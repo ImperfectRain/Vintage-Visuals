@@ -39,16 +39,19 @@
     Game assemblies. Private=false keeps them out of the mod folder - the game
     already has them loaded, and shipping copies causes type-identity errors.
 
-    VintagestoryAPI  - the public modding API (ModSystem, ICoreClientAPI, ...)
-    VintagestoryLib  - internal client types we Harmony-patch (ShaderRegistry,
-                       ShaderProgram, ShaderProgramBase). Not a stable API:
-                       every reference into this assembly is a version-coupling
-                       risk and must be guarded. See src/Common/HarmonyPatches.cs.
+    VintagestoryAPI  - the public modding API (ModSystem, ICoreClientAPI,
+                       IShaderProgram, IShader, ...). Everything this mod
+                       compiles against lives here.
     0Harmony         - runtime patching, ships in the game's Lib folder.
+
+    Deliberately NOT referenced: VintagestoryLib. The one internal type we need
+    (ShaderRegistry, to intercept vanilla GLSL) is resolved by name at runtime
+    in src/Common/ShaderSourceInterceptor.cs, so a rename there degrades to a
+    logged error instead of a build break, and nothing else in the mod acquires
+    a dependency on unstable internals.
   -->
   <ItemGroup>
     <Reference Include="VintagestoryAPI" HintPath="$(GameDirectory)/VintagestoryAPI.dll" Private="false" />
-    <Reference Include="VintagestoryLib" HintPath="$(GameDirectory)/VintagestoryLib.dll" Private="false" />
     <Reference Include="Newtonsoft.Json" HintPath="$(GameDirectory)/Lib/Newtonsoft.Json.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameDirectory)/Lib/0Harmony.dll" Private="false" />
     <Reference Include="$(GameDirectory)/Lib/OpenTK*.dll" Private="false" />
