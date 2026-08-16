@@ -44,6 +44,10 @@
                        compiles against lives here.
     0Harmony         - runtime patching, ships in the game's Lib folder.
 
+    Config serialization goes through ICoreAPI.LoadModConfig/StoreModConfig, so
+    Newtonsoft.Json needs no reference here; OpenTK is likewise unreferenced
+    because nothing in this mod touches GL directly.
+
     Deliberately NOT referenced: VintagestoryLib. The one internal type we need
     (ShaderRegistry, to intercept vanilla GLSL) is resolved by name at runtime
     in src/Common/ShaderSourceInterceptor.cs, so a rename there degrades to a
@@ -52,9 +56,7 @@
   -->
   <ItemGroup>
     <Reference Include="VintagestoryAPI" HintPath="$(GameDirectory)/VintagestoryAPI.dll" Private="false" />
-    <Reference Include="Newtonsoft.Json" HintPath="$(GameDirectory)/Lib/Newtonsoft.Json.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameDirectory)/Lib/0Harmony.dll" Private="false" />
-    <Reference Include="$(GameDirectory)/Lib/OpenTK*.dll" Private="false" />
   </ItemGroup>
 
   <!--

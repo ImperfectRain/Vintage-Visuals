@@ -48,9 +48,11 @@ namespace VintageVisuals.Common.Patching
         {
             if (AssetCategory.categories.ContainsKey(code)) return;
 
-            // Client-only, does not affect gameplay: these assets never reach
-            // the server and must not participate in server asset syncing.
-            var unused = new AssetCategory(code, false, EnumAppSide.Client);
+            // The constructor registers itself into AssetCategory.categories,
+            // which is the actual point of this call - the instance is not
+            // needed here. Client-only and not gameplay-affecting: these assets
+            // never reach the server and must not join server asset syncing.
+            new AssetCategory(code, false, EnumAppSide.Client);
         }
 
         /// <summary>
