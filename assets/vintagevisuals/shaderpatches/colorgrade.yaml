@@ -1,0 +1,52 @@
+# Vintage Visuals - color grading patches against vanilla final.fsh
+#
+# Group defaults to this file's name ("colorgrade"), so every entry below
+# succeeds or fails as one unit. If any anchor stops matching after a game
+# update, the loader rolls final.fsh back to vanilla and disables the whole
+# subsystem rather than leaving a shader that references half-injected code.
+#
+# Strategy: rather than guessing where vanilla writes its final pixel - which
+# moves around between versions - the original main() is renamed and a new
+# main() is appended that calls it and grades the result. That depends on only
+# two facts about final.fsh: it has a `void main(void) {` and its colour output
+# is named `outColor`. Both are asserted below.
+#
+# Verify against the installed game's assets/game/shaders/final.fsh before
+# trusting any of this on a new game version.
+
+# 1. Inject the uniforms and the grading function.
+- type: start
+  filename: final.fsh
+  snippet: colorgrade.glsl
+
+# 2. Assert the fragment output is still called outColor.
+#
+# This looks like a no-op patch, and semantically it is - but it is the reason
+# the appended main() below can safely reference outColor. If vanilla ever
+# renames the output, this anchor stops matching, the group rolls back, and the
+# subsystem switches itself off. Without it the appended code would reference an
+# undeclared variable and fail to COMPILE, which costs the player their shaders
+# instead of just this effect.
+- type: token
+  filename: final.fsh
+  tokens: out vec4 outColor;
+  content: |
+    out vec4 outColor; // vintagevisuals: output name asserted by colorgrade.yaml
+
+# 3. Rename the vanilla entrypoint so a new one can wrap it.
+- type: token
+  filename: final.fsh
+  tokens: void main(void) {
+  content: |
+    void vvSceneMain(void) {
+
+# 4. New entrypoint: run vanilla's, then grade whatever it wrote.
+- type: end
+  filename: final.fsh
+  content: |
+
+    void main(void)
+    {
+        vvSceneMain();
+        outColor = vvApplyColorGrade(outColor);
+    }

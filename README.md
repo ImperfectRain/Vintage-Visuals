@@ -44,11 +44,17 @@ All values live in `ModConfig/vintagevisuals.json`. Edit and press
 | `ColorGrade.Contrast` | 0.0 – 2.0 | `1.0` | Pivots around mid-grey (0.18); 1.0 is neutral |
 | `ColorGrade.Saturation` | 0.0 – 2.0 | `1.0` | 0 is greyscale, 1.0 is neutral |
 | `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
-| `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `1.0` | Blend between vanilla output and the filmic curve |
+| `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →
 saturation. Rationale in [src/ColorGrade/README.md](src/ColorGrade/README.md).
+
+`TonemapStrength` ships at `0.0` deliberately. The ACES curve expects linear,
+scene-referred input, and nobody has yet confirmed against a running game
+whether `final.fsh`'s output is still linear where this mod grades it. Turning
+it on before that is checked risks a washed-out image on first install. Set it
+to `1.0`, look at the result, and if it holds up, change the default.
 
 ## Current state
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
 
@@ -86,10 +87,11 @@ namespace VintageVisuals
 
         private void RegisterSubsystems()
         {
-            // Subsystems are registered here as each phase lands: ColorGrade,
-            // Weather, Reflections, PseudoPBR. Each is independently toggleable
-            // by design, so registration order carries no meaning beyond log
-            // ordering.
+            _subsystems.Add(new ColorGradeSubsystem());
+
+            // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is
+            // independently toggleable by design, so registration order carries
+            // no meaning beyond log ordering.
 
             foreach (IVisualSubsystem subsystem in _subsystems)
             {
