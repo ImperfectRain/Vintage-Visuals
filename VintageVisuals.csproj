@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      net8.0 rather than the net10.0 the current game source uses.
+
+      A net8.0 assembly loads on a .NET 10 runtime, but a net10.0 assembly will
+      NOT load on the .NET 8 runtime that Vintage Story 1.21 ships with. Target
+      the lower of the two so one build covers both. Override on the command
+      line if you specifically need newer language/runtime features:
+          dotnet build -p:TargetFramework=net10.0
+    -->
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>VintageVisuals</AssemblyName>
+    <RootNamespace>VintageVisuals</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.0.1</Version>
+    <!-- The game loads mods from a flat folder; satellite/deps files just add noise. -->
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+  </PropertyGroup>
+
+  <!--
+    Per-machine paths live in Properties/localSettings.props, which is
+    gitignored. It is generated on first build (see EnsureLocalSettings below)
+    and defaults GameDirectory to the VINTAGE_STORY environment variable.
+  -->
+  <Import Project="Properties\localSettings.props" Condition="Exists('Properties\localSettings.props')" />
+  <PropertyGroup>
+    <GameDirectory Condition="'$(GameDirectory)' == ''">$(VINTAGE_STORY)</GameDirectory>
+    <OutputPath>bin\$(Configuration)\Mods\vintagevisuals</OutputPath>
+    <ReleasesDir>$(MSBuildProjectDirectory)\Releases</ReleasesDir>
+  </PropertyGroup>
+
+  <!--
+    Game assemblies. Private=false keeps them out of the mod folder - the game
+    already has them loaded, and shipping copies causes type-identity errors.
+
+    VintagestoryAPI  - the public modding API (ModSystem, ICoreClientAPI, ...)
+    VintagestoryLib  - internal client types we Harmony-patch (ShaderRegistry,
+                       ShaderProgram, ShaderProgramBase). Not a stable API:
+                       every reference into this assembly is a version-coupling
+                       risk and must be guarded. See src/Common/HarmonyPatches.cs.
+    0Harmony         - runtime patching, ships in the game's Lib folder.
+  -->
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI" HintPath="$(GameDirectory)/VintagestoryAPI.dll" Private="false" />
+    <Reference Include="VintagestoryLib" HintPath="$(GameDirectory)/VintagestoryLib.dll" Private="false" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(GameDirectory)/Lib/Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(GameDirectory)/Lib/0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDirectory)/Lib/OpenTK*.dll" Private="false" />
+  </ItemGroup>
+
+  <!--
+    YamlDotNet is NOT referenced from the game folder: the game does not ship
+    it. It is pulled from NuGet and copied next to the mod dll so the game's
+    assembly resolver finds it.
+  -->
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="15.1.2" />
+  </ItemGroup>
+
+  <!-- Assets and modinfo are content, copied verbatim into the mod folder. -->
+  <ItemGroup>
+    <None Include="modinfo.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="modicon.png" CopyToOutputDirectory="PreserveNewest" Condition="Exists('modicon.png')" />
+    <None Include="assets\**\*">
+      <Link>assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- /tools is the offline PBR prototype (Python). Never compiled into the mod. -->
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
+
+  <Target Name="EnsureLocalSettings" BeforeTargets="PrepareForBuild" Condition="!Exists('Properties\localSettings.props')">
+    <MakeDir Directories="Properties" />
+    <WriteLinesToFile File="Properties\localSettings.props" Overwrite="true" Lines="&lt;Project&gt;%0A  &lt;PropertyGroup&gt;%0A    &lt;GameDirectory&gt;%24(VINTAGE_STORY)&lt;/GameDirectory&gt;%0A  &lt;/PropertyGroup&gt;%0A&lt;/Project&gt;" />
+    <Message Importance="high" Text="Generated Properties/localSettings.props - set GameDirectory there if VINTAGE_STORY is not set." />
+  </Target>
+
+  <Target Name="CheckGameDirectory" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(GameDirectory)' == ''"
+           Text="GameDirectory is empty. Set the VINTAGE_STORY environment variable to your Vintage Story install folder, or set &lt;GameDirectory&gt; in Properties/localSettings.props." />
+    <Error Condition="!Exists('$(GameDirectory)/VintagestoryAPI.dll')"
+           Text="VintagestoryAPI.dll not found under '$(GameDirectory)'. Point GameDirectory at the folder containing VintagestoryAPI.dll." />
+  </Target>
+
+  <Target Name="ZipRelease" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(ReleasesDir)" />
+    <ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(ReleasesDir)\vintagevisuals_$(Version).zip" Overwrite="true" />
+  </Target>
+
+</Project>

@@ -1,0 +1,14 @@
+{
+  "type": "code",
+  "modid": "vintagevisuals",
+  "name": "Vintage Visuals",
+  "description": "Visual overhaul: color grading, weather/sky, screen-space reflections and a pseudo-PBR texture pipeline. Each subsystem is independently toggleable.",
+  "authors": [ "ImperfectRain" ],
+  "version": "0.0.1",
+  "side": "Client",
+  "requiredOnClient": true,
+  "requiredOnServer": false,
+  "dependencies": {
+    "game": ""
+  }
+}

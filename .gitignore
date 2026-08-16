@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+Releases/
+*.user
+*.suo
+*.userprefs
+
+# Per-developer machine paths (game install dir, data dir). Generated on first
+# build by the EnsureLocalSettings target in VintageVisuals.csproj.
+Properties/localSettings.props
+
+# Generated shader dumps written by ShaderDebugDumper when VINTAGEVISUALS_DEBUG=1.
+ShaderDebug/
+
+# Derived PBR atlases + the offline tool's scratch output. These are rebuilt
+# from vanilla textures by AtlasPreprocessor / tools/pbrgen; committing them
+# would balloon the repo with binary noise and make diffs unreadable.
+/generated/
+tools/pbrgen/out/
+tools/pbrgen/samples/
+
+# Python venv for the offline PBR tool
+.venv/
+__pycache__/
+*.pyc
+
+# OS noise
+.DS_Store
+Thumbs.db
