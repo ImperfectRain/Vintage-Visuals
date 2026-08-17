@@ -11,6 +11,16 @@ dotnet build                                  # -> bin/Debug/Mods/vintagevisuals
 dotnet build -c Release                       # also zips to Releases/
 ```
 
+`TargetFramework` must be **at least** the framework the installed game's
+`VintagestoryAPI.dll` targets — net10.0 for 1.22+, net8.0 for 1.21. This is a
+compile-time rule that runs opposite to how runtime loading works: a net8.0
+assembly loads fine on a .NET 10 runtime, but you cannot *compile* against a
+reference assembly targeting a higher framework. Too low gives dozens of MSB3277
+warnings and then `error CS1705: ... uses 'System.Runtime, Version=10.0.0.0'
+which has a higher version than referenced assembly`. Override in
+`Properties/localSettings.props`, not on the command line — `-p:TargetFramework=`
+skips restore and fails with `NETSDK1005` instead.
+
 Copy or symlink `bin/Debug/Mods/vintagevisuals/` into your VintagestoryData
 `Mods/` folder to test. There is no unit test suite for the mod assembly —
 it is verified by running the game (see "Verification" below).

@@ -1,16 +1,36 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    Per-machine paths and overrides live in Properties/localSettings.props,
+    which is gitignored. It is generated on first build (see EnsureLocalSettings
+    below) and defaults GameDirectory to the VINTAGE_STORY environment variable.
+    Imported before the defaults so anything it sets wins.
+  -->
+  <Import Project="Properties\localSettings.props" Condition="Exists('Properties\localSettings.props')" />
+
   <PropertyGroup>
     <!--
-      net8.0 rather than the net10.0 the current game source uses.
+      TargetFramework MUST be greater than or equal to the framework the
+      installed game's VintagestoryAPI.dll was built against. This is a
+      compile-time rule and it does not work the way runtime loading does:
+      a net8.0 assembly happily *loads* on a .NET 10 runtime, but you cannot
+      *compile* against a reference assembly that targets a higher framework.
 
-      A net8.0 assembly loads on a .NET 10 runtime, but a net10.0 assembly will
-      NOT load on the .NET 8 runtime that Vintage Story 1.21 ships with. Target
-      the lower of the two so one build covers both. Override on the command
-      line if you specifically need newer language/runtime features:
-          dotnet build -p:TargetFramework=net10.0
+      Getting this wrong produces a wall of MSB3277 warnings followed by:
+          error CS1705: Assembly 'VintagestoryAPI' ... uses 'System.Runtime,
+          Version=10.0.0.0' which has a higher version than referenced
+          assembly 'System.Runtime, Version=8.0.0.0'
+      If you see that, this value is below your game's framework - raise it.
+
+      net10.0 matches Vintage Story 1.22+. On 1.21, which shipped on .NET 8,
+      set net8.0 in Properties/localSettings.props rather than editing this
+      line, so the override stays out of version control.
+
+      Note that -p:TargetFramework=... on the command line does NOT work here:
+      it changes the build without re-running restore, so the assets file has
+      no target for the new framework and you get NETSDK1005 instead.
     -->
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -23,12 +43,6 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
   </PropertyGroup>
 
-  <!--
-    Per-machine paths live in Properties/localSettings.props, which is
-    gitignored. It is generated on first build (see EnsureLocalSettings below)
-    and defaults GameDirectory to the VINTAGE_STORY environment variable.
-  -->
-  <Import Project="Properties\localSettings.props" Condition="Exists('Properties\localSettings.props')" />
   <PropertyGroup>
     <GameDirectory Condition="'$(GameDirectory)' == ''">$(VINTAGE_STORY)</GameDirectory>
     <OutputPath>bin\$(Configuration)\Mods\vintagevisuals</OutputPath>
@@ -86,7 +100,7 @@
 
   <Target Name="EnsureLocalSettings" BeforeTargets="PrepareForBuild" Condition="!Exists('Properties\localSettings.props')">
     <MakeDir Directories="Properties" />
-    <WriteLinesToFile File="Properties\localSettings.props" Overwrite="true" Lines="&lt;Project&gt;%0A  &lt;PropertyGroup&gt;%0A    &lt;GameDirectory&gt;%24(VINTAGE_STORY)&lt;/GameDirectory&gt;%0A  &lt;/PropertyGroup&gt;%0A&lt;/Project&gt;" />
+    <WriteLinesToFile File="Properties\localSettings.props" Overwrite="true" Lines="&lt;Project&gt;%0A  &lt;PropertyGroup&gt;%0A    &lt;GameDirectory&gt;%24(VINTAGE_STORY)&lt;/GameDirectory&gt;%0A    &lt;!-- Uncomment for Vintage Story 1.21, which shipped on .NET 8: --&gt;%0A    &lt;!-- &lt;TargetFramework&gt;net8.0&lt;/TargetFramework&gt; --&gt;%0A  &lt;/PropertyGroup&gt;%0A&lt;/Project&gt;" />
     <Message Importance="high" Text="Generated Properties/localSettings.props - set GameDirectory there if VINTAGE_STORY is not set." />
   </Target>
 
