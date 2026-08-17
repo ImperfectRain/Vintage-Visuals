@@ -39,6 +39,19 @@ namespace VintageVisuals
         private ShaderSourceInterceptor _interceptor;
         private readonly List<IVisualSubsystem> _subsystems = new List<IVisualSubsystem>();
 
+        /// <summary>Guards the one self-inflicted shader reload, so it can never loop.</summary>
+        private bool _forcedShaderReload;
+
+        // Uniform upload needs the vanilla program to exist and be compiled.
+        // Exactly when that becomes true varies with load order and machine
+        // speed, and getting it wrong is silent - an unset GLSL uniform reads
+        // as zero, which this mod's shader treats as "disabled". Rather than
+        // guess one correct moment, apply repeatedly over a short window and
+        // let the one-shot warnings keep the log quiet. Apply() is idempotent
+        // and costs a handful of uniform writes, so this is cheap insurance.
+        private const int ApplyRetries = 5;
+        private const int ApplyRetryIntervalMs = 500;
+
         /// <summary>Client-only: this mod draws things, and the server draws nothing.</summary>
         public override bool ShouldLoad(EnumAppSide forSide)
         {
@@ -112,26 +125,50 @@ namespace VintageVisuals
         {
             ShaderPatcher.LogSummary();
 
-            if (ShaderPatchingAvailable && ShaderPatcher.Groups.Count > 0)
+            bool anyApplied = false;
+            foreach (ShaderPatchGroup group in ShaderPatcher.Groups)
             {
-                bool anyApplied = false;
-                foreach (ShaderPatchGroup group in ShaderPatcher.Groups)
-                {
-                    if (group.PatchedFiles.Count > 0) anyApplied = true;
-                }
-
-                if (!anyApplied)
-                {
-                    // Most likely cause: the game compiled its shaders before
-                    // this mod installed the hook. Saying so beats leaving the
-                    // user to guess why nothing looks different.
-                    Mod.Logger.Warning("[VintageVisuals] the shader hook is installed but no vanilla shader has " +
-                        "passed through it yet. If nothing looks different, reload shaders from the graphics " +
-                        "settings menu; if that fixes it, this mod is loading too late and that is a bug worth reporting.");
-                }
+                if (group.PatchedFiles.Count > 0) anyApplied = true;
             }
 
+            // The game compiles its shaders during the pre-mod main-menu
+            // bootstrap, before any ModSystem exists and therefore before the
+            // interceptor is installed. Its later "reload with mod assets" pass
+            // does not route already-cached programs back through LoadShader,
+            // so without this the hook is installed correctly and simply never
+            // sees the one program we care about.
+            //
+            // Rather than fight that caching, ask for a reload we control. Once
+            // only, and guarded, because ReloadShaders() raises the very event
+            // whose handler schedules the re-apply.
+            if (ShaderPatchingAvailable && ShaderPatcher.Groups.Count > 0 && !anyApplied && !_forcedShaderReload)
+            {
+                _forcedShaderReload = true;
+                Mod.Logger.Notification("[VintageVisuals] no vanilla shader has passed through the hook yet — " +
+                    "the game compiled its shaders before this mod loaded. Forcing one shader reload so the " +
+                    "patches reach the running programs.");
+
+                // Deferred a tick: ReloadShaders() re-enters shader loading, and
+                // doing that from inside an asset-load event is asking for trouble.
+                Capi.Event.RegisterCallback(_ => Capi.Shader.ReloadShaders(), 0);
+                return;
+            }
+
+            ScheduleApplyRetries();
+        }
+
+        /// <summary>
+        /// Applies now and again a few times over the next couple of seconds.
+        /// See the ApplyRetries comment for why a single shot is not enough.
+        /// </summary>
+        private void ScheduleApplyRetries()
+        {
             ApplyToAllSubsystems();
+
+            for (int attempt = 1; attempt <= ApplyRetries; attempt++)
+            {
+                Capi.Event.RegisterCallback(_ => ApplyToAllSubsystems(), attempt * ApplyRetryIntervalMs);
+            }
         }
 
         private bool OnReloadShader()
@@ -148,7 +185,7 @@ namespace VintageVisuals
             Capi.Event.RegisterCallback(_ =>
             {
                 ShaderPatcher.LogSummary();
-                ApplyToAllSubsystems();
+                ScheduleApplyRetries();
             }, 0);
 
             return true;

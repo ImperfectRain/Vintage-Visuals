@@ -29,7 +29,9 @@ namespace VintageVisuals.ColorGrade
         private VintageVisualsModSystem _mod;
 
         // Apply() runs on every config change and shader reload; these keep a
-        // recurring problem to one log line instead of one per reload.
+        // recurring problem to one log line instead of one per reload. They are
+        // cleared whenever the condition clears, so a problem that comes back
+        // after being fixed is reported again rather than staying silent.
         private bool _warnedMissingProgram;
         private bool _warnedMissingUniform;
 
@@ -40,29 +42,47 @@ namespace VintageVisuals.ColorGrade
             _mod = mod;
         }
 
+        /// <summary>
+        /// Finds the vanilla "final" program.
+        ///
+        /// <see cref="IShaderAPI.GetProgramByName"/> does NOT find it — that
+        /// lookup covers name-registered programs, which in practice means ones
+        /// mods registered, and the vanilla passes are addressed by their
+        /// <see cref="EnumShaderProgram"/> id instead. Calling only the by-name
+        /// overload is what produced "no shader program named 'final'" in the
+        /// log while the shader itself was patched perfectly well.
+        ///
+        /// The by-name call is kept as a fallback purely in case a future
+        /// version starts registering the vanilla passes by name too.
+        /// </summary>
+        private IShaderProgram ResolveFinalProgram()
+        {
+            return _mod.Capi.Shader.GetProgram((int)EnumShaderProgram.Final)
+                   ?? _mod.Capi.Shader.GetProgramByName(TargetProgramName);
+        }
+
         public void Apply()
         {
             if (_mod == null || _mod.Capi == null) return;
 
-            IShaderProgram program = _mod.Capi.Shader.GetProgramByName(TargetProgramName);
+            IShaderProgram program = ResolveFinalProgram();
 
             if (program == null)
             {
                 if (!_warnedMissingProgram)
                 {
                     _warnedMissingProgram = true;
-                    _mod.Mod.Logger.Warning("[VintageVisuals] colorgrade: no shader program named '" +
-                        TargetProgramName + "'. Color grading is inactive.");
+                    _mod.Mod.Logger.Warning("[VintageVisuals] colorgrade: the vanilla '" + TargetProgramName +
+                        "' shader program is not loaded yet. Color grading is inactive for now; this resolves " +
+                        "itself if it was simply called too early.");
                 }
                 return;
             }
 
             _warnedMissingProgram = false;
 
-            // HasUniform is the ground truth for "did the patch land": the
-            // uniform only exists if our GLSL was injected and survived
-            // compilation. Checking the patcher's own bookkeeping alone would
-            // not catch a shader that failed to compile downstream.
+            // HasUniform is the ground truth for "did our GLSL reach the GPU":
+            // the uniform exists only if the injection survived compilation.
             if (!program.HasUniform(EnabledUniform))
             {
                 if (!_warnedMissingUniform)
@@ -80,11 +100,14 @@ namespace VintageVisuals.ColorGrade
 
             ColorGradeConfig config = _mod.ConfigManager.Config.ColorGrade;
 
-            // Every one of these must hold for the effect to be legitimate:
-            // the player enabled it, the hook installed, and the patch applied.
-            bool active = config.Enabled
-                          && _mod.ShaderPatchingAvailable
-                          && _mod.ShaderPatcher.IsGroupHealthy(GroupName);
+            // Activation deliberately does NOT consult ShaderPatchingAvailable
+            // or IsGroupHealthy. Those track what this mod *believes* it did;
+            // HasUniform above is direct evidence of what actually reached the
+            // compiled program, and it is strictly stronger. Requiring both
+            // meant that any reset of our own bookkeeping — a shader reload
+            // rebuilds the patch groups — could veto a shader that was in fact
+            // correctly patched, which is a false negative with no upside.
+            bool active = config.Enabled;
 
             program.Use();
             program.Uniform(EnabledUniform, active ? 1f : 0f);
@@ -100,7 +123,12 @@ namespace VintageVisuals.ColorGrade
 
             program.Stop();
 
-            _mod.Mod.Logger.VerboseDebug("[VintageVisuals] colorgrade: uniforms uploaded, active=" + active);
+            _mod.Mod.Logger.Notification("[VintageVisuals] colorgrade: uniforms uploaded, active=" + active +
+                " (exposure=" + config.Exposure.ToString("0.##") +
+                " contrast=" + config.Contrast.ToString("0.##") +
+                " saturation=" + config.Saturation.ToString("0.##") +
+                " temperature=" + config.Temperature.ToString("0.##") +
+                " tonemap=" + config.TonemapStrength.ToString("0.##") + ")");
         }
 
         public void Dispose()
