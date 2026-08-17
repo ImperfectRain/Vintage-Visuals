@@ -11,6 +11,9 @@ dotnet build                                  # -> bin/Debug/Mods/vintagevisuals
 dotnet build -c Release                       # also zips to Releases/
 ```
 
+No `-p:` flags needed: the project defaults to **net10.0**, which is correct for
+1.22+ and is confirmed building clean against 1.22.7.
+
 `TargetFramework` must be **at least** the framework the installed game's
 `VintagestoryAPI.dll` targets — net10.0 for 1.22+, net8.0 for 1.21. This is a
 compile-time rule that runs opposite to how runtime loading works: a net8.0

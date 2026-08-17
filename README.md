@@ -60,32 +60,35 @@ to `1.0`, look at the result, and if it holds up, change the default.
 
 Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 
-| Item | State |
+| Item | Level reached |
 |---|---|
-| Repo scaffold builds | **compiles** clean against API 1.22.5, packages to a zip |
-| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **33 checks pass** against the compiled assembly |
-| Config system wired, live-tunable values | compiles, **not run in game** |
-| Color grade: exposure/saturation/contrast/temperature | compiles, **not run in game** |
-| Color grade: tonemap curve | compiles, ships off — see above |
+| Repo scaffold builds and loads in-game | **3 (loads)** — builds clean on net10.0, loads on 1.22.7 with no exceptions |
+| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **3 (loads)** — parses in game; 33 offline checks pass |
+| Config system wired, live-tunable values | 2 (compiles) |
+| Color grade: exposure/saturation/contrast/temperature | 2 (compiles) — **patches do not reach the running shader**, see below |
+| Color grade: tonemap curve | 2 (compiles), ships off |
 | PBR: offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 
-Using the verification levels from [CLAUDE.md](CLAUDE.md), this sits at **2
-(compiles)**, with the patch engine independently exercised beyond that:
+Levels are the ones defined in [CLAUDE.md](CLAUDE.md). Confirmed on a 1.22.7
+install: the mod loads (`Found 4 mods (0 disabled)`, 149 mod systems
+instantiated), the Harmony hook installs, and the patch YAML parses — no
+exceptions during startup or in-world play.
 
-- **The offline PBR tool runs.** Test suite, constants tuned against measured
-  output, contact sheet reviewed. Working software.
-- **The patch engine is exercised by `tools/smoketest`**, which drives the
-  compiled assembly against the real `colorgrade.yaml`: parsing, anchor
-  matching, and the rollback path. No game required.
-- **Nothing has run inside Vintage Story.** No GPU has seen the GLSL, and the
-  Harmony hook onto `ShaderRegistry` is resolved by name at runtime, so nothing
-  offline can confirm it binds.
+**Phase 1 is not done.** The colour grading patches are structurally correct
+but never reach the shader the game is actually running. `ShaderRegistry.LoadShader`
+is called during the pre-mod main-menu bootstrap, before any `ModSystem` — and
+therefore the interceptor — exists; the later "reloaded shaders with mod assets"
+pass does reload `final`, but appears not to route cached programs back through
+the hooked method. The log says so plainly:
 
-First run will tell you the rest. The patch engine logs every group it applies
-or fails, `ColorGrade.Saturation: 0.0` plus <kbd>Ctrl</kbd>+<kbd>V</kbd> should
-turn the world greyscale instantly, and `EnableShaderDebugDump` writes the exact
-GLSL that reached the compiler.
+```
+[vintagevisuals] patch group 'colorgrade': loaded but not applied to any shader yet.
+[vintagevisuals] colorgrade: no shader program named 'final'. Color grading is inactive.
+```
+
+Being unable to *see* the effect is the expected outcome of that, not a separate
+fault. Fixing the ordering is the current priority.
 
 ## Known limitations
 

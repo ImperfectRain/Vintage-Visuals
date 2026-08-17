@@ -22,9 +22,10 @@
           assembly 'System.Runtime, Version=8.0.0.0'
       If you see that, this value is below your game's framework - raise it.
 
-      net10.0 matches Vintage Story 1.22+. On 1.21, which shipped on .NET 8,
-      set net8.0 in Properties/localSettings.props rather than editing this
-      line, so the override stays out of version control.
+      net10.0 matches Vintage Story 1.22+ and is confirmed building clean
+      against a 1.22.7 install. On 1.21, which shipped on .NET 8, set net8.0 in
+      Properties/localSettings.props rather than editing this line, so the
+      override stays out of version control.
 
       Note that -p:TargetFramework=... on the command line does NOT work here:
       it changes the build without re-running restore, so the assets file has
