@@ -41,6 +41,15 @@
     <Version>0.0.1</Version>
     <!-- The game loads mods from a flat folder; satellite/deps files just add noise. -->
     <GenerateDependencyFile>false</GenerateDependencyFile>
+    <!--
+      Required, not optional. Library projects do NOT copy their NuGet
+      dependencies to the output folder by default, so without this YamlDotNet
+      never ships beside the mod dll and the game throws FileNotFoundException
+      the first time a shader patch file is parsed - at load, with the mod
+      already half-initialised. The game resolves a mod's dependencies from its
+      own folder, so the assembly has to physically be there.
+    -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <PropertyGroup>

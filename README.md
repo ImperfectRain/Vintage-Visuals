@@ -62,30 +62,30 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 
 | Item | State |
 |---|---|
-| Repo scaffold builds and loads in-game | written, **not compiled** |
-| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | written, algorithm verified by simulation |
-| Config system wired, live-tunable values | written, **not run** |
-| Color grade: exposure/saturation/contrast/temperature | written, **not run** |
-| Color grade: tonemap curve | written, ships off — see above |
+| Repo scaffold builds | **compiles** clean against API 1.22.5, packages to a zip |
+| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **33 checks pass** against the compiled assembly |
+| Config system wired, live-tunable values | compiles, **not run in game** |
+| Color grade: exposure/saturation/contrast/temperature | compiles, **not run in game** |
+| Color grade: tonemap curve | compiles, ships off — see above |
 | PBR: offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 
-Two honest verification levels are in play here, and it matters which is which:
+Using the verification levels from [CLAUDE.md](CLAUDE.md), this sits at **2
+(compiles)**, with the patch engine independently exercised beyond that:
 
-- **The offline PBR tool runs.** It has a test suite, its constants were tuned
-  against measured output rather than guessed, and its contact sheet has been
-  reviewed. Treat it as working software.
-- **The mod assembly has never been compiled.** Building it needs Vintage
-  Story's own DLLs, which are not redistributable and were not available. The
-  C# and GLSL were written against the official API source (v1.22.5) with every
-  signature checked, and the patch engine's matching and rollback logic was
-  verified by simulating it against a stand-in `final.fsh` — but no compiler and
-  no GPU has seen any of it. Assume it needs a round of fixes.
+- **The offline PBR tool runs.** Test suite, constants tuned against measured
+  output, contact sheet reviewed. Working software.
+- **The patch engine is exercised by `tools/smoketest`**, which drives the
+  compiled assembly against the real `colorgrade.yaml`: parsing, anchor
+  matching, and the rollback path. No game required.
+- **Nothing has run inside Vintage Story.** No GPU has seen the GLSL, and the
+  Harmony hook onto `ShaderRegistry` is resolved by name at runtime, so nothing
+  offline can confirm it binds.
 
-First run will tell you a lot. The patch engine logs every group it applies or
-fails, `ColorGrade.Saturation: 0.0` plus <kbd>Ctrl</kbd>+<kbd>V</kbd> should turn
-the world greyscale instantly, and `EnableShaderDebugDump` writes the exact GLSL
-that reached the compiler.
+First run will tell you the rest. The patch engine logs every group it applies
+or fails, `ColorGrade.Saturation: 0.0` plus <kbd>Ctrl</kbd>+<kbd>V</kbd> should
+turn the world greyscale instantly, and `EnableShaderDebugDump` writes the exact
+GLSL that reached the compiler.
 
 ## Known limitations
 

@@ -89,7 +89,7 @@ namespace VintageVisuals.Common.Patching
 
                 try
                 {
-                    patches.AddRange(ParseFile(asset.ToText(), defaultGroup, origin));
+                    patches.AddRange(ParsePatchFile(asset.ToText(), defaultGroup, origin, ResolveSnippet));
                 }
                 catch (Exception ex)
                 {
@@ -104,7 +104,35 @@ namespace VintageVisuals.Common.Patching
                                  assets.Count + " file(s).");
         }
 
-        private IEnumerable<ShaderPatch> ParseFile(string yaml, string defaultGroup, string origin)
+        /// <summary>
+        /// Loads a snippet's GLSL out of the asset system. Passed to
+        /// <see cref="ParsePatchFile"/> as a delegate so the parser itself has
+        /// no dependency on the game API and can be exercised directly.
+        /// </summary>
+        private string ResolveSnippet(string snippetName)
+        {
+            var location = new AssetLocation(_domain, SnippetCategory + "/" + snippetName);
+            IAsset asset = _capi.Assets.TryGet(location);
+
+            if (asset == null)
+            {
+                throw new ArgumentException("snippet '" + snippetName + "' not found at " + location +
+                    ". Snippet filenames include their extension, e.g. 'colorgrade.glsl'.");
+            }
+
+            return asset.ToText();
+        }
+
+        /// <summary>
+        /// Parses one patch YAML document into patches.
+        ///
+        /// Static and API-free on purpose: this is where a game update actually
+        /// breaks things, and a seam that can be called with a string and a
+        /// stub resolver is one that can be tested without a running client.
+        /// </summary>
+        /// <param name="resolveSnippet">Maps a snippet filename to its GLSL.</param>
+        public static IEnumerable<ShaderPatch> ParsePatchFile(string yaml, string defaultGroup, string origin,
+                                                              System.Func<string, string> resolveSnippet)
         {
             IDeserializer deserializer = new DeserializerBuilder()
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
@@ -119,13 +147,14 @@ namespace VintageVisuals.Common.Patching
 
             for (int i = 0; i < entries.Count; i++)
             {
-                result.Add(BuildPatch(entries[i], defaultGroup, origin + " entry " + (i + 1)));
+                result.Add(BuildPatch(entries[i], defaultGroup, origin + " entry " + (i + 1), resolveSnippet));
             }
 
             return result;
         }
 
-        private ShaderPatch BuildPatch(PatchEntry entry, string defaultGroup, string origin)
+        private static ShaderPatch BuildPatch(PatchEntry entry, string defaultGroup, string origin,
+                                              System.Func<string, string> resolveSnippet)
         {
             if (string.IsNullOrWhiteSpace(entry.Filename))
             {
@@ -135,7 +164,7 @@ namespace VintageVisuals.Common.Patching
             }
 
             string group = string.IsNullOrWhiteSpace(entry.Group) ? defaultGroup : entry.Group.Trim();
-            string content = ResolveContent(entry, origin);
+            string content = ResolveContent(entry, origin, resolveSnippet);
             ShaderPatchKind kind = ParseKind(entry.Type, origin);
 
             Regex anchor = null;
@@ -162,7 +191,7 @@ namespace VintageVisuals.Common.Patching
                                    anchor, anchorDescription, entry.Optional, entry.Multiple, origin);
         }
 
-        private string ResolveContent(PatchEntry entry, string origin)
+        private static string ResolveContent(PatchEntry entry, string origin, System.Func<string, string> resolveSnippet)
         {
             if (string.IsNullOrEmpty(entry.Snippet)) return entry.Content ?? "";
 
@@ -172,16 +201,14 @@ namespace VintageVisuals.Common.Patching
                     "having two sources for the injected GLSL makes the applied result ambiguous.");
             }
 
-            var location = new AssetLocation(_domain, SnippetCategory + "/" + entry.Snippet);
-            IAsset asset = _capi.Assets.TryGet(location);
-
-            if (asset == null)
+            try
             {
-                throw new ArgumentException(origin + ": snippet '" + entry.Snippet + "' not found at " + location +
-                    ". Snippet filenames include their extension, e.g. 'colorgrade.glsl'.");
+                return resolveSnippet(entry.Snippet);
             }
-
-            return asset.ToText();
+            catch (Exception ex)
+            {
+                throw new ArgumentException(origin + ": " + ex.Message);
+            }
         }
 
         private static ShaderPatchKind ParseKind(string type, string origin)

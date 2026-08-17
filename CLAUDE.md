@@ -22,8 +22,15 @@ which has a higher version than referenced assembly`. Override in
 skips restore and fails with `NETSDK1005` instead.
 
 Copy or symlink `bin/Debug/Mods/vintagevisuals/` into your VintagestoryData
-`Mods/` folder to test. There is no unit test suite for the mod assembly —
-it is verified by running the game (see "Verification" below).
+`Mods/` folder to test.
+
+```sh
+dotnet run --project tools/smoketest   # patch engine checks, no game needed
+```
+
+That drives the compiled patch engine against the real patch YAML: parsing,
+anchor matching, and group rollback. It cannot tell you whether the anchors
+match *your* game's shaders, or whether anything renders — see "Verification".
 
 The offline PBR tool is a separate Python program, not part of the build:
 

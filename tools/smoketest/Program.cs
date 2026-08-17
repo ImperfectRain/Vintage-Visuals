@@ -1,0 +1,171 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using VintageVisuals.Common.Patching;
+
+// Drives the REAL compiled VintageVisuals patch engine against the REAL
+// colorgrade.yaml. Everything before this was a Python port of the algorithm;
+// this exercises the shipped IL.
+
+namespace VintageVisuals.SmokeTest
+{
+static class Program
+{
+    // Walk up from the built exe (tools/smoketest/bin/<cfg>/<tfm>/) to the
+    // repo root, so the harness runs from any checkout on any machine.
+    static readonly string Repo = Path.GetFullPath(Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+    static int failures = 0;
+
+    static void Check(string name, bool ok, string detail = "")
+    {
+        Console.WriteLine((ok ? "  PASS  " : "  FAIL  ") + name + (ok ? "" : "   " + detail));
+        if (!ok) failures++;
+    }
+
+    // Stand-in shaped like vanilla final.fsh.
+    const string Vanilla = @"#version 330 core
+#extension GL_ARB_explicit_attrib_location : enable
+
+uniform sampler2D primaryScene;
+uniform sampler2D bloomParts;
+uniform vec2 invFrameSize;
+
+in vec2 texCoord;
+
+layout(location = 0) out vec4 outColor;
+
+vec4 fxaaTexturePixel(sampler2D tex, vec2 uv, vec2 inv) { return texture(tex, uv); }
+
+void main(void) {
+    vec4 color = fxaaTexturePixel(primaryScene, texCoord, invFrameSize);
+#if BLOOM == 1
+    color.rgb += texture(bloomParts, texCoord).rgb;
+#endif
+    outColor = color;
+}
+";
+
+    static string ResolveSnippet(string name)
+        => File.ReadAllText(Path.Combine(Repo, "assets/vintagevisuals/shadersnippets", name));
+
+    static List<ShaderPatch> LoadRealPatches()
+        => ShaderPatchLoader.ParsePatchFile(
+               File.ReadAllText(Path.Combine(Repo, "assets/vintagevisuals/shaderpatches/colorgrade.yaml")),
+               "colorgrade", "test", ResolveSnippet).ToList();
+
+    static int Main()
+    {
+        Console.WriteLine("YAML deserialization (private nested class, public properties)");
+        List<ShaderPatch> patches;
+        try
+        {
+            patches = LoadRealPatches();
+            Check("colorgrade.yaml parsed", true);
+        }
+        catch (Exception ex)
+        {
+            Check("colorgrade.yaml parsed", false, ex.ToString());
+            return 1;
+        }
+
+        Check("4 patches produced", patches.Count == 4, patches.Count.ToString());
+        Check("all in group 'colorgrade'", patches.All(p => p.Group == "colorgrade"));
+        Check("all target final.fsh", patches.All(p => p.AppliesTo("final.fsh")));
+        Check("kinds are start/token/token/end",
+              string.Join(",", patches.Select(p => p.Kind.ToString())) == "Start,Token,Token,End",
+              string.Join(",", patches.Select(p => p.Kind.ToString())));
+        Check("snippet resolved into content",
+              patches[0].Content.Contains("vvApplyColorGrade"),
+              patches[0].Content.Length + " chars");
+        Check("bool 'optional' defaulted to false", patches.All(p => !p.Optional));
+
+        Console.WriteLine("ShaderPatcher applies the group");
+        var logger = new CollectingLogger();
+        var patcher = new ShaderPatcher(logger);
+        patcher.SetPatches(patches);
+
+        string result = patcher.Patch("final.fsh", Vanilla);
+        Check("group healthy", patcher.IsGroupHealthy("colorgrade"));
+        Check("uniforms injected", result.Contains("uniform float vv_enabled;"));
+        Check("grading function injected", result.Contains("vec4 vvApplyColorGrade(vec4 color)"));
+        Check("vanilla main renamed", result.Contains("void vvSceneMain(void) {"));
+        Check("new main appended", result.Contains("vvSceneMain();"));
+        Check("outColor graded", result.Contains("outColor = vvApplyColorGrade(outColor);"));
+        Check("output-name assertion applied", result.Contains("output name asserted"));
+
+        int mainCount = Regex.Matches(result, @"(?<![A-Za-z0-9_])void\s+main\s*\(\s*void\s*\)").Count;
+        Check("exactly one main()", mainCount == 1, mainCount.ToString());
+        Check("#version still first line", result.TrimStart().StartsWith("#version"));
+        Check("braces balanced", result.Count(c => c == '{') == result.Count(c => c == '}'));
+
+        int versionLine = result.Split('\n').ToList().FindIndex(l => l.StartsWith("#version"));
+        int uniformLine = result.Split('\n').ToList().FindIndex(l => l.Contains("vv_enabled"));
+        Check("injection after #version", uniformLine > versionLine);
+
+        Console.WriteLine("Non-target shaders are untouched");
+        Check("chunkopaque.fsh unchanged", patcher.Patch("chunkopaque.fsh", Vanilla) == Vanilla);
+
+        Console.WriteLine("Rollback when an anchor goes stale");
+        var logger2 = new CollectingLogger();
+        var patcher2 = new ShaderPatcher(logger2);
+        patcher2.SetPatches(LoadRealPatches());
+
+        string renamedOutput = Vanilla.Replace("out vec4 outColor;", "out vec4 fragColour;");
+        string rolled = patcher2.Patch("final.fsh", renamedOutput);
+
+        Check("returns vanilla untouched", rolled == renamedOutput);
+        Check("no half-applied GLSL", !rolled.Contains("vvApplyColorGrade") && !rolled.Contains("vvSceneMain"));
+        Check("group marked unhealthy", !patcher2.IsGroupHealthy("colorgrade"));
+        Check("logged CRITICAL", logger2.Lines.Any(l => l.Contains("CRITICAL")),
+              string.Join(" | ", logger2.Lines));
+        Check("group skipped on later shaders",
+              patcher2.Patch("final.fsh", Vanilla) == Vanilla);
+
+        Console.WriteLine("Patcher never throws into the game's loader");
+        try
+        {
+            patcher.Patch("final.fsh", null);
+            patcher.Patch("final.fsh", "");
+            patcher.Patch(null, Vanilla);
+            Check("null/empty inputs survive", true);
+        }
+        catch (Exception ex) { Check("null/empty inputs survive", false, ex.Message); }
+
+        Console.WriteLine("Malformed YAML fails loudly, not silently");
+        foreach (var (label, yaml) in new[]
+        {
+            ("unknown type", "- type: bogus\n  filename: final.fsh\n  content: x"),
+            ("missing filename", "- type: end\n  content: x"),
+            ("token without tokens", "- type: token\n  filename: final.fsh\n  content: x"),
+            ("content and snippet together", "- type: start\n  filename: final.fsh\n  content: x\n  snippet: colorgrade.glsl"),
+        })
+        {
+            try
+            {
+                ShaderPatchLoader.ParsePatchFile(yaml, "g", "t", ResolveSnippet).ToList();
+                Check(label + " rejected", false, "no exception");
+            }
+            catch (ArgumentException) { Check(label + " rejected", true); }
+        }
+
+        var empty = ShaderPatchLoader.ParsePatchFile("# only a comment\n", "g", "t", ResolveSnippet).ToList();
+        Check("comment-only file yields no patches", empty.Count == 0);
+
+        Console.WriteLine("Whitespace tolerance on real anchors");
+        var reflowed = Vanilla
+            .Replace("void main(void) {", "void  main( void )\n{")
+            .Replace("layout(location = 0) out vec4 outColor;", "layout( location=0 ) out   vec4   outColor ;");
+        var patcher3 = new ShaderPatcher(new CollectingLogger());
+        patcher3.SetPatches(LoadRealPatches());
+        patcher3.Patch("final.fsh", reflowed);
+        Check("reflowed vanilla still matches", patcher3.IsGroupHealthy("colorgrade"));
+
+        Console.WriteLine();
+        Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
+        return failures == 0 ? 0 : 1;
+    }
+}
+}

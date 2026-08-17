@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Exercises the compiled patch engine without launching the game.
+
+    Not part of the mod: `dotnet build` at the repo root does not see this, and
+    the mod's csproj explicitly excludes tools/**. Run it deliberately with
+    `dotnet run` from inside this folder (see tools/smoketest/README.md).
+  -->
+
+  <Import Project="..\..\Properties\localSettings.props" Condition="Exists('..\..\Properties\localSettings.props')" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Must match the mod; see the comment in VintageVisuals.csproj. -->
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>VintageVisuals.SmokeTest</AssemblyName>
+    <RootNamespace>VintageVisuals.SmokeTest</RootNamespace>
+    <GameDirectory Condition="'$(GameDirectory)' == ''">$(VINTAGE_STORY)</GameDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Private=true, unlike the mod: this is a standalone executable and needs
+      the API assembly beside it to actually run.
+    -->
+    <Reference Include="VintagestoryAPI" HintPath="$(GameDirectory)/VintagestoryAPI.dll" Private="true" />
+    <Reference Include="0Harmony" HintPath="$(GameDirectory)/Lib/0Harmony.dll" Private="true" />
+    <ProjectReference Include="..\..\VintageVisuals.csproj" />
+  </ItemGroup>
+
+  <Target Name="CheckGameDirectory" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(GameDirectory)/VintagestoryAPI.dll')"
+           Text="VintagestoryAPI.dll not found under '$(GameDirectory)'. Set VINTAGE_STORY or GameDirectory in Properties/localSettings.props." />
+  </Target>
+
+</Project>
