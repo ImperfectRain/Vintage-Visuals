@@ -68,12 +68,30 @@ namespace VintageVisuals.PseudoPBR
 
         private void BuildAtlasOnce(PseudoPbrConfig config)
         {
-            if (!config.BuildMaterialAtlas) { _atlasBuilt = false; return; }
+            if (!config.BuildMaterialAtlas)
+            {
+                // Say so rather than returning quietly. A feature that does
+                // nothing AND logs nothing is indistinguishable from a feature
+                // that is broken, and that ambiguity has already cost this
+                // project a debugging round once.
+                if (_atlasBuilt)
+                {
+                    _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: material atlas disabled by config " +
+                                                 "(PseudoPBR.BuildMaterialAtlas is false).");
+                }
+                _atlasBuilt = false;
+                return;
+            }
+
             if (_atlasBuilt) return;
 
             // Set before the work, not after: if this throws we do not want to
             // retry it on every subsequent config change.
             _atlasBuilt = true;
+
+            // Logged before the work, so the log always shows the attempt even
+            // if the build hangs or the process dies partway through.
+            _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: building material atlas…");
 
             try
             {
