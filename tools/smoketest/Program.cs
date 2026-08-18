@@ -163,6 +163,9 @@ void main(void) {
         patcher3.Patch("final.fsh", reflowed);
         Check("reflowed vanilla still matches", patcher3.IsGroupHealthy("colorgrade"));
 
+        Console.WriteLine("PBR port agrees with the validated Python prototype");
+        PbrParityChecks.Run(Repo, Check);
+
         Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;

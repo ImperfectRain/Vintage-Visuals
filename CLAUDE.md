@@ -53,7 +53,9 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   Kept out of the YAML so the GLSL stays readable and diffable.
 - `assets/vintagevisuals/shaders/` — our own standalone shader programs.
 - `tools/pbrgen/` — offline PBR prototype (Python). Content-authoring aid, **not**
-  runtime code; never reference it from the C# build.
+  runtime code; never reference it from the C# build. `src/PseudoPBR/` is a
+  **port** of it: `tools/smoketest` asserts the two agree on a fixture, so a
+  retune means editing both and regenerating `tools/pbrgen/parity_fixture.json`.
 - `docs/WORKFLOW.md` — the commit/doc conventions this repo follows. Read it
   before committing.
 - `docs/IMPLEMENTATION_PLAN.md` — phase order and the MVP checklist. Phases are
