@@ -9,10 +9,10 @@ Built as GLSL patches against the vanilla shaders plus a C# code mod. Four
 subsystems, each independently toggleable, each degrading gracefully if it
 cannot load.
 
-> **Status: pre-alpha (0.0.1).** The scaffold, shader-patch engine and color
-> grading subsystem are implemented; weather, reflections and the in-game PBR
-> pipeline are not. See [Current state](#current-state) for exactly what has and
-> has not been verified.
+> **Status: pre-alpha (0.0.1).** Colour grading works in game on 1.22.7 —
+> Phase 1 of the plan is complete. Weather, reflections and the in-game PBR
+> pipeline are not started. See [Current state](#current-state) for exactly what
+> has and has not been verified.
 
 ## Install
 
@@ -21,7 +21,9 @@ cannot load.
 2. Launch the game. Settings live in
    `VintagestoryData/ModConfig/vintagevisuals.json`, created on first run.
 3. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> in game to reload the config from disk
-   without restarting.
+   without restarting. With the optional
+   [ConfigLib](https://mods.vintagestory.at/configlib) mod installed you get
+   sliders on <kbd>F7</kbd> instead.
 
 ## Subsystems
 
@@ -37,11 +39,18 @@ cannot load.
 All values live in `ModConfig/vintagevisuals.json`. Edit and press
 <kbd>Ctrl</kbd>+<kbd>V</kbd> to apply live — no world reload needed.
 
+If you also have [ConfigLib](https://mods.vintagestory.at/configlib) installed,
+press <kbd>F7</kbd> for sliders instead. It is entirely optional: this mod
+declares no dependency on it, references none of its code, and behaves exactly
+the same without it. The two are not separate settings — ConfigLib writes into
+the same config this mod already uses, so a slider and a hand-edit are the same
+value.
+
 | Key | Range | Default | Effect |
 |---|---|---|---|
 | `ColorGrade.Enabled` | bool | `true` | Master toggle for the subsystem |
 | `ColorGrade.Exposure` | 0.1 – 4.0 | `1.0` | Linear exposure multiplier applied before the tonemap |
-| `ColorGrade.Contrast` | 0.0 – 2.0 | `1.0` | Pivots around mid-grey (0.18); 1.0 is neutral |
+| `ColorGrade.Contrast` | 0.0 – 2.0 | `1.0` | Pivots around display mid-grey (0.5); 1.0 is neutral |
 | `ColorGrade.Saturation` | 0.0 – 2.0 | `1.0` | 0 is greyscale, 1.0 is neutral |
 | `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
 | `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
@@ -62,33 +71,28 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 
 | Item | Level reached |
 |---|---|
-| Repo scaffold builds and loads in-game | **3 (loads)** — builds clean on net10.0, loads on 1.22.7 with no exceptions |
-| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **3 (loads)** — parses in game; 33 offline checks pass |
-| Config system wired, live-tunable values | 2 (compiles) |
-| Color grade: exposure/saturation/contrast/temperature | 2 (compiles) — **patches do not reach the running shader**, see below |
-| Color grade: tonemap curve | 2 (compiles), ships off |
-| PBR: offline prototype validated on sample textures | **done**, 31 tests passing |
+| Repo scaffold builds and loads in-game | **4 (renders)** |
+| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **4 (renders)** — patches reach the running shader |
+| Config system wired, live-tunable values | **4 (renders)** — Ctrl+V retunes without a reload |
+| **Color grade:** exposure/saturation/contrast/temperature | **4 (renders)** — confirmed on 1.22.7 |
+| **Color grade:** basic tonemap curve | 2 (compiles), ships off — see below |
+| ConfigLib integration (optional in-game GUI) | 2 (compiles) — not yet run with ConfigLib installed |
+| **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 
-Levels are the ones defined in [CLAUDE.md](CLAUDE.md). Confirmed on a 1.22.7
-install: the mod loads (`Found 4 mods (0 disabled)`, 149 mod systems
-instantiated), the Harmony hook installs, and the patch YAML parses — no
-exceptions during startup or in-world play.
+Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
 
-**Phase 1 is not done.** The colour grading patches are structurally correct
-but never reach the shader the game is actually running. `ShaderRegistry.LoadShader`
-is called during the pre-mod main-menu bootstrap, before any `ModSystem` — and
-therefore the interceptor — exists; the later "reloaded shaders with mod assets"
-pass does reload `final`, but appears not to route cached programs back through
-the hooked method. The log says so plainly:
+**Phase 1's milestone is met.** On a 1.22.7 install, setting
+`ColorGrade.Saturation` to `0.0` renders the world fully greyscale in a live
+session, with no manual shader-reload workaround, and the look survives a world
+reload. That was blocked by two faults, both fixed: `GetProgramByName("final")`
+never resolves the vanilla program (it is addressed by `EnumShaderProgram` id),
+and the game compiles its shaders during the pre-mod bootstrap, so the mod now
+requests one shader reload of its own when the hook has demonstrably seen
+nothing.
 
-```
-[vintagevisuals] patch group 'colorgrade': loaded but not applied to any shader yet.
-[vintagevisuals] colorgrade: no shader program named 'final'. Color grading is inactive.
-```
-
-Being unable to *see* the effect is the expected outcome of that, not a separate
-fault. Fixing the ordering is the current priority.
+`TonemapStrength` still ships at `0.0` and is the one part of colour grading
+never confirmed on screen — see [Known limitations](#known-limitations).
 
 ## Known limitations
 
@@ -98,6 +102,14 @@ These are known now, not discovered later. Kept current as the mod grows.
   update that rewords the matched lines silently disables the affected
   subsystem (you get a loud log line, but the game will not crash). Expect to
   re-verify patches against `assets/game/shaders/` on every game update.
+- **ConfigLib is integrated over the event bus, not its C# API.** Its NuGet
+  package (`Maltiez.VintageStory.ConfigLib`) is not published on nuget.org, and
+  the `configlib` package that *is* there is an unrelated abandoned stub. So the
+  bridge listens for ConfigLib's `configlib:vintagevisuals:*` event-bus messages
+  instead of referencing its assembly. Upside: nothing to resolve, so the
+  optional dependency cannot fail to load. Limitation: this mod can *read*
+  setting changes but cannot drive ConfigLib's GUI beyond what
+  `configlib-patches.json` declares.
 - **Compatibility with other shader mods is untested.** Volumetric Shading,
   Coriaender Shaders and Ancestral Bliss Shaders patch some of the same vanilla
   files. Conflicts are likely and are not yet documented.

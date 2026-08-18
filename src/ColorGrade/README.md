@@ -47,15 +47,19 @@ which costs the player every shader instead of just this effect.
 
 ## Failure behaviour
 
-Three independent things must be true before any grading happens, and each has
-its own log line when it is not:
+Grading activates on two conditions, each with its own log line when unmet:
 
-- the Harmony hook installed (`ShaderPatchingAvailable`)
-- the patch group applied cleanly (`ShaderPatcher.IsGroupHealthy`)
-- the compiled program actually exposes `vv_enabled` (`IShaderProgram.HasUniform`)
+- the vanilla `final` program resolves (see below)
+- that compiled program exposes `vv_enabled` (`IShaderProgram.HasUniform`)
 
-The third is the ground truth — a shader can pass patching and still fail to
-compile downstream. If it is false, the GLSL never reached the GPU.
+The second is deliberately the *only* evidence consulted about whether the patch
+landed. `ShaderPatchingAvailable` and `ShaderPatcher.IsGroupHealthy` record what
+this mod believes it did; `HasUniform` is direct evidence of what actually
+reached the compiled program, and is strictly stronger. Requiring all three
+meant a reset of our own bookkeeping — a shader reload rebuilds the patch groups
+— could veto a shader that was in fact correctly patched. A shader can pass
+patching and still fail to compile downstream, and only `HasUniform` catches
+that.
 
 Additionally, `vv_enabled` reads as `0` when uniforms were never uploaded (an
 unset GLSL uniform is zero), and the grading function bails out on that. So a
@@ -67,10 +71,26 @@ failure to upload degrades to *vanilla output*, never to a black screen.
    `VintagestoryData/ShaderDebug/final.fsh`. That file is what reached the GLSL
    compiler, prefix code and all — driver error line numbers refer to it.
 2. Set `ColorGrade.Saturation` to `0.0` and press <kbd>Ctrl</kbd>+<kbd>V</kbd>.
-   The world should turn greyscale immediately, with no world reload. This is
-   the cheapest end-to-end proof that patching, config and uniform upload all
-   work.
+   The world turns greyscale immediately, with no world reload. This is the
+   cheapest end-to-end proof that patching, config and uniform upload all work,
+   and it is the check that closed Phase 1's milestone. With ConfigLib
+   installed, dragging the Saturation slider on <kbd>F7</kbd> does the same
+   thing through the same code path.
 3. Set it back to `1.0`, press <kbd>Ctrl</kbd>+<kbd>V</kbd>, confirm it returns.
+
+## Resolving the vanilla program
+
+`IShaderAPI.GetProgramByName("final")` returns **null**. That lookup covers
+name-registered programs, which in practice means ones a mod registered; the
+vanilla passes are addressed by their `EnumShaderProgram` id, so this subsystem
+uses `GetProgram((int)EnumShaderProgram.Final)`.
+
+Getting this wrong was invisible rather than loud, and that is worth
+remembering: the grading function bails out when `vv_enabled < 0.5`, and an
+unset GLSL uniform reads as exactly `0`. So "never uploaded the uniforms" and
+"correctly disabled" render *identically*. The fail-safe is still right — a
+failed upload must not black out the screen — but when debugging, trust
+`HasUniform` and the `uniforms uploaded, active=...` log line, not your eyes.
 
 ## Known limitations
 
@@ -79,8 +99,8 @@ failure to upload degrades to *vanilla output*, never to a black screen.
   where this grades it has not been checked against a running game, so
   `TonemapStrength` **defaults to 0** and the other four controls — which are
   space-agnostic enough to be useful either way — default to neutral. Confirm
-  this and update the default; it is the single most valuable thing to verify
-  in this subsystem.
+  this and update the default; it is the single most valuable thing left to
+  verify in this subsystem. Everything else here is confirmed rendering.
 - **Grading runs after vanilla's own tonemap and bloom**, not instead of them.
   Highlights already clipped upstream cannot be recovered by lowering exposure
   here.
