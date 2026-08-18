@@ -1,0 +1,152 @@
+using System;
+using Vintagestory.API.Common;
+using Vintagestory.API.Datastructures;
+
+namespace VintageVisuals.Common
+{
+    /// <summary>
+    /// Optional live-tuning bridge to the ConfigLib mod (in-game GUI, F7).
+    ///
+    /// This file references NO ConfigLib types. ConfigLib publishes every
+    /// setting change onto the game's ordinary event bus, so the whole
+    /// integration is vanilla API plus three well-known event names. That
+    /// matters for two reasons:
+    ///
+    ///  - CLAUDE.md requires ConfigLib stay optional. With nothing to resolve,
+    ///    "degrades gracefully" is not a code path that has to be right — if
+    ///    ConfigLib is absent the events simply never fire. There is no
+    ///    assembly load to fail, so the failure mode does not exist.
+    ///  - Maltiez.VintageStory.ConfigLib is not published on nuget.org (the
+    ///    `configlib` package that is there is an unrelated, abandoned 2020
+    ///    stub). A compile-time PackageReference would break `dotnet restore`
+    ///    for everyone.
+    ///
+    /// This is an additional *writer* into the existing config object, never a
+    /// second source of truth: it sets the same fields that
+    /// ModConfig/vintagevisuals.json populates and then triggers the same
+    /// notification Ctrl+V does. Remove ConfigLib and the JSON + hotkey flow
+    /// works exactly as before.
+    /// </summary>
+    public sealed class ConfigLibBridge
+    {
+        /// <summary>Mod id of ConfigLib, as declared in its own modinfo.</summary>
+        public const string ConfigLibModId = "configlib";
+
+        /// <summary>
+        /// Must match this mod's id: ConfigLib derives the domain from the mod
+        /// whose assets/&lt;domain&gt;/config/configlib-patches.json it read.
+        /// </summary>
+        private const string Domain = "vintagevisuals";
+
+        // Formats taken from ConfigLib's own public event-name constants.
+        private const string SettingChangedEvent = "configlib:" + Domain + ":setting-changed";
+        private const string SettingLoadedEvent = "configlib:" + Domain + ":setting-loaded";
+        private const string ConfigSavedEvent = "configlib:" + Domain + ":config-saved";
+
+        private readonly VintageVisualsModSystem _mod;
+
+        public ConfigLibBridge(VintageVisualsModSystem mod)
+        {
+            _mod = mod;
+        }
+
+        public void Install()
+        {
+            // setting-loaded carries the initial values, setting-changed the
+            // live edits. Both are handled identically: whatever the value is
+            // now, put it in the config object and re-apply.
+            _mod.Capi.Event.RegisterEventBusListener(OnSettingEvent, 0.5, SettingLoadedEvent);
+            _mod.Capi.Event.RegisterEventBusListener(OnSettingEvent, 0.5, SettingChangedEvent);
+
+            // Persistence is deliberately deferred to this event rather than
+            // written on every change: dragging a GUI slider emits a stream of
+            // setting-changed events, and writing the JSON on each one would
+            // thrash the disk for no benefit. ConfigLib tells us when it has
+            // committed, and that is when our own file should catch up so the
+            // standalone fallback stays in sync.
+            _mod.Capi.Event.RegisterEventBusListener(OnConfigSaved, 0.5, ConfigSavedEvent);
+        }
+
+        private void OnSettingEvent(string eventName, ref EnumHandling handling, IAttribute data)
+        {
+            try
+            {
+                ITreeAttribute tree = data as ITreeAttribute;
+                if (tree == null) return;
+
+                string code = tree.GetString("setting");
+                if (string.IsNullOrEmpty(code)) return;
+
+                if (!ApplySetting(code, tree)) return;
+
+                // Same notification Ctrl+V raises, so there is exactly one
+                // uniform-upload path regardless of who changed the value.
+                _mod.ConfigManager.NotifyChanged();
+            }
+            catch (Exception ex)
+            {
+                // An optional convenience must never take the client down.
+                _mod.Mod.Logger.Warning("[VintageVisuals] ConfigLib bridge failed to apply a setting: " + ex.Message);
+            }
+        }
+
+        private void OnConfigSaved(string eventName, ref EnumHandling handling, IAttribute data)
+        {
+            try
+            {
+                _mod.ConfigManager.Save();
+            }
+            catch (Exception ex)
+            {
+                _mod.Mod.Logger.Warning("[VintageVisuals] ConfigLib bridge failed to persist config: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Copies one setting into the shared config object.
+        /// Returns false for codes this mod does not own.
+        ///
+        /// Phase 2-4 subsystems extend this by adding their block to
+        /// configlib-patches.json and one case here — not by inventing a second
+        /// integration approach per subsystem.
+        /// </summary>
+        private bool ApplySetting(string code, ITreeAttribute tree)
+        {
+            ColorGradeConfig colorGrade = _mod.ConfigManager.Config.ColorGrade;
+
+            switch (code)
+            {
+                case "colorgrade_enabled":
+                    colorGrade.Enabled = tree.GetBool("value", colorGrade.Enabled);
+                    break;
+                case "colorgrade_exposure":
+                    colorGrade.Exposure = tree.GetFloat("value", colorGrade.Exposure);
+                    break;
+                case "colorgrade_contrast":
+                    colorGrade.Contrast = tree.GetFloat("value", colorGrade.Contrast);
+                    break;
+                case "colorgrade_saturation":
+                    colorGrade.Saturation = tree.GetFloat("value", colorGrade.Saturation);
+                    break;
+                case "colorgrade_temperature":
+                    colorGrade.Temperature = tree.GetFloat("value", colorGrade.Temperature);
+                    break;
+                case "colorgrade_tonemapstrength":
+                    colorGrade.TonemapStrength = tree.GetFloat("value", colorGrade.TonemapStrength);
+                    break;
+                default:
+                    return false;
+            }
+
+            // The GUI's own min/max should already keep values in range, but
+            // the config file is still hand-editable and ConfigLib will happily
+            // load whatever is in its YAML. Re-clamp rather than trust it.
+            foreach (string correction in _mod.ConfigManager.Config.ClampToValidRanges())
+            {
+                _mod.Mod.Logger.Warning("[VintageVisuals] " + correction);
+            }
+
+            return true;
+        }
+    }
+}

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "settings": {
+    "boolean": {
+      "colorgrade_enabled": {
+        "ingui": "Enable colour grading",
+        "comment": "Master toggle. When off the grading pass is a no-op and the image is vanilla.",
+        "default": true,
+        "clientSide": true,
+        "weight": 0
+      }
+    },
+    "float": {
+      "colorgrade_exposure": {
+        "ingui": "Exposure",
+        "comment": "Linear exposure multiplier applied before the tonemap. 1.0 is unchanged.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 1,
+        "range": { "min": 0.1, "max": 4.0, "step": 0.01 }
+      },
+      "colorgrade_contrast": {
+        "ingui": "Contrast",
+        "comment": "Pivots around display mid-grey. 1.0 is unchanged, 0 is flat.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 2,
+        "range": { "min": 0.0, "max": 2.0, "step": 0.01 }
+      },
+      "colorgrade_saturation": {
+        "ingui": "Saturation",
+        "comment": "0 is greyscale, 1.0 is unchanged, above 1 oversaturates.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 3,
+        "range": { "min": 0.0, "max": 2.0, "step": 0.01 }
+      },
+      "colorgrade_temperature": {
+        "ingui": "Temperature",
+        "comment": "White balance. Negative is cooler/bluer, positive is warmer/oranger.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 4,
+        "range": { "min": -1.0, "max": 1.0, "step": 0.01 }
+      },
+      "colorgrade_tonemapstrength": {
+        "ingui": "Tonemap strength",
+        "comment": "Blend between vanilla output and the filmic ACES curve. 0 disables the tonemap only.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 5,
+        "range": { "min": 0.0, "max": 1.0, "step": 0.01 }
+      }
+    }
+  }
+}

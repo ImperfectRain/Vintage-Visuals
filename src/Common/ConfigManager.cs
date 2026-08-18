@@ -7,13 +7,14 @@ namespace VintageVisuals.Common
     /// <summary>
     /// Owns the config instance, its file, and the "config changed" signal.
     ///
-    /// Backed by the vanilla <c>LoadModConfig</c>/<c>StoreModConfig</c> API
-    /// rather than ConfigLib. ConfigLib gives a nicer in-game GUI, but making
-    /// it a hard dependency means this mod cannot load without it, and the
-    /// plan's own module-boundary rule is that subsystems degrade gracefully.
-    /// A ConfigLib bridge can be layered on top of this later without changing
-    /// how subsystems read values — they only ever see
-    /// <see cref="Config"/> plus <see cref="ConfigChanged"/>.
+    /// Backed by the vanilla <c>LoadModConfig</c>/<c>StoreModConfig</c> API,
+    /// which is the always-available path and needs no other mod installed.
+    ///
+    /// <see cref="ConfigLibBridge"/> layers an optional in-game GUI on top by
+    /// writing into this same object and calling <see cref="NotifyChanged"/>.
+    /// It is an additional writer, not a second store: subsystems only ever see
+    /// <see cref="Config"/> plus <see cref="ConfigChanged"/>, and neither knows
+    /// nor cares which writer moved the value.
     /// </summary>
     public sealed class ConfigManager
     {
@@ -94,7 +95,21 @@ namespace VintageVisuals.Common
         public void Reload()
         {
             Load();
+            NotifyChanged();
+            _logger.Notification("[VintageVisuals] config reloaded from ModConfig/" + ConfigFilename);
+        }
 
+        /// <summary>
+        /// Tells subsystems the in-memory config changed, without re-reading
+        /// the file.
+        ///
+        /// Exists so every writer - the hotkey reload, and the optional
+        /// ConfigLib GUI bridge - converges on one notification path. A second
+        /// way to push values into the render pipeline is how the two drift out
+        /// of sync.
+        /// </summary>
+        public void NotifyChanged()
+        {
             try
             {
                 ConfigChanged?.Invoke();
@@ -103,11 +118,9 @@ namespace VintageVisuals.Common
             {
                 // One misbehaving subsystem must not stop the others from
                 // picking up the new values.
-                _logger.Error("[VintageVisuals] a subsystem threw while applying the reloaded config.");
+                _logger.Error("[VintageVisuals] a subsystem threw while applying the changed config.");
                 _logger.LogException(EnumLogType.Error, ex);
             }
-
-            _logger.Notification("[VintageVisuals] config reloaded from ModConfig/" + ConfigFilename);
         }
     }
 }

@@ -82,7 +82,10 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   regenerated, and both are gitignored.
 - Do not commit derived atlases, `bin/`, `obj/`, or `Properties/localSettings.props`.
 - Do not add a hard dependency on another mod without a graceful-degradation
-  path. ConfigLib integration, when it lands, must stay optional.
+  path. The ConfigLib integration (`src/Common/ConfigLibBridge.cs`) is the
+  reference for how: it talks to ConfigLib purely over the game's event bus, so
+  it references no ConfigLib type, appears nowhere in `modinfo.json`, and needs
+  no fallback code path — absent ConfigLib, the events just never fire.
 - Do not bundle a shader change with an unrelated refactor in one commit —
   `git bisect` on broken rendering is the main debugging tool here.
 

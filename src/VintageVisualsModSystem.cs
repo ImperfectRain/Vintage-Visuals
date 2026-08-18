@@ -42,6 +42,9 @@ namespace VintageVisuals
         /// <summary>Guards the one self-inflicted shader reload, so it can never loop.</summary>
         private bool _forcedShaderReload;
 
+        /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
+        private ConfigLibBridge _configLibBridge;
+
         // Uniform upload needs the vanilla program to exist and be compiled.
         // Exactly when that becomes true varies with load order and machine
         // speed, and getting it wrong is silent - an unset GLSL uniform reads
@@ -92,10 +95,50 @@ namespace VintageVisuals
             ConfigManager.ConfigChanged += ApplyToAllSubsystems;
             api.Event.ReloadShader += OnReloadShader;
 
+            InstallConfigLibBridge(api);
+
             // Shaders have compiled by the time the texture atlases are ready,
             // so this is the first point at which uniforms can be uploaded and
             // the patch results are worth reporting.
             api.Event.BlockTexturesLoaded += OnShadersReady;
+        }
+
+        /// <summary>
+        /// Wires up the optional in-game settings GUI.
+        ///
+        /// ConfigLib is a soft dependency and is deliberately absent from
+        /// modinfo.json: a modinfo dependency is hard, and would stop this mod
+        /// loading at all for anyone without ConfigLib installed.
+        ///
+        /// The IsModEnabled check is belt-and-braces rather than load-bearing.
+        /// ConfigLibBridge references no ConfigLib types at all - it listens on
+        /// the game's own event bus - so with ConfigLib absent the listeners
+        /// would simply never fire. The check earns its place by keeping the
+        /// log honest about which mode is active, which is the first thing
+        /// worth knowing when a slider does not do anything.
+        /// </summary>
+        private void InstallConfigLibBridge(ICoreClientAPI api)
+        {
+            if (!api.ModLoader.IsModEnabled(ConfigLibBridge.ConfigLibModId))
+            {
+                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib not installed — settings come from " +
+                    "ModConfig/vintagevisuals.json, reloadable with Ctrl+V.");
+                return;
+            }
+
+            try
+            {
+                _configLibBridge = new ConfigLibBridge(this);
+                _configLibBridge.Install();
+                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib detected — live settings GUI available (F7). " +
+                    "ModConfig/vintagevisuals.json and Ctrl+V keep working alongside it.");
+            }
+            catch (Exception ex)
+            {
+                _configLibBridge = null;
+                Mod.Logger.Warning("[VintageVisuals] ConfigLib bridge failed to install; falling back to " +
+                    "ModConfig/vintagevisuals.json + Ctrl+V. " + ex.Message);
+            }
         }
 
         private void RegisterSubsystems()
