@@ -61,6 +61,41 @@ already claimed by other shader mods for ice and glass.
 That leaves the atlas route: material data has to travel through a texture keyed
 by the same UVs the block already uses.
 
+## What a real registry showed
+
+Run against a 1.22.7 client with mods: **14,090 blocks, 20 materials, every one
+classified** — no fallbacks. Distribution, largest first:
+
+| Material | Blocks | Share |
+|---|---|---|
+| Wood | 4189 | 30% |
+| Stone | 3513 | 25% |
+| Ceramic | 2035 | 14% |
+| Plant | 1053 | 7% |
+| Metal | 766 | 5% |
+| Ore | 537 | 4% |
+| Cloth / Gravel / Water / Leaves / Soil | 335–230 | ~9% |
+| Glass / Sand / Other / Snow / Lava | 159–70 | ~4% |
+| Meta / Ice / Mantle / Fire | 17 | <1% |
+
+Two findings changed the table, and neither was guessable without the data:
+
+- **Ceramic was mis-tuned, and it is 14% of the world.** The first values
+  assumed glazed pottery (roughness 0.45, specular 0.60). The registry says the
+  bucket is brickwork and roofing — brick stairs, brick slabs, brick courses,
+  clay shingles, slanted roofing, tool molds — all matte fired clay. The
+  original numbers would have given the game permanently wet-looking roofs
+  across a seventh of every build. Retuned to 0.70 / 0.30, just slightly
+  smoother than raw stone.
+- **`EnumBlockMaterial.Brick` is assigned to zero blocks.** Vintage Story files
+  all of its brickwork under Ceramic. The entry is kept for content mods and
+  deliberately matched to Ceramic's values, so two identical-looking walls
+  cannot shade differently.
+
+`Other` accounts for 118 blocks (0.8%) — oil lamps, skeps, beehives, candles,
+cobwebs. All small props where the neutral default is the right answer, so no
+special casing is warranted.
+
 ## The material report
 
 `PseudoPBR.WriteMaterialReport` (on by default) writes

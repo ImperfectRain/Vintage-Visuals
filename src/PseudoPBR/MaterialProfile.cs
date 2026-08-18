@@ -66,7 +66,14 @@ namespace VintageVisuals.PseudoPBR
     /// </summary>
     public static class MaterialProfiles
     {
-        /// <summary>Used for anything unclassified. Deliberately dull — an unknown surface should not sparkle.</summary>
+        /// <summary>
+        /// Used for anything unclassified, and for the non-surface materials.
+        ///
+        /// Deliberately dull: an unknown surface should not sparkle. Measured
+        /// against a real registry this covers 118 of 14090 blocks (0.8%) -
+        /// oil lamps, skeps, beehives, candles, cobwebs - all small props where
+        /// a neutral response is the right answer anyway.
+        /// </summary>
         public static readonly MaterialProfile Default = new MaterialProfile
         {
             Roughness = 0.80f,
@@ -100,14 +107,31 @@ namespace VintageVisuals.PseudoPBR
                 Roughness = 0.90f, Metalness = 0.0f, SpecularScale = 0.15f,
                 NormalStrength = 1.00f, RoughnessVariation = 0.20f } },
 
-            // Fired clay is slightly glazed, so it is smoother than raw stone.
+            // Retuned against a real 14090-block registry, where Ceramic is the
+            // third largest material at 2035 blocks - 14% of everything.
+            //
+            // The first guess here was 0.45 roughness / 0.60 specular, on the
+            // reasoning that fired clay is slightly glazed. The report says
+            // otherwise: this bucket is brickwork and roofing. Brick stairs,
+            // brick slabs, brick courses, clay shingles, slanted roofing and
+            // tool molds dominate it, and every one of those is matte fired
+            // clay. Shipping the original numbers would have given the game
+            // permanently wet-looking roofs and shiny brick across a seventh of
+            // the world.
+            //
+            // Now only slightly smoother than raw stone, which is what fired
+            // clay actually is.
             { EnumBlockMaterial.Ceramic, new MaterialProfile {
-                Roughness = 0.45f, Metalness = 0.0f, SpecularScale = 0.60f,
-                NormalStrength = 0.70f, RoughnessVariation = 0.15f } },
+                Roughness = 0.70f, Metalness = 0.0f, SpecularScale = 0.30f,
+                NormalStrength = 1.05f, RoughnessVariation = 0.25f } },
 
+            // Vintage Story 1.22.7 assigns this to ZERO blocks - all of its
+            // brickwork is Ceramic. Kept because a content mod may use it, and
+            // matched to the Ceramic values so the two cannot drift apart and
+            // make identical-looking walls shade differently.
             { EnumBlockMaterial.Brick, new MaterialProfile {
-                Roughness = 0.80f, Metalness = 0.0f, SpecularScale = 0.20f,
-                NormalStrength = 1.10f, RoughnessVariation = 0.25f } },
+                Roughness = 0.70f, Metalness = 0.0f, SpecularScale = 0.30f,
+                NormalStrength = 1.05f, RoughnessVariation = 0.25f } },
 
             // Normal strength above 1: log ends and plank seams are the clearest
             // real relief in the game's texture set, and the whole point of

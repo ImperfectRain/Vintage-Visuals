@@ -59,6 +59,8 @@ namespace VintageVisuals.SmokeTest
             MaterialProfile leaves = MaterialProfiles.For(EnumBlockMaterial.Leaves);
             MaterialProfile gravel = MaterialProfiles.For(EnumBlockMaterial.Gravel);
             MaterialProfile lava = MaterialProfiles.For(EnumBlockMaterial.Lava);
+            MaterialProfile ceramic = MaterialProfiles.For(EnumBlockMaterial.Ceramic);
+            MaterialProfile brick = MaterialProfiles.For(EnumBlockMaterial.Brick);
 
             // --- metalness comes only from the block material ---
             ok("metal is fully metallic", metal.Metalness >= 0.99f);
@@ -74,6 +76,17 @@ namespace VintageVisuals.SmokeTest
             ok("metal is smoother than stone", metal.Roughness < stone.Roughness);
             ok("soil is rougher than stone", soil.Roughness > stone.Roughness);
             ok("gravel is among the roughest", gravel.Roughness >= 0.9f);
+
+            // Ceramic is 14% of a real registry and is almost entirely brickwork
+            // and roof tile, not glazed pottery. It must stay much closer to
+            // stone than to glass, or a seventh of the world looks wet.
+            ok("ceramic is matte, not glazed",
+                ceramic.Roughness >= 0.6f && ceramic.SpecularScale <= 0.4f);
+            ok("ceramic is nearer stone than glass",
+                Math.Abs(ceramic.Roughness - stone.Roughness) < Math.Abs(ceramic.Roughness - glass.Roughness));
+            ok("brick and ceramic match so identical walls shade alike",
+                Math.Abs(brick.Roughness - ceramic.Roughness) < 1e-6f &&
+                Math.Abs(brick.SpecularScale - ceramic.SpecularScale) < 1e-6f);
 
             // --- specular ordering ---
             ok("water and glass are the most reflective",
