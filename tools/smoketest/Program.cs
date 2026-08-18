@@ -166,6 +166,9 @@ void main(void) {
         Console.WriteLine("Block material classification");
         MaterialProfileChecks.Run(Check);
 
+        Console.WriteLine("Material atlas: packing, assembly, cache");
+        MaterialAtlasChecks.Run(Check);
+
         Console.WriteLine("Eye adaptation model");
         AdaptiveExposureChecks.Run(Check);
 

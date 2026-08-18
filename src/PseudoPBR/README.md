@@ -13,12 +13,71 @@ block is made of, and can report it. Nothing changes how the game renders yet.
 |---|---|
 | Offline prototype (`tools/pbrgen`) | done, 31 tests |
 | C# port of the three passes | done, 21 parity checks |
-| Material classification + profile table | done, 33 checks |
-| Material report (`material-report.txt`) | done |
-| Derived atlas built at texture-upload time | not started |
-| Disk cache keyed by texture hash | not started |
+| Material classification + profile table | done, 36 checks |
+| Material report (`material-report.txt`) | done, run against 14090 blocks |
+| Derived material atlas | done, 29 checks |
+| Disk cache keyed by content fingerprint | done |
+| Preview images for inspection | done |
+| Atlas uploaded to the GPU | not started |
 | Lighting shader consumes the maps | not started |
 | Roughness modulates SSR blur | not started (needs Phase 3) |
+
+## The atlas
+
+`MaterialAtlasSource` walks every block, finds each of its textures in the game's
+block atlas, loads the source PNG, and pairs it with the block's material
+profile. `MaterialAtlasBuilder` derives the maps and packs them into one texture
+laid out to match the block atlas exactly — so the shader can sample it with the
+UVs the block already has, and no new UV plumbing is needed.
+
+Channel packing, the decision everything downstream depends on:
+
+| Channel | Holds |
+|---|---|
+| R | tangent-space normal X (0.5 flat) |
+| G | tangent-space normal Y (0.5 flat) |
+| B | roughness |
+| A | specular reflectance |
+
+Normal Z is not stored; it is reconstructed in the shader as
+`sqrt(1 - x² - y²)`, which is exact for a unit normal and buys the fourth
+channel for something that cannot be derived.
+
+**Metalness is deliberately absent**, even though `MaterialProfile` carries it.
+There are five values worth storing and four channels. Metalness is the one that
+drops with least visible loss — its main effect is tinting the specular
+highlight by albedo rather than white, a refinement on top of "is this shiny at
+all". Storing it needs either a second atlas (a whole extra texture unit) or a
+bit-packing trick that bilinear filtering would destroy. Revisit if metal ends
+up looking like shiny plastic; the fix is a second atlas, not a cleverer pack.
+
+Two details that are easy to get wrong:
+
+- **Gaps are filled with a neutral texel** — flat normal, default roughness, no
+  specular. Any part of the atlas no texture covers, and any texture that failed
+  to process, then shades like an ordinary matte surface rather than like a hole.
+- **Each region is derived with tiling on**, so gradients wrap within that one
+  texture instead of bleeding into whatever unrelated texture happens to sit
+  beside it in the atlas.
+
+Textures are deduplicated by `TextureSubId`: every fence variant of a wood type
+points at the same planks, and deriving it per block would be thousands of
+redundant Sobel passes over identical pixels.
+
+## Cache and previews
+
+The built atlas is cached to `VintagestoryData/VintageVisuals/material-atlas-0.bin`,
+keyed by an FNV-1a fingerprint over the atlas dimensions, every region's
+rectangle and profile, and the source pixels themselves. A game update, an added
+mod, a retexture or a profile retune all invalidate it automatically. Writes go
+to a temporary file and are moved into place, so a crash mid-write cannot leave a
+half-atlas that passes its own header check. A corrupt, truncated or stale cache
+reads as "rebuild", never as an exception.
+
+`WriteAtlasPreview` also writes three viewable BMPs — normal, roughness and
+specular, separately, because a packed RGBA image is unreadable to a human. Same
+reasoning as the offline tool's contact sheet: these maps cannot be judged from
+statistics, and "do the log grooves read as grooves" is a question for eyes.
 
 ## The two sources of material data
 

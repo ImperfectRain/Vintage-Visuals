@@ -59,6 +59,24 @@ namespace VintageVisuals.Common
         /// off once the classification looks right.
         /// </summary>
         public bool WriteMaterialReport { get; set; } = true;
+
+        /// <summary>
+        /// Derives the material atlas at world load, caching it to disk.
+        ///
+        /// Costs seconds of CPU on the first run for a given texture set and
+        /// almost nothing afterwards. Nothing consumes the atlas yet, so this
+        /// currently only produces the cache and the preview images.
+        /// </summary>
+        public bool BuildMaterialAtlas { get; set; } = true;
+
+        /// <summary>
+        /// Writes the derived atlas as viewable BMPs alongside the cache.
+        ///
+        /// On while the subsystem is being built: these maps cannot be judged
+        /// from numbers, and looking at them is the only way to tell whether
+        /// wood grooves read as grooves. Turn it off to save the disk write.
+        /// </summary>
+        public bool WriteAtlasPreview { get; set; } = true;
     }
 
     /// <summary>

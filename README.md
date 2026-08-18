@@ -60,6 +60,8 @@ value.
 | `AdaptiveExposure.BrightenSeconds` | 0 – 60 | `4.0` | Seconds to adapt to darkness (slow, like a real eye) |
 | `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
+| `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
+| `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular BMPs beside the cache |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →
@@ -85,7 +87,8 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | ConfigLib integration (optional in-game GUI) | 2 (compiles) — not yet run with ConfigLib installed |
 | **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
 | **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
-| **PBR:** block material classification | 2 (compiles) — 33 checks; writes a report in game |
+| **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
+| **PBR:** derived material atlas + disk cache | 2 (compiles) — 29 checks; nothing samples it yet |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 
