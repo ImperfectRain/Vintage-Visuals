@@ -21,6 +21,8 @@ namespace VintageVisuals.Common
 
         public ColorGradeConfig ColorGrade { get; set; } = new ColorGradeConfig();
 
+        public AdaptiveExposureConfig AdaptiveExposure { get; set; } = new AdaptiveExposureConfig();
+
         /// <summary>
         /// Clamps every value into its supported range, returning a description
         /// of anything that had to be corrected.
@@ -34,7 +36,47 @@ namespace VintageVisuals.Common
         {
             var corrections = new List<string>();
             ColorGrade.ClampToValidRanges(corrections);
+            AdaptiveExposure.ClampToValidRanges(corrections);
             return corrections;
+        }
+    }
+
+    /// <summary>
+    /// Eye adaptation. Multiplies <see cref="ColorGradeConfig.Exposure"/>
+    /// rather than replacing it, so a player who has dialled in a manual
+    /// exposure keeps it and this rides on top.
+    /// </summary>
+    public class AdaptiveExposureConfig
+    {
+        /// <summary>
+        /// On by default, unlike the tonemap. The tonemap is off because of an
+        /// unresolved correctness question about colour space; this has no such
+        /// question — it is bounded, clamped, and cannot blow the image out.
+        /// The only risk is taste, and the effect is the point of the feature.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>Multiplier in pitch darkness. Above 1 brightens.</summary>
+        public float DarkGain { get; set; } = 1.6f;
+
+        /// <summary>Multiplier in full light. 1.0 leaves bright scenes exactly as authored.</summary>
+        public float BrightGain { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Seconds to adapt toward darkness (the multiplier rising). Slow,
+        /// mirroring how long human dark adaptation actually takes.
+        /// </summary>
+        public float BrightenSeconds { get; set; } = 4.0f;
+
+        /// <summary>Seconds to adapt toward light (the multiplier falling). Fast.</summary>
+        public float DarkenSeconds { get; set; } = 1.0f;
+
+        internal void ClampToValidRanges(List<string> corrections)
+        {
+            DarkGain = ColorGradeConfig.Clamp(DarkGain, 0.25f, 4.0f, "AdaptiveExposure.DarkGain", corrections);
+            BrightGain = ColorGradeConfig.Clamp(BrightGain, 0.25f, 4.0f, "AdaptiveExposure.BrightGain", corrections);
+            BrightenSeconds = ColorGradeConfig.Clamp(BrightenSeconds, 0.0f, 60.0f, "AdaptiveExposure.BrightenSeconds", corrections);
+            DarkenSeconds = ColorGradeConfig.Clamp(DarkenSeconds, 0.0f, 60.0f, "AdaptiveExposure.DarkenSeconds", corrections);
         }
     }
 
@@ -79,7 +121,7 @@ namespace VintageVisuals.Common
             TonemapStrength = Clamp(TonemapStrength, 0.0f, 1.0f, "ColorGrade.TonemapStrength", corrections);
         }
 
-        private static float Clamp(float value, float min, float max, string name, List<string> corrections)
+        internal static float Clamp(float value, float min, float max, string name, List<string> corrections)
         {
             // NaN fails every comparison, so test for it explicitly rather than
             // letting it slip through and poison the shader uniform.

@@ -29,10 +29,10 @@ cannot load.
 
 | Subsystem | What it does | Docs |
 |---|---|---|
-| **ColorGrade** | Filmic tonemap, exposure, saturation, contrast, white-balance | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
+| **ColorGrade** | Eye adaptation, filmic tonemap, exposure, saturation, contrast, white-balance | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
 | **Weather** | Volumetric clouds, cloud shadows, sky scattering, weather-driven fog | not implemented |
 | **Reflections** | Screen-space reflections on water | not implemented |
-| **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [tools/pbrgen/README.md](tools/pbrgen/README.md) (offline prototype only) |
+| **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) (maths ported, not yet wired in) |
 
 ## Configuration
 
@@ -54,6 +54,11 @@ value.
 | `ColorGrade.Saturation` | 0.0 – 2.0 | `1.0` | 0 is greyscale, 1.0 is neutral |
 | `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
 | `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
+| `AdaptiveExposure.Enabled` | bool | `true` | Eye adaptation: brightens dark places, settles in light |
+| `AdaptiveExposure.DarkGain` | 0.25 – 4.0 | `1.6` | Exposure multiplier in pitch darkness |
+| `AdaptiveExposure.BrightGain` | 0.25 – 4.0 | `1.0` | Exposure multiplier in full light |
+| `AdaptiveExposure.BrightenSeconds` | 0 – 60 | `4.0` | Seconds to adapt to darkness (slow, like a real eye) |
+| `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →
@@ -77,6 +82,8 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **Color grade:** exposure/saturation/contrast/temperature | **4 (renders)** — confirmed on 1.22.7 |
 | **Color grade:** basic tonemap curve | 2 (compiles), ships off — see below |
 | ConfigLib integration (optional in-game GUI) | 2 (compiles) — not yet run with ConfigLib installed |
+| **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
+| **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 

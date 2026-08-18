@@ -18,6 +18,10 @@ uniform float vv_saturation;
 uniform float vv_temperature;
 uniform float vv_tonemapStrength;
 
+// Eye adaptation, driven from the CPU. Multiplies vv_exposure rather than
+// replacing it, so a manually dialled exposure survives.
+uniform float vv_adaptation;
+
 // Rec.709 luma weights, matching the primaries the game renders in.
 const vec3 VV_LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
@@ -84,7 +88,12 @@ vec4 vvApplyColorGrade(vec4 color)
 
     vec3 graded = max(color.rgb, vec3(0.0));
 
-    graded *= vv_exposure;
+    // A uniform that was never uploaded reads as 0, which here would mean
+    // multiplying the scene by zero - a black screen. Treat non-positive as
+    // "no adaptation", the same defensive reasoning as vv_enabled above.
+    float adaptation = vv_adaptation > 0.0 ? vv_adaptation : 1.0;
+
+    graded *= vv_exposure * adaptation;
     graded = vvWhiteBalance(graded, vv_temperature);
 
     // Blend rather than branch: the tonemap can be dialled back to compare

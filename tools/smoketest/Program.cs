@@ -163,6 +163,9 @@ void main(void) {
         patcher3.Patch("final.fsh", reflowed);
         Check("reflowed vanilla still matches", patcher3.IsGroupHealthy("colorgrade"));
 
+        Console.WriteLine("Eye adaptation model");
+        AdaptiveExposureChecks.Run(Check);
+
         Console.WriteLine("PBR port agrees with the validated Python prototype");
         PbrParityChecks.Run(Repo, Check);
 

@@ -1,4 +1,7 @@
+using System;
 using Vintagestory.API.Client;
+using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 
 namespace VintageVisuals.ColorGrade
@@ -26,7 +29,21 @@ namespace VintageVisuals.ColorGrade
         /// </summary>
         private const string EnabledUniform = "vv_enabled";
 
+        /// <summary>Eye-adaptation multiplier, updated on a timer rather than on config change.</summary>
+        private const string AdaptationUniform = "vv_adaptation";
+
         private VintageVisualsModSystem _mod;
+
+        private readonly AdaptiveExposure _adaptation = new AdaptiveExposure();
+        private long _tickListenerId = -1;
+        private float _lastUploadedAdaptation = -1f;
+
+        /// <summary>
+        /// 100ms. Adaptation is measured in seconds, so ticking faster buys
+        /// nothing and puts a block lookup plus a uniform upload on a hotter
+        /// path than it needs to be.
+        /// </summary>
+        private const int AdaptationTickMs = 100;
 
         // Apply() runs on every config change and shader reload; these keep a
         // recurring problem to one log line instead of one per reload. They are
@@ -40,6 +57,65 @@ namespace VintageVisuals.ColorGrade
         public void Initialize(VintageVisualsModSystem mod)
         {
             _mod = mod;
+            _tickListenerId = mod.Capi.Event.RegisterGameTickListener(OnAdaptationTick, AdaptationTickMs);
+        }
+
+        /// <summary>
+        /// Advances eye adaptation and pushes it when it has actually moved.
+        ///
+        /// This is the one recurring cost the subsystem has. It is kept to a
+        /// single block-light lookup, and the uniform is only uploaded when the
+        /// value changed by enough to see — once adaptation settles, this
+        /// becomes a lookup and an early return.
+        /// </summary>
+        private void OnAdaptationTick(float deltaSeconds)
+        {
+            if (_mod == null || _mod.Capi == null) return;
+
+            AdaptiveExposureConfig config = _mod.ConfigManager.Config.AdaptiveExposure;
+
+            float target;
+            if (!config.Enabled || !_mod.ConfigManager.Config.ColorGrade.Enabled)
+            {
+                // Ease back to neutral rather than snapping, so toggling the
+                // feature off mid-session is not a visible jolt.
+                target = 1.0f;
+            }
+            else
+            {
+                target = AdaptiveExposure.TargetFor(SampleNormalisedLight(), config.DarkGain, config.BrightGain);
+            }
+
+            float adaptation = _adaptation.Step(target, deltaSeconds, config.BrightenSeconds, config.DarkenSeconds);
+
+            if (Math.Abs(adaptation - _lastUploadedAdaptation) < 1e-3f) return;
+
+            IShaderProgram program = ResolveFinalProgram();
+            if (program == null || !program.HasUniform(AdaptationUniform)) return;
+
+            program.Use();
+            program.Uniform(AdaptationUniform, adaptation);
+            program.Stop();
+
+            _lastUploadedAdaptation = adaptation;
+        }
+
+        /// <summary>
+        /// Light level where the player's head is, normalised to 0..1.
+        ///
+        /// MaxTimeOfDayLight rather than raw sunlight: it combines block light
+        /// with sunlight scaled by time of day, which is what "how bright is it
+        /// here, right now" actually means. Raw sunlight would report a bright
+        /// surface at midnight.
+        /// </summary>
+        private float SampleNormalisedLight()
+        {
+            IClientPlayer player = _mod.Capi.World?.Player;
+            if (player?.Entity == null) return 1.0f;
+
+            BlockPos pos = player.Entity.Pos.AsBlockPos;
+            int level = _mod.Capi.World.BlockAccessor.GetLightLevel(pos, EnumLightLevelType.MaxTimeOfDayLight);
+            return AdaptiveExposure.NormaliseLightLevel(level);
         }
 
         /// <summary>
@@ -119,6 +195,8 @@ namespace VintageVisuals.ColorGrade
                 program.Uniform("vv_saturation", config.Saturation);
                 program.Uniform("vv_temperature", config.Temperature);
                 program.Uniform("vv_tonemapStrength", config.TonemapStrength);
+                program.Uniform(AdaptationUniform, _adaptation.Current);
+                _lastUploadedAdaptation = _adaptation.Current;
             }
 
             program.Stop();
@@ -133,6 +211,13 @@ namespace VintageVisuals.ColorGrade
 
         public void Dispose()
         {
+            if (_mod?.Capi != null && _tickListenerId >= 0)
+            {
+                _mod.Capi.Event.UnregisterGameTickListener(_tickListenerId);
+            }
+
+            _tickListenerId = -1;
+            _adaptation.Reset();
             _mod = null;
         }
     }

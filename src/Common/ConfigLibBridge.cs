@@ -113,9 +113,25 @@ namespace VintageVisuals.Common
         private bool ApplySetting(string code, ITreeAttribute tree)
         {
             ColorGradeConfig colorGrade = _mod.ConfigManager.Config.ColorGrade;
+            AdaptiveExposureConfig adaptive = _mod.ConfigManager.Config.AdaptiveExposure;
 
             switch (code)
             {
+                case "adaptive_enabled":
+                    adaptive.Enabled = tree.GetBool("value", adaptive.Enabled);
+                    break;
+                case "adaptive_darkgain":
+                    adaptive.DarkGain = tree.GetFloat("value", adaptive.DarkGain);
+                    break;
+                case "adaptive_brightgain":
+                    adaptive.BrightGain = tree.GetFloat("value", adaptive.BrightGain);
+                    break;
+                case "adaptive_brightenseconds":
+                    adaptive.BrightenSeconds = tree.GetFloat("value", adaptive.BrightenSeconds);
+                    break;
+                case "adaptive_darkenseconds":
+                    adaptive.DarkenSeconds = tree.GetFloat("value", adaptive.DarkenSeconds);
+                    break;
                 case "colorgrade_enabled":
                     colorGrade.Enabled = tree.GetBool("value", colorGrade.Enabled);
                     break;

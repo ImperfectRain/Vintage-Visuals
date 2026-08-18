@@ -8,6 +8,13 @@
         "default": true,
         "clientSide": true,
         "weight": 0
+      },
+      "adaptive_enabled": {
+        "ingui": "Eye adaptation",
+        "comment": "Brightens dark places and settles back in the light, like an eye adjusting.",
+        "default": true,
+        "clientSide": true,
+        "weight": 10
       }
     },
     "float": {
@@ -17,7 +24,11 @@
         "default": 1.0,
         "clientSide": true,
         "weight": 1,
-        "range": { "min": 0.1, "max": 4.0, "step": 0.01 }
+        "range": {
+          "min": 0.1,
+          "max": 4.0,
+          "step": 0.01
+        }
       },
       "colorgrade_contrast": {
         "ingui": "Contrast",
@@ -25,7 +36,11 @@
         "default": 1.0,
         "clientSide": true,
         "weight": 2,
-        "range": { "min": 0.0, "max": 2.0, "step": 0.01 }
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.01
+        }
       },
       "colorgrade_saturation": {
         "ingui": "Saturation",
@@ -33,7 +48,11 @@
         "default": 1.0,
         "clientSide": true,
         "weight": 3,
-        "range": { "min": 0.0, "max": 2.0, "step": 0.01 }
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.01
+        }
       },
       "colorgrade_temperature": {
         "ingui": "Temperature",
@@ -41,7 +60,11 @@
         "default": 0.0,
         "clientSide": true,
         "weight": 4,
-        "range": { "min": -1.0, "max": 1.0, "step": 0.01 }
+        "range": {
+          "min": -1.0,
+          "max": 1.0,
+          "step": 0.01
+        }
       },
       "colorgrade_tonemapstrength": {
         "ingui": "Tonemap strength",
@@ -49,7 +72,59 @@
         "default": 0.0,
         "clientSide": true,
         "weight": 5,
-        "range": { "min": 0.0, "max": 1.0, "step": 0.01 }
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.01
+        }
+      },
+      "adaptive_darkgain": {
+        "ingui": "Eye adaptation: dark gain",
+        "comment": "Exposure multiplier in pitch darkness. 1.0 disables the brightening.",
+        "default": 1.6,
+        "clientSide": true,
+        "weight": 11,
+        "range": {
+          "min": 0.25,
+          "max": 4.0,
+          "step": 0.05
+        }
+      },
+      "adaptive_brightgain": {
+        "ingui": "Eye adaptation: bright gain",
+        "comment": "Exposure multiplier in full light. 1.0 leaves bright scenes as authored.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 12,
+        "range": {
+          "min": 0.25,
+          "max": 4.0,
+          "step": 0.05
+        }
+      },
+      "adaptive_brightenseconds": {
+        "ingui": "Eye adaptation: time to adapt to dark",
+        "comment": "Seconds to settle after entering darkness. Slow, like real dark adaptation.",
+        "default": 4.0,
+        "clientSide": true,
+        "weight": 13,
+        "range": {
+          "min": 0.0,
+          "max": 60.0,
+          "step": 0.5
+        }
+      },
+      "adaptive_darkenseconds": {
+        "ingui": "Eye adaptation: time to adapt to light",
+        "comment": "Seconds to settle after stepping into light. Fast, like real light adaptation.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 14,
+        "range": {
+          "min": 0.0,
+          "max": 60.0,
+          "step": 0.5
+        }
       }
     }
   }

@@ -24,7 +24,7 @@ mid-grey you would use in linear space.
 |---|---|
 | **Input** | `outColor` as vanilla `final.fsh` leaves it |
 | **Output** | the same variable, graded |
-| **Uniforms** | `vv_enabled`, `vv_exposure`, `vv_contrast`, `vv_saturation`, `vv_temperature`, `vv_tonemapStrength` |
+| **Uniforms** | `vv_enabled`, `vv_exposure`, `vv_contrast`, `vv_saturation`, `vv_temperature`, `vv_tonemapStrength`, `vv_adaptation` |
 | **Config** | `ColorGrade` section of `ModConfig/vintagevisuals.json` |
 | **Patch group** | `colorgrade` (from `assets/vintagevisuals/shaderpatches/colorgrade.yaml`) |
 
@@ -77,6 +77,33 @@ failure to upload degrades to *vanilla output*, never to a black screen.
    installed, dragging the Saturation slider on <kbd>F7</kbd> does the same
    thing through the same code path.
 3. Set it back to `1.0`, press <kbd>Ctrl</kbd>+<kbd>V</kbd>, confirm it returns.
+
+## Eye adaptation
+
+`AdaptiveExposure` multiplies `Exposure` — it does not replace it — so a
+manually dialled exposure survives. Dark surroundings raise the multiplier
+toward `DarkGain`, bright ones settle it at `BrightGain`.
+
+It is driven by the **game's light level at the player**, not by measuring the
+rendered frame. Measuring the frame is the textbook approach, but it needs a
+luminance reduction (mip chain or downsample pass) plus a GPU→CPU readback to
+smooth over time — a render pipeline of its own, and this mod deliberately owns
+no framebuffers. `MaxTimeOfDayLight` at the player's head is a direct measure of
+the same thing an eye would adapt to, costs one block lookup, and needs no
+readback.
+
+The honest trade-off: it reacts to *where the player is*, not to what is on
+screen. Staring at bright sky from inside a dark room will not stop it down. For
+cave-to-surface transitions — the case players actually notice — the two agree.
+
+Brightening and darkening have separate time constants, because human adaptation
+is asymmetric: adapting to light takes seconds, adapting to dark takes minutes.
+That asymmetry is most of what makes it read as an eye rather than a fade.
+
+Ticks at 10 Hz and uploads only when the value moved by more than 1e-3, so once
+adaptation settles it costs a block lookup and an early return. Easing uses
+exponential smoothing on a time constant, so speed does not change with frame
+rate — `tools/smoketest` checks that 10 Hz and 100 Hz land in the same place.
 
 ## Resolving the vanilla program
 

@@ -19,8 +19,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Optional [ConfigLib](https://mods.vintagestory.at/configlib) support: install
   it and press <kbd>F7</kbd> for sliders. Completely optional — the mod declares
   no dependency on it and works identically without it.
+- **Eye adaptation:** the view now brightens in dark places and settles back in
+  the light, at different speeds each way — fast into light, slow into dark,
+  like a real eye. On by default; tune or disable it under `AdaptiveExposure`.
 - Offline PBR prototype tool (`tools/pbrgen`) that derives normal, roughness and
-  specular-mask maps from a vanilla diffuse texture.
+  specular-mask maps from a vanilla diffuse texture. Its three passes are now
+  also ported to C# ready for in-game use, though nothing consumes them yet.
 
 ### Fixed
 - Colour grading had no visible effect. Two causes: the vanilla `final` shader
