@@ -89,45 +89,46 @@ namespace VintageVisuals.PseudoPBR
             // retry it on every subsequent config change.
             _atlasBuilt = true;
 
-            // Logged before the work, so the log always shows the attempt even
-            // if the build hangs or the process dies partway through.
-            _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: building material atlas…");
+            var diagnostics = new PbrDiagnostics(_mod.Mod.Logger);
+            string directory = Path.Combine(GamePaths.DataPath, DataDirectory);
+
+            // Noted before the work, so the transcript shows the attempt even if
+            // the build hangs or the process dies partway through.
+            diagnostics.Note("building material atlas…");
 
             try
             {
-                BuildAtlas(config);
+                BuildAtlas(config, diagnostics, directory);
             }
             catch (Exception ex)
             {
-                _mod.Mod.Logger.Error("[VintageVisuals] pseudopbr: material atlas build failed. " +
-                    "Nothing consumes it yet, so rendering is unaffected.");
-                _mod.Mod.Logger.LogException(EnumLogType.Error, ex);
+                diagnostics.Error("material atlas build failed. Nothing consumes it yet, " +
+                                  "so rendering is unaffected.", ex);
             }
+
+            diagnostics.WriteTo(directory);
         }
 
-        private void BuildAtlas(PseudoPbrConfig config)
+        private void BuildAtlas(PseudoPbrConfig config, PbrDiagnostics diagnostics, string directory)
         {
             int width = _mod.Capi.BlockTextureAtlas.Size.Width;
             int height = _mod.Capi.BlockTextureAtlas.Size.Height;
 
             if (width <= 0 || height <= 0)
             {
-                _mod.Mod.Logger.Warning("[VintageVisuals] pseudopbr: block texture atlas reports a zero size; " +
-                                        "skipping the material atlas.");
+                diagnostics.Warn("block texture atlas reports a zero size; skipping the material atlas.");
                 return;
             }
 
             int skipped;
-            List<AtlasRegion> regions = MaterialAtlasSource.Collect(_mod.Capi, 0, _mod.Mod.Logger, out skipped);
+            List<AtlasRegion> regions = MaterialAtlasSource.Collect(_mod.Capi, 0, diagnostics, out skipped);
 
             if (regions.Count == 0)
             {
-                _mod.Mod.Logger.Warning("[VintageVisuals] pseudopbr: no block textures were collected; " +
-                                        "the material atlas would be empty.");
+                diagnostics.Warn("no block textures were collected; the material atlas would be empty.");
                 return;
             }
 
-            string directory = Path.Combine(GamePaths.DataPath, DataDirectory);
             string cachePath = Path.Combine(directory, "material-atlas-0.bin");
 
             var stopwatch = Stopwatch.StartNew();
@@ -140,18 +141,17 @@ namespace VintageVisuals.PseudoPBR
             if (cached != null && cached.Width == width && cached.Height == height)
             {
                 pixels = cached.Pixels;
-                _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: reused cached material atlas (" +
-                    width + "x" + height + ") in " + stopwatch.ElapsedMilliseconds + "ms.");
+                diagnostics.Note("reused cached material atlas (" + width + "x" + height + ") in " +
+                                 stopwatch.ElapsedMilliseconds + "ms.");
             }
             else
             {
                 int written, outOfBounds;
                 pixels = MaterialAtlasBuilder.Build(width, height, regions, out written, out outOfBounds);
 
-                _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: built material atlas (" +
-                    width + "x" + height + ") from " + written + " texture(s) in " +
-                    stopwatch.ElapsedMilliseconds + "ms" +
-                    (outOfBounds > 0 ? ", " + outOfBounds + " outside the atlas bounds" : "") + ".");
+                diagnostics.Note("built material atlas (" + width + "x" + height + ") from " + written +
+                                 " texture(s) in " + stopwatch.ElapsedMilliseconds + "ms" +
+                                 (outOfBounds > 0 ? ", " + outOfBounds + " outside the atlas bounds" : "") + ".");
 
                 try
                 {
@@ -161,7 +161,7 @@ namespace VintageVisuals.PseudoPBR
                 {
                     // Losing the cache costs startup time on the next launch,
                     // nothing else.
-                    _mod.Mod.Logger.Warning("[VintageVisuals] pseudopbr: could not cache the atlas: " + ex.Message);
+                    diagnostics.Warn("could not cache the atlas: " + ex.Message);
                 }
             }
 
@@ -169,13 +169,13 @@ namespace VintageVisuals.PseudoPBR
             {
                 try
                 {
-                    string[] written = AtlasPreview.WriteAll(directory, width, height, pixels);
-                    _mod.Mod.Logger.Notification("[VintageVisuals] pseudopbr: preview images written to " +
-                                                 Path.GetDirectoryName(written[0]));
+                    string[] previews = AtlasPreview.WriteAll(directory, width, height, pixels);
+                    diagnostics.Note("preview images written: " + string.Join(", ",
+                        Array.ConvertAll(previews, Path.GetFileName)));
                 }
                 catch (Exception ex)
                 {
-                    _mod.Mod.Logger.Warning("[VintageVisuals] pseudopbr: could not write preview images: " + ex.Message);
+                    diagnostics.Warn("could not write preview images: " + ex.Message);
                 }
             }
         }

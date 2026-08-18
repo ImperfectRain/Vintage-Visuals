@@ -157,10 +157,10 @@ namespace VintageVisuals.SmokeTest
                 foreach (string preview in previews)
                 {
                     var info = new FileInfo(preview);
-                    // 54-byte header plus 3 bytes per pixel, rows padded to 4.
-                    if (!info.Exists || info.Length < 54 + atlasW * atlasH * 3) allPresent = false;
+                    // PNG: signature + chunks; must at least exceed the raw pixel count.
+                    if (!info.Exists || info.Length < atlasW * atlasH) allPresent = false;
                 }
-                ok("preview images are complete BMPs", allPresent);
+                ok("preview images are complete PNGs", allPresent);
             }
             finally
             {

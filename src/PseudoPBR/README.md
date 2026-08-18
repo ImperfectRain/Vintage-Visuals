@@ -98,10 +98,24 @@ to a temporary file and are moved into place, so a crash mid-write cannot leave 
 half-atlas that passes its own header check. A corrupt, truncated or stale cache
 reads as "rebuild", never as an exception.
 
-`WriteAtlasPreview` also writes three viewable BMPs — normal, roughness and
+`WriteAtlasPreview` also writes three viewable PNGs — normal, roughness and
 specular, separately, because a packed RGBA image is unreadable to a human. Same
 reasoning as the offline tool's contact sheet: these maps cannot be judged from
 statistics, and "do the log grooves read as grooves" is a question for eyes.
+
+These were BMP first, which was simpler to write and the wrong choice: BMP is
+awkward to share, does not preview in most tools, and several upload paths
+reject it outright. An image nobody can send you is not a diagnostic. The PNG
+writer is hand-rolled with stored (uncompressed) deflate blocks — about sixty
+lines, no dependency — and is verified pixel-exact against an independent
+decoder on deliberately awkward dimensions.
+
+`pbr-diagnostics.txt` lands in the same folder and records what the pipeline
+did: texture counts, skip reasons with examples, atlas size, timing, cache hit
+or miss. It duplicates the log on purpose. The log is the right primary sink,
+but the outputs live here, this is the folder someone opens when something
+looks wrong, and `client-main.txt` is elsewhere among thousands of unrelated
+lines — so the folder should contain its own answer.
 
 ## The two sources of material data
 

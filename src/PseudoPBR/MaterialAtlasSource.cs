@@ -30,7 +30,7 @@ namespace VintageVisuals.PseudoPBR
         /// textures once they no longer fit in one, so a derived atlas is built
         /// per page and <paramref name="atlasNumber"/> selects which.
         /// </summary>
-        public static List<AtlasRegion> Collect(ICoreClientAPI capi, int atlasNumber, ILogger logger,
+        public static List<AtlasRegion> Collect(ICoreClientAPI capi, int atlasNumber, PbrDiagnostics diagnostics,
                                                 out int skippedTextures)
         {
             var regions = new List<AtlasRegion>();
@@ -89,13 +89,13 @@ namespace VintageVisuals.PseudoPBR
                 }
             }
 
-            logger.Notification("[VintageVisuals] pseudopbr: atlas page " + atlasNumber + " — " +
-                                regions.Count + " texture(s) collected, " + skippedTextures + " skipped.");
+            diagnostics.Note("atlas page " + atlasNumber + " — " + regions.Count +
+                             " texture(s) collected, " + skippedTextures + " skipped.");
 
             foreach (KeyValuePair<string, int> reason in skipReasons)
             {
-                logger.Warning("[VintageVisuals] pseudopbr:   skipped " + reason.Value + " — " + reason.Key +
-                               " (e.g. " + skipExamples[reason.Key] + ")");
+                diagnostics.Warn("  skipped " + reason.Value + " — " + reason.Key +
+                                 " (e.g. " + skipExamples[reason.Key] + ")");
             }
 
             return regions;
