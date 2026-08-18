@@ -64,6 +64,30 @@ Textures are deduplicated by `TextureSubId`: every fence variant of a wood type
 points at the same planks, and deriving it per block would be thousands of
 redundant Sobel passes over identical pixels.
 
+## Resolving a block's texture file
+
+Two traps, both of which returned null silently on all 3749 textures of a real
+atlas before they were found:
+
+- **Texture locations carry no category or extension.** A block declares
+  `block/stone/granite`; the asset is `textures/block/stone/granite.png`. They
+  must be resolved with `WithPathPrefixOnce("textures/")` and
+  `WithPathAppendixOnce(".png")` — the same pattern the game's own
+  `ITextureSource` uses.
+- **`BakedName` is not a filename.** `CompositeTexture.Bake` appends synthetic
+  suffixes for overlays (`++`), rotation (`@`) and alpha (`~`), so a baked name
+  can describe a composite that exists only inside the atlas with no file
+  behind it.
+
+Resolution therefore goes through `CompositeTexture.Base`. The cost is that
+overlays, rotation and alpha are not composited into the derived maps — material
+response comes from the base texture. For roughness and surface relief that is a
+fair approximation; if an overlaid block ever looks wrong, this is why.
+
+Skips are counted **by reason**, with an example block for each. A bare
+"3749 skipped" says something is wrong but not what, and a fail-soft path that
+swallows its own cause turns a two-minute fix into a debugging round.
+
 ## Cache and previews
 
 The built atlas is cached to `VintagestoryData/VintageVisuals/material-atlas-0.bin`,

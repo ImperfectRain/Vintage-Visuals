@@ -35,6 +35,8 @@ namespace VintageVisuals.PseudoPBR
         {
             var regions = new List<AtlasRegion>();
             var seen = new HashSet<int>();
+            var skipReasons = new Dictionary<string, int>();
+            var skipExamples = new Dictionary<string, string>();
             skippedTextures = 0;
 
             int atlasWidth = capi.BlockTextureAtlas.Size.Width;
@@ -63,35 +65,108 @@ namespace VintageVisuals.PseudoPBR
 
                     if (position == null || position.atlasNumber != atlasNumber) continue;
 
+                    string name = block.Code.ToString() + ":" + entry.Key;
+                    string reason;
                     AtlasRegion region = TryBuildRegion(capi, composite, position, profile,
-                        atlasWidth, atlasHeight, block.Code.ToString() + ":" + entry.Key);
+                        atlasWidth, atlasHeight, name, out reason);
 
-                    if (region == null) skippedTextures++;
-                    else regions.Add(region);
+                    if (region != null)
+                    {
+                        regions.Add(region);
+                        continue;
+                    }
+
+                    skippedTextures++;
+
+                    // Count why, and keep a few examples. A bare "3749 skipped"
+                    // says something is wrong but not what, which is exactly
+                    // how a fail-soft path turns into a wasted debugging round.
+                    int count;
+                    skipReasons.TryGetValue(reason, out count);
+                    skipReasons[reason] = count + 1;
+
+                    if (!skipExamples.ContainsKey(reason)) skipExamples[reason] = name;
                 }
             }
 
             logger.Notification("[VintageVisuals] pseudopbr: atlas page " + atlasNumber + " — " +
                                 regions.Count + " texture(s) collected, " + skippedTextures + " skipped.");
+
+            foreach (KeyValuePair<string, int> reason in skipReasons)
+            {
+                logger.Warning("[VintageVisuals] pseudopbr:   skipped " + reason.Value + " — " + reason.Key +
+                               " (e.g. " + skipExamples[reason.Key] + ")");
+            }
+
             return regions;
+        }
+
+        /// <summary>
+        /// Finds the PNG behind a composite texture.
+        ///
+        /// Two traps here, both of which silently returned null on every one of
+        /// 3749 textures before they were found:
+        ///
+        /// 1. Texture asset locations are declared without their category or
+        ///    extension - "block/stone/granite" - and must be resolved as
+        ///    "textures/block/stone/granite.png". This is the same
+        ///    WithPathPrefixOnce/WithPathAppendixOnce pattern the game's own
+        ///    ITextureSource uses.
+        /// 2. BakedName is NOT a filename. CompositeTexture.Bake appends
+        ///    synthetic suffixes for overlays, rotation and alpha, so a baked
+        ///    name can describe a composite that exists only in the atlas and
+        ///    has no file behind it at all.
+        ///
+        /// So resolution goes through Base, the plain source path, and falls
+        /// back to BakedName only for the simple case where they are equal.
+        /// The cost is that overlays, rotation and alpha are not composited into
+        /// the derived maps - material response comes from the base texture.
+        /// For roughness and surface relief that is a fair approximation; if an
+        /// overlaid block ever looks wrong, this is the reason.
+        /// </summary>
+        private static IAsset ResolveTextureAsset(ICoreClientAPI capi, CompositeTexture composite)
+        {
+            AssetLocation source = composite.Base ?? composite.Baked.BakedName;
+            if (source == null) return null;
+
+            AssetLocation resolved = source.Clone()
+                .WithPathPrefixOnce("textures/")
+                .WithPathAppendixOnce(".png");
+
+            return capi.Assets.TryGet(resolved);
         }
 
         private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, CompositeTexture composite,
                                                   TextureAtlasPosition position, MaterialProfile profile,
-                                                  int atlasWidth, int atlasHeight, string name)
+                                                  int atlasWidth, int atlasHeight, string name,
+                                                  out string skipReason)
         {
+            skipReason = null;
+
             try
             {
-                IAsset asset = capi.Assets.TryGet(composite.Baked.BakedName);
-                if (asset == null) return null;
+                IAsset asset = ResolveTextureAsset(capi, composite);
+                if (asset == null)
+                {
+                    skipReason = "texture asset not found";
+                    return null;
+                }
 
                 BitmapRef bitmap = asset.ToBitmap(capi);
-                if (bitmap == null) return null;
+                if (bitmap == null)
+                {
+                    skipReason = "asset could not be decoded as a bitmap";
+                    return null;
+                }
 
                 using (bitmap)
                 {
                     LinearTexture texture = ToLinearTexture(bitmap);
-                    if (texture == null) return null;
+                    if (texture == null)
+                    {
+                        skipReason = "bitmap had no usable pixels";
+                        return null;
+                    }
 
                     // Atlas positions are normalised UVs; the builder works in
                     // pixels. Rounding rather than truncating because the UVs
@@ -107,10 +182,12 @@ namespace VintageVisuals.PseudoPBR
                     };
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // One unreadable texture must cost that texture's material data
-                // and nothing else.
+                // and nothing else - but the reason still has to survive, or a
+                // systematic failure looks identical to a handful of odd files.
+                skipReason = ex.GetType().Name + ": " + ex.Message;
                 return null;
             }
         }
