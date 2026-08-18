@@ -23,6 +23,8 @@ namespace VintageVisuals.Common
 
         public AdaptiveExposureConfig AdaptiveExposure { get; set; } = new AdaptiveExposureConfig();
 
+        public PseudoPbrConfig PseudoPBR { get; set; } = new PseudoPbrConfig();
+
         /// <summary>
         /// Clamps every value into its supported range, returning a description
         /// of anything that had to be corrected.
@@ -39,6 +41,24 @@ namespace VintageVisuals.Common
             AdaptiveExposure.ClampToValidRanges(corrections);
             return corrections;
         }
+    }
+
+    /// <summary>
+    /// Phase 4 material system. Classification only so far — nothing here
+    /// changes rendering yet.
+    /// </summary>
+    public class PseudoPbrConfig
+    {
+        /// <summary>
+        /// Writes VintagestoryData/VintageVisuals/material-report.txt listing
+        /// how every loaded block was classified.
+        ///
+        /// On by default while the subsystem is being built: it is the only way
+        /// to see whether modded blocks classify sensibly, it costs one file
+        /// write per session, and it changes nothing about rendering. Turn it
+        /// off once the classification looks right.
+        /// </summary>
+        public bool WriteMaterialReport { get; set; } = true;
     }
 
     /// <summary>

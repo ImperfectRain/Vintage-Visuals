@@ -5,6 +5,7 @@ using Vintagestory.API.Common;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
+using VintageVisuals.PseudoPBR;
 
 namespace VintageVisuals
 {
@@ -144,6 +145,7 @@ namespace VintageVisuals
         private void RegisterSubsystems()
         {
             _subsystems.Add(new ColorGradeSubsystem());
+            _subsystems.Add(new PseudoPbrSubsystem());
 
             // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is
             // independently toggleable by design, so registration order carries
