@@ -298,6 +298,8 @@ actually for.
 | Sky reflection | 0 – 2 | 0.35 | realism |
 | Specular antialiasing | 0 – 2 | 1.0 | correctness |
 | Detail distance | 4 – 192 | 48 | performance/quality |
+| Torch & lava highlights | 0 – 2 | 1.0 | realism |
+| Torch highlight directionality | 0 – 1 | 0.7 | taste |
 
 **Roughness bias** is the strongest single style control, because roughness is
 what separates a look that reads as *wet* from one that reads as *dry* — and
@@ -316,6 +318,41 @@ already the colour the horizon is being blended toward, which makes it a better
 environment estimate than any constant. It is deliberately **not** multiplied by
 the shadow map: sky light reaches surfaces the sun does not, and killing it in
 shadow is what makes metal in a doorway look like painted wood.
+
+### Light that is not the sun
+
+Until this existed, `lightPosition` was the only light the material system knew
+about — so underground, where every light is a torch, none of it did anything. A
+metal wall beside a lantern had no highlight; the same wall in daylight did.
+
+Vanilla bakes every torch, lantern, lava pool and glowing block into a single
+per-vertex colour, `blockLight`. That gives intensity and hue but **no
+position**, and a specular highlight needs a direction.
+
+The direction is recoverable without the CPU ever telling us where the lights
+are. Block light is a scalar field over the surface, and **the gradient of that
+field points toward whatever is emitting it**. Both pieces are already to hand —
+screen-space derivatives of the light and of the world position — so
+`vvBlockLightDirection` solves for the world-space gradient consistent with
+both (Mikkelsen's surface-gradient construction, which lands it in the tangent
+plane by construction) and tilts the normal toward it. The tilt grows with the
+gradient's magnitude: a steep falloff means the source is close and therefore
+off to one side, a flat one means it is distant or genuinely ambient.
+
+Degenerate cases — a uniform light field, a degenerate derivative basis — fall
+back to the normal, which *is* "treat this as ambient" and is the right answer
+in exactly those cases.
+
+Two consequences worth stating:
+
+- The highlight is **not** scaled by the shadow map or by daylight. A torch
+  burns in a cave at midnight, and gating it on either would remove the
+  highlight from precisely the places this exists to light.
+- `BlockLightDirectionality` exists because this is an estimate. At 0 block
+  light is treated as purely ambient — safe and dull. At 1 the estimate is
+  trusted fully, which gives a highlight that tracks a torch as you walk past
+  it, and can wobble where the light field is noisy. Debug view 9 shows the
+  estimated direction directly.
 
 ### Specular antialiasing
 
@@ -371,6 +408,7 @@ system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slide
 | 6 | perturbed normal in world space | The six block faces should read as six flat colours, with relief as variation inside each |
 | 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
 | 8 | roughness as shaded | Stored roughness plus bias plus specular antialiasing. Brighter than view 2 means aliasing is being suppressed there |
+| 9 | estimated block-light direction | Flat means the gradient found nothing and the light is ambient; variation across a wall means a torch is being located |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is

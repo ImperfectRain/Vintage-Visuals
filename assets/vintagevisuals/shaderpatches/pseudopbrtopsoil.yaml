@@ -45,6 +45,15 @@
   content: |
     in vec4 rgbaFog; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
 
+# 2c. Assert `blockLight`, the per-vertex colour vanilla bakes every torch,
+# lantern, lava pool and glowing block into. It is the only handle this shader
+# has on light that is not the sun.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: in vec3 blockLight;
+  content: |
+    in vec3 blockLight; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
+
 # 3. Assert `lightPosition`, which the injected shading functions read.
 - type: token
   filename: chunktopsoil.fsh
@@ -77,12 +86,12 @@
     vec3 vvAlbedo = outColor.rgb;
     float vvShadow = getBrightnessFromShadowMap();
     outColor = applyFogAndShadowWithNormal(outColor, clamp(fogAmount - 50*murkiness, 0, 1), vvSurfaceNormal(normal, uv, worldPos.xyz), 1, intensity, worldPos.xyz);
-    outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb);
+    outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb, blockLight);
 
 # 6. Debug layer views, applied last so they replace the finished colour.
 - type: token
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
-    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0, rgbaFog.rgb);
+    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0, rgbaFog.rgb, blockLight);
     outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);

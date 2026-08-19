@@ -144,6 +144,30 @@ namespace VintageVisuals.Common
         public float DetailDistance { get; set; } = 48.0f;
 
         /// <summary>
+        /// Strength of highlights from torches, lava, lanterns and glowing
+        /// blocks.
+        ///
+        /// Until this existed, the sun was the only light the material system
+        /// could produce a highlight from - so underground, where every light
+        /// is a block light, none of it did anything. Deliberately not scaled
+        /// by daylight or shadow: a torch burns in a cave at midnight.
+        /// </summary>
+        public float BlockLightSpecular { get; set; } = 1.0f;
+
+        /// <summary>
+        /// How much to trust the estimated direction of block light.
+        ///
+        /// Vanilla bakes every light source into one directionless colour, so
+        /// the direction is recovered from the gradient of that colour across
+        /// the surface - light gets brighter toward whatever is emitting it. At
+        /// 0 block light is treated as purely ambient, which is safe and dull;
+        /// at 1 the estimate is trusted fully, which gives a highlight that
+        /// tracks a torch as you walk past it and can wobble where the light
+        /// field is noisy.
+        /// </summary>
+        public float BlockLightDirectionality { get; set; } = 0.7f;
+
+        /// <summary>
         /// Renders one layer of the material system on its own instead of the
         /// finished image. 0 renders normally.
         ///
@@ -156,6 +180,7 @@ namespace VintageVisuals.Common
         ///   7  reflectance at normal incidence (grey = dielectric, coloured = metal)
         ///   8  the roughness the shading model actually uses, after bias and
         ///      specular antialiasing
+        ///   9  estimated block-light direction (flat = treated as ambient)
         ///
         /// A float rather than an int because ConfigLib's float settings are
         /// the ones this mod has confirmed working in game; an integer category
@@ -203,7 +228,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 8.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 9.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);
@@ -215,6 +240,10 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SpecularAntiAliasing", corrections);
             DetailDistance = ColorGradeConfig.Clamp(DetailDistance, 4.0f, 192.0f,
                 "PseudoPBR.DetailDistance", corrections);
+            BlockLightSpecular = ColorGradeConfig.Clamp(BlockLightSpecular, 0.0f, 2.0f,
+                "PseudoPBR.BlockLightSpecular", corrections);
+            BlockLightDirectionality = ColorGradeConfig.Clamp(BlockLightDirectionality, 0.0f, 1.0f,
+                "PseudoPBR.BlockLightDirectionality", corrections);
         }
     }
 

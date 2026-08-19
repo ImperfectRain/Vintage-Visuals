@@ -53,6 +53,7 @@ in vec4 rgbaFog;
 in float fogAmount;
 in vec2 uv;
 in float glowLevel;
+in vec3 blockLight;
 flat in int renderFlags;
 in vec3 normal;
 in vec4 worldPos;
@@ -133,7 +134,7 @@ void main()
                 return;
             }
 
-            ok("7 patches produced", patches.Count == 7);
+            ok("8 patches produced", patches.Count == 8);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("all target chunkopaque.fsh", patches.All(p => p.AppliesTo("chunkopaque.fsh")));
 
@@ -166,7 +167,10 @@ void main()
             ok("brightness call patched",
                 result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv, worldPos.xyz))"));
             ok("microfacet pass runs on the lit colour",
-                result.Contains("outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb);"));
+                result.Contains("outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);"));
+            ok("block-light specular injected",
+                result.Contains("vec3 vvBlockLightDirection(vec3 n, vec3 cameraRelativePos, float intensity)") &&
+                result.Contains("vec3 vvBlockLightSpecular(vec3 f0, float roughness, vec3 n, vec3 v,"));
             ok("specular antialiasing and ambient terms injected",
                 result.Contains("float vvFilteredRoughness(float roughness, vec3 n)") &&
                 result.Contains("vec3 vvAmbientSpecular(vec3 f0, float roughness, float ndotv, vec3 environment)"));
@@ -282,6 +286,7 @@ in vec4 rgbaFog;
 in float fogAmount;
 in vec2 uv;
 in float glowLevel;
+in vec3 blockLight;
 flat in int renderFlags;
 in vec3 normal;
 in vec4 worldPos;
@@ -330,7 +335,7 @@ void main()
             List<ShaderPatch> patches = ShaderPatchLoader
                 .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
 
-            ok("pseudopbrtopsoil.yaml parsed into 7 patches", patches.Count == 7);
+            ok("pseudopbrtopsoil.yaml parsed into 8 patches", patches.Count == 8);
             ok("all target chunktopsoil.fsh", patches.All(p => p.AppliesTo("chunktopsoil.fsh")));
 
             // Its own group. Sharing pseudopbr's would mean a reworded
@@ -350,7 +355,7 @@ void main()
                 result.IndexOf("vec3 vvAlbedo = outColor.rgb;", StringComparison.Ordinal) <
                 result.IndexOf("outColor = applyFogAndShadowWithNormal", StringComparison.Ordinal));
             ok("microfacet pass runs on the lit topsoil colour",
-                result.Contains("outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb);"));
+                result.Contains("outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb, blockLight);"));
             ok("topsoil braces balanced", result.Count(c => c == '{') == result.Count(c => c == '}'));
 
             // Same rule as chunkopaque, and it has to hold independently: our

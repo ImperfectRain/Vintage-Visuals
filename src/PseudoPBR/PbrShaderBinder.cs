@@ -42,6 +42,8 @@ namespace VintageVisuals.PseudoPBR
         public const string AmbientUniform = "vv_pbrAmbient";
         public const string SpecularAaUniform = "vv_pbrSpecularAA";
         public const string DetailDistanceUniform = "vv_pbrDetailDistance";
+        public const string BlockLightUniform = "vv_pbrBlockLight";
+        public const string BlockLightDirUniform = "vv_pbrBlockLightDir";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go

@@ -217,15 +217,39 @@
           "step": 4.0
         }
       },
-      "pbr_debugview": {
-        "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded.",
-        "default": 0.0,
+      "pbr_blocklight": {
+        "ingui": "Torch & lava highlights",
+        "comment": "Strength of highlights from torches, lava, lanterns and glowing blocks. Works underground and at night, where the sun cannot reach.",
+        "default": 1.0,
         "clientSide": true,
         "weight": 28,
         "range": {
           "min": 0.0,
-          "max": 8.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_blocklightdir": {
+        "ingui": "Torch highlight directionality",
+        "comment": "0 treats block light as coming from everywhere. 1 estimates where the light actually is, so highlights track a torch as you pass it.",
+        "default": 0.7,
+        "clientSide": true,
+        "weight": 29,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "pbr_debugview": {
+        "ingui": "Debug: show one layer",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 30,
+        "range": {
+          "min": 0.0,
+          "max": 9.0,
           "step": 1.0
         }
       }

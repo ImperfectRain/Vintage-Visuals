@@ -178,6 +178,12 @@ namespace VintageVisuals.Common
                 case "pbr_detaildistance":
                     pbr.DetailDistance = tree.GetFloat("value", pbr.DetailDistance);
                     break;
+                case "pbr_blocklight":
+                    pbr.BlockLightSpecular = tree.GetFloat("value", pbr.BlockLightSpecular);
+                    break;
+                case "pbr_blocklightdir":
+                    pbr.BlockLightDirectionality = tree.GetFloat("value", pbr.BlockLightDirectionality);
+                    break;
                 default:
                     return false;
             }

@@ -61,6 +61,8 @@ uniform float vv_pbrMetalResponse;   // how metallic the reflective materials re
 uniform float vv_pbrAmbient;         // sky/environment reflection strength
 uniform float vv_pbrSpecularAA;      // geometric specular antialiasing strength
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
+uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
+uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully trusts the gradient
 
 // Builds a tangent frame for an axis-aligned block face.
 //
@@ -305,9 +307,94 @@ vec3 vvAmbientSpecular(vec3 f0, float roughness, float ndotv, vec3 environment)
     return environment * fresnel * max(0.0, vv_pbrAmbient);
 }
 
+// ---------------------------------------------------------------------------
+// Block light: torches, lava, lanterns, glowing ore
+//
+// Vanilla bakes all of it into one per-vertex colour, `blockLight`. That gives
+// this shader an intensity and a hue but no position, and a specular highlight
+// needs a direction - which is why, until now, a metal wall beside a lit torch
+// had no highlight at all while the same wall in sunlight did. Underground,
+// where every light is a block light, the material system did nothing.
+//
+// The direction is recoverable without the CPU ever telling us where the lights
+// are. Block light is a scalar field over the surface, and the gradient of that
+// field points toward whatever is emitting it. Both pieces are already to hand:
+// screen-space derivatives of the light and of the world position.
+// ---------------------------------------------------------------------------
+
+const vec3 VV_PBR_LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// How far a unit of light gradient tilts the light direction off the normal.
+// Tuned so a torch a couple of blocks away reads as coming from the side
+// rather than from directly overhead.
+const float VV_BLOCKLIGHT_TILT = 6.0;
+
+/// Estimated direction toward the block light illuminating this fragment.
+//
+// Mikkelsen's surface-gradient construction: solve for the world-space gradient
+// of the light field that is consistent with both screen derivatives, which
+// lands it in the tangent plane by construction. Then tilt the normal toward
+// it, by an amount that grows with the gradient's magnitude - a steep falloff
+// means the source is close and therefore off to one side, a flat one means it
+// is distant or ambient.
+//
+// Degenerate cases fall back to the normal, which is exactly "treat this light
+// as ambient" and is the right answer when the field is uniform.
+vec3 vvBlockLightDirection(vec3 n, vec3 cameraRelativePos, float intensity)
+{
+    vec3 dpdx = dFdx(cameraRelativePos);
+    vec3 dpdy = dFdy(cameraRelativePos);
+
+    vec3 r1 = cross(dpdy, n);
+    vec3 r2 = cross(n, dpdx);
+
+    float det = dot(dpdx, r1);
+    if (abs(det) < 1e-8) return n;
+
+    vec3 gradient = (r1 * dFdx(intensity) + r2 * dFdy(intensity)) / det;
+
+    float magnitude = length(gradient);
+    if (magnitude < 1e-4) return n;
+
+    float tilt = clamp(magnitude * VV_BLOCKLIGHT_TILT, 0.0, 4.0) * clamp(vv_pbrBlockLightDir, 0.0, 1.0);
+
+    return normalize(n + (gradient / magnitude) * tilt);
+}
+
+// A microfacet highlight from block light, in the light's own colour.
+//
+// Deliberately NOT scaled by the shadow map or by daylight. Block light is
+// independent of both - a torch burns in a cave at midnight - and gating it on
+// either would remove the highlight from precisely the places this exists to
+// light.
+vec3 vvBlockLightSpecular(vec3 f0, float roughness, vec3 n, vec3 v,
+                          vec3 blockLightColor, vec3 cameraRelativePos)
+{
+    if (vv_pbrBlockLight < 0.001) return vec3(0.0);
+
+    float intensity = dot(blockLightColor, VV_PBR_LUMA);
+    if (intensity < 0.004) return vec3(0.0);
+
+    vec3 l = vvBlockLightDirection(n, cameraRelativePos, intensity);
+    vec3 h = normalize(l + v);
+
+    float ndotl = max(dot(n, l), 0.0);
+    float ndotv = max(dot(n, v), 1e-4);
+    float ndoth = max(dot(n, h), 0.0);
+    float vdoth = max(dot(v, h), 0.0);
+
+    vec3 fresnel = vvFresnelSchlick(vdoth, f0);
+    float distribution = vvDistributionGGX(ndoth, roughness);
+    float geometry = vvGeometrySmith(ndotv, ndotl, roughness);
+
+    vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
+
+    return blockLightColor * specular * ndotl * max(0.0, vv_pbrBlockLight);
+}
+
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                 vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness,
-                vec3 environment)
+                vec3 environment, vec3 blockLightColor)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
 
@@ -372,6 +459,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
     // metal in a doorway look like painted wood. Daylight and fog still apply.
+    // Torches, lava and glowing blocks. Fogged like everything else, but not
+    // shadowed and not scaled by daylight - see vvBlockLightSpecular.
+    result += vvBlockLightSpecular(f0, roughness, n, v, blockLightColor, cameraRelativePos)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * vv_pbrSpecularStrength;
+
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
             * clamp(vv_pbrDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
@@ -388,7 +481,8 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 // sampler problems: if view 1 shows block textures instead of flat lavender,
 // vv_materialTex is not reading the atlas at all.
 vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos,
-                 float shadowBrightness, float fog, float murkiness, vec3 environment)
+                 float shadowBrightness, float fog, float murkiness, vec3 environment,
+                 vec3 blockLightColor)
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode <= 0) return color;
@@ -409,7 +503,8 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     if (mode == 5)
     {
         vec4 lobe = vvApplyPbr(vec4(0.0, 0.0, 0.0, color.a), vec3(1.0), faceNormal, materialUv,
-                               cameraRelativePos, shadowBrightness, fog, murkiness, environment);
+                               cameraRelativePos, shadowBrightness, fog, murkiness, environment,
+                               blockLightColor);
         return vec4(lobe.rgb, color.a);
     }
 
@@ -432,6 +527,16 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         float shaded = vvFilteredRoughness(clamp(material.b + vv_pbrRoughnessBias, 0.04, 1.0),
                                            vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos));
         return vec4(vec3(shaded), color.a);
+    }
+
+    // 9: the estimated block-light direction, as a colour. Flat means the
+    // gradient found nothing and the light is being treated as ambient;
+    // variation across a wall means a torch is being located.
+    if (mode == 9)
+    {
+        vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 l = vvBlockLightDirection(n, cameraRelativePos, dot(blockLightColor, VV_PBR_LUMA));
+        return vec4(l * 0.5 + 0.5, color.a);
     }
 
     return color;

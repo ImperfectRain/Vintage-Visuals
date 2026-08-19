@@ -67,7 +67,9 @@ value.
 | `PseudoPBR.AmbientSpecular` | 0.0 – 2.0 | `0.35` | Sky reflection strength, so metal in shade still has a highlight |
 | `PseudoPBR.SpecularAntiAliasing` | 0.0 – 2.0 | `1.0` | Stops rough surfaces sparkling as the camera moves |
 | `PseudoPBR.DetailDistance` | 4 – 192 | `48` | Blocks at which surface relief has faded out |
-| `PseudoPBR.DebugView` | 0 – 8 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal, 7 reflectance |
+| `PseudoPBR.BlockLightSpecular` | 0.0 – 2.0 | `1.0` | Highlights from torches, lava and glowing blocks. Works underground and at night |
+| `PseudoPBR.BlockLightDirectionality` | 0.0 – 1.0 | `0.7` | 0 treats block light as ambient; 1 estimates where the torch actually is |
+| `PseudoPBR.DebugView` | 0 – 9 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal, 7 reflectance |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
 | `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
