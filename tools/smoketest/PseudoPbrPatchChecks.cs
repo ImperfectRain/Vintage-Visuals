@@ -163,7 +163,7 @@ void main()
             ok("uv assertion applied", CountOf(result, "in vec2 uv; // vintagevisuals") == 1);
             ok("normal assertion applied", CountOf(result, "in vec3 normal; // vintagevisuals") == 1);
             ok("brightness call patched",
-                result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv))"));
+                result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv, worldPos.xyz))"));
             ok("microfacet pass runs on the lit colour",
                 result.Contains("outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness);"));
             ok("Cook-Torrance terms injected",
@@ -219,7 +219,7 @@ void main()
             // does, so pin it rather than trusting the anchor's position.
             int declAt = result.IndexOf("\nuniform vec3 lightPosition;", StringComparison.Ordinal);
             int usedAt = result.IndexOf("float vvDirectionalShade(vec3 n)", StringComparison.Ordinal);
-            int callAt = result.IndexOf("vvSurfaceBrightness(nb, normal, uv)", StringComparison.Ordinal);
+            int callAt = result.IndexOf("vvSurfaceBrightness(nb, normal, uv", StringComparison.Ordinal);
             ok("lightPosition declared before our functions use it", declAt >= 0 && declAt < usedAt);
             ok("our functions defined before the call site", usedAt >= 0 && usedAt < callAt);
 

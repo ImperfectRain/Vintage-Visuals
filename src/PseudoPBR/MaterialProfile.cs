@@ -99,9 +99,19 @@ namespace VintageVisuals.PseudoPBR
                 Roughness = 0.65f, Metalness = 0.35f, SpecularScale = 0.85f,
                 NormalStrength = 1.10f, RoughnessVariation = 0.35f } },
 
+            // Retuned after seeing stone in game. Both numbers came down for
+            // the same reason: stone's albedo is high-frequency speckle, and a
+            // Sobel reads every speckle as a bump. At 1.00 the derived normal
+            // was fighting the texture rather than describing it, and any
+            // specular on top of that many competing facets glints - so a rock
+            // wall read as polished and slightly wet instead of rough.
+            //
+            // The relief that matters on stone is the coarse structure, not the
+            // grain, and 0.65 keeps the former while letting the latter sit
+            // under the albedo where it belongs.
             { EnumBlockMaterial.Stone, new MaterialProfile {
-                Roughness = 0.85f, Metalness = 0.0f, SpecularScale = 0.25f,
-                NormalStrength = 1.00f, RoughnessVariation = 0.25f } },
+                Roughness = 0.85f, Metalness = 0.0f, SpecularScale = 0.15f,
+                NormalStrength = 0.65f, RoughnessVariation = 0.25f } },
 
             { EnumBlockMaterial.Mantle, new MaterialProfile {
                 Roughness = 0.90f, Metalness = 0.0f, SpecularScale = 0.15f,
@@ -123,7 +133,7 @@ namespace VintageVisuals.PseudoPBR
             // clay actually is.
             { EnumBlockMaterial.Ceramic, new MaterialProfile {
                 Roughness = 0.70f, Metalness = 0.0f, SpecularScale = 0.30f,
-                NormalStrength = 1.05f, RoughnessVariation = 0.25f } },
+                NormalStrength = 0.85f, RoughnessVariation = 0.25f } },
 
             // Vintage Story 1.22.7 assigns this to ZERO blocks - all of its
             // brickwork is Ceramic. Kept because a content mod may use it, and
@@ -131,7 +141,7 @@ namespace VintageVisuals.PseudoPBR
             // make identical-looking walls shade differently.
             { EnumBlockMaterial.Brick, new MaterialProfile {
                 Roughness = 0.70f, Metalness = 0.0f, SpecularScale = 0.30f,
-                NormalStrength = 1.05f, RoughnessVariation = 0.25f } },
+                NormalStrength = 0.85f, RoughnessVariation = 0.25f } },
 
             // Normal strength above 1: log ends and plank seams are the clearest
             // real relief in the game's texture set, and the whole point of
@@ -140,15 +150,26 @@ namespace VintageVisuals.PseudoPBR
                 Roughness = 0.75f, Metalness = 0.0f, SpecularScale = 0.20f,
                 NormalStrength = 1.25f, RoughnessVariation = 0.25f } },
 
-            // Soft and matte. Low normal strength because painted soil texture
-            // is noise, not geometry, and amplifying it looks like gravel.
+            // Soft and matte, but not featureless. 0.70 was set on the theory
+            // that painted soil texture is noise rather than geometry and
+            // amplifying it would look like gravel. In game the result was
+            // dirt that read as flat colour with no surface at all, which is
+            // the opposite failure.
+            //
+            // 0.95 is still below every material that deliberately exaggerates
+            // relief, so soil stays the soft one - it just has a surface now.
+            // The specular ceiling stays at 0.05: dirt showing grain is right,
+            // dirt catching highlights is not.
             { EnumBlockMaterial.Soil, new MaterialProfile {
                 Roughness = 0.95f, Metalness = 0.0f, SpecularScale = 0.05f,
-                NormalStrength = 0.70f, RoughnessVariation = 0.15f } },
+                NormalStrength = 0.95f, RoughnessVariation = 0.15f } },
 
+            // Still exaggerated, but less so once stone came down - gravel
+            // should read as coarser than stone, and that is a relative
+            // judgement, not an absolute one.
             { EnumBlockMaterial.Gravel, new MaterialProfile {
                 Roughness = 0.95f, Metalness = 0.0f, SpecularScale = 0.10f,
-                NormalStrength = 1.30f, RoughnessVariation = 0.20f } },
+                NormalStrength = 1.10f, RoughnessVariation = 0.20f } },
 
             { EnumBlockMaterial.Sand, new MaterialProfile {
                 Roughness = 0.90f, Metalness = 0.0f, SpecularScale = 0.12f,

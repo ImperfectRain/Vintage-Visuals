@@ -221,6 +221,29 @@ spare, so this is a guard for heavily modded installs, not the common case.
 Lifting it means one material atlas per page plus a hook into the chunk draw
 call to bind alongside whichever terrain page is active.
 
+## Two things that make relief read as texture rather than smear
+
+Both were learned from looking at it in game, and neither is obvious from the
+maths.
+
+**Nearest filtering, not linear.** The atlas was uploaded with `linearMag: true`
+on the reasoning that magnified normals want to be smooth. That reasoning
+belongs to a game with high-resolution art. Vintage Story is pixel art: the
+diffuse is sampled with nearest, so one texel covers a large, flat, hard-edged
+patch of screen. Filtering the *normal* linearly across that patch makes the
+lighting roll smoothly over a surface whose colour steps sharply, and the two
+disagreeing is exactly what "soft and gloopy" looks like - stone reading as wet
+clay, because the shading says curved while the texture says blocky. Nearest
+keeps one normal per texel so relief lands on the pixel grid.
+
+**Relief fades out with distance.** Nearest minification aliases harder than
+linear did, and with no mipmaps on the atlas, one screen pixel at range covers
+many texels and picks one essentially at random - which crawls as the camera
+moves. Relief is a close-up detail anyway; past a few blocks the eye reads
+silhouette and colour, not grain. `VV_DETAIL_FULL` (16 blocks) to
+`VV_DETAIL_NONE` (48) costs one `length()` and removes the aliasing problem
+rather than managing it.
+
 ## Debug views
 
 `PseudoPBR.DebugView` replaces the finished image with one layer of the material

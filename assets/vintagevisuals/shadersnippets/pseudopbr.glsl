@@ -76,6 +76,25 @@ vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)
     return normalize(vvTangentFrame(faceNormal) * vec3(xy, z));
 }
 
+// How much of the material response survives at this distance.
+//
+// The atlas is sampled with nearest filtering and carries no mipmaps, so at
+// range one screen pixel covers many texels and picks one of them essentially
+// at random - which crawls and shimmers as the camera moves. Surface relief is
+// a close-up detail anyway: past a few blocks the eye reads silhouette and
+// colour, not grain. Fading it out costs one length() and removes the whole
+// aliasing problem instead of managing it.
+//
+// Distances are in blocks, measured from the camera.
+const float VV_DETAIL_FULL = 16.0;
+const float VV_DETAIL_NONE = 48.0;
+
+float vvDetailFade(vec3 cameraRelativePos)
+{
+    float distance = length(cameraRelativePos);
+    return clamp((VV_DETAIL_NONE - distance) / (VV_DETAIL_NONE - VV_DETAIL_FULL), 0.0, 1.0);
+}
+
 // Vanilla's directional shading term, lifted from getBrightnessFromNormal so
 // the two agree on what "lit" means.
 //
@@ -104,10 +123,13 @@ float vvReliefDelta(vec3 faceNormal, vec2 materialUv)
 // chose  -  values this shader cannot see and should not guess. And a difference
 // is exactly zero where the atlas is flat, so every texture this mod failed to
 // process, and every gap in the atlas, renders precisely as vanilla.
-float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materialUv)
+float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materialUv,
+                          vec3 cameraRelativePos)
 {
     if (vv_pbrEnabled < 0.5) return vanillaBrightness;
-    return clamp(vanillaBrightness + vvReliefDelta(faceNormal, materialUv), 0.0, 1.0);
+
+    float delta = vvReliefDelta(faceNormal, materialUv) * vvDetailFade(cameraRelativePos);
+    return clamp(vanillaBrightness + delta, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +239,8 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Everything that should suppress a highlight: shadow, night, fog, water.
     float visibility = clamp(shadowBrightness, 0.0, 1.0)
                      * clamp(dayLight, 0.0, 1.0)
-                     * clamp(1.0 - fog - murkiness, 0.0, 1.0);
+                     * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+                     * vvDetailFade(cameraRelativePos);
 
     vec3 result = litColor.rgb;
 

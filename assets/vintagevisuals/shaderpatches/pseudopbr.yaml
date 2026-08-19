@@ -85,7 +85,7 @@
   filename: chunkopaque.fsh
   tokens: outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);
   content: |
-    outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, vvSurfaceBrightness(nb, normal, uv)), worldPos.xyz);
+    outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, vvSurfaceBrightness(nb, normal, uv, worldPos.xyz)), worldPos.xyz);
     outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness);
 
 # 6. Debug layer views, applied last so they replace the finished colour.
