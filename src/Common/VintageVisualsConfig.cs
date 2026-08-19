@@ -52,10 +52,20 @@ namespace VintageVisuals.Common
     {
         /// <summary>
         /// Master switch for the rendering half. False leaves the atlas build
-        /// and the reports alone — they are diagnostics and cost nothing at
-        /// runtime — and only stops the shader from perturbing normals.
+        /// and the reports alone — they are diagnostics that cost nothing at
+        /// runtime — and stops chunkopaque.fsh being patched at all, so the
+        /// world renders from vanilla source.
+        ///
+        /// Defaults to FALSE, unlike every other feature in this mod. Not
+        /// because the code is believed wrong, but because of what it costs
+        /// when it is: this is the only subsystem that patches the shader
+        /// drawing the world, and its two failures so far were a sepia screen
+        /// and missing terrain, neither of which a player could diagnose. The
+        /// other subsystems degrade to "no effect"; this one degrades to "no
+        /// world". Until it has been seen working on a real GPU, opting in is
+        /// the right default. Flip it once someone has looked.
         /// </summary>
-        public bool Enabled { get; set; } = true;
+        public bool Enabled { get; set; } = false;
 
         /// <summary>
         /// Global multiplier on the surface relief, on top of the per-material

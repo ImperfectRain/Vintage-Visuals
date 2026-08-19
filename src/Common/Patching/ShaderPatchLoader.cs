@@ -63,7 +63,28 @@ namespace VintageVisuals.Common.Patching
         /// </summary>
         public void LoadInto(ShaderPatcher patcher)
         {
+            LoadInto(patcher, null);
+        }
+
+        /// <summary>
+        /// As above, but skips any group <paramref name="groupEnabled"/> rejects.
+        ///
+        /// A disabled subsystem must not patch shaders at all — not patch them
+        /// and then decline to use them. A uniform this mod never uploads is a
+        /// safe no-op, but the GLSL around it is not: it still has to compile,
+        /// it still occupies a sampler, and if any of that goes wrong the
+        /// player loses whatever that shader draws. For chunkopaque.fsh that is
+        /// the entire world, and "turn the feature off" then has to actually
+        /// restore vanilla source rather than merely quieten the feature.
+        ///
+        /// This is the escape hatch a config flag has to be. It cost a session
+        /// of broken rendering to learn that a flag which only silences the
+        /// effect is not one.
+        /// </summary>
+        public void LoadInto(ShaderPatcher patcher, System.Func<string, bool> groupEnabled)
+        {
             var patches = new List<ShaderPatch>();
+            var skipped = new List<string>();
 
             _capi.Assets.Reload(AssetCategory.categories[PatchCategory]);
             _capi.Assets.Reload(AssetCategory.categories[SnippetCategory]);
@@ -87,6 +108,12 @@ namespace VintageVisuals.Common.Patching
                 // repeating it on every entry.
                 string defaultGroup = Path.GetFileNameWithoutExtension(asset.Name);
 
+                if (groupEnabled != null && !groupEnabled(defaultGroup))
+                {
+                    skipped.Add(defaultGroup);
+                    continue;
+                }
+
                 try
                 {
                     patches.AddRange(ParsePatchFile(asset.ToText(), defaultGroup, origin, ResolveSnippet));
@@ -101,7 +128,13 @@ namespace VintageVisuals.Common.Patching
 
             patcher.SetPatches(patches);
             _logger.Notification("[VintageVisuals] loaded " + patches.Count + " shader patch(es) from " +
-                                 assets.Count + " file(s).");
+                                 assets.Count + " file(s)." +
+                                 (skipped.Count > 0
+                                     ? " Skipped " + string.Join(", ", skipped) +
+                                       " — disabled in config, so " +
+                                       (skipped.Count == 1 ? "its" : "their") +
+                                       " target shaders stay vanilla."
+                                     : ""));
         }
 
         /// <summary>

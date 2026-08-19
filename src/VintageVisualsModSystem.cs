@@ -43,6 +43,13 @@ namespace VintageVisuals
         /// <summary>Guards the one self-inflicted shader reload, so it can never loop.</summary>
         private bool _forcedShaderReload;
 
+        /// <summary>
+        /// Whether the last shader load applied the pseudopbr group, so a
+        /// change to that flag can be turned into a shader reload rather than
+        /// silently waiting for the next one.
+        /// </summary>
+        private bool _pseudoPbrPatchesApplied;
+
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
 
@@ -78,7 +85,7 @@ namespace VintageVisuals
             if (Capi == null) return;
 
             _patchLoader = new ShaderPatchLoader(Capi, Mod.Logger, Mod.Info.ModID);
-            _patchLoader.LoadInto(ShaderPatcher);
+            _patchLoader.LoadInto(ShaderPatcher, IsPatchGroupEnabled);
         }
 
         public override void StartClientSide(ICoreClientAPI api)
@@ -140,6 +147,51 @@ namespace VintageVisuals
                 Mod.Logger.Warning("[VintageVisuals] ConfigLib bridge failed to install; falling back to " +
                     "ModConfig/vintagevisuals.json + Ctrl+V. " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Whether a patch group's GLSL should be applied at all.
+        ///
+        /// Only groups that can cost the player something they cannot switch
+        /// off are listed. ColorGrade patches unconditionally: its uniform
+        /// defaults to "disabled", and a no-op grading function on final.fsh is
+        /// harmless. PseudoPBR patches chunkopaque.fsh, which draws the world —
+        /// so if the player turns it off, the honest response is to hand the
+        /// compiler vanilla source, not patched source with the effect muted.
+        /// </summary>
+        private bool IsPatchGroupEnabled(string group)
+        {
+            if (group == PseudoPbrSubsystem.GroupName)
+            {
+                return ConfigManager.Config.PseudoPBR.Enabled;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Reloads shaders when the PseudoPBR flag has been toggled since the
+        /// last shader load.
+        ///
+        /// Every other setting in this mod is a uniform, and uniforms take
+        /// effect the moment they are uploaded. This one decides whether GLSL
+        /// is injected at all, so it needs the shaders rebuilt — otherwise
+        /// unticking the box in the GUI would appear to do nothing until the
+        /// next graphics setting change, which is exactly the wrong behaviour
+        /// for what is meant to be an escape hatch.
+        /// </summary>
+        private void ReloadShadersIfPatchGatingChanged()
+        {
+            bool wanted = ConfigManager.Config.PseudoPBR.Enabled;
+            if (wanted == _pseudoPbrPatchesApplied) return;
+
+            _pseudoPbrPatchesApplied = wanted;
+
+            Mod.Logger.Notification("[VintageVisuals] PseudoPBR.Enabled is now " + wanted +
+                "; reloading shaders so chunkopaque.fsh is rebuilt " +
+                (wanted ? "with the patch." : "from vanilla source."));
+
+            Capi.Event.RegisterCallback(_ => Capi.Shader.ReloadShaders(), 0);
         }
 
         private void RegisterSubsystems()
@@ -222,7 +274,7 @@ namespace VintageVisuals
             // first: a developer editing patch YAML expects a shader reload to
             // pick the edits up without restarting the game.
             ShaderPatcher.ResetRunState();
-            if (_patchLoader != null) _patchLoader.LoadInto(ShaderPatcher);
+            if (_patchLoader != null) _patchLoader.LoadInto(ShaderPatcher, IsPatchGroupEnabled);
 
             // GL uniform values are per-program state and are lost when the
             // program is relinked, so they must be re-uploaded — but only once
@@ -245,6 +297,8 @@ namespace VintageVisuals
 
         private void ApplyToAllSubsystems()
         {
+            ReloadShadersIfPatchGatingChanged();
+
             foreach (IVisualSubsystem subsystem in _subsystems)
             {
                 try

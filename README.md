@@ -59,7 +59,7 @@ value.
 | `AdaptiveExposure.BrightGain` | 0.25 – 4.0 | `1.0` | Exposure multiplier in full light |
 | `AdaptiveExposure.BrightenSeconds` | 0 – 60 | `4.0` | Seconds to adapt to darkness (slow, like a real eye) |
 | `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
-| `PseudoPBR.Enabled` | bool | `true` | Surface relief: derived normals shade stone, wood and gravel as textured rather than flat |
+| `PseudoPBR.Enabled` | bool | **`false`** | Surface relief. Off by default — it is the only setting that patches the shader drawing the world, and it has not been confirmed working on a GPU |
 | `PseudoPBR.NormalStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the relief. 0 is flat, 1.0 is the tuned look |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
@@ -92,7 +92,7 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
 | **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas |
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
-| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — anchors confirmed against the real 1.22.7 shader, GLSL-validated in all 48 settings combinations; never seen on screen |
+| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — **broken on a real GPU**, ships disabled; anchors confirmed and GLSL-validated, cause under investigation |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | **PBR:** specular / roughness consumed by a shader | not started |
 | Everything under Weather / Reflections | not started |
@@ -133,14 +133,18 @@ These are known now, not discovered later. Kept current as the mod grows.
 - **Color grading runs after the vanilla tonemap**, not instead of it, because
   the patch inserts at the end of `final.fsh`. Highlights already clipped by
   vanilla cannot be recovered by lowering exposure here.
-- **The PseudoPBR shader patch is the riskiest one in the mod.** It patches
-  `chunkopaque.fsh`, which draws the world. Its anchors are confirmed against
-  1.22.7 and the patched source is GLSL-validated, but a future game update that
-  rewords any of the four anchored lines disables the effect — loudly, rolling
-  back to vanilla, which is what the deliberately redundant `uv` and `normal`
-  assertion patches buy. Surface relief also needs a **single-page** block
-  texture atlas; heavily modded installs that spill onto a second page get
-  vanilla rendering and a log line saying so.
+- **Surface relief does not work yet, and ships off.** It patches
+  `chunkopaque.fsh`, which draws the world, and on a real GPU it has broken that
+  render twice — once to a sepia screen, once to missing terrain. The anchors are
+  confirmed against 1.22.7 and the patched source passes `glslangValidator` in
+  all 48 settings combinations, so the cause is something a compiler check
+  cannot see; it is being tracked down. `PseudoPBR.Enabled: false` now skips the
+  patch entirely rather than muting the effect, so the default install feeds the
+  compiler vanilla source. Everything else in the subsystem — classification,
+  the atlas, the cache, the previews — is diagnostic and unaffected.
+  Surface relief also needs a **single-page** block texture atlas; heavily
+  modded installs that spill onto a second page get vanilla rendering and a log
+  line saying so.
 - **Roughness and specular are derived but unused.** They sit in the atlas
   waiting for a lighting term, which needs a light direction the patch site does
   not currently provide. Today's effect is surface relief only.

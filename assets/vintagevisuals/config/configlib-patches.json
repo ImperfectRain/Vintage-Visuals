@@ -18,8 +18,8 @@
       },
       "pbr_enabled": {
         "ingui": "Surface relief (PBR)",
-        "comment": "Derived normal maps give stone, wood and gravel real surface relief under the game's own lighting.",
-        "default": true,
+        "comment": "Derived normal maps give stone, wood and gravel real surface relief. Off by default: this is the only setting that patches the shader drawing the world.",
+        "default": false,
         "clientSide": true,
         "weight": 20
       }
