@@ -76,6 +76,15 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   that live in the includes, so anything using e.g. `lightPosition` must anchor
   below it instead. Confirm with `EnableShaderDebugDump`, which writes the exact
   source handed to the compiler.
+- **Shipped GLSL must be plain 7-bit ASCII, comments included.** GLSL's source
+  character set is ASCII, and NVIDIA's frontend rejects the whole shader rather
+  than the character: thirteen em dashes in `pseudopbr.glsl`'s comments produced
+  `error C0000: syntax error, unexpected $end at token "<EOF>"` on
+  `chunkopaque.fsh` and took the world render with it. `glslangValidator`
+  compiled the identical file cleanly in all 48 settings combinations, so a
+  passing validator proves nothing here. `ShaderPatchLoader` now refuses
+  non-ASCII patch content at load time, and `tools/smoketest` scans the shipped
+  assets.
 - **Never declare a sampler above vanilla's.** Sampler texture units are
   assigned at LINK time from the program's active sampler list, so inserting one
   above vanilla's shifts every sampler below it. In `chunkopaque.fsh` that

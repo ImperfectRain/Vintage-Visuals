@@ -12,14 +12,14 @@
 #     shifts the ones below it by a unit when the program links. Injecting at
 #     the top of the file pushed liquidDepth off the end, which made
 #     getUnderwaterMurkiness() saturate and mixed every fragment this shader
-#     draws to waterMurkColor — in game, a world that looked transparent with
+#     draws to waterMurkColor  -  in game, a world that looked transparent with
 #     only grass tops left. The injection is therefore anchored on
 #     `uniform sampler2D liquidDepth`, the LAST sampler vanilla declares, and
 #     must stay there. It is still above main(), and still below
 #     `uniform vec3 lightPosition`, which the snippet needs.
 #
 #  3. Normal shading moved to the VERTEX shader. 1.22.7 does not call
-#     applyFogAndShadowWithNormal at all — the function is still defined but
+#     applyFogAndShadowWithNormal at all  -  the function is still defined but
 #     dead. main() reads a per-vertex `nb` varying instead, so that is the
 #     value the relief has to modulate.
 #
@@ -60,7 +60,7 @@
   content: |
     uniform vec3 lightPosition; // vintagevisuals: uniform asserted by pseudopbr.yaml
 
-# 4. Inject the sampler, the uniforms and the shading functions — after every
+# 4. Inject the sampler, the uniforms and the shading functions  -  after every
 #    vanilla sampler, and before main(). See note 2; this is not a free choice.
 - type: token
   filename: chunkopaque.fsh

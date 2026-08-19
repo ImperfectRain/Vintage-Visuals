@@ -178,6 +178,9 @@ void main(void) {
         Console.WriteLine("PseudoPBR shader patch applies and rolls back cleanly");
         PseudoPbrPatchChecks.Run(Repo, Check);
 
+        Console.WriteLine("Shipped GLSL is plain ASCII");
+        AsciiChecks.Run(Repo, Check);
+
         Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;

@@ -1,7 +1,7 @@
 // Vintage Visuals - pseudo-PBR material response
 //
 // Injected into chunkopaque.fsh by shaderpatches/pseudopbr.yaml, anchored on
-// vanilla's `uniform sampler2D liquidDepth` — the LAST sampler vanilla
+// vanilla's `uniform sampler2D liquidDepth`  -  the LAST sampler vanilla
 // declares. That position is the single most load-bearing decision in this
 // file, and it was learned the hard way.
 //
@@ -12,14 +12,14 @@
 // liquidDepth's, and liquidDepth took a unit nothing was ever bound to. A
 // liquidDepth that reads nothing makes getUnderwaterMurkiness() saturate to 1,
 // and applyUnderwaterEffects then mixes EVERYTHING this shader draws to
-// waterMurkColor. In game that looked like the world had gone transparent —
+// waterMurkColor. In game that looked like the world had gone transparent  - 
 // only grass tops survived, because they come from chunktopsoil.fsh, which
 // this mod does not patch. Same cause both times it broke; only the water
 // colour differed.
 //
 // So: declared last, after terrainTex, terrainTexLinear, shadowMapFar,
 // shadowMapNear, glow, sky and liquidDepth. Vanilla keeps units 0..6 and this
-// takes what is left. Anchoring on the last of them is what enforces it — if a
+// takes what is left. Anchoring on the last of them is what enforces it  -  if a
 // game update adds an eighth sampler below liquidDepth, the anchor still puts
 // us above it, so re-check this when the sampler list changes.
 //
@@ -28,7 +28,7 @@
 //   R,G = tangent-space normal X,Y   B = roughness   A = specular
 
 // The anchor line, pasted back. The patch REPLACES it with this whole file, so
-// dropping this would delete the sampler the underwater code depends on — the
+// dropping this would delete the sampler the underwater code depends on  -  the
 // exact failure this layout exists to prevent.
 uniform sampler2D liquidDepth;
 
@@ -44,7 +44,7 @@ uniform float vv_pbrNormalStrength;
 uniform float vv_pbrSpecularStrength;
 
 // 0 renders normally. 1..6 replace the output with one layer of the material
-// system so it can be inspected on its own — see vvDebugView.
+// system so it can be inspected on its own  -  see vvDebugView.
 uniform float vv_pbrDebugView;
 
 // Builds a tangent frame for an axis-aligned block face.
@@ -81,7 +81,7 @@ vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)
 //
 // Deliberately WITHOUT that function's second line, `nb = max(nb, normal.y *
 // 0.95)`. That term is a sky-bounce fudge stopping block tops being darker than
-// their sides, and it saturates every upward-facing surface at 0.95 — included
+// their sides, and it saturates every upward-facing surface at 0.95  -  included
 // here, floors and ground would be the one place relief could never show, which
 // is most of what a player looks at.
 float vvDirectionalShade(vec3 n)
@@ -101,7 +101,7 @@ float vvReliefDelta(vec3 faceNormal, vec2 materialUv)
 // A difference rather than a replacement, for two reasons. Vanilla computes nb
 // per VERTEX and hands it over as a varying, so its absolute value already
 // carries whatever normalShadeIntensity and minNormalShade the vertex shader
-// chose — values this shader cannot see and should not guess. And a difference
+// chose  -  values this shader cannot see and should not guess. And a difference
 // is exactly zero where the atlas is flat, so every texture this mod failed to
 // process, and every gap in the atlas, renders precisely as vanilla.
 float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materialUv)
@@ -113,8 +113,8 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
 // Specular highlight from the atlas's roughness and specular channels.
 //
 // Blinn-Phong rather than a microfacet BRDF. The inputs are derived, not
-// measured — roughness comes from local texture variance and the specular mask
-// from flood-filled colour regions — so a physically exact evaluation of
+// measured  -  roughness comes from local texture variance and the specular mask
+// from flood-filled colour regions  -  so a physically exact evaluation of
 // approximate data buys nothing a half-vector power does not, and costs a
 // square root and two divisions per fragment on every terrain pixel.
 //
@@ -133,8 +133,8 @@ vec3 vvSpecular(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos,
     vec3 n = vvPerturbNormal(normalize(faceNormal), materialUv);
     vec3 l = normalize(lightPosition);
 
-    // worldPos is camera-relative here — vanilla's own applyReflectiveEffect
-    // treats it that way — so the view vector points back from the fragment.
+    // worldPos is camera-relative here  -  vanilla's own applyReflectiveEffect
+    // treats it that way  -  so the view vector points back from the fragment.
     vec3 v = normalize(-cameraRelativePos);
     vec3 h = normalize(l + v);
 
@@ -167,7 +167,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
 
     vec4 material = texture(vv_materialTex, materialUv);
 
-    // 1: the tangent-space normal as stored, blue forced flat — the same view
+    // 1: the tangent-space normal as stored, blue forced flat  -  the same view
     // the offline preview PNG writes, so the two can be compared directly.
     if (mode == 1) return vec4(material.r, material.g, 1.0, color.a);
 
@@ -181,7 +181,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
                                           shadowBrightness, fog, murkiness), color.a);
 
     // 6: the perturbed normal in WORLD space. Unlike view 1 this shows the
-    // tangent frame doing its job — the six block faces should come out as six
+    // tangent frame doing its job  -  the six block faces should come out as six
     // flat colours, with the relief visible as variation within each.
     if (mode == 6) return vec4(vvPerturbNormal(normalize(faceNormal), materialUv) * 0.5 + 0.5, color.a);
 

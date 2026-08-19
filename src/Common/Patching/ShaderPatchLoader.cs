@@ -198,6 +198,8 @@ namespace VintageVisuals.Common.Patching
 
             string group = string.IsNullOrWhiteSpace(entry.Group) ? defaultGroup : entry.Group.Trim();
             string content = ResolveContent(entry, origin, resolveSnippet);
+
+            RejectNonAscii(content, origin);
             ShaderPatchKind kind = ParseKind(entry.Type, origin);
 
             Regex anchor = null;
@@ -241,6 +243,40 @@ namespace VintageVisuals.Common.Patching
             catch (Exception ex)
             {
                 throw new ArgumentException(origin + ": " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Refuses GLSL containing characters outside 7-bit ASCII.
+        ///
+        /// This looks pedantic and is not. GLSL's source character set is
+        /// ASCII; what a driver does with anything else is its own business,
+        /// and NVIDIA's frontend does not merely warn. A handful of em dashes
+        /// in COMMENTS made chunkopaque.fsh fail with
+        ///
+        ///     error C0000: syntax error, unexpected $end at token "&lt;EOF&gt;"
+        ///
+        /// which took out the shader that draws the world. glslangValidator
+        /// compiled the same file without complaint in all 48 settings
+        /// combinations, so the only cheap defence against the whole class is
+        /// to refuse the input.
+        ///
+        /// Failing at load time turns a driver-specific black screen into a log
+        /// line naming the file, and only costs a subsystem that was going to
+        /// be broken on that hardware anyway.
+        /// </summary>
+        private static void RejectNonAscii(string content, string origin)
+        {
+            if (content == null) return;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (content[i] <= '\u007e' || content[i] == '\n' || content[i] == '\r' || content[i] == '\t') continue;
+
+                throw new ArgumentException(origin + ": patch content contains the non-ASCII character '" +
+                    content[i] + "' (U+" + ((int)content[i]).ToString("X4") + ") at offset " + i +
+                    ". GLSL's source character set is ASCII, and some drivers reject the whole shader rather " +
+                    "than the character - even inside a comment. Use plain ASCII punctuation.");
             }
         }
 

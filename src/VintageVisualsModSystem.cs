@@ -191,6 +191,16 @@ namespace VintageVisuals
                 "; reloading shaders so chunkopaque.fsh is rebuilt " +
                 (wanted ? "with the patch." : "from vanilla source."));
 
+            // Re-derive the patch set BEFORE asking for the reload, not from
+            // inside the ReloadShader handler. The game recompiles its shaders
+            // before that event reaches us, so a gating change made there
+            // applies to the reload after the one it asked for — the log showed
+            // the compile happening, then "Skipped pseudopbr" arriving 40 lines
+            // later. One toggle then took two reloads to take effect, which is
+            // exactly the kind of off-by-one that makes an A/B test lie.
+            ShaderPatcher.ResetRunState();
+            if (_patchLoader != null) _patchLoader.LoadInto(ShaderPatcher, IsPatchGroupEnabled);
+
             Capi.Event.RegisterCallback(_ => Capi.Shader.ReloadShaders(), 0);
         }
 
