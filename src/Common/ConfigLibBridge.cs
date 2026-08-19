@@ -114,6 +114,7 @@ namespace VintageVisuals.Common
         {
             ColorGradeConfig colorGrade = _mod.ConfigManager.Config.ColorGrade;
             AdaptiveExposureConfig adaptive = _mod.ConfigManager.Config.AdaptiveExposure;
+            PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
 
             switch (code)
             {
@@ -149,6 +150,12 @@ namespace VintageVisuals.Common
                     break;
                 case "colorgrade_tonemapstrength":
                     colorGrade.TonemapStrength = tree.GetFloat("value", colorGrade.TonemapStrength);
+                    break;
+                case "pbr_enabled":
+                    pbr.Enabled = tree.GetBool("value", pbr.Enabled);
+                    break;
+                case "pbr_normalstrength":
+                    pbr.NormalStrength = tree.GetFloat("value", pbr.NormalStrength);
                     break;
                 default:
                     return false;

@@ -39,16 +39,37 @@ namespace VintageVisuals.Common
             var corrections = new List<string>();
             ColorGrade.ClampToValidRanges(corrections);
             AdaptiveExposure.ClampToValidRanges(corrections);
+            PseudoPBR.ClampToValidRanges(corrections);
             return corrections;
         }
     }
 
     /// <summary>
-    /// Phase 4 material system. Classification only so far — nothing here
-    /// changes rendering yet.
+    /// Phase 4 material system: what each block face is made of, and how that
+    /// changes the way light lands on it.
     /// </summary>
     public class PseudoPbrConfig
     {
+        /// <summary>
+        /// Master switch for the rendering half. False leaves the atlas build
+        /// and the reports alone — they are diagnostics and cost nothing at
+        /// runtime — and only stops the shader from perturbing normals.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>
+        /// Global multiplier on the surface relief, on top of the per-material
+        /// strength already baked into the atlas.
+        ///
+        /// 1.0 is the tuned look. This exists because relief is the one part of
+        /// the material system that is purely a matter of taste and cannot be
+        /// judged from a texture — some players will want log grooves obvious,
+        /// others will want the vanilla flat look back without losing the rest.
+        /// 0 flattens everything, which is not the same as Enabled=false: the
+        /// shader still samples, so it still costs what it costs.
+        /// </summary>
+        public float NormalStrength { get; set; } = 1.0f;
+
         /// <summary>
         /// Writes VintagestoryData/VintageVisuals/material-report.txt listing
         /// how every loaded block was classified.
@@ -77,6 +98,16 @@ namespace VintageVisuals.Common
         /// wood grooves read as grooves. Turn it off to save the disk write.
         /// </summary>
         public bool WriteAtlasPreview { get; set; } = true;
+
+        internal void ClampToValidRanges(List<string> corrections)
+        {
+            // Capped at 2 rather than left open. Above roughly 1.4 the
+            // reconstructed Z collapses toward zero and every face starts
+            // shading as though lit from its own edge, which reads as a
+            // rendering fault rather than as strong relief.
+            NormalStrength = ColorGradeConfig.Clamp(NormalStrength, 0.0f, 2.0f,
+                "PseudoPBR.NormalStrength", corrections);
+        }
     }
 
     /// <summary>

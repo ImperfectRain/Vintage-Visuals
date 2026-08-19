@@ -32,7 +32,7 @@ cannot load.
 | **ColorGrade** | Eye adaptation, filmic tonemap, exposure, saturation, contrast, white-balance | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
 | **Weather** | Volumetric clouds, cloud shadows, sky scattering, weather-driven fog | not implemented |
 | **Reflections** | Screen-space reflections on water | not implemented |
-| **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) (maths ported, not yet wired in) |
+| **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
 
 ## Configuration
 
@@ -59,6 +59,8 @@ value.
 | `AdaptiveExposure.BrightGain` | 0.25 – 4.0 | `1.0` | Exposure multiplier in full light |
 | `AdaptiveExposure.BrightenSeconds` | 0 – 60 | `4.0` | Seconds to adapt to darkness (slow, like a real eye) |
 | `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
+| `PseudoPBR.Enabled` | bool | `true` | Surface relief: derived normals shade stone, wood and gravel as textured rather than flat |
+| `PseudoPBR.NormalStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the relief. 0 is flat, 1.0 is the tuned look |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
 | `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
@@ -88,7 +90,9 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
 | **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
-| **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas; nothing samples it yet |
+| **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas |
+| **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
+| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — 24 checks; anchors not yet confirmed against 1.22.7 |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections / in-game PBR | not started |
 
@@ -128,6 +132,17 @@ These are known now, not discovered later. Kept current as the mod grows.
 - **Color grading runs after the vanilla tonemap**, not instead of it, because
   the patch inserts at the end of `final.fsh`. Highlights already clipped by
   vanilla cannot be recovered by lowering exposure here.
+- **The PseudoPBR shader patch is the riskiest one in the mod.** It patches
+  `chunkopaque.fsh`, which draws the world, and its anchors have not yet been
+  checked against 1.22.7's own copy — they are taken from Volumetric Shading's
+  patch set. A wrong anchor rolls the group back to vanilla and logs `CRITICAL`
+  rather than failing to compile, which is what the deliberately redundant `uv`
+  assertion patch buys. Surface relief also needs a **single-page** block
+  texture atlas; heavily modded installs that spill onto a second page get
+  vanilla rendering and a log line saying so.
+- **Roughness and specular are derived but unused.** They sit in the atlas
+  waiting for a lighting term, which needs a light direction the patch site does
+  not currently provide. Today's effect is surface relief only.
 - **Texture analysis infers detail, not identity.** Sobel edge detection reads
   *painted-on* shading as real geometry, and variance cannot distinguish "rough
   surface" from "busy pattern". Both are inherent to reading pixels. What pixels

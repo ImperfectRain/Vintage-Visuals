@@ -175,6 +175,9 @@ void main(void) {
         Console.WriteLine("PBR port agrees with the validated Python prototype");
         PbrParityChecks.Run(Repo, Check);
 
+        Console.WriteLine("PseudoPBR shader patch applies and rolls back cleanly");
+        PseudoPbrPatchChecks.Run(Repo, Check);
+
         Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;

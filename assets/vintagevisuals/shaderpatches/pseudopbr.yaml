@@ -1,0 +1,48 @@
+# Vintage Visuals - pseudo-PBR patches against vanilla chunkopaque.fsh
+#
+# Group defaults to this file's name ("pseudopbr"). Every entry below succeeds
+# or fails as one unit: if any anchor stops matching, the loader rolls
+# chunkopaque.fsh back to vanilla and this subsystem goes inert. That matters
+# more here than anywhere else in the mod - chunkopaque.fsh draws the world, so
+# a half-applied patch that fails to compile is a black screen rather than a
+# missing effect.
+#
+# ANCHOR PROVENANCE. The two token anchors below are NOT yet verified against
+# 1.22.7's own assets/game/shaders/chunkopaque.fsh. They are taken from the
+# patch set of Volumetric Shading, which has patched these same two lines
+# across several game versions, and are corroborated by the shader idioms in
+# its own chunk shaders (`uniform sampler2D terrainTex`, `in vec2 uv`,
+# world-space `normal` compared against vec3(0,1,0) for normal shading).
+# Verify them against the installed game before trusting this, per CLAUDE.md.
+# If they are wrong the failure is loud and safe - group rollback plus a
+# CRITICAL log line - which is why shipping on best evidence is reasonable
+# here and would not be if the patch could half-apply.
+
+# 1. Inject the sampler, the uniforms and the perturbation function.
+- type: start
+  filename: chunkopaque.fsh
+  snippet: pseudopbr.glsl
+
+# 2. Assert the texture coordinate varying is still called `uv`.
+#
+# Semantically a no-op, and load-bearing anyway: it is the reason patch 3 can
+# safely pass `uv` into our function. Without it, a vanilla rename would leave
+# the injected call referencing an undeclared variable, and chunkopaque.fsh
+# would fail to COMPILE - costing the player the entire world render instead of
+# just this effect. Same pattern as the outColor assertion in colorgrade.yaml.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: in vec2 uv;
+  content: |
+    in vec2 uv; // vintagevisuals: varying name asserted by pseudopbr.yaml
+
+# 3. Feed vanilla's own lighting call a perturbed normal.
+#
+# Deliberately the smallest possible intervention: no new lighting model, no
+# extra pass, no change to what the shader writes. The game already shades by
+# normal, so handing it relief-bearing normals is the whole effect.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity);
+  content: |
+    outColor = applyFogAndShadowWithNormal(texColor, fogAmount, vvPerturbNormal(normal, uv), 1, intensity);

@@ -6,8 +6,13 @@ per block.
 
 ## Status
 
-**Phase 4, classification landed.** The mod now works out what material every
-block is made of, and can report it. Nothing changes how the game renders yet.
+**Phase 4, surface relief wired to the screen.** The mod works out what material
+every block is made of, derives a material atlas from the block textures, and
+feeds it to the chunk shader so the game's own lighting shades real surface
+relief instead of flat faces.
+
+Not yet verified in game — see [Verification](#verification) below for exactly
+what that means and what is still unconfirmed.
 
 | Piece | State |
 |---|---|
@@ -18,8 +23,10 @@ block is made of, and can report it. Nothing changes how the game renders yet.
 | Derived material atlas | done, 29 checks |
 | Disk cache keyed by content fingerprint | done |
 | Preview images for inspection | done |
-| Atlas uploaded to the GPU | not started |
-| Lighting shader consumes the maps | not started |
+| Atlas uploaded to the GPU | done, level 2 (compiles) |
+| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 24 checks |
+| Specular / roughness consumed by a shader | not started — needs a light direction |
+| `chunktopsoil.fsh` (grass, dirt tops) | not started |
 | Roughness modulates SSR blur | not started (needs Phase 3) |
 
 ## The atlas
@@ -116,6 +123,52 @@ or miss. It duplicates the log on purpose. The log is the right primary sink,
 but the outputs live here, this is the folder someone opens when something
 looks wrong, and `client-main.txt` is elsewhere among thousands of unrelated
 lines — so the folder should contain its own answer.
+
+## Reaching the screen
+
+The relief effect is deliberately the smallest possible intervention in the
+render pipeline. There is **no second lighting model** and no extra pass — the
+game already shades by normal, so it is given a better normal:
+
+```glsl
+outColor = applyFogAndShadowWithNormal(texColor, fogAmount, vvPerturbNormal(normal, uv), 1, intensity);
+```
+
+That one token replacement in `chunkopaque.fsh` is the whole render-side change.
+Everything else exists to make it possible:
+
+- `MaterialAtlasTexture` uploads the derived atlas as one RGBA texture with the
+  block atlas's exact dimensions, so it samples with the same `uv`.
+- `PbrShaderBinder` is an `IRenderer` that draws nothing. It re-binds the atlas
+  and refreshes the uniforms once per frame at render order **0.35**, which is
+  the gap immediately before terrain opaque (0.37). Once-at-startup would be
+  cheaper, but texture unit bindings are global GL state that this mod does not
+  own — anything can rebind unit 6, and the failure would be silent and ugly.
+- `vvTangentFrame` builds the tangent basis. Chunk geometry carries no tangents,
+  and does not need to: every block face is axis-aligned, so one consistent
+  frame per axis is exact rather than approximate.
+
+`vv_pbrEnabled` follows the same defensive shape as `vv_enabled` in ColorGrade —
+an unset GLSL uniform reads as exactly `0`, so a failure to bind lands on the
+same branch as a deliberate disable and renders vanilla normals. The one thing
+that must never happen here is a black world: `chunkopaque.fsh` draws the
+terrain, so unlike every other patch in this mod, a failure that reached the
+GLSL compiler would cost the player everything, not one effect.
+
+### Single-page atlases only
+
+The shader samples our atlas with the diffuse's own `uv`, which works because
+both atlases share a layout. When the block atlas needs more than one page the
+game binds a different terrain texture per draw call, and `uv` alone no longer
+says which page a fragment came from — and there is nowhere left in the vertex
+format to tell us (see [Why not vertex flags](#why-not-vertex-flags)).
+
+So a multi-page atlas switches the relief off and logs why. Vanilla renders
+untouched; the report, the atlas and the previews are still produced. A 1.22.7
+install packs ~3700 block textures into a single 4096×2048 page with room to
+spare, so this is a guard for heavily modded installs, not the common case.
+Lifting it means one material atlas per page plus a hook into the chunk draw
+call to bind alongside whichever terrain page is active.
 
 ## The two sources of material data
 
@@ -262,18 +315,46 @@ it, and they carry over from the prototype unchanged:
 - **Constants were tuned on synthetic stand-ins**, not on Vintage Story's real
   textures. Re-run the sweep on real assets before shipping this.
 
-## What the atlas stage still needs to decide
+## Verification
 
-1. **Where to hook.** Texture-atlas upload time, per the plan — a Harmony patch
-   on the atlas manager. That is `VintagestoryLib` territory, so it must be
-   reflection-guarded and log loudly rather than throw, exactly like
-   `ShaderSourceInterceptor`. `ITextureAtlasAPI` does expose
-   `GetPosition(block, textureName)` and `AllocateTextureSpace`, so the mapping
-   from a block to its atlas rectangle is public API — only the upload hook is
-   internal.
-2. **Cache key.** A hash of the source texture, so the cost is paid once per
-   texture rather than once per launch.
+Per [CLAUDE.md](../../CLAUDE.md)'s ladder, honestly:
+
+| Piece | Level |
+|---|---|
+| Classification, report, atlas build, disk cache, previews | **3 (loads)** — run against a real 14,090-block registry and a real 4096×2048 atlas |
+| GPU upload and per-frame binding | **2 (compiles)** |
+| `chunkopaque.fsh` patch | **2 (compiles)** — applies and rolls back correctly against a stand-in shader, 24 smoke-test checks |
+| Relief visible in game | **not reached** |
+
+Two specific things are unconfirmed and one of them is the real risk:
+
+1. **The patch anchors have not been checked against 1.22.7's own
+   `chunkopaque.fsh`.** They come from Volumetric Shading's patch set, which has
+   tracked these same two lines across several game versions, corroborated by
+   the chunk-shader idioms it ships (`uniform sampler2D terrainTex`,
+   `in vec2 uv`, world-space `normal` compared against `vec3(0,1,0)`). If either
+   anchor is wrong the group rolls back to vanilla and logs `CRITICAL` — loud and
+   safe, which is why shipping on best evidence is defensible here and would not
+   be if the patch could half-apply. The `uv` assertion patch exists solely to
+   make that true.
+2. **Texture unit 6 is a convention, not a reservation.** If the game or another
+   mod binds something else there mid-frame, the relief samples the wrong
+   texture. Re-binding every frame before terrain draws makes this unlikely
+   rather than impossible.
+
+## What the material system still needs
+
+1. **Specular and roughness are derived, packed, cached and unused.** Consuming
+   them needs a light direction, which `chunkopaque.fsh` does not hand us at the
+   point the patch intervenes. That is the next piece of render work, and it is
+   what turns "metal trim has relief" into "metal trim is reflective".
+2. **Grass and dirt tops go through `chunktopsoil.fsh`**, a different shader with
+   its own anchors. Left for a separate change: bundling it would mean one
+   rollback takes both shaders down, and `git bisect` on broken rendering is the
+   main debugging tool here.
 3. **Region labelling cost.** `LabelColourRegions` is a scalar flood fill. Fine
-   per texture, and it will not survive a full atlas — it needs to become a
-   compute pass or a vectorised connected-components implementation before it
-   runs over every block in the game.
+   per texture; it will not survive being run over every block in the game
+   without becoming a compute pass or a vectorised connected-components
+   implementation.
+4. **No mipmaps on the material atlas.** Magnified normals are smooth, minified
+   ones alias. The fix is a mipped upload, not nearest sampling.
