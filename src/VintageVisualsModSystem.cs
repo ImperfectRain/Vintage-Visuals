@@ -220,8 +220,6 @@ namespace VintageVisuals
 
         private void OnShadersReady()
         {
-            ShaderPatcher.LogSummary();
-
             bool anyApplied = false;
             foreach (ShaderPatchGroup group in ShaderPatcher.Groups)
             {
@@ -264,7 +262,21 @@ namespace VintageVisuals
 
             for (int attempt = 1; attempt <= ApplyRetries; attempt++)
             {
-                Capi.Event.RegisterCallback(_ => ApplyToAllSubsystems(), attempt * ApplyRetryIntervalMs);
+                bool last = attempt == ApplyRetries;
+                Capi.Event.RegisterCallback(_ =>
+                {
+                    ApplyToAllSubsystems();
+
+                    // The summary is logged HERE rather than when the reload is
+                    // requested. The game recompiles its shaders after our
+                    // reload handler returns, so a summary taken at request
+                    // time always reports "loaded but not applied to any shader
+                    // yet" — which it did, 52 times in one session, for groups
+                    // that had in fact applied perfectly. A status line that is
+                    // wrong in the normal case is worse than none: it sent this
+                    // project looking for a patch failure that never happened.
+                    if (last) ShaderPatcher.LogSummary();
+                }, attempt * ApplyRetryIntervalMs);
             }
         }
 
@@ -279,11 +291,7 @@ namespace VintageVisuals
             // GL uniform values are per-program state and are lost when the
             // program is relinked, so they must be re-uploaded — but only once
             // the reload has actually finished. Next tick is soon enough.
-            Capi.Event.RegisterCallback(_ =>
-            {
-                ShaderPatcher.LogSummary();
-                ScheduleApplyRetries();
-            }, 0);
+            Capi.Event.RegisterCallback(_ => ScheduleApplyRetries(), 0);
 
             return true;
         }

@@ -105,6 +105,23 @@ adaptation settles it costs a block lookup and an early return. Easing uses
 exponential smoothing on a time constant, so speed does not change with frame
 rate — `tools/smoketest` checks that 10 Hz and 100 Hz land in the same place.
 
+## Never touching GL from a config handler
+
+`Apply()` sets a dirty flag and nothing else. Every GL call this subsystem makes
+happens in an `IRenderer` at `EnumRenderStage.Before`, guarded by
+`capi.Render.CurrentActiveShader != null`.
+
+That is not tidiness. `IShaderProgram.Use()` **throws** if a program is already
+bound — `Already a different shader (gui) in use!` — and the client does not
+recover from it: OpenGL goes to `InvalidOperation` and the world stops drawing
+correctly for the rest of the session. A ConfigLib slider fires mid-frame with
+the gui shader bound, so the very act of dragging Saturation was corrupting the
+frame. It looked like a rendering bug in a completely different subsystem, and
+cost several rounds of debugging pointed the wrong way.
+
+Eye adaptation runs on the same renderer rather than a game-tick listener, for
+the same reason, accumulating `deltaTime` so it still steps at roughly 10 Hz.
+
 ## Resolving the vanilla program
 
 `IShaderAPI.GetProgramByName("final")` returns **null**. That lookup covers

@@ -90,6 +90,15 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   them does not break the mod's effect, it breaks the frame. Count the
   `uniform sampler` lines in the dumped shader before choosing a unit, and
   prefer the top of the range OpenGL 3.3 guarantees (0..15).
+- **Never call `IShaderProgram.Use()` off the render thread.** It THROWS
+  ("Already a different shader (gui) in use!") when a program is already bound,
+  and the client does not recover — OpenGL goes to `InvalidOperation` and the
+  world stops drawing. A ConfigLib slider fires mid-frame with the gui shader
+  bound, so a config handler must never touch GL. Set a dirty flag and upload
+  from an `IRenderer` at `EnumRenderStage.Before`, guarded by
+  `capi.Render.CurrentActiveShader != null`. The same applies to creating
+  textures: `LoadOrUpdateTextureFromRgba` binds to the active unit as a side
+  effect.
 - **A config flag for a shader patch must gate the PATCH, not the effect.**
   Muting a uniform leaves the patched GLSL compiling and occupying a sampler, so
   when the damage comes from the source existing at all, the player's off switch

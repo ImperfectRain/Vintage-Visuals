@@ -56,6 +56,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedNoTexture;
         private bool _reportedMissingUniform;
         private bool _reportedActive;
+        private bool _reportedBusy;
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasTexture atlas)
         {
@@ -83,6 +84,27 @@ namespace VintageVisuals.PseudoPBR
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
             if (stage != EnumRenderStage.Opaque) return;
+
+            // IShaderProgram.Use() THROWS if a program is already bound —
+            // "Already a different shader (gui) in use!" — and the client does
+            // not recover: OpenGL goes to InvalidOperation and the world stops
+            // drawing correctly. Nothing should hold a program this early in
+            // the opaque stage, but the cost of being wrong is the whole frame,
+            // so skip and try again next frame instead.
+            if (_capi.Render.CurrentActiveShader != null)
+            {
+                if (!_reportedBusy)
+                {
+                    _reportedBusy = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: another shader program was bound at the " +
+                        "start of the opaque stage, so the material uniforms were not uploaded this frame. " +
+                        "Retrying every frame; if this line is the last word, something else is holding a " +
+                        "program for the whole frame.");
+                }
+                return;
+            }
+
+            _reportedBusy = false;
 
             if (!_enabled)
             {

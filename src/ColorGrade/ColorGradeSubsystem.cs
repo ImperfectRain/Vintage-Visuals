@@ -15,7 +15,7 @@ namespace VintageVisuals.ColorGrade
     /// is enough. That avoids putting this mod in the render hot path at all,
     /// which is the main reason it does not hook the render loop.
     /// </summary>
-    public sealed class ColorGradeSubsystem : IVisualSubsystem
+    public sealed class ColorGradeSubsystem : IVisualSubsystem, IRenderer
     {
         /// <summary>Matches the shaderpatches group name and the config section name.</summary>
         public const string GroupName = "colorgrade";
@@ -35,8 +35,25 @@ namespace VintageVisuals.ColorGrade
         private VintageVisualsModSystem _mod;
 
         private readonly AdaptiveExposure _adaptation = new AdaptiveExposure();
-        private long _tickListenerId = -1;
         private float _lastUploadedAdaptation = -1f;
+
+        /// <summary>
+        /// Set by Apply(), consumed by the next frame.
+        ///
+        /// Apply() runs from config changes, and a config change can arrive
+        /// from anywhere — including ConfigLib's GUI, mid-frame, with the gui
+        /// shader bound. Calling IShaderProgram.Use() then throws
+        /// "Already a different shader (gui) in use!" and leaves OpenGL in a
+        /// state the client never recovers from: the log fills with
+        /// InvalidOperation and the world stops drawing correctly. So config
+        /// changes only set a flag, and every GL call this subsystem makes
+        /// happens on the render thread at a stage where nothing else holds a
+        /// program.
+        /// </summary>
+        private bool _uniformsDirty = true;
+
+        /// <summary>Seconds since adaptation was last stepped, to keep the old 10Hz cost profile.</summary>
+        private float _sinceAdaptationStep;
 
         /// <summary>
         /// 100ms. Adaptation is measured in seconds, so ticking faster buys
@@ -57,7 +74,40 @@ namespace VintageVisuals.ColorGrade
         public void Initialize(VintageVisualsModSystem mod)
         {
             _mod = mod;
-            _tickListenerId = mod.Capi.Event.RegisterGameTickListener(OnAdaptationTick, AdaptationTickMs);
+
+            // EnumRenderStage.Before is the one point in the frame the game has
+            // not yet bound a program for anything. Uniform values are
+            // per-program state that survives until the program is relinked, so
+            // this does no per-frame work beyond an early return once the
+            // config has settled and adaptation has converged.
+            mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-colorgrade");
+        }
+
+        /// <summary>0 = drawn first. Nothing else should hold a shader program at this point.</summary>
+        public double RenderOrder { get { return 0.0; } }
+
+        public int RenderRange { get { return 0; } }
+
+        public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
+        {
+            if (stage != EnumRenderStage.Before) return;
+            if (_mod == null || _mod.Capi == null) return;
+
+            // Belt and braces. Use() throws rather than queues if a program is
+            // already bound, and that throw is not recoverable in practice —
+            // it has already cost this project a session of broken rendering.
+            // If anything is bound at this stage, skip the frame; the dirty
+            // flag survives and the next frame tries again.
+            if (_mod.Capi.Render.CurrentActiveShader != null) return;
+
+            _sinceAdaptationStep += deltaTime;
+            if (_sinceAdaptationStep >= AdaptationTickMs / 1000f)
+            {
+                StepAdaptation(_sinceAdaptationStep);
+                _sinceAdaptationStep = 0f;
+            }
+
+            if (_uniformsDirty) UploadUniforms();
         }
 
         /// <summary>
@@ -68,10 +118,8 @@ namespace VintageVisuals.ColorGrade
         /// value changed by enough to see — once adaptation settles, this
         /// becomes a lookup and an early return.
         /// </summary>
-        private void OnAdaptationTick(float deltaSeconds)
+        private void StepAdaptation(float deltaSeconds)
         {
-            if (_mod == null || _mod.Capi == null) return;
-
             AdaptiveExposureConfig config = _mod.ConfigManager.Config.AdaptiveExposure;
 
             float target;
@@ -93,6 +141,8 @@ namespace VintageVisuals.ColorGrade
             IShaderProgram program = ResolveFinalProgram();
             if (program == null || !program.HasUniform(AdaptationUniform)) return;
 
+            // Safe here: the caller has already established that this is the
+            // render thread at a stage with no program bound.
             program.Use();
             program.Uniform(AdaptationUniform, adaptation);
             program.Stop();
@@ -137,7 +187,17 @@ namespace VintageVisuals.ColorGrade
                    ?? _mod.Capi.Shader.GetProgramByName(TargetProgramName);
         }
 
+        /// <summary>
+        /// Records that the config changed. Deliberately does NO GL work — see
+        /// <see cref="_uniformsDirty"/> for why that distinction is not a
+        /// stylistic one.
+        /// </summary>
         public void Apply()
+        {
+            _uniformsDirty = true;
+        }
+
+        private void UploadUniforms()
         {
             if (_mod == null || _mod.Capi == null) return;
 
@@ -201,6 +261,8 @@ namespace VintageVisuals.ColorGrade
 
             program.Stop();
 
+            _uniformsDirty = false;
+
             _mod.Mod.Logger.Notification("[VintageVisuals] colorgrade: uniforms uploaded, active=" + active +
                 " (exposure=" + config.Exposure.ToString("0.##") +
                 " contrast=" + config.Contrast.ToString("0.##") +
@@ -211,14 +273,22 @@ namespace VintageVisuals.ColorGrade
 
         public void Dispose()
         {
-            if (_mod?.Capi != null && _tickListenerId >= 0)
+            if (_mod?.Capi != null)
             {
-                _mod.Capi.Event.UnregisterGameTickListener(_tickListenerId);
+                _mod.Capi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
             }
 
-            _tickListenerId = -1;
             _adaptation.Reset();
             _mod = null;
+        }
+
+        /// <summary>
+        /// Required by IRenderer. Disposal is driven by the mod system through
+        /// IVisualSubsystem.Dispose above, which is also what unregisters this.
+        /// </summary>
+        void IDisposable.Dispose()
+        {
+            Dispose();
         }
     }
 }
