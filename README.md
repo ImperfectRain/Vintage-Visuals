@@ -94,7 +94,8 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
 | **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — 24 checks; anchors not yet confirmed against 1.22.7 |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
-| Everything under Weather / Reflections / in-game PBR | not started |
+| **PBR:** specular / roughness consumed by a shader | not started |
+| Everything under Weather / Reflections | not started |
 
 Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
 
