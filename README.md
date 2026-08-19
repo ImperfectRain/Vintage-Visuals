@@ -86,7 +86,7 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | Config system wired, live-tunable values | **4 (renders)** — Ctrl+V retunes without a reload |
 | **Color grade:** exposure/saturation/contrast/temperature | **4 (renders)** — confirmed on 1.22.7 |
 | **Color grade:** basic tonemap curve | 2 (compiles), ships off — see below |
-| ConfigLib integration (optional in-game GUI) | 2 (compiles) — not yet run with ConfigLib installed |
+| ConfigLib integration (optional in-game GUI) | **3 (loads)** — F7 panel lists all 11 settings with the right labels, ranges and defaults |
 | **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
 | **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
