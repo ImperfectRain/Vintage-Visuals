@@ -22,6 +22,29 @@ namespace VintageVisuals.SmokeTest
         {
             Action<string, bool> ok = (name, condition) => check(name, condition, "");
 
+            // --- multi-page bookkeeping ---
+            //
+            // A modded install needs more than one block atlas page, and every
+            // page must be derived before ANY of them is used: a half-populated
+            // set would render one page with another page's material data,
+            // which is silent and wrong rather than merely absent.
+            var set = new MaterialAtlasSet();
+            ok("a fresh page set has no pixels", !set.HasPixels && set.PageCount == 0);
+
+            set.SetPending(1, 2, 2, new int[4]);
+            ok("setting page 1 first also allocates page 0", set.PageCount == 2);
+            ok("a set with an underived page is not ready", !set.HasPixels);
+
+            set.SetPending(0, 2, 2, new int[4]);
+            ok("the set is ready once every page is derived", set.HasPixels);
+
+            ok("an unuploaded page reports texture id 0", set.TextureIdFor(0) == 0);
+            ok("a page beyond the set reports texture id 0", set.TextureIdFor(9) == 0);
+            ok("nothing is uploaded before the render thread runs", !set.AnyUploaded);
+
+            set.Dispose();
+            ok("disposing clears the pages", set.PageCount == 0);
+
             // --- channel packing round-trips ---
             int packed = MaterialAtlasBuilder.Pack(0.0f, 0.25f, 0.5f, 1.0f);
             ok("pack writes R in the low byte", (packed & 0xFF) == 0);

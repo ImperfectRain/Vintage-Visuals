@@ -22,7 +22,8 @@ what that means and what is still unconfirmed.
 | Material report (`material-report.txt`) | done, run against 14090 blocks |
 | Derived material atlas | done, 29 checks |
 | Disk cache keyed by content fingerprint | done |
-| Preview images for inspection | done |
+| Preview images for inspection | done, one set per atlas page |
+| Multi-page block atlases | done, level 2 (compiles) |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
 | `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 49 checks |
 | Specular from the roughness and specular channels | done, level 2 (compiles) |

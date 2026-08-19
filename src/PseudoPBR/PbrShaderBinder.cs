@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Vintagestory.API.Client;
 
 namespace VintageVisuals.PseudoPBR
@@ -35,7 +37,8 @@ namespace VintageVisuals.PseudoPBR
         public const string DebugViewUniform = "vv_pbrDebugView";
 
         private readonly ICoreClientAPI _capi;
-        private readonly MaterialAtlasTexture _atlas;
+        private readonly MaterialAtlasSet _atlas;
+        private readonly Func<Dictionary<int, int>> _buildPageMap;
 
         private bool _enabled;
         private float _normalStrength = 1f;
@@ -58,10 +61,11 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedActive;
         private bool _reportedBusy;
 
-        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasTexture atlas)
+        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas, Func<Dictionary<int, int>> buildPageMap)
         {
             _capi = capi;
             _atlas = atlas;
+            _buildPageMap = buildPageMap;
         }
 
         public double RenderOrder { get { return BindBeforeTerrainOpaque; } }
@@ -143,6 +147,12 @@ namespace VintageVisuals.PseudoPBR
 
             _reportedNoTexture = false;
 
+            // Republished every frame rather than cached. The game recreates
+            // its atlas textures on reload and their ids change with them, and
+            // a stale map is a page rendering with another page's material
+            // data - silent and wrong, the worst of the two failure modes.
+            TerrainTextureBindInterceptor.SetPages(_buildPageMap());
+
             IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
 
             // HasUniform is the ground truth for "did our GLSL reach the GPU",
@@ -166,7 +176,11 @@ namespace VintageVisuals.PseudoPBR
             _reportedMissingUniform = false;
 
             program.Use();
-            program.BindTexture2D(SamplerUniform, _atlas.TextureId, MaterialAtlasTexture.TextureUnit);
+
+            // Page 0 as the default. The bind hook swaps in the right page as
+            // vanilla selects it, but on a single-page atlas there is nothing
+            // to swap and this is the whole binding.
+            program.BindTexture2D(SamplerUniform, _atlas.TextureIdFor(0), MaterialAtlasTexture.TextureUnit);
             program.Uniform(EnabledUniform, 1f);
             program.Uniform(NormalStrengthUniform, _normalStrength);
             program.Uniform(SpecularStrengthUniform, _specularStrength);
@@ -178,8 +192,9 @@ namespace VintageVisuals.PseudoPBR
             if (!_reportedActive)
             {
                 _reportedActive = true;
-                _capi.Logger.Notification("[VintageVisuals] pseudopbr: surface relief active — atlas texture " +
-                    _atlas.TextureId + " bound at unit " + MaterialAtlasTexture.TextureUnit + ", uniforms uploading.");
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: surface relief active - " +
+                    _atlas.PageCount + " atlas page(s) on the GPU, bound at unit " +
+                    MaterialAtlasTexture.TextureUnit + ", uniforms uploading.");
             }
         }
 
@@ -208,7 +223,9 @@ namespace VintageVisuals.PseudoPBR
                 _programThinksEnabled = false;
             }
 
-            if (_atlas.IsUploaded)
+            TerrainTextureBindInterceptor.SetPages(null);
+
+            if (_atlas.AnyUploaded)
             {
                 _atlas.Release();
                 _capi.Logger.Notification("[VintageVisuals] pseudopbr: disabled — material atlas released from " +

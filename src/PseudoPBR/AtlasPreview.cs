@@ -31,11 +31,21 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Writes normal, roughness and specular views side by side.</summary>
         public static string[] WriteAll(string directory, int width, int height, int[] pixels)
         {
+            return WriteAll(directory, width, height, pixels, "");
+        }
+
+        /// <summary>
+        /// As above, with a filename suffix distinguishing atlas pages. Page 0
+        /// passes an empty suffix and keeps the original names, so the images
+        /// the docs refer to stay where they were.
+        /// </summary>
+        public static string[] WriteAll(string directory, int width, int height, int[] pixels, string suffix)
+        {
             Directory.CreateDirectory(directory);
 
-            string normalPath = Path.Combine(directory, "material-atlas-normal.png");
-            string roughnessPath = Path.Combine(directory, "material-atlas-roughness.png");
-            string specularPath = Path.Combine(directory, "material-atlas-specular.png");
+            string normalPath = Path.Combine(directory, "material-atlas-normal" + suffix + ".png");
+            string roughnessPath = Path.Combine(directory, "material-atlas-roughness" + suffix + ".png");
+            string specularPath = Path.Combine(directory, "material-atlas-specular" + suffix + ".png");
 
             WritePng(normalPath, width, height, pixels, ChannelView.Normal);
             WritePng(roughnessPath, width, height, pixels, ChannelView.Roughness);

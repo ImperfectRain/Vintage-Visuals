@@ -22,7 +22,10 @@ namespace VintageVisuals
     /// </summary>
     public class VintageVisualsModSystem : ModSystem
     {
-        private const string HarmonyId = "com.imperfectrain.vintagevisuals";
+        private const string HarmonyIdValue = "com.imperfectrain.vintagevisuals";
+
+        /// <summary>Shared so subsystems installing their own hooks stay under one id to unpatch.</summary>
+        public string HarmonyId { get { return HarmonyIdValue; } }
         private const string ReloadHotkeyCode = "vintagevisuals_reloadconfig";
 
         public ICoreClientAPI Capi { get; private set; }
@@ -90,7 +93,7 @@ namespace VintageVisuals
 
         public override void StartClientSide(ICoreClientAPI api)
         {
-            _interceptor = new ShaderSourceInterceptor(HarmonyId, ShaderPatcher, Mod.Logger);
+            _interceptor = new ShaderSourceInterceptor(HarmonyIdValue, ShaderPatcher, Mod.Logger);
             _interceptor.SetShaderDumpEnabled(ConfigManager.Config.EnableShaderDebugDump);
             ShaderPatchingAvailable = _interceptor.Install();
 

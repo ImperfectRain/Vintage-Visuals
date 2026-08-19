@@ -138,16 +138,17 @@ These are known now, not discovered later. Kept current as the mod grows.
   vanilla cannot be recovered by lowering exposure here.
 - **The material system ships switched off**, pending one look on a real GPU.
   It patches `chunkopaque.fsh`, which draws the world, and it broke that render
-  twice before the cause was found: declaring a sampler above vanilla's shifted
-  their link-time texture units, pushing `liquidDepth` off the end and mixing
-  every terrain fragment to the water murk colour. Fixed by declaring ours after
-  all seven of vanilla's, with a test pinning the order — but link-time unit
-  assignment happens in the driver, so no check short of running it proves it.
+  repeatedly before the cause was found: non-ASCII characters in GLSL comments,
+  which NVIDIA's driver rejects outright (`unexpected $end`) while
+  `glslangValidator` compiles them without complaint. Guarded now at both load
+  time and in the test suite. Several other real faults were fixed on the way
+  there — sampler declaration order, texture-unit collisions, GL calls from
+  config handlers — none of which were the one causing the symptom.
   Set `PseudoPBR.Enabled: true` (or tick it on F7) to try it; with it off the
   patch is skipped entirely and the compiler gets vanilla source.
-  Surface relief also needs a **single-page** block texture atlas; heavily
-  modded installs that spill onto a second page get vanilla rendering and a log
-  line saying so.
+  Multi-page block atlases are supported via a Harmony hook on the moment
+  vanilla selects an atlas page; if that hook cannot be installed, a multi-page
+  atlas falls back to vanilla rendering with a log line saying so.
 - **Roughness and specular are derived but unused.** They sit in the atlas
   waiting for a lighting term, which needs a light direction the patch site does
   not currently provide. Today's effect is surface relief only.
