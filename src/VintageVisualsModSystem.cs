@@ -47,11 +47,11 @@ namespace VintageVisuals
         private bool _forcedShaderReload;
 
         /// <summary>
-        /// Whether the last shader load applied the pseudopbr group, so a
-        /// change to that flag can be turned into a shader reload rather than
-        /// silently waiting for the next one.
+        /// The gating flags as of the last shader load, so a change to any of
+        /// them becomes a shader reload rather than silently waiting for the
+        /// next one.
         /// </summary>
-        private bool _pseudoPbrPatchesApplied;
+        private string _appliedGating;
 
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
@@ -155,12 +155,17 @@ namespace VintageVisuals
         /// <summary>
         /// Whether a patch group's GLSL should be applied at all.
         ///
-        /// Only groups that can cost the player something they cannot switch
-        /// off are listed. ColorGrade patches unconditionally: its uniform
-        /// defaults to "disabled", and a no-op grading function on final.fsh is
-        /// harmless. PseudoPBR patches chunkopaque.fsh, which draws the world —
-        /// so if the player turns it off, the honest response is to hand the
-        /// compiler vanilla source, not patched source with the effect muted.
+        /// Every group is gated on its subsystem's own flag. "Off" has to mean
+        /// the compiler gets vanilla source, not patched source with the effect
+        /// muted: a muted patch still has to compile, still occupies a sampler,
+        /// and still costs the player whatever that shader draws if anything
+        /// goes wrong.
+        ///
+        /// It also makes the mod fully inert without uninstalling it, which is
+        /// what lets someone produce a clean EnableShaderDebugDump of the
+        /// game's own shaders. Those dumps are how every patch here is
+        /// verified, and a dump taken with the mod half on contains the mod's
+        /// own injections, which is exactly as useless as it sounds.
         /// </summary>
         private bool IsPatchGroupEnabled(string group)
         {
@@ -169,7 +174,19 @@ namespace VintageVisuals
                 return ConfigManager.Config.PseudoPBR.Enabled;
             }
 
+            if (group == ColorGradeSubsystem.GroupName)
+            {
+                return ConfigManager.Config.ColorGrade.Enabled;
+            }
+
             return true;
+        }
+
+        /// <summary>The gating flags as one value, so a change to any of them is one comparison.</summary>
+        private string PatchGatingSignature()
+        {
+            return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
+                   (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-");
         }
 
         /// <summary>
@@ -185,14 +202,16 @@ namespace VintageVisuals
         /// </summary>
         private void ReloadShadersIfPatchGatingChanged()
         {
-            bool wanted = ConfigManager.Config.PseudoPBR.Enabled;
-            if (wanted == _pseudoPbrPatchesApplied) return;
+            string wanted = PatchGatingSignature();
+            if (_appliedGating != null && wanted == _appliedGating) return;
 
-            _pseudoPbrPatchesApplied = wanted;
+            bool first = _appliedGating == null;
+            _appliedGating = wanted;
+            if (first) return;
 
-            Mod.Logger.Notification("[VintageVisuals] PseudoPBR.Enabled is now " + wanted +
-                "; reloading shaders so chunkopaque.fsh is rebuilt " +
-                (wanted ? "with the patch." : "from vanilla source."));
+            Mod.Logger.Notification("[VintageVisuals] a subsystem was switched on or off (" + wanted +
+                "); reloading shaders so each target is rebuilt either with its patch or from vanilla " +
+                "source.");
 
             // Re-derive the patch set BEFORE asking for the reload, not from
             // inside the ReloadShader handler. The game recompiles its shaders

@@ -28,7 +28,8 @@ Copy or symlink `bin/Debug/Mods/vintagevisuals/` into your VintagestoryData
 `Mods/` folder to test.
 
 ```sh
-dotnet run --project tools/smoketest   # patch engine checks, no game needed
+dotnet run --project tools/smoketest     # patch engine checks, no game needed
+dotnet run --project tools/verifypatches # patches vs the game's OWN shaders
 ```
 
 That drives the compiled patch engine against the real patch YAML: parsing,
@@ -41,6 +42,27 @@ The offline PBR tool is a separate Python program, not part of the build:
 python3 tools/pbrgen/pbrgen.py <in.png> --outdir out/    # generate maps
 python3 -m pytest tools/pbrgen/                          # its tests DO run in CI-less envs
 ```
+
+## Reference shaders
+
+`reference/game-shaders/` holds the game's own shaders as
+`EnableShaderDebugDump` writes them. **Gitignored and never committed** - they
+are Vintage Story's assets, not this project's.
+
+`tools/verifypatches` applies every shipped patch group to them and compiles the
+result in all 48 combinations of the game's prefix defines. That is a different
+question from `tools/smoketest`, which checks the engine against stand-in
+shaders: an anchor can match a hand-written fixture perfectly and miss the real
+file because the game reworded a line. Run it before claiming level 2 on
+anything touching GLSL.
+
+To refresh the dumps, **switch every subsystem off first**
+(`ColorGrade.Enabled` and `PseudoPBR.Enabled` both false), then set
+`EnableShaderDebugDump`, load a world, and copy `VintagestoryData/ShaderDebug/`
+over the directory. Every group is gated on its subsystem's flag precisely so
+this produces clean vanilla source - a dump taken with the mod half on contains
+the mod's own injections, and patching that reports success while proving
+nothing. `verifypatches` refuses such a file by name rather than trusting it.
 
 ## Where things live
 

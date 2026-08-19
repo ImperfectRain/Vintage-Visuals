@@ -28,3 +28,9 @@ __pycache__/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# The game's own shaders, dumped with EnableShaderDebugDump and kept locally so
+# patches can be verified against the real source. Never committed: they are
+# Vintage Story's assets, not this project's, and redistributing them here would
+# be shipping someone else's game files. See CLAUDE.md for how to refresh them.
+reference/game-shaders/
