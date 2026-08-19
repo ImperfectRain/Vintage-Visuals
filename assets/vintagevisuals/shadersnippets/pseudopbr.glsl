@@ -54,6 +54,14 @@ uniform float vv_pbrDebugView;
 // one place and fail in the other. Ours exists wherever we put it.
 uniform float vv_pbrDayLight;
 
+// Look controls. Each is a uniform rather than a rebuild because the whole
+// point is that taste is argued with at runtime, not compiled in.
+uniform float vv_pbrRoughnessBias;   // matte <-> gloss, applied to every material
+uniform float vv_pbrMetalResponse;   // how metallic the reflective materials read
+uniform float vv_pbrAmbient;         // sky/environment reflection strength
+uniform float vv_pbrSpecularAA;      // geometric specular antialiasing strength
+uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
+
 // Builds a tangent frame for an axis-aligned block face.
 //
 // A proper renderer would take tangents from the mesh. Chunk geometry carries
@@ -116,14 +124,15 @@ vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)
 // colour, not grain. Fading it out costs one length() and removes the whole
 // aliasing problem instead of managing it.
 //
-// Distances are in blocks, measured from the camera.
-const float VV_DETAIL_FULL = 16.0;
-const float VV_DETAIL_NONE = 48.0;
-
+// Distances are in blocks, measured from the camera. Full detail is held to a
+// third of the fade distance, so one slider moves both ends together and the
+// ramp keeps its shape.
 float vvDetailFade(vec3 cameraRelativePos)
 {
-    float distance = length(cameraRelativePos);
-    return clamp((VV_DETAIL_NONE - distance) / (VV_DETAIL_NONE - VV_DETAIL_FULL), 0.0, 1.0);
+    float far = max(4.0, vv_pbrDetailDistance);
+    float near = far * 0.33;
+
+    return clamp((far - length(cameraRelativePos)) / max(1.0, far - near), 0.0, 1.0);
 }
 
 // Vanilla's directional shading term, lifted from getBrightnessFromNormal so
@@ -239,11 +248,66 @@ vec3 vvFresnelSchlick(float VdotH, vec3 f0)
 // not a cleverer curve.
 vec3 vvReflectanceF0(vec3 albedo, float specularMask)
 {
-    return mix(vec3(0.04), albedo, specularMask * specularMask);
+    return mix(vec3(0.04), albedo, specularMask * specularMask * clamp(vv_pbrMetalResponse, 0.0, 1.0));
+}
+
+// Geometric specular antialiasing, after Kaplanyan et al. 2016 and the
+// simplified kernel of Tokuyoshi and Kaplanyan 2019.
+//
+// This is the fix for sparkle, and it is aimed squarely at what this mod does
+// to a surface. The normals here are DERIVED from texture detail, so they are
+// far higher frequency than a hand-authored map - and a normal that changes
+// faster than one screen pixel makes the specular lobe flicker as the camera
+// moves, because each pixel samples a different microfacet orientation every
+// frame. Rough stone with a tight highlight is exactly the worst case.
+//
+// The standard answer is not to smooth the normal - that loses the detail the
+// mod exists to add - but to widen the lobe by however much the normal varies
+// inside the pixel, measured from its screen-space derivative. A surface whose
+// normals scatter within one pixel IS rougher at that scale; this makes the
+// shading model agree with that.
+//
+// Kernel clamped because the derivative estimate degrades badly at grazing
+// angles and silhouettes, which is the known weakness of the screen-space form.
+const float VV_SPECULAR_AA_VARIANCE = 0.25;
+const float VV_SPECULAR_AA_CLAMP = 0.18;
+
+float vvFilteredRoughness(float roughness, vec3 n)
+{
+    if (vv_pbrSpecularAA < 0.001) return roughness;
+
+    vec3 dndx = dFdx(n);
+    vec3 dndy = dFdy(n);
+
+    float variance = VV_SPECULAR_AA_VARIANCE * (dot(dndx, dndx) + dot(dndy, dndy));
+    float kernel = min(2.0 * variance * vv_pbrSpecularAA, VV_SPECULAR_AA_CLAMP);
+
+    // Widening happens in alpha (roughness squared), which is the space the
+    // NDF actually integrates over - adding to roughness directly would widen
+    // smooth surfaces far more than rough ones.
+    return clamp(sqrt(roughness * roughness + kernel), 0.0, 1.0);
+}
+
+// Ambient specular from the sky.
+//
+// Without this, a metal block in shade or indoors has no highlight at all and
+// reads as dark plastic, because the only light this shader knows about is the
+// sun. There is no reflection probe to sample, so vanilla's own fog colour
+// stands in for the sky - it is already the colour the horizon is being blended
+// toward, which makes it a better environment estimate than any constant.
+//
+// Schlick with a roughness-aware ceiling (Karis): a rough surface must not get
+// a mirror-bright rim, which is what plain Fresnel would give it.
+vec3 vvAmbientSpecular(vec3 f0, float roughness, float ndotv, vec3 environment)
+{
+    vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - ndotv, 0.0, 1.0), 5.0);
+
+    return environment * fresnel * max(0.0, vv_pbrAmbient);
 }
 
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
-                vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness)
+                vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness,
+                vec3 environment)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
 
@@ -252,10 +316,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Floored rather than clamped to 0: a perfectly smooth surface makes the
     // GGX denominator collapse to a single pixel-wide highlight that aliases
     // into sparkle as the camera moves.
-    float roughness = clamp(material.b, 0.04, 1.0);
+    float roughness = clamp(material.b + vv_pbrRoughnessBias, 0.04, 1.0);
     float specularMask = clamp(material.a, 0.0, 1.0);
 
-    vec3 n = vvPerturbNormal(normalize(faceNormal), materialUv);
+    // The same normal the relief uses, so the highlight sits on the surface the
+    // player can see rather than on one the shading invented.
+    vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
     vec3 l = normalize(lightPosition);
 
     // worldPos is camera-relative here - vanilla's own applyReflectiveEffect
@@ -267,6 +333,11 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     float ndotv = max(dot(n, v), 1e-4);
     float ndoth = max(dot(n, h), 0.0);
     float vdoth = max(dot(v, h), 0.0);
+
+    // Widened by however much the normal varies inside this pixel. Everything
+    // downstream uses the filtered value, so the lobe, the geometry term and
+    // the ambient ceiling all agree on how rough the surface is at this scale.
+    roughness = vvFilteredRoughness(roughness, n);
 
     vec3 f0 = vvReflectanceF0(albedo, specularMask);
     vec3 fresnel = vvFresnelSchlick(vdoth, f0);
@@ -298,6 +369,14 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 
     result += specular * ndotl * visibility * vv_pbrSpecularStrength;
 
+    // Ambient is deliberately NOT multiplied by the shadow map: sky light
+    // reaches surfaces the sun does not, and killing it in shadow is what makes
+    // metal in a doorway look like painted wood. Daylight and fog still apply.
+    result += vvAmbientSpecular(f0, roughness, ndotv, environment)
+            * clamp(vv_pbrDayLight, 0.0, 1.0)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * vv_pbrSpecularStrength;
+
     return vec4(result, litColor.a);
 }
 
@@ -309,7 +388,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 // sampler problems: if view 1 shows block textures instead of flat lavender,
 // vv_materialTex is not reading the atlas at all.
 vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos,
-                 float shadowBrightness, float fog, float murkiness)
+                 float shadowBrightness, float fog, float murkiness, vec3 environment)
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode <= 0) return color;
@@ -330,7 +409,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     if (mode == 5)
     {
         vec4 lobe = vvApplyPbr(vec4(0.0, 0.0, 0.0, color.a), vec3(1.0), faceNormal, materialUv,
-                               cameraRelativePos, shadowBrightness, fog, murkiness);
+                               cameraRelativePos, shadowBrightness, fog, murkiness, environment);
         return vec4(lobe.rgb, color.a);
     }
 
@@ -343,6 +422,17 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // surface means the shader is treating it as metal - the fastest way to see
     // whether the specular-mask stand-in for metalness is behaving.
     if (mode == 7) return vec4(vvReflectanceF0(color.rgb, material.a), color.a);
+
+    // 8: the roughness the shading model actually uses - the stored value plus
+    // the bias slider plus whatever specular antialiasing widened it by. Where
+    // this is much brighter than view 2, the surface was sparkling and is now
+    // being held down.
+    if (mode == 8)
+    {
+        float shaded = vvFilteredRoughness(clamp(material.b + vv_pbrRoughnessBias, 0.04, 1.0),
+                                           vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos));
+        return vec4(vec3(shaded), color.a);
+    }
 
     return color;
 }

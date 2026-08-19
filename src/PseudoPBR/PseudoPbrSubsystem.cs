@@ -132,7 +132,7 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
-            _binder.SetState(active, config.NormalStrength, config.SpecularStrength, config.DebugView);
+            _binder.SetState(active, config);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

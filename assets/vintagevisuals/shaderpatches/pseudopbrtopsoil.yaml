@@ -36,6 +36,15 @@
   content: |
     in vec3 normal; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
 
+# 2b. Assert `rgbaFog`, which stands in for the sky in the ambient specular
+# term. Vanilla blends the horizon toward it, which makes it a better
+# environment estimate than any constant this mod could pick.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: in vec4 rgbaFog;
+  content: |
+    in vec4 rgbaFog; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
+
 # 3. Assert `lightPosition`, which the injected shading functions read.
 - type: token
   filename: chunktopsoil.fsh
@@ -68,12 +77,12 @@
     vec3 vvAlbedo = outColor.rgb;
     float vvShadow = getBrightnessFromShadowMap();
     outColor = applyFogAndShadowWithNormal(outColor, clamp(fogAmount - 50*murkiness, 0, 1), vvSurfaceNormal(normal, uv, worldPos.xyz), 1, intensity, worldPos.xyz);
-    outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness);
+    outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb);
 
 # 6. Debug layer views, applied last so they replace the finished colour.
 - type: token
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
-    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0);
+    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0, rgbaFog.rgb);
     outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);

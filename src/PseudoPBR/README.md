@@ -284,6 +284,67 @@ silhouette and colour, not grain. `VV_DETAIL_FULL` (16 blocks) to
 `VV_DETAIL_NONE` (48) costs one `length()` and removes the aliasing problem
 rather than managing it.
 
+## Adjusting the look
+
+Seven live uniforms, no rebuild. They fall into three groups by what they are
+actually for.
+
+| Slider | Range | Default | For |
+|---|---|---|---|
+| Surface relief strength | 0 – 2 | 1.0 | taste |
+| Roughness bias | -0.5 – 0.5 | 0.0 | style |
+| Metal response | 0 – 1 | 1.0 | style |
+| Specular strength | 0 – 2 | 1.0 | taste |
+| Sky reflection | 0 – 2 | 0.35 | realism |
+| Specular antialiasing | 0 – 2 | 1.0 | correctness |
+| Detail distance | 4 – 192 | 48 | performance/quality |
+
+**Roughness bias** is the strongest single style control, because roughness is
+what separates a look that reads as *wet* from one that reads as *dry* — and
+where that line sits is taste, not physics.
+
+**Metal response** dials the whole metalness stand-in. At 0 every surface is a
+dielectric with a white highlight; at 1 metals tint their highlight by their own
+albedo. A coloured specular is one of the strongest "modern renderer" cues, so
+turning it down is the fastest route to a flatter, more stylised image.
+
+**Sky reflection** is the cheapest single step toward realism here. Without it
+the sun is the only light this shader knows about, so a metal block in shade or
+indoors has no highlight at all and reads as dark plastic. There is no
+reflection probe to sample, so vanilla's own fog colour stands in — it is
+already the colour the horizon is being blended toward, which makes it a better
+environment estimate than any constant. It is deliberately **not** multiplied by
+the shadow map: sky light reaches surfaces the sun does not, and killing it in
+shadow is what makes metal in a doorway look like painted wood.
+
+### Specular antialiasing
+
+Not taste — this one is closer to a correctness fix, and it exists because of
+what this mod does to a surface.
+
+The normals here are *derived from texture detail*, so they carry far higher
+frequencies than a hand-authored map. A normal that changes faster than one
+screen pixel makes the specular lobe flicker as the camera moves, because each
+pixel samples a different microfacet orientation every frame. Rough stone with a
+tight highlight is the worst case, and it is exactly the "rocks look shiny and
+sparkly" complaint.
+
+The standard answer is **not** to smooth the normal — that discards the detail
+the mod exists to add — but to widen the lobe by however much the normal varies
+inside the pixel, measured from its screen-space derivative. A surface whose
+normals scatter within one pixel genuinely *is* rougher at that scale; this
+makes the shading model agree with that. Following Kaplanyan et al. (2016) and
+the simplified kernel of Tokuyoshi and Kaplanyan (2019), with the kernel clamped
+because the screen-space derivative estimate degrades badly at grazing angles
+and silhouettes — the known weakness of this form.
+
+The widening happens in *alpha* (roughness squared), which is the space the NDF
+integrates over; adding to roughness directly would widen smooth surfaces far
+more than rough ones.
+
+Debug view 8 shows the roughness the model actually uses. Where it is much
+brighter than view 2, a surface was sparkling and is now being held down.
+
 ## Debug views
 
 `PseudoPBR.DebugView` replaces the finished image with one layer of the material
@@ -300,6 +361,7 @@ system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slide
 | 5 | specular highlight alone | Where highlights land, without albedo hiding them |
 | 6 | perturbed normal in world space | The six block faces should read as six flat colours, with relief as variation inside each |
 | 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
+| 8 | roughness as shaded | Stored roughness plus bias plus specular antialiasing. Brighter than view 2 means aliasing is being suppressed there |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is
@@ -577,6 +639,26 @@ Two lessons, both now in the code:
   kept occupying the unit. At the exact moment the config flag was the player's
   only escape from a corrupted frame, it did nothing and only a restart helped.
   Whatever else a renderer does, "off" has to mean it touches no shared state.
+
+## Known weakness: albedo is not height
+
+The normal pass runs a Sobel over the texture's luminance, which assumes darker
+means lower — the "dark is deep" heuristic. It is the standard way to get a
+normal map out of pixel art and it is wrong in a specific, visible way: a dark
+*marking* on a flat surface becomes a dent, and a light one becomes a bulge.
+Painted mortar lines get real depth; a dark mineral fleck in stone becomes a
+pit.
+
+This is inherent to reading albedo as height, not a bug in the implementation,
+and it is why relief on busy textures reads as noise rather than structure. The
+fix is to separate local contrast from the albedo level before the gradient
+pass — subtracting a local mean so only *relative* variation contributes, which
+the pipeline already computes for the roughness pass and could reuse.
+
+That change belongs to `tools/pbrgen` first: it is the reference implementation,
+its constants were tuned against measured output, and `tools/smoketest` asserts
+the C# port agrees with it texel for texel. Changing one without the other is
+the one failure mode that would be silent.
 
 ## What the material system still needs
 

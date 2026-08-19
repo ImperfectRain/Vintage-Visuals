@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
+using VintageVisuals.Common;
 
 namespace VintageVisuals.PseudoPBR
 {
@@ -36,6 +37,11 @@ namespace VintageVisuals.PseudoPBR
         public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
         public const string DebugViewUniform = "vv_pbrDebugView";
         public const string DayLightUniform = "vv_pbrDayLight";
+        public const string RoughnessBiasUniform = "vv_pbrRoughnessBias";
+        public const string MetalResponseUniform = "vv_pbrMetalResponse";
+        public const string AmbientUniform = "vv_pbrAmbient";
+        public const string SpecularAaUniform = "vv_pbrSpecularAA";
+        public const string DetailDistanceUniform = "vv_pbrDetailDistance";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -57,6 +63,7 @@ namespace VintageVisuals.PseudoPBR
         private float _normalStrength = 1f;
         private float _specularStrength = 1f;
         private float _debugView;
+        private PseudoPbrConfig _look = new PseudoPbrConfig();
 
         /// <summary>
         /// Set while the program still believes the effect is on, so switching
@@ -90,12 +97,13 @@ namespace VintageVisuals.PseudoPBR
         /// deliberately does no GL work of its own — the config path is not
         /// guaranteed to be a thread with a GL context.
         /// </summary>
-        public void SetState(bool enabled, float normalStrength, float specularStrength, float debugView)
+        public void SetState(bool enabled, PseudoPbrConfig look)
         {
             _enabled = enabled;
-            _normalStrength = normalStrength;
-            _specularStrength = specularStrength;
-            _debugView = debugView;
+            _normalStrength = look.NormalStrength;
+            _specularStrength = look.SpecularStrength;
+            _debugView = look.DebugView;
+            _look = look;
         }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)

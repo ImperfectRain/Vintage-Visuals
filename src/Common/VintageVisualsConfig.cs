@@ -90,6 +90,60 @@ namespace VintageVisuals.Common
         public float SpecularStrength { get; set; } = 1.0f;
 
         /// <summary>
+        /// Shifts every material's roughness. Negative is glossier, positive is
+        /// more matte.
+        ///
+        /// The single most useful control for style, because roughness is what
+        /// separates a look that reads as "wet" from one that reads as "dry" -
+        /// and where that line sits is taste, not physics.
+        /// </summary>
+        public float RoughnessBias { get; set; } = 0.0f;
+
+        /// <summary>
+        /// How metallic the reflective materials read. 0 makes every surface a
+        /// dielectric with a white highlight; 1 lets metals tint their highlight
+        /// by their own albedo, which is what makes copper look like copper.
+        ///
+        /// Worth turning down for a flatter, more stylised look, since a
+        /// coloured specular is one of the strongest "modern renderer" cues.
+        /// </summary>
+        public float MetalResponse { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Strength of the sky reflection, using vanilla's fog colour as the
+        /// environment.
+        ///
+        /// Without it, the sun is the only light this shader knows about, so a
+        /// metal block in shade or indoors has no highlight at all and reads as
+        /// dark plastic. It is the cheapest single step toward realism here,
+        /// and turning it off is the cheapest step toward a flat look.
+        /// </summary>
+        public float AmbientSpecular { get; set; } = 0.35f;
+
+        /// <summary>
+        /// Geometric specular antialiasing strength (Kaplanyan et al. 2016;
+        /// Tokuyoshi and Kaplanyan 2019).
+        ///
+        /// Defaults to full, and should normally stay there. Derived normals
+        /// carry far higher frequencies than a hand-authored map, so without
+        /// this a rough surface with a tight highlight sparkles as the camera
+        /// moves. Exposed because it is a real trade-off - it widens highlights
+        /// slightly - and because being able to turn it off is how anyone
+        /// confirms it is doing something.
+        /// </summary>
+        public float SpecularAntiAliasing { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Distance in blocks at which surface relief has faded to nothing.
+        /// Full strength is held to a third of it.
+        ///
+        /// Higher costs nothing in frame time but shows more aliasing, since
+        /// the material atlas carries no mipmaps and one screen pixel covers
+        /// many texels at range.
+        /// </summary>
+        public float DetailDistance { get; set; } = 48.0f;
+
+        /// <summary>
         /// Renders one layer of the material system on its own instead of the
         /// finished image. 0 renders normally.
         ///
@@ -100,6 +154,8 @@ namespace VintageVisuals.Common
         ///   5  specular highlight on its own
         ///   6  perturbed normal in world space
         ///   7  reflectance at normal incidence (grey = dielectric, coloured = metal)
+        ///   8  the roughness the shading model actually uses, after bias and
+        ///      specular antialiasing
         ///
         /// A float rather than an int because ConfigLib's float settings are
         /// the ones this mod has confirmed working in game; an integer category
@@ -147,8 +203,18 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 7.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 8.0f,
                 "PseudoPBR.DebugView", corrections);
+            RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
+                "PseudoPBR.RoughnessBias", corrections);
+            MetalResponse = ColorGradeConfig.Clamp(MetalResponse, 0.0f, 1.0f,
+                "PseudoPBR.MetalResponse", corrections);
+            AmbientSpecular = ColorGradeConfig.Clamp(AmbientSpecular, 0.0f, 2.0f,
+                "PseudoPBR.AmbientSpecular", corrections);
+            SpecularAntiAliasing = ColorGradeConfig.Clamp(SpecularAntiAliasing, 0.0f, 2.0f,
+                "PseudoPBR.SpecularAntiAliasing", corrections);
+            DetailDistance = ColorGradeConfig.Clamp(DetailDistance, 4.0f, 192.0f,
+                "PseudoPBR.DetailDistance", corrections);
         }
     }
 

@@ -157,15 +157,75 @@
           "step": 0.05
         }
       },
+      "pbr_roughnessbias": {
+        "ingui": "Roughness bias",
+        "comment": "Shifts every material's roughness. Negative is glossier and wetter, positive is drier and more matte.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 23,
+        "range": {
+          "min": -0.5,
+          "max": 0.5,
+          "step": 0.01
+        }
+      },
+      "pbr_metalresponse": {
+        "ingui": "Metal response",
+        "comment": "How metallic reflective materials read. 0 gives every surface a white highlight; 1 lets metals tint theirs by their own colour.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 24,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "pbr_ambientspecular": {
+        "ingui": "Sky reflection",
+        "comment": "Strength of the ambient sky highlight. Without it metal in shade or indoors has no highlight at all.",
+        "default": 0.35,
+        "clientSide": true,
+        "weight": 25,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_specularaa": {
+        "ingui": "Specular antialiasing",
+        "comment": "Widens highlights by how much the normal varies within a pixel, which is what stops rough surfaces sparkling as you move. Leave at 1 unless comparing.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 26,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_detaildistance": {
+        "ingui": "Detail distance (blocks)",
+        "comment": "Distance at which surface relief has faded out. Higher shows more detail at range and more aliasing with it.",
+        "default": 48.0,
+        "clientSide": true,
+        "weight": 27,
+        "range": {
+          "min": 4.0,
+          "max": 192.0,
+          "step": 4.0
+        }
+      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance (grey = dielectric, coloured = metal).",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded.",
         "default": 0.0,
         "clientSide": true,
         "weight": 23,
         "range": {
           "min": 0.0,
-          "max": 7.0,
+          "max": 8.0,
           "step": 1.0
         }
       }

@@ -163,6 +163,21 @@ namespace VintageVisuals.Common
                 case "pbr_debugview":
                     pbr.DebugView = tree.GetFloat("value", pbr.DebugView);
                     break;
+                case "pbr_roughnessbias":
+                    pbr.RoughnessBias = tree.GetFloat("value", pbr.RoughnessBias);
+                    break;
+                case "pbr_metalresponse":
+                    pbr.MetalResponse = tree.GetFloat("value", pbr.MetalResponse);
+                    break;
+                case "pbr_ambientspecular":
+                    pbr.AmbientSpecular = tree.GetFloat("value", pbr.AmbientSpecular);
+                    break;
+                case "pbr_specularaa":
+                    pbr.SpecularAntiAliasing = tree.GetFloat("value", pbr.SpecularAntiAliasing);
+                    break;
+                case "pbr_detaildistance":
+                    pbr.DetailDistance = tree.GetFloat("value", pbr.DetailDistance);
+                    break;
                 default:
                     return false;
             }

@@ -49,6 +49,15 @@
   content: |
     in vec3 normal; // vintagevisuals: varying name asserted by pseudopbr.yaml
 
+# 2b. Assert `rgbaFog`, which stands in for the sky in the ambient specular
+# term. Vanilla blends the horizon toward it, which makes it a better
+# environment estimate than any constant this mod could pick.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: in vec4 rgbaFog;
+  content: |
+    in vec4 rgbaFog; // vintagevisuals: varying name asserted by pseudopbr.yaml
+
 # 3. Assert `lightPosition`, which the injected shading functions read.
 #
 # A separate assertion rather than the injection point, because the injection
@@ -86,7 +95,7 @@
   tokens: outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);
   content: |
     outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, vvSurfaceBrightness(nb, normal, uv, worldPos.xyz)), worldPos.xyz);
-    outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness);
+    outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb);
 
 # 6. Debug layer views, applied last so they replace the finished colour.
 #
@@ -96,5 +105,5 @@
   filename: chunkopaque.fsh
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
-    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, b, fogAmount, murkiness);
+    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb);
     outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
