@@ -116,3 +116,32 @@
   content: |
     outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
     outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
+
+# --- vertex shader: sky exposure for the weather system ---------------------
+#
+# In THIS group, not a weather group of its own, and that is not tidiness. A
+# varying is a contract between the .vsh and the .fsh of one program: the
+# fragment side declares `in float vv_sunExposure` and reads it, so if the
+# vertex side failed to apply independently the program would not link and the
+# world would stop drawing. Both halves succeed or both roll back.
+#
+# Vanilla already knows the answer - rgbaLightIn.a is the per-vertex sun light
+# level, 0 under a roof and 1 in the open - it just never reaches the fragment
+# stage. Rain cannot wet a surface the sky cannot see, and this is the only
+# signal in either chunk shader that knows the difference.
+
+- type: token
+  filename: chunkopaque.vsh
+  tokens: out vec3 blockLight;
+  content: |
+    out vec3 blockLight;
+
+    // vintagevisuals: sky exposure for the weather system
+    out float vv_sunExposure;
+
+- type: token
+  filename: chunkopaque.vsh
+  tokens: rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, camPos);
+  content: |
+    rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, camPos);
+    vv_sunExposure = rgbaLightIn.a;

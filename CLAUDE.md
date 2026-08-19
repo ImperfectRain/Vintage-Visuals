@@ -142,6 +142,16 @@ nothing. `verifypatches` refuses such a file by name rather than trusting it.
   when the damage comes from the source existing at all, the player's off switch
   does nothing. `IsPatchGroupEnabled` in `VintageVisualsModSystem` skips the
   whole group and reloads shaders, so "off" means vanilla source.
+- **A varying belongs to ONE patch group.** It is a contract between the `.vsh`
+  and `.fsh` of the same program: if the vertex half could roll back
+  independently, the fragment shader would declare an input nothing writes and
+  the program would not link, costing the world rather than the feature. The
+  sky-exposure varying lives in `pseudopbr.yaml`, not a weather group.
+- **A declared uniform is not an uploaded uniform.** An unset GLSL uniform reads
+  as zero, and zero is a legal value, so a missing `program.Uniform(...)` call
+  is invisible from C# and from the log. Five shipped that way at once. The
+  fix is `tools/smoketest`'s uniform-wiring check, which compares the shader's
+  declarations against the binder's uploads in both directions.
 - **A patch that replaces its anchor must paste the anchor back.** Replacement
   content is literal, never a regex template. `pseudopbr.glsl` re-declares
   `uniform vec3 lightPosition;` for this reason.

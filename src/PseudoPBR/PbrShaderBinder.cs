@@ -44,6 +44,7 @@ namespace VintageVisuals.PseudoPBR
         public const string DetailDistanceUniform = "vv_pbrDetailDistance";
         public const string BlockLightUniform = "vv_pbrBlockLight";
         public const string BlockLightDirUniform = "vv_pbrBlockLightDir";
+        public const string WetnessUniform = "vv_weatherWetness";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -62,17 +63,15 @@ namespace VintageVisuals.PseudoPBR
         private readonly Func<Dictionary<int, int>> _buildPageMap;
 
         private bool _enabled;
-        private float _normalStrength = 1f;
-        private float _specularStrength = 1f;
-        private float _debugView;
         private PseudoPbrConfig _look = new PseudoPbrConfig();
+        private float _wetness;
 
         /// <summary>
-        /// Set while the program still believes the effect is on, so switching
+        /// Set while a program still believes the effect is on, so switching
         /// off pushes vv_pbrEnabled=0 exactly once and then stops touching the
-        /// program at all.
+        /// programs at all.
         /// </summary>
-        private bool _programThinksEnabled;
+        private bool _programsThinkEnabled;
 
         // One-shot latches. Each clears when its condition clears, so a problem
         // that returns after a shader reload is reported again rather than
@@ -83,7 +82,8 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedActive;
         private bool _reportedBusy;
 
-        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas, Func<Dictionary<int, int>> buildPageMap)
+        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas,
+                               Func<Dictionary<int, int>> buildPageMap)
         {
             _capi = capi;
             _atlas = atlas;
@@ -96,24 +96,22 @@ namespace VintageVisuals.PseudoPBR
 
         /// <summary>
         /// Sets what the next frame will do. Called from config changes, so it
-        /// deliberately does no GL work of its own — the config path is not
+        /// deliberately does no GL work of its own - the config path is not
         /// guaranteed to be a thread with a GL context.
         /// </summary>
-        public void SetState(bool enabled, PseudoPbrConfig look)
+        public void SetState(bool enabled, PseudoPbrConfig look, float wetness)
         {
             _enabled = enabled;
-            _normalStrength = look.NormalStrength;
-            _specularStrength = look.SpecularStrength;
-            _debugView = look.DebugView;
             _look = look;
+            _wetness = wetness;
         }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
             if (stage != EnumRenderStage.Opaque) return;
 
-            // IShaderProgram.Use() THROWS if a program is already bound —
-            // "Already a different shader (gui) in use!" — and the client does
+            // IShaderProgram.Use() THROWS if a program is already bound -
+            // "Already a different shader (gui) in use!" - and the client does
             // not recover: OpenGL goes to InvalidOperation and the world stops
             // drawing correctly. Nothing should hold a program this early in
             // the opaque stage, but the cost of being wrong is the whole frame,
@@ -124,9 +122,7 @@ namespace VintageVisuals.PseudoPBR
                 {
                     _reportedBusy = true;
                     _capi.Logger.Warning("[VintageVisuals] pseudopbr: another shader program was bound at the " +
-                        "start of the opaque stage, so the material uniforms were not uploaded this frame. " +
-                        "Retrying every frame; if this line is the last word, something else is holding a " +
-                        "program for the whole frame.");
+                        "start of the opaque stage, so the material uniforms were not uploaded this frame.");
                 }
                 return;
             }
@@ -176,27 +172,63 @@ namespace VintageVisuals.PseudoPBR
             // data - silent and wrong, the worst of the two failure modes.
             TerrainTextureBindInterceptor.SetPages(_buildPageMap());
 
-            IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
+            // Vanilla's own dayLight uniform is declared in chunkopaque.fsh and
+            // not in chunktopsoil.fsh, so the shared snippet reads ours instead
+            // and this is where it comes from.
+            float daylight = _capi.World?.Calendar == null ? 1f : _capi.World.Calendar.DayLightStrength;
 
-            // HasUniform is the ground truth for "did our GLSL reach the GPU",
-            // exactly as in ColorGrade: the uniform exists only if the injection
-            // survived compilation. Same lesson too — GetProgramByName does not
-            // find vanilla passes, they are addressed by EnumShaderProgram id.
-            if (program == null || !program.HasUniform(EnabledUniform))
+            int uploaded = 0;
+            foreach (EnumShaderProgram id in PatchedPrograms)
+            {
+                if (Upload(id, daylight)) uploaded++;
+            }
+
+            if (uploaded == 0)
             {
                 if (!_reportedMissingUniform)
                 {
                     _reportedMissingUniform = true;
-                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: chunkopaque " +
-                        (program == null ? "is not loaded" : "has no " + EnabledUniform + " uniform") +
-                        ", so the GLSL injection did not reach the compiled program. Surface relief and the " +
-                        "debug views are inactive — look for a pseudopbr patch failure above, and set " +
-                        "EnableShaderDebugDump to inspect the merged source.");
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: no patched chunk program exposes " +
+                        EnabledUniform + ", so the GLSL injection did not reach any compiled program. Surface " +
+                        "relief and the debug views are inactive - look for a pseudopbr patch failure above, " +
+                        "and set EnableShaderDebugDump to inspect the merged source.");
                 }
                 return;
             }
 
             _reportedMissingUniform = false;
+            _programsThinkEnabled = true;
+
+            if (!_reportedActive)
+            {
+                _reportedActive = true;
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: surface relief active - " +
+                    _atlas.PageCount + " atlas page(s) on the GPU at unit " +
+                    MaterialAtlasTexture.TextureUnit + ", uniforms uploading to " + uploaded +
+                    " of " + PatchedPrograms.Length + " patched program(s).");
+            }
+        }
+
+        /// <summary>
+        /// Pushes every uniform to one program. Returns false when the program
+        /// is not loaded or was never patched.
+        ///
+        /// One place, one list. An earlier version had the uniform writes
+        /// scattered through the frame path and five of them were silently
+        /// never added, which meant the sliders that drove them did nothing and
+        /// - because vv_pbrDayLight gates it - the whole specular term read as
+        /// night. Uniform uploads all live here so that "did I wire this up"
+        /// is answerable by looking at one method.
+        /// </summary>
+        private bool Upload(EnumShaderProgram id, float daylight)
+        {
+            IShaderProgram program = _capi.Shader.GetProgram((int)id);
+
+            // HasUniform is the ground truth for "did our GLSL reach the GPU",
+            // exactly as in ColorGrade: the uniform exists only if the injection
+            // survived compilation. Same lesson too - GetProgramByName does not
+            // find vanilla passes, they are addressed by EnumShaderProgram id.
+            if (program == null || !program.HasUniform(EnabledUniform)) return false;
 
             program.Use();
 
@@ -204,21 +236,23 @@ namespace VintageVisuals.PseudoPBR
             // vanilla selects it, but on a single-page atlas there is nothing
             // to swap and this is the whole binding.
             program.BindTexture2D(SamplerUniform, _atlas.TextureIdFor(0), MaterialAtlasTexture.TextureUnit);
+
             program.Uniform(EnabledUniform, 1f);
-            program.Uniform(NormalStrengthUniform, _normalStrength);
-            program.Uniform(SpecularStrengthUniform, _specularStrength);
-            program.Uniform(DebugViewUniform, _debugView);
+            program.Uniform(NormalStrengthUniform, _look.NormalStrength);
+            program.Uniform(SpecularStrengthUniform, _look.SpecularStrength);
+            program.Uniform(DebugViewUniform, _look.DebugView);
+            program.Uniform(DayLightUniform, daylight);
+            program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
+            program.Uniform(MetalResponseUniform, _look.MetalResponse);
+            program.Uniform(AmbientUniform, _look.AmbientSpecular);
+            program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
+            program.Uniform(DetailDistanceUniform, _look.DetailDistance);
+            program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
+            program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
+            program.Uniform(WetnessUniform, _wetness);
+
             program.Stop();
-
-            _programThinksEnabled = true;
-
-            if (!_reportedActive)
-            {
-                _reportedActive = true;
-                _capi.Logger.Notification("[VintageVisuals] pseudopbr: surface relief active - " +
-                    _atlas.PageCount + " atlas page(s) on the GPU, bound at unit " +
-                    MaterialAtlasTexture.TextureUnit + ", uniforms uploading.");
-            }
+            return true;
         }
 
         /// <summary>
@@ -226,14 +260,16 @@ namespace VintageVisuals.PseudoPBR
         ///
         /// Not just "stop varying the uniform". The texture is released too,
         /// because while it exists it stays bound to its unit, and a config flag
-        /// that leaves shared GL state occupied is not an off switch — the
+        /// that leaves shared GL state occupied is not an off switch - the
         /// player has no way to rule this subsystem out.
         /// </summary>
         private void ReleaseWhileDisabled()
         {
             _reportedActive = false;
 
-            if (_programThinksEnabled)
+            TerrainTextureBindInterceptor.SetPages(null);
+
+            if (_programsThinkEnabled)
             {
                 foreach (EnumShaderProgram id in PatchedPrograms)
                 {
@@ -245,15 +281,13 @@ namespace VintageVisuals.PseudoPBR
                     program.Stop();
                 }
 
-                _programThinksEnabled = false;
+                _programsThinkEnabled = false;
             }
-
-            TerrainTextureBindInterceptor.SetPages(null);
 
             if (_atlas.AnyUploaded)
             {
                 _atlas.Release();
-                _capi.Logger.Notification("[VintageVisuals] pseudopbr: disabled — material atlas released from " +
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: disabled - material atlas released from " +
                     "the GPU. This subsystem now holds no shader patch, no texture and no texture unit.");
             }
         }

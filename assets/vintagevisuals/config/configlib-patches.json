@@ -22,6 +22,13 @@
         "default": false,
         "clientSide": true,
         "weight": 20
+      },
+      "weather_enabled": {
+        "ingui": "Weather effects",
+        "comment": "Rain makes exposed surfaces wet: smoother, more reflective and darker, drying out after the rain stops.",
+        "default": true,
+        "clientSide": true,
+        "weight": 40
       }
     },
     "float": {
@@ -241,15 +248,39 @@
           "step": 0.05
         }
       },
+      "weather_wetness": {
+        "ingui": "Wetness strength",
+        "comment": "How wet rain makes surfaces look. Above 1 exaggerates past anything physical.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 41,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "weather_dryingseconds": {
+        "ingui": "Drying time (seconds)",
+        "comment": "How long a soaked surface takes to dry once the rain stops. Surfaces wet in seconds either way; the slow dry is what makes it read as weather.",
+        "default": 60.0,
+        "clientSide": true,
+        "weight": 42,
+        "range": {
+          "min": 1.0,
+          "max": 600.0,
+          "step": 5.0
+        }
+      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness.",
         "default": 0.0,
         "clientSide": true,
         "weight": 30,
         "range": {
           "min": 0.0,
-          "max": 9.0,
+          "max": 10.0,
           "step": 1.0
         }
       }

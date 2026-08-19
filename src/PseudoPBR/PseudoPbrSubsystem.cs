@@ -132,7 +132,15 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
-            _binder.SetState(active, config);
+            // Wetness comes from the weather subsystem, not from this one's
+            // config. Rain changes how surfaces respond to light and that
+            // response is modelled here, but whether it is raining is not this
+            // subsystem's business to decide.
+            float wetness = _mod.Weather == null
+                ? 0f
+                : _mod.Weather.Wetness * _mod.ConfigManager.Config.Weather.WetnessStrength;
+
+            _binder.SetState(active, config, wetness);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

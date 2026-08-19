@@ -6,6 +6,7 @@ using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
+using VintageVisuals.Weather;
 
 namespace VintageVisuals
 {
@@ -52,6 +53,13 @@ namespace VintageVisuals
         /// next one.
         /// </summary>
         private string _appliedGating;
+
+        /// <summary>
+        /// Publishes the current weather state. PseudoPBR reads wetness from
+        /// here when it uploads its uniforms - rain changes how surfaces
+        /// respond to light, and that response already has a shader.
+        /// </summary>
+        public WeatherSubsystem Weather { get; private set; }
 
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
@@ -229,6 +237,8 @@ namespace VintageVisuals
         private void RegisterSubsystems()
         {
             _subsystems.Add(new ColorGradeSubsystem());
+            Weather = new WeatherSubsystem();
+            _subsystems.Add(Weather);
             _subsystems.Add(new PseudoPbrSubsystem());
 
             // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is

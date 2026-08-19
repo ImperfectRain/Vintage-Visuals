@@ -134,9 +134,19 @@ void main()
                 return;
             }
 
-            ok("8 patches produced", patches.Count == 8);
+            ok("10 patches produced", patches.Count == 10);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
-            ok("all target chunkopaque.fsh", patches.All(p => p.AppliesTo("chunkopaque.fsh")));
+            ok("targets both stages of the chunkopaque program",
+                patches.All(p => p.AppliesTo("chunkopaque.fsh") || p.AppliesTo("chunkopaque.vsh")) &&
+                patches.Any(p => p.AppliesTo("chunkopaque.vsh")));
+
+            // A varying is a contract between the two stages of ONE program.
+            // If the vertex half could fail independently of the fragment half,
+            // the fragment shader would declare an input nothing writes and the
+            // program would not link - which costs the world, not the feature.
+            ok("the sky-exposure varying is written and read by the same group",
+                patches.Any(p => p.AppliesTo("chunkopaque.vsh") && p.Content.Contains("out float vv_sunExposure;")) &&
+                patches.Any(p => p.AppliesTo("chunkopaque.fsh") && p.Content.Contains("in float vv_sunExposure;")));
 
             // Every patch must be anchored. A 'start' patch here would inject
             // above lightPosition's declaration and fail to compile — the
@@ -335,8 +345,13 @@ void main()
             List<ShaderPatch> patches = ShaderPatchLoader
                 .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
 
-            ok("pseudopbrtopsoil.yaml parsed into 8 patches", patches.Count == 8);
-            ok("all target chunktopsoil.fsh", patches.All(p => p.AppliesTo("chunktopsoil.fsh")));
+            ok("pseudopbrtopsoil.yaml parsed into 10 patches", patches.Count == 10);
+            ok("targets both stages of the chunktopsoil program",
+                patches.All(p => p.AppliesTo("chunktopsoil.fsh") || p.AppliesTo("chunktopsoil.vsh")) &&
+                patches.Any(p => p.AppliesTo("chunktopsoil.vsh")));
+            ok("the sky-exposure varying is written and read by the same group",
+                patches.Any(p => p.AppliesTo("chunktopsoil.vsh") && p.Content.Contains("out float vv_sunExposure;")) &&
+                patches.Any(p => p.AppliesTo("chunktopsoil.fsh") && p.Content.Contains("in float vv_sunExposure;")));
 
             // Its own group. Sharing pseudopbr's would mean a reworded
             // chunktopsoil line switching relief off for every wall and log too.

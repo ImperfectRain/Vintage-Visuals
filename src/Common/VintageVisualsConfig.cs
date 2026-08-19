@@ -25,6 +25,8 @@ namespace VintageVisuals.Common
 
         public PseudoPbrConfig PseudoPBR { get; set; } = new PseudoPbrConfig();
 
+        public WeatherConfig Weather { get; set; } = new WeatherConfig();
+
         /// <summary>
         /// Clamps every value into its supported range, returning a description
         /// of anything that had to be corrected.
@@ -40,7 +42,46 @@ namespace VintageVisuals.Common
             ColorGrade.ClampToValidRanges(corrections);
             AdaptiveExposure.ClampToValidRanges(corrections);
             PseudoPBR.ClampToValidRanges(corrections);
+            Weather.ClampToValidRanges(corrections);
             return corrections;
+        }
+    }
+
+    /// <summary>
+    /// Phase 2 weather system. Currently one effect: what rain does to how
+    /// surfaces respond to light.
+    /// </summary>
+    public class WeatherConfig
+    {
+        /// <summary>
+        /// Master toggle. Off eases wetness back to dry rather than snapping,
+        /// so flipping it mid-storm is not a visible jolt.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>
+        /// How wet rain makes surfaces look. 0 is off; 1 is the tuned look.
+        ///
+        /// Above 1 exaggerates past anything physical, which is a legitimate
+        /// place to be for a stylised look and a silly one for a realistic one.
+        /// </summary>
+        public float WetnessStrength { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Seconds for a soaked surface to dry once the rain stops.
+        ///
+        /// The asymmetry is the whole effect. Surfaces wet in seconds and dry
+        /// over a minute or more; easing both at the same rate reads as a fade
+        /// rather than as weather.
+        /// </summary>
+        public float DryingSeconds { get; set; } = 60.0f;
+
+        internal void ClampToValidRanges(List<string> corrections)
+        {
+            WetnessStrength = ColorGradeConfig.Clamp(WetnessStrength, 0.0f, 2.0f,
+                "Weather.WetnessStrength", corrections);
+            DryingSeconds = ColorGradeConfig.Clamp(DryingSeconds, 1.0f, 600.0f,
+                "Weather.DryingSeconds", corrections);
         }
     }
 
@@ -228,7 +269,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 9.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 10.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

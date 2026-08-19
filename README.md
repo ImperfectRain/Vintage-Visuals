@@ -30,7 +30,7 @@ cannot load.
 | Subsystem | What it does | Docs |
 |---|---|---|
 | **ColorGrade** | Eye adaptation, filmic tonemap, exposure, saturation, contrast, white-balance | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
-| **Weather** | Volumetric clouds, cloud shadows, sky scattering, weather-driven fog | not implemented |
+| **Weather** | Wet surfaces in rain; clouds and sky still to come | [src/Weather/README.md](src/Weather/README.md) |
 | **Reflections** | Screen-space reflections on water | not implemented |
 | **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
 
@@ -73,6 +73,9 @@ value.
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
 | `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
+| `Weather.Enabled` | bool | `true` | Rain makes exposed surfaces wet: smoother, more reflective, darker |
+| `Weather.WetnessStrength` | 0.0 – 2.0 | `1.0` | How wet rain makes surfaces look |
+| `Weather.DryingSeconds` | 1 – 600 | `60` | How long a soaked surface takes to dry once rain stops |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →

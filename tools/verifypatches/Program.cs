@@ -163,10 +163,10 @@ namespace VintageVisuals.VerifyPatches
             {
                 combinations++;
 
-                if (!TryCompile(vanilla, defines, out _)) vanillaFailures++;
+                if (!TryCompile(vanilla, defines, filename, out _)) vanillaFailures++;
 
                 string error;
-                if (!TryCompile(patched, defines, out error))
+                if (!TryCompile(patched, defines, filename, out error))
                 {
                     patchedFailures++;
                     if (firstError == null) firstError = Describe(defines) + ": " + error;
@@ -221,7 +221,7 @@ namespace VintageVisuals.VerifyPatches
             return string.Join(" ", defines.Select(d => d.Key + "=" + d.Value));
         }
 
-        static bool TryCompile(string source, Dictionary<string, int> defines, out string error)
+        static bool TryCompile(string source, Dictionary<string, int> defines, string filename, out string error)
         {
             error = null;
 
@@ -233,7 +233,13 @@ namespace VintageVisuals.VerifyPatches
             body.AddRange(defines.Select(d => "#define " + d.Key + " " + d.Value));
             body.AddRange(lines.Skip(1).Where(l => !l.TrimStart().StartsWith("#extension")));
 
-            string temp = Path.Combine(Path.GetTempPath(), "vv-verify-" + Guid.NewGuid().ToString("N") + ".frag");
+            // glslang picks the shader stage from the extension, so the
+            // temp file has to keep the original one - a vertex shader
+            // compiled as a fragment shader fails on its outputs, not on
+            // anything the patch did.
+            string extension = Path.GetExtension(filename) == ".vsh" ? ".vert" : ".frag";
+            string temp = Path.Combine(Path.GetTempPath(),
+                "vv-verify-" + Guid.NewGuid().ToString("N") + extension);
 
             try
             {

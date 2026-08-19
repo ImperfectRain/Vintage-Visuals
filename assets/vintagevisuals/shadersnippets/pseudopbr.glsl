@@ -63,6 +63,13 @@ uniform float vv_pbrSpecularAA;      // geometric specular antialiasing strength
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
 uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
 uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully trusts the gradient
+uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
+
+// Sky exposure, added to the vertex shader by the weather patch: vanilla's own
+// per-vertex sun light level, which is 0 under a roof and 1 in the open. Rain
+// cannot reach a surface the sky cannot see, and this is the only signal in
+// either chunk shader that knows the difference.
+in float vv_sunExposure;
 
 // Builds a tangent frame for an axis-aligned block face.
 //
@@ -167,6 +174,41 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 
     vec3 n = normalize(faceNormal);
     return normalize(mix(n, vvPerturbNormal(n, materialUv), vvDetailFade(cameraRelativePos)));
+}
+
+// ---------------------------------------------------------------------------
+// Rain
+//
+// A wet surface is not the dry one with water drawn on top. Three things
+// change, and all three are already inputs to the microfacet model:
+//
+//   roughness  collapses  - water fills the microscopic pits that scatter light
+//   specular   rises      - a smooth water film is far more reflective than
+//                           stone, which is what makes wet ground glare
+//   albedo     darkens    - light entering the film scatters inside it and less
+//                           of it comes back out
+//
+// Miss the darkening and wet stone reads as polished stone. It is the least
+// obvious of the three and the one that sells it.
+// ---------------------------------------------------------------------------
+
+const float VV_WET_ROUGHNESS = 0.08;
+const float VV_WET_SPECULAR = 0.60;
+const float VV_WET_DARKEN = 0.72;
+
+// How wet this fragment is.
+//
+// Two gates, both physical. Rain falls downward, so it pools on up-facing
+// surfaces, runs off vertical ones and never touches undersides - squared so
+// the falloff is steep rather than linear. And it cannot reach anything the sky
+// cannot see, which is what sun exposure measures.
+float vvWetness(vec3 faceNormal)
+{
+    if (vv_weatherWetness < 0.001) return 0.0;
+
+    float facing = clamp(faceNormal.y * 0.5 + 0.5, 0.0, 1.0);
+
+    return clamp(vv_weatherWetness * facing * facing * clamp(vv_sunExposure, 0.0, 1.0), 0.0, 1.0);
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -406,6 +448,15 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     float roughness = clamp(material.b + vv_pbrRoughnessBias, 0.04, 1.0);
     float specularMask = clamp(material.a, 0.0, 1.0);
 
+    // Rain, before anything else reads these. Wetness is a property of the
+    // surface, not a layer over the finished shading, so it belongs here where
+    // roughness and reflectance are decided rather than at the end where it
+    // would be a tint.
+    float wetness = vvWetness(faceNormal);
+    roughness = mix(roughness, VV_WET_ROUGHNESS, wetness);
+    specularMask = max(specularMask, mix(specularMask, VV_WET_SPECULAR, wetness));
+    albedo *= mix(1.0, VV_WET_DARKEN, wetness);
+
     // The same normal the relief uses, so the highlight sits on the surface the
     // player can see rather than on one the shading invented.
     vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
@@ -443,7 +494,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                      * clamp(1.0 - fog - murkiness, 0.0, 1.0)
                      * vvDetailFade(cameraRelativePos);
 
-    vec3 result = litColor.rgb;
+    vec3 result = litColor.rgb * mix(1.0, VV_WET_DARKEN, wetness);
 
     // Energy conservation. Light reflected specularly is light that did not
     // scatter diffusely, so the diffuse has to give it up - this is what makes
@@ -528,6 +579,10 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
                                            vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos));
         return vec4(vec3(shaded), color.a);
     }
+
+    // 10: wetness. White is soaked, black is dry - shows both gates at once,
+    // so an overhang should read black while the ground beside it is white.
+    if (mode == 10) return vec4(vec3(vvWetness(faceNormal)), color.a);
 
     // 9: the estimated block-light direction, as a colour. Flat means the
     // gradient found nothing and the light is being treated as ambient;

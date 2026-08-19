@@ -115,6 +115,7 @@ namespace VintageVisuals.Common
             ColorGradeConfig colorGrade = _mod.ConfigManager.Config.ColorGrade;
             AdaptiveExposureConfig adaptive = _mod.ConfigManager.Config.AdaptiveExposure;
             PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
+            WeatherConfig weather = _mod.ConfigManager.Config.Weather;
 
             switch (code)
             {
@@ -180,6 +181,15 @@ namespace VintageVisuals.Common
                     break;
                 case "pbr_blocklight":
                     pbr.BlockLightSpecular = tree.GetFloat("value", pbr.BlockLightSpecular);
+                    break;
+                case "weather_enabled":
+                    weather.Enabled = tree.GetBool("value", weather.Enabled);
+                    break;
+                case "weather_wetness":
+                    weather.WetnessStrength = tree.GetFloat("value", weather.WetnessStrength);
+                    break;
+                case "weather_dryingseconds":
+                    weather.DryingSeconds = tree.GetFloat("value", weather.DryingSeconds);
                     break;
                 case "pbr_blocklightdir":
                     pbr.BlockLightDirectionality = tree.GetFloat("value", pbr.BlockLightDirectionality);
