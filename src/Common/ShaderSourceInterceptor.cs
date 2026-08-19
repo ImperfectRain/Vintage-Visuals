@@ -166,7 +166,24 @@ namespace VintageVisuals.Common
                 if (shader == null || string.IsNullOrEmpty(shader.Code)) return;
 
                 string filename = program.PassName + extension;
-                shader.Code = patcher.Patch(filename, shader.Code);
+
+                string original = shader.Code;
+                string patched = patcher.Patch(filename, original);
+
+                // Only write back when the source actually changed.
+                //
+                // This hook sees EVERY shader the game loads, and the vast
+                // majority have no patch targeting them at all. Assigning
+                // IShader.Code is not obviously free — it is a property on an
+                // unstable internal type, and whatever bookkeeping its setter
+                // does would then run for every shader in the game because of a
+                // mod that wanted to change two of them. Writing only on a real
+                // change keeps this mod's footprint to the files it actually
+                // edits, which is what it always claimed to have.
+                if (!string.Equals(original, patched, StringComparison.Ordinal))
+                {
+                    shader.Code = patched;
+                }
 
                 if (_dumpShaders) DumpShader(filename, shader, logger);
             }
