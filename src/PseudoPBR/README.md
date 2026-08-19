@@ -73,6 +73,29 @@ Textures are deduplicated by `TextureSubId`: every fence variant of a wood type
 points at the same planks, and deriving it per block would be thousands of
 redundant Sobel passes over identical pixels.
 
+### Every baked texture, not just the base
+
+A `CompositeTexture` with `Alternates` bakes **one variant per alternate**, each
+with its own `TextureSubId` and its own slot in the atlas, and Vintage Story
+uses alternates heavily for natural blocks — granite being the obvious one.
+Walking only `composite.Baked` left every variant slot at the neutral texel,
+which in game is a granite block with no surface at all sitting next to one that
+has it. Tiled textures bake the same way.
+
+Two consequences for how they are reached:
+
+- **`Positions` is indexed by `TextureSubId`.** `GetPosition(block, textureCode)`
+  answers for the composite's base and knows nothing about its alternates, so a
+  variant's slot is only reachable through the index.
+- **Each variant resolves its own file** via `TextureFilenames[0]`, its own base
+  path, rather than inheriting whatever the composite's base happened to be.
+
+The collector now reports **coverage** — how many of the page's allocated slots
+it actually filled — because "3749 collected, 0 skipped" reads like success and
+says nothing about textures that were never enumerated at all. That is exactly
+how a whole class of blocks came to render with no surface while the log looked
+clean.
+
 ## Resolving a block's texture file
 
 Two traps, both of which returned null silently on all 3749 textures of a real

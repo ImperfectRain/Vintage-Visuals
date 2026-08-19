@@ -134,7 +134,8 @@ namespace VintageVisuals.PseudoPBR
 
             _uploadFailed = false;
             logger.Notification("[VintageVisuals] pseudopbr: material atlas uploaded as texture " + TextureId +
-                                " (" + _pendingWidth + "x" + _pendingHeight + "), bound at unit " + TextureUnit + ".");
+                                " (" + _pendingWidth + "x" + _pendingHeight + "), nearest filtering, bound at unit " +
+                                TextureUnit + ".");
             return true;
         }
 

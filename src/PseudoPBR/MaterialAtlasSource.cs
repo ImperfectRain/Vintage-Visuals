@@ -54,38 +54,56 @@ namespace VintageVisuals.PseudoPBR
                     CompositeTexture composite = entry.Value;
                     if (composite?.Baked == null) continue;
 
-                    // Many blocks share a texture - every fence variant of a
-                    // wood type points at the same planks. Deriving it once per
-                    // block would be thousands of redundant Sobel passes over
-                    // the same pixels.
-                    if (!seen.Add(composite.Baked.TextureSubId)) continue;
-
-                    TextureAtlasPosition position =
-                        capi.BlockTextureAtlas.GetPosition(block, entry.Key, true);
-
-                    if (position == null || position.atlasNumber != atlasNumber) continue;
-
-                    string name = block.Code.ToString() + ":" + entry.Key;
-                    string reason;
-                    AtlasRegion region = TryBuildRegion(capi, composite, position, profile,
-                        atlasWidth, atlasHeight, name, out reason);
-
-                    if (region != null)
+                    // Every baked texture the composite produces, not just its
+                    // base. A composite with Alternates bakes one variant per
+                    // alternate, each with its own TextureSubId and its own
+                    // slot in the atlas - and VS uses alternates heavily for
+                    // natural blocks, granite being the obvious one. Processing
+                    // only the base left every variant slot at the neutral
+                    // texel, which in game is a granite block with no surface
+                    // at all sitting next to one that has it. Tiled textures
+                    // bake the same way.
+                    foreach (BakedCompositeTexture baked in EnumerateBaked(composite.Baked))
                     {
-                        regions.Add(region);
-                        continue;
+                        // Many blocks share a texture - every fence variant of
+                        // a wood type points at the same planks. Deriving it
+                        // once per block would be thousands of redundant Sobel
+                        // passes over the same pixels.
+                        if (!seen.Add(baked.TextureSubId)) continue;
+
+                        TextureAtlasPosition position = PositionFor(capi, baked.TextureSubId);
+                        if (position == null || position.atlasNumber != atlasNumber) continue;
+
+                        // TextureFilenames[0] is the variant's own base path, so
+                        // each alternate resolves to its own PNG rather than to
+                        // whatever the composite's base happened to be.
+                        AssetLocation source = baked.TextureFilenames != null && baked.TextureFilenames.Length > 0
+                            ? baked.TextureFilenames[0]
+                            : composite.Base;
+
+                        string name = block.Code.ToString() + ":" + entry.Key;
+                        string reason;
+                        AtlasRegion region = TryBuildRegion(capi, source, position, profile,
+                            atlasWidth, atlasHeight, name, out reason);
+
+                        if (region != null)
+                        {
+                            regions.Add(region);
+                            continue;
+                        }
+
+                        skippedTextures++;
+
+                        // Count why, and keep a few examples. A bare "3749
+                        // skipped" says something is wrong but not what, which
+                        // is exactly how a fail-soft path turns into a wasted
+                        // debugging round.
+                        int count;
+                        skipReasons.TryGetValue(reason, out count);
+                        skipReasons[reason] = count + 1;
+
+                        if (!skipExamples.ContainsKey(reason)) skipExamples[reason] = name;
                     }
-
-                    skippedTextures++;
-
-                    // Count why, and keep a few examples. A bare "3749 skipped"
-                    // says something is wrong but not what, which is exactly
-                    // how a fail-soft path turns into a wasted debugging round.
-                    int count;
-                    skipReasons.TryGetValue(reason, out count);
-                    skipReasons[reason] = count + 1;
-
-                    if (!skipExamples.ContainsKey(reason)) skipExamples[reason] = name;
                 }
             }
 
@@ -99,6 +117,53 @@ namespace VintageVisuals.PseudoPBR
             }
 
             return regions;
+        }
+
+        /// <summary>
+        /// Every baked texture one composite produces: itself, its variants
+        /// (from Alternates) and its tiles. Each has its own TextureSubId and
+        /// therefore its own place in the atlas.
+        /// </summary>
+        private static IEnumerable<BakedCompositeTexture> EnumerateBaked(BakedCompositeTexture baked)
+        {
+            if (baked == null) yield break;
+
+            yield return baked;
+
+            // BakedVariants and BakedTiles are documented as also containing
+            // the baked name itself, so the seen-set is what stops the base
+            // being processed twice rather than any check here.
+            if (baked.BakedVariants != null)
+            {
+                foreach (BakedCompositeTexture variant in baked.BakedVariants)
+                {
+                    if (variant != null) yield return variant;
+                }
+            }
+
+            if (baked.BakedTiles != null)
+            {
+                foreach (BakedCompositeTexture tile in baked.BakedTiles)
+                {
+                    if (tile != null) yield return tile;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The atlas slot for a texture sub-id.
+        ///
+        /// Positions is indexed by TextureSubId, which is the only way to reach
+        /// a variant's slot - GetPosition(block, textureCode) answers for the
+        /// composite's base and knows nothing about its alternates.
+        /// </summary>
+        private static TextureAtlasPosition PositionFor(ICoreClientAPI capi, int textureSubId)
+        {
+            TextureAtlasPosition[] positions = capi.BlockTextureAtlas.Positions;
+
+            if (positions == null || textureSubId < 0 || textureSubId >= positions.Length) return null;
+
+            return positions[textureSubId];
         }
 
         /// <summary>
@@ -124,9 +189,8 @@ namespace VintageVisuals.PseudoPBR
         /// For roughness and surface relief that is a fair approximation; if an
         /// overlaid block ever looks wrong, this is the reason.
         /// </summary>
-        private static IAsset ResolveTextureAsset(ICoreClientAPI capi, CompositeTexture composite)
+        private static IAsset ResolveTextureAsset(ICoreClientAPI capi, AssetLocation source)
         {
-            AssetLocation source = composite.Base ?? composite.Baked.BakedName;
             if (source == null) return null;
 
             AssetLocation resolved = source.Clone()
@@ -136,7 +200,7 @@ namespace VintageVisuals.PseudoPBR
             return capi.Assets.TryGet(resolved);
         }
 
-        private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, CompositeTexture composite,
+        private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, AssetLocation source,
                                                   TextureAtlasPosition position, MaterialProfile profile,
                                                   int atlasWidth, int atlasHeight, string name,
                                                   out string skipReason)
@@ -145,7 +209,7 @@ namespace VintageVisuals.PseudoPBR
 
             try
             {
-                IAsset asset = ResolveTextureAsset(capi, composite);
+                IAsset asset = ResolveTextureAsset(capi, source);
                 if (asset == null)
                 {
                     skipReason = "texture asset not found";
