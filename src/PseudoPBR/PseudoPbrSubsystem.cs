@@ -47,6 +47,9 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         private bool _atlasIsSinglePage;
 
+        /// <summary>Last reported reason the subsystem is inactive, so it is logged on change rather than per call.</summary>
+        private string _inactiveReason;
+
         public string Name => GroupName;
 
         public void Initialize(VintageVisualsModSystem mod)
@@ -86,7 +89,29 @@ namespace VintageVisuals.PseudoPBR
         {
             if (_binder == null) return;
 
-            bool active = config.Enabled && _atlasTexture != null && _atlasTexture.IsUploaded && _atlasIsSinglePage;
+            bool active = config.Enabled && _atlasTexture != null && _atlasTexture.HasPixels && _atlasIsSinglePage;
+
+            // Says why, once per reason, when the answer is no. "Enabled is
+            // ticked but nothing happens" has been the shape of every problem
+            // this subsystem has had, and each time the log was silent about
+            // which precondition failed.
+            if (!active && config.Enabled)
+            {
+                string reason = _atlasTexture == null || !_atlasTexture.HasPixels
+                    ? "no material atlas has been derived (see the pseudopbr lines above)"
+                    : "the block texture atlas needs more than one page";
+
+                if (_inactiveReason != reason)
+                {
+                    _inactiveReason = reason;
+                    _mod.Mod.Logger.Warning("[VintageVisuals] pseudopbr: enabled in config but inactive — " + reason + ".");
+                }
+            }
+            else
+            {
+                _inactiveReason = null;
+            }
+
             _binder.SetState(active, config.NormalStrength, config.SpecularStrength, config.DebugView);
         }
 
@@ -126,10 +151,6 @@ namespace VintageVisuals.PseudoPBR
 
             if (_atlasBuilt) return;
 
-            // Set before the work, not after: if this throws we do not want to
-            // retry it on every subsequent config change.
-            _atlasBuilt = true;
-
             var diagnostics = new PbrDiagnostics(_mod.Mod.Logger);
             string directory = Path.Combine(GamePaths.DataPath, DataDirectory);
 
@@ -139,10 +160,28 @@ namespace VintageVisuals.PseudoPBR
 
             try
             {
-                BuildAtlas(config, diagnostics, directory);
+                // Latching on the OUTCOME, not on the attempt. An earlier
+                // version set this before the work with the reasoning that a
+                // throw should not be retried — which is right, and which it
+                // also applied to the transient early returns below it. If the
+                // very first Apply() ran before the block atlas had a size, the
+                // build gave up permanently and the subsystem spent the rest of
+                // the session enabled, silent and doing nothing. Apply() runs
+                // several times over the first seconds and again on every config
+                // change, so a genuinely transient failure now gets those tries.
+                _atlasBuilt = BuildAtlas(config, diagnostics, directory);
+
+                if (!_atlasBuilt)
+                {
+                    diagnostics.Note("material atlas not built this time; will try again on the next config " +
+                                     "change or startup retry.");
+                }
             }
             catch (Exception ex)
             {
+                // A throw is not transient. Latch so it is not retried every
+                // time a slider moves.
+                _atlasBuilt = true;
                 diagnostics.Error("material atlas build failed. Surface relief stays off and the world " +
                                   "renders as vanilla; nothing else in the mod is affected.", ex);
             }
@@ -150,15 +189,16 @@ namespace VintageVisuals.PseudoPBR
             diagnostics.WriteTo(directory);
         }
 
-        private void BuildAtlas(PseudoPbrConfig config, PbrDiagnostics diagnostics, string directory)
+        /// <summary>Returns whether the atlas is now derived and ready to upload.</summary>
+        private bool BuildAtlas(PseudoPbrConfig config, PbrDiagnostics diagnostics, string directory)
         {
             int width = _mod.Capi.BlockTextureAtlas.Size.Width;
             int height = _mod.Capi.BlockTextureAtlas.Size.Height;
 
             if (width <= 0 || height <= 0)
             {
-                diagnostics.Warn("block texture atlas reports a zero size; skipping the material atlas.");
-                return;
+                diagnostics.Warn("block texture atlas reports a zero size — too early to derive anything from it.");
+                return false;
             }
 
             _atlasIsSinglePage = CheckSinglePageAtlas(diagnostics);
@@ -169,7 +209,7 @@ namespace VintageVisuals.PseudoPBR
             if (regions.Count == 0)
             {
                 diagnostics.Warn("no block textures were collected; the material atlas would be empty.");
-                return;
+                return false;
             }
 
             string cachePath = Path.Combine(directory, "material-atlas-0.bin");
@@ -208,7 +248,13 @@ namespace VintageVisuals.PseudoPBR
                 }
             }
 
-            _atlasTexture.Upload(_mod.Capi, width, height, pixels, diagnostics);
+            // Handed over, not uploaded. The GL upload happens on the render
+            // thread inside PbrShaderBinder — creating a texture binds it to
+            // the active unit as a side effect, and doing that here, during an
+            // asset-load event, means clobbering whatever the game had bound.
+            _atlasTexture.SetPending(width, height, pixels);
+            diagnostics.Note("material atlas ready for upload (" + width + "x" + height + "); it reaches the " +
+                             "GPU on the first opaque frame after PseudoPBR.Enabled is set.");
 
             if (config.WriteAtlasPreview)
             {
@@ -223,6 +269,8 @@ namespace VintageVisuals.PseudoPBR
                     diagnostics.Warn("could not write preview images: " + ex.Message);
                 }
             }
+
+            return true;
         }
 
         /// <summary>

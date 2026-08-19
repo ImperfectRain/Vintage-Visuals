@@ -3,15 +3,21 @@ using Vintagestory.API.Client;
 namespace VintageVisuals.PseudoPBR
 {
     /// <summary>
-    /// Keeps the material atlas bound into the vanilla chunkopaque program and
-    /// its uniforms current.
+    /// Owns everything this subsystem does on the render thread: uploading the
+    /// material atlas, keeping it bound into the vanilla chunkopaque program,
+    /// and keeping its uniforms current.
     ///
-    /// This is a renderer that draws nothing. It exists because texture unit
-    /// bindings are global GL state that this mod does not own: anything can
-    /// rebind unit 6 between frames, and the failure would be silent and ugly
-    /// (surface relief sampled out of whatever texture happened to be there).
-    /// Re-binding once per frame, immediately before terrain draws, costs a
-    /// handful of GL calls and removes the question entirely.
+    /// It draws nothing. It exists because all of that is GL state work with a
+    /// right moment and a wrong moment, and the wrong moment has already cost
+    /// this subsystem two rounds of debugging. Texture unit bindings are global
+    /// state this mod does not own, and creating a texture binds it as a side
+    /// effect — so both the upload and the re-bind happen here, once per frame,
+    /// immediately before terrain draws.
+    ///
+    /// Every path that declines to do something says so exactly once. A
+    /// renderer that silently returns is indistinguishable from a renderer that
+    /// is working, and this subsystem has now twice been debugged from a
+    /// screenshot because the log had nothing to say.
     /// </summary>
     public sealed class PbrShaderBinder : IRenderer
     {
@@ -43,12 +49,13 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         private bool _programThinksEnabled;
 
-        /// <summary>
-        /// Latched so a missing uniform is reported once rather than at 60Hz.
-        /// Cleared when the condition clears, so a problem that returns after
-        /// a shader reload is reported again instead of staying silent.
-        /// </summary>
-        private bool _warnedMissingUniform;
+        // One-shot latches. Each clears when its condition clears, so a problem
+        // that returns after a shader reload is reported again rather than
+        // staying silent.
+        private bool _reportedNoPixels;
+        private bool _reportedNoTexture;
+        private bool _reportedMissingUniform;
+        private bool _reportedActive;
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasTexture atlas)
         {
@@ -61,9 +68,9 @@ namespace VintageVisuals.PseudoPBR
         public int RenderRange { get { return 0; } }
 
         /// <summary>
-        /// Sets what the next frame will upload. Called from config changes, so
-        /// it deliberately does no GL work of its own — the config thread is not
-        /// necessarily a thread with a GL context.
+        /// Sets what the next frame will do. Called from config changes, so it
+        /// deliberately does no GL work of its own — the config path is not
+        /// guaranteed to be a thread with a GL context.
         /// </summary>
         public void SetState(bool enabled, float normalStrength, float specularStrength, float debugView)
         {
@@ -76,17 +83,43 @@ namespace VintageVisuals.PseudoPBR
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
             if (stage != EnumRenderStage.Opaque) return;
-            if (!_atlas.IsUploaded) return;
 
-            // Nothing to do while switched off — and specifically, no texture
-            // binding. An earlier version bound every frame regardless and only
-            // varied the uniform, which meant PseudoPBR.Enabled=false still
-            // occupied a texture unit. That is not an off switch: when binding
-            // to the wrong unit was corrupting the frame, the config flag that
-            // should have rescued the player did nothing and only a restart
-            // helped. Whatever else this renderer does, "off" has to mean it
-            // touches no shared GL state.
-            if (!_enabled && !_programThinksEnabled) return;
+            if (!_enabled)
+            {
+                ReleaseWhileDisabled();
+                return;
+            }
+
+            if (!_atlas.HasPixels)
+            {
+                if (!_reportedNoPixels)
+                {
+                    _reportedNoPixels = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: enabled, but no material atlas has been " +
+                        "derived yet, so there is nothing to sample. Check PseudoPBR.BuildMaterialAtlas and the " +
+                        "earlier pseudopbr lines in this log.");
+                }
+                return;
+            }
+
+            _reportedNoPixels = false;
+
+            // Upload happens here, not at asset-load time. Creating a texture
+            // binds it to the active unit as a side effect, and doing that at
+            // an arbitrary moment during startup means clobbering whatever the
+            // game had bound there.
+            if (!_atlas.EnsureUploaded(_capi, _capi.Logger))
+            {
+                if (!_reportedNoTexture)
+                {
+                    _reportedNoTexture = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: the material atlas is not on the GPU, so " +
+                        "surface relief is inactive. The upload failure is logged above.");
+                }
+                return;
+            }
+
+            _reportedNoTexture = false;
 
             IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
 
@@ -96,29 +129,19 @@ namespace VintageVisuals.PseudoPBR
             // find vanilla passes, they are addressed by EnumShaderProgram id.
             if (program == null || !program.HasUniform(EnabledUniform))
             {
-                if (!_warnedMissingUniform)
+                if (!_reportedMissingUniform)
                 {
-                    _warnedMissingUniform = true;
-                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: chunkopaque has no " + EnabledUniform +
-                        " uniform, so the GLSL injection did not reach the compiled program. Surface relief is " +
-                        "inactive — check the log for a pseudopbr patch failure, and set EnableShaderDebugDump " +
-                        "to inspect the merged source.");
+                    _reportedMissingUniform = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: chunkopaque " +
+                        (program == null ? "is not loaded" : "has no " + EnabledUniform + " uniform") +
+                        ", so the GLSL injection did not reach the compiled program. Surface relief and the " +
+                        "debug views are inactive — look for a pseudopbr patch failure above, and set " +
+                        "EnableShaderDebugDump to inspect the merged source.");
                 }
                 return;
             }
 
-            _warnedMissingUniform = false;
-
-            if (!_enabled)
-            {
-                // One last visit to clear the flag the program is still holding,
-                // then leave it alone until the effect is switched back on.
-                program.Use();
-                program.Uniform(EnabledUniform, 0f);
-                program.Stop();
-                _programThinksEnabled = false;
-                return;
-            }
+            _reportedMissingUniform = false;
 
             program.Use();
             program.BindTexture2D(SamplerUniform, _atlas.TextureId, MaterialAtlasTexture.TextureUnit);
@@ -127,14 +150,55 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(SpecularStrengthUniform, _specularStrength);
             program.Uniform(DebugViewUniform, _debugView);
             program.Stop();
+
             _programThinksEnabled = true;
+
+            if (!_reportedActive)
+            {
+                _reportedActive = true;
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: surface relief active — atlas texture " +
+                    _atlas.TextureId + " bound at unit " + MaterialAtlasTexture.TextureUnit + ", uniforms uploading.");
+            }
         }
 
         /// <summary>
-        /// Required by IRenderer. The atlas texture is owned by the subsystem,
-        /// not by this, so there is deliberately nothing to release here — the
-        /// game calls this on renderer unregistration, which happens on world
-        /// leave, while the texture outlives that.
+        /// Gives back everything this renderer holds while it is switched off.
+        ///
+        /// Not just "stop varying the uniform". The texture is released too,
+        /// because while it exists it stays bound to its unit, and a config flag
+        /// that leaves shared GL state occupied is not an off switch — the
+        /// player has no way to rule this subsystem out.
+        /// </summary>
+        private void ReleaseWhileDisabled()
+        {
+            _reportedActive = false;
+
+            if (_programThinksEnabled)
+            {
+                IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
+                if (program != null && program.HasUniform(EnabledUniform))
+                {
+                    program.Use();
+                    program.Uniform(EnabledUniform, 0f);
+                    program.Stop();
+                }
+
+                _programThinksEnabled = false;
+            }
+
+            if (_atlas.IsUploaded)
+            {
+                _atlas.Release();
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: disabled — material atlas released from " +
+                    "the GPU. This subsystem now holds no shader patch, no texture and no texture unit.");
+            }
+        }
+
+        /// <summary>
+        /// Required by IRenderer. The atlas is owned by the subsystem, not by
+        /// this, so there is deliberately nothing to release here — the game
+        /// calls this on renderer unregistration, which happens on world leave,
+        /// while the atlas outlives that.
         /// </summary>
         public void Dispose()
         {

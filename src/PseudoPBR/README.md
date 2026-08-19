@@ -172,15 +172,25 @@ player looks at.
 
 Everything else exists to make that line possible:
 
-- `MaterialAtlasTexture` uploads the derived atlas as one RGBA texture with the
-  block atlas's exact dimensions, so it samples with the same `uv`.
-- `PbrShaderBinder` is an `IRenderer` that draws nothing. It re-binds the atlas
-  and refreshes the uniforms once per frame at render order **0.35**, which is
-  the gap immediately before terrain opaque (0.37). Once-at-startup would be
-  cheaper, but texture unit bindings are global GL state that this mod does not
-  own — anything can rebind unit 15, and the failure would be silent and ugly.
-  It also binds nothing at all while the subsystem is off, so `Enabled: false`
-  really does mean "touches no shared GL state".
+- `MaterialAtlasTexture` holds the derived atlas. Its pixels and its GL texture
+  have separate lifetimes on purpose: the pixels are produced during asset load,
+  and the **upload happens on the render thread**, at a stage this mod chose.
+  Creating a texture binds it to the active unit as a side effect, so uploading
+  from an asset-load event means clobbering whatever the game had bound there.
+- `PbrShaderBinder` is an `IRenderer` that draws nothing and owns every piece of
+  GL work here — the upload, the re-bind and the uniforms — once per frame at
+  render order **0.35**, the gap immediately before terrain opaque (0.37).
+  Once-at-startup would be cheaper, but texture unit bindings are global GL
+  state this mod does not own.
+- **Off means off.** While disabled the binder applies no patch, uploads
+  nothing, binds nothing, and *releases* the texture — because a texture that
+  exists stays bound to its unit. A flag that leaves shared GL state occupied
+  gives the player no way to rule this subsystem out, which is exactly what they
+  need when something looks wrong.
+- **Every path that declines to act says so, once.** A renderer that silently
+  returns is indistinguishable from one that is working. Twice this subsystem
+  was debugged from a screenshot because the log had nothing to say; each
+  precondition now names itself when it fails.
 - `vvTangentFrame` builds the tangent basis. Chunk geometry carries no tangents,
   and does not need to: every block face is axis-aligned, so one consistent
   frame per axis is exact rather than approximate.
