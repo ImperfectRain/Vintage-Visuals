@@ -116,9 +116,6 @@ namespace VintageVisuals.Common
         /// </summary>
         public float CloudDetail { get; set; } = 0.6f;
 
-        /// <summary>Multiplies volumetric cloud opacity. 1 is vanilla.</summary>
-        public float CloudDensity { get; set; } = 1.0f;
-
         internal void ClampToValidRanges(List<string> corrections)
         {
             WetnessStrength = ColorGradeConfig.Clamp(WetnessStrength, 0.0f, 2.0f,
@@ -139,8 +136,7 @@ namespace VintageVisuals.Common
                 "Weather.CloudDriftSpeed", corrections);
             CloudDetail = ColorGradeConfig.Clamp(CloudDetail, 0.0f, 1.0f,
                 "Weather.CloudDetail", corrections);
-            CloudDensity = ColorGradeConfig.Clamp(CloudDensity, 0.25f, 3.0f,
-                "Weather.CloudDensity", corrections);
+
         }
     }
 

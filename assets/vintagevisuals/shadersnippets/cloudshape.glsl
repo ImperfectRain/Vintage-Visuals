@@ -7,7 +7,6 @@
 // has no reason to redo, and the shape is the part that reads as weather.
 
 uniform float vv_cloudDetail;   // extra high-frequency shaping, 0 is vanilla
-uniform float vv_cloudDensity;  // multiplies cloud opacity, 1 is vanilla
 
 // Replaces vanilla's octave() entirely - the patch anchors on the whole
 // function, so nothing of the original is left to paste back.

@@ -212,9 +212,6 @@ namespace VintageVisuals.Common
                 case "weather_clouddetail":
                     weather.CloudDetail = tree.GetFloat("value", weather.CloudDetail);
                     break;
-                case "weather_clouddensity":
-                    weather.CloudDensity = tree.GetFloat("value", weather.CloudDensity);
-                    break;
                 case "pbr_blocklightdir":
                     pbr.BlockLightDirectionality = tree.GetFloat("value", pbr.BlockLightDirectionality);
                     break;

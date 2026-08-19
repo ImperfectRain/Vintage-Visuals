@@ -147,6 +147,12 @@ nothing. `verifypatches` refuses such a file by name rather than trusting it.
   independently, the fragment shader would declare an input nothing writes and
   the program would not link, costing the world rather than the feature. The
   sky-exposure varying lives in `pseudopbr.yaml`, not a weather group.
+- **Zero must mean "behave like vanilla" for every uniform.** An unset GLSL
+  uniform reads as exactly 0, and a uniform can be unset for many reasons - the
+  binder skipped, the program was not patched, a group rolled back. So 0 has to
+  be the harmless value. `vv_cloudDensity` multiplied vanilla's density term,
+  where 0 meant NO CLOUDS AT ALL rather than "normal clouds", and that shipped.
+  Check the zero case of every new uniform before adding it.
 - **A declared uniform is not an uploaded uniform.** An unset GLSL uniform reads
   as zero, and zero is a legal value, so a missing `program.Uniform(...)` call
   is invisible from C# and from the log. Five shipped that way at once. The

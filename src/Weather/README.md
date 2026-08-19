@@ -139,10 +139,21 @@ redo; shape and density are the parts that read as weather.
   breaks the silhouette into the ragged fringe real cumulus have. Blended rather
   than added, so 0 is exactly vanilla and sharpening a cloud does not also
   inflate it.
-- **Density scales vanilla's `f`**, inside the exponential. That is Beer's law,
-  so it is the physically meaningful place to make cloud thicker — scaling the
-  result afterwards would flatten the falloff and make thin and thick cloud look
-  equally solid at the edges.
+### The density patch, and why it is gone
 
-Rain thickens clouds further on top of the slider, because a sky that is raining
-on you should not be the same sky as a clear one with the fog turned up.
+A second patch scaled vanilla's density term inside `volume()`. It was removed
+after it deleted every cloud in the sky.
+
+`volume()` has exactly one caller, and its result gates `if (v > 0.0)` - the
+test deciding whether a cloud is drawn at all. So an unset `vv_cloudDensity` did
+not mean "vanilla density", it meant **no clouds anywhere**.
+
+The rule it broke is the one this whole mod runs on: an unset GLSL uniform reads
+as zero, and a uniform can be unset for many reasons - the binder skipped, the
+program was not patched, a group rolled back - so zero has to be the harmless
+value. Every other uniform here satisfies that. Rain 0 is dry, cloud shadow 0 is
+unshadowed, cloud detail 0 is vanilla's own two octaves. That one inverted it,
+and the failure was total rather than partial.
+
+Density can come back, through a term where zero is harmless rather than fatal,
+once the shaping patch has been seen working.

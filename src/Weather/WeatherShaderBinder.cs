@@ -31,7 +31,6 @@ namespace VintageVisuals.Weather
         public const string CloudOriginUniform = "vv_cloudOrigin";
 
         public const string CloudDetailUniform = "vv_cloudDetail";
-        public const string CloudDensityUniform = "vv_cloudDensity";
 
         /// <summary>
         /// Every program a weather patch reaches. Chunkopaque and Chunktopsoil
@@ -156,7 +155,6 @@ namespace VintageVisuals.Weather
             if (clouds)
             {
                 program.Uniform(CloudDetailUniform, enabled ? config.CloudDetail : 0f);
-                program.Uniform(CloudDensityUniform, enabled ? _weather.CloudDensity : 1f);
             }
 
             program.Stop();

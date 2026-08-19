@@ -85,16 +85,6 @@ namespace VintageVisuals.Weather
         }
 
         /// <summary>
-        /// Volumetric cloud opacity. Thicker in rain, because a sky that is
-        /// raining on you should not be the same sky as a clear one with the
-        /// fog turned up.
-        /// </summary>
-        public float CloudDensity
-        {
-            get { return Config.CloudDensity * (1f + 0.5f * _rain.Current); }
-        }
-
-        /// <summary>
         /// Camera world position. The chunk shaders only have camera-relative
         /// coordinates, so without this cloud shadows slide along the ground
         /// with the player instead of staying where they fell.

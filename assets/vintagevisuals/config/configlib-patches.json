@@ -356,18 +356,6 @@
           "step": 0.05
         }
       },
-      "weather_clouddensity": {
-        "ingui": "Cloud density",
-        "comment": "Multiplies volumetric cloud opacity. 1 is vanilla. Rain thickens clouds further on top of this.",
-        "default": 1.0,
-        "clientSide": true,
-        "weight": 50,
-        "range": {
-          "min": 0.25,
-          "max": 3.0,
-          "step": 0.05
-        }
-      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
         "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness.",

@@ -24,14 +24,18 @@
     }
   snippet: cloudshape.glsl
 
-# 2. Scale optical density.
+# The density patch that used to sit here has been REMOVED.
 #
-# `f` is vanilla's density factor and the exponential is Beer's law, so
-# multiplying f is the physically meaningful place to make clouds thicker -
-# scaling the result afterwards would flatten the falloff and make thin cloud
-# and thick cloud look equally solid at the edges.
-- type: token
-  filename: cloudvolumetric.fsh
-  tokens: "return 1.0 - exp(-max(0.0, min(max(m.x, m.y), t) - max(0.0, min(m.x, m.y))) * f);"
-  content: |
-    return 1.0 - exp(-max(0.0, min(max(m.x, m.y), t) - max(0.0, min(m.x, m.y))) * f * max(0.0, vv_cloudDensity));
+# It multiplied vanilla's `f` inside volume(), which is the only caller's
+# density term, and volume()'s result gates `if (v > 0.0)` - the test deciding
+# whether a cloud is drawn at all. So an unset vv_cloudDensity did not mean
+# "vanilla density", it meant NO CLOUDS ANYWHERE, and that is what shipped.
+#
+# The rule it broke is the one this whole mod runs on: an unset GLSL uniform
+# reads as zero, so zero has to be the value that means "behave like vanilla".
+# Every other uniform here satisfies that - rain 0 is dry, cloud shadow 0 is
+# unshadowed, cloud detail 0 is vanilla's own two octaves - and this one
+# inverted it.
+#
+# Density can come back, but through a term where zero is harmless rather than
+# fatal, and only once the shaping patch has been seen working.

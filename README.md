@@ -83,7 +83,6 @@ value.
 | `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |
 | `Weather.CloudDriftSpeed` | 0 – 8 | `0.9` | Cloud shadow speed, cells per minute |
 | `Weather.CloudDetail` | 0.0 – 1.0 | `0.6` | Extra high-frequency shaping on volumetric clouds |
-| `Weather.CloudDensity` | 0.25 – 3.0 | `1.0` | Volumetric cloud opacity |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →
