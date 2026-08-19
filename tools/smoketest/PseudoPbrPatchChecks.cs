@@ -145,6 +145,11 @@ void main()
             ok("snippet resolved into content",
                 patches.Any(p => p.Content.Contains("float vvSurfaceBrightness(float vanillaBrightness")));
 
+            // The whole shipped surface has to be ASCII; AsciiChecks scans the
+            // files, this pins the resolved patch content the loader produces.
+            ok("resolved patch content is plain ASCII",
+                patches.All(p => p.Content.All(c => c <= '~' || c == '\n' || c == '\r' || c == '\t')));
+
             // --- the happy path ---
             var logger = new CollectingLogger();
             var patcher = new ShaderPatcher(logger);
@@ -159,8 +164,12 @@ void main()
             ok("normal assertion applied", CountOf(result, "in vec3 normal; // vintagevisuals") == 1);
             ok("brightness call patched",
                 result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv))"));
-            ok("specular added at the lit-colour site",
-                result.Contains("outColor.rgb += vvSpecular(normal, uv, worldPos.xyz, b, fogAmount, murkiness);"));
+            ok("microfacet pass runs on the lit colour",
+                result.Contains("outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness);"));
+            ok("Cook-Torrance terms injected",
+                result.Contains("float vvDistributionGGX(float NdotH, float roughness)") &&
+                result.Contains("float vvGeometrySmith(float NdotV, float NdotL, float roughness)") &&
+                result.Contains("vec3 vvFresnelSchlick(float VdotH, vec3 f0)"));
             ok("debug view applied before the glow write",
                 result.IndexOf("vvDebugView(outColor", StringComparison.Ordinal) <
                 result.IndexOf("outGlow = vec4(glowLevel", StringComparison.Ordinal));

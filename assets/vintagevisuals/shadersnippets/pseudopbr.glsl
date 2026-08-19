@@ -110,46 +110,129 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
     return clamp(vanillaBrightness + vvReliefDelta(faceNormal, materialUv), 0.0, 1.0);
 }
 
-// Specular highlight from the atlas's roughness and specular channels.
+// ---------------------------------------------------------------------------
+// Cook-Torrance microfacet shading
 //
-// Blinn-Phong rather than a microfacet BRDF. The inputs are derived, not
-// measured  -  roughness comes from local texture variance and the specular mask
-// from flood-filled colour regions  -  so a physically exact evaluation of
-// approximate data buys nothing a half-vector power does not, and costs a
-// square root and two divisions per fragment on every terrain pixel.
-//
-// The exponent is what actually reads as material: 4 for a rough surface gives
-// a broad soft sheen, 256 for polished metal gives a tight glint. Roughness
-// drives it, so the same code makes soil matte and steel sharp.
-vec3 vvSpecular(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos,
-                float shadowBrightness, float fog, float murkiness)
+// Applied on top of vanilla's lit colour rather than replacing it. Vanilla
+// already computes a diffuse term from block light, sun light and the shadow
+// map, and it is the term the whole game is balanced around; throwing it away
+// for a from-scratch lighting model would mean re-deriving light colour,
+// ambient and time of day from uniforms this shader only partly has. So the
+// diffuse stays vanilla's, and this adds what vanilla has no notion of: a
+// microfacet specular lobe whose shape comes from the derived roughness, and
+// the energy that lobe takes back out of the diffuse.
+// ---------------------------------------------------------------------------
+
+const float VV_PI = 3.14159265359;
+
+// GGX / Trowbridge-Reitz normal distribution. This is the term that makes
+// roughness read as material: it concentrates the highlight into a tight core
+// with a wide tail, which is what separates polished metal from worn stone far
+// more convincingly than a Blinn-Phong exponent does.
+float vvDistributionGGX(float NdotH, float roughness)
 {
-    if (vv_pbrEnabled < 0.5) return vec3(0.0);
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / max(1e-5, VV_PI * d * d);
+}
+
+// Smith geometry term with the Schlick-GGX approximation, using the k for
+// direct lighting rather than IBL. Accounts for microfacets shadowing each
+// other, which is what stops rough surfaces blowing out at grazing angles.
+float vvGeometrySmith(float NdotV, float NdotL, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    float gv = NdotV / (NdotV * (1.0 - k) + k);
+    float gl = NdotL / (NdotL * (1.0 - k) + k);
+    return gv * gl;
+}
+
+vec3 vvFresnelSchlick(float VdotH, vec3 f0)
+{
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
+}
+
+// Reflectance at normal incidence.
+//
+// Dielectrics reflect about 4% of light, white; metals reflect their own
+// albedo, which is why copper has an orange highlight and steel a white one.
+// That distinction needs metalness, and metalness is not in the atlas - there
+// are five values worth storing and four channels.
+//
+// The specular mask stands in for it, squared so the interpolation stays near
+// the dielectric end until a surface is genuinely reflective. That works
+// because of how the material table happens to be shaped: among the materials
+// chunkopaque actually draws, SpecularScale tracks metalness closely (Metal
+// 1.00/1.00, Ore 0.85/0.35, Stone 0.25/0, Soil 0.05/0). The materials where
+// the two diverge - water, glass - are drawn by chunkliquid and
+// chunktransparent, not by this shader; ice is the one exception here, and its
+// albedo is near-white, so tinting by it is very close to not tinting at all.
+//
+// If this ever reads wrong, the fix is a second atlas carrying real metalness,
+// not a cleverer curve.
+vec3 vvReflectanceF0(vec3 albedo, float specularMask)
+{
+    return mix(vec3(0.04), albedo, specularMask * specularMask);
+}
+
+vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
+                vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness)
+{
+    if (vv_pbrEnabled < 0.5) return litColor;
 
     vec4 material = texture(vv_materialTex, materialUv);
-    float roughness = clamp(material.b, 0.0, 1.0);
+
+    // Floored rather than clamped to 0: a perfectly smooth surface makes the
+    // GGX denominator collapse to a single pixel-wide highlight that aliases
+    // into sparkle as the camera moves.
+    float roughness = clamp(material.b, 0.04, 1.0);
     float specularMask = clamp(material.a, 0.0, 1.0);
 
     vec3 n = vvPerturbNormal(normalize(faceNormal), materialUv);
     vec3 l = normalize(lightPosition);
 
-    // worldPos is camera-relative here  -  vanilla's own applyReflectiveEffect
-    // treats it that way  -  so the view vector points back from the fragment.
+    // worldPos is camera-relative here - vanilla's own applyReflectiveEffect
+    // treats it that way - so the view vector points back from the fragment.
     vec3 v = normalize(-cameraRelativePos);
     vec3 h = normalize(l + v);
 
-    float shininess = mix(256.0, 4.0, roughness);
-    float highlight = pow(max(0.0, dot(n, h)), shininess);
+    float ndotl = max(dot(n, l), 0.0);
+    float ndotv = max(dot(n, v), 1e-4);
+    float ndoth = max(dot(n, h), 0.0);
+    float vdoth = max(dot(v, h), 0.0);
 
-    // Everything that should suppress a highlight: facing away from the sun,
-    // in shadow, at night, or behind fog. Without the dot(n, l) term a surface
-    // lit from behind still catches a rim highlight, which reads as glass.
-    float visibility = max(0.0, dot(n, l))
-                     * clamp(shadowBrightness, 0.0, 1.0)
+    vec3 f0 = vvReflectanceF0(albedo, specularMask);
+    vec3 fresnel = vvFresnelSchlick(vdoth, f0);
+
+    float distribution = vvDistributionGGX(ndoth, roughness);
+    float geometry = vvGeometrySmith(ndotv, ndotl, roughness);
+
+    // The standard Cook-Torrance denominator. One factor of NdotL cancels
+    // against the NdotL in the reflectance equation, which is why the term
+    // below is multiplied by ndotl exactly once.
+    vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
+
+    // Everything that should suppress a highlight: shadow, night, fog, water.
+    float visibility = clamp(shadowBrightness, 0.0, 1.0)
                      * clamp(dayLight, 0.0, 1.0)
                      * clamp(1.0 - fog - murkiness, 0.0, 1.0);
 
-    return vec3(min(1.0, highlight * specularMask * visibility * vv_pbrSpecularStrength));
+    vec3 result = litColor.rgb;
+
+    // Energy conservation. Light reflected specularly is light that did not
+    // scatter diffusely, so the diffuse has to give it up - this is what makes
+    // metal read as metal rather than as bright plastic, because a metal's
+    // diffuse drops to almost nothing and only the highlight remains.
+    //
+    // Scaled by the strength slider so that 0 is exactly vanilla: a player who
+    // turns the effect off must get their old image back, not a darker one.
+    result *= mix(vec3(1.0), 1.0 - fresnel, vv_pbrSpecularStrength * specularMask);
+
+    result += specular * ndotl * visibility * vv_pbrSpecularStrength;
+
+    return vec4(result, litColor.a);
 }
 
 // Replaces the output with one layer of the material system.
@@ -177,13 +260,23 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // 4: the relief contribution alone, biased so no change reads as mid grey.
     if (mode == 4) return vec4(vec3(0.5 + vvReliefDelta(faceNormal, materialUv)), color.a);
 
-    if (mode == 5) return vec4(vvSpecular(faceNormal, materialUv, cameraRelativePos,
-                                          shadowBrightness, fog, murkiness), color.a);
+    // 5: the specular contribution alone, on black.
+    if (mode == 5)
+    {
+        vec4 lobe = vvApplyPbr(vec4(0.0, 0.0, 0.0, color.a), vec3(1.0), faceNormal, materialUv,
+                               cameraRelativePos, shadowBrightness, fog, murkiness);
+        return vec4(lobe.rgb, color.a);
+    }
 
     // 6: the perturbed normal in WORLD space. Unlike view 1 this shows the
     // tangent frame doing its job  -  the six block faces should come out as six
     // flat colours, with the relief visible as variation within each.
     if (mode == 6) return vec4(vvPerturbNormal(normalize(faceNormal), materialUv) * 0.5 + 0.5, color.a);
+
+    // 7: reflectance at normal incidence. Grey means dielectric, a coloured
+    // surface means the shader is treating it as metal - the fastest way to see
+    // whether the specular-mask stand-in for metalness is behaving.
+    if (mode == 7) return vec4(vvReflectanceF0(color.rgb, material.a), color.a);
 
     return color;
 }

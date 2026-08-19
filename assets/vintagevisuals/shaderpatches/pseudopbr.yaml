@@ -74,14 +74,19 @@
 # ambiguous anchor rather than guessing.
 #
 # nb is wrapped, not the min, so shadow keeps its authority and relief cannot
-# light up a face the shadow map says is dark. Specular is added after, so it
-# is fogged and shadowed by the same terms.
+# light up a face the shadow map says is dark.
+#
+# The microfacet pass then runs on the finished lit colour: it takes energy out
+# of the diffuse and adds the specular lobe back, using vanilla's own shadow,
+# fog and murkiness terms so a highlight cannot appear where the light does not
+# reach. texColor is passed as the albedo - it is the colour-mapped diffuse,
+# which is what the reflectance model needs to tint a metal's highlight.
 - type: token
   filename: chunkopaque.fsh
   tokens: outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);
   content: |
     outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, vvSurfaceBrightness(nb, normal, uv)), worldPos.xyz);
-    outColor.rgb += vvSpecular(normal, uv, worldPos.xyz, b, fogAmount, murkiness);
+    outColor = vvApplyPbr(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness);
 
 # 6. Debug layer views, applied last so they replace the finished colour.
 #

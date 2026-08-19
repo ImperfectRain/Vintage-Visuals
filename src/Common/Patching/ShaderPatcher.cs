@@ -27,6 +27,22 @@ namespace VintageVisuals.Common.Patching
         public IReadOnlyList<ShaderPatchGroup> Groups => _groups;
 
         /// <summary>Replaces the loaded patch set. Called on (re)load of the YAML assets.</summary>
+        /// <summary>
+        /// Which files each group has ever patched, surviving both SetPatches
+        /// and ResetRunState.
+        ///
+        /// <see cref="ShaderPatchGroup.PatchedFiles"/> cannot answer "did this
+        /// work" because the groups are rebuilt from disk on every shader
+        /// reload, and the game recompiles its shaders BEFORE the reload event
+        /// reaches us — so the per-run record is wiped moments after it is
+        /// filled. The summary read that record and reported "loaded but not
+        /// applied to any shader yet" 52 times in one session for groups that
+        /// were demonstrably working, which sent this project hunting a patch
+        /// failure that never happened.
+        /// </summary>
+        private readonly Dictionary<string, HashSet<string>> _everApplied =
+            new Dictionary<string, HashSet<string>>();
+
         public void SetPatches(IEnumerable<ShaderPatch> patches)
         {
             _groups.Clear();
@@ -91,6 +107,15 @@ namespace VintageVisuals.Common.Patching
                     code = staged;
                     if (!group.PatchedFiles.Contains(filename)) group.PatchedFiles.Add(filename);
 
+                    HashSet<string> everApplied;
+                    if (!_everApplied.TryGetValue(group.Name, out everApplied))
+                    {
+                        everApplied = new HashSet<string>();
+                        _everApplied[group.Name] = everApplied;
+                    }
+
+                    everApplied.Add(filename);
+
                     _logger.VerboseDebug("[VintageVisuals] applied " + applicable.Count +
                                          " patch(es) from group '" + group.Name + "' to " + filename);
                 }
@@ -134,17 +159,24 @@ namespace VintageVisuals.Common.Patching
                 {
                     _logger.Error("[VintageVisuals] patch group '" + group.Name + "': FAILED — " + group.FailureReason);
                 }
-                else if (group.PatchedFiles.Count == 0)
-                {
-                    // Not an error: the group's target shaders may simply not
-                    // have been loaded yet, or at all on this render path.
-                    _logger.Notification("[VintageVisuals] patch group '" + group.Name +
-                                         "': loaded but not applied to any shader yet.");
-                }
                 else
                 {
-                    _logger.Notification("[VintageVisuals] patch group '" + group.Name + "': OK (" +
-                                         string.Join(", ", group.PatchedFiles) + ")");
+                    HashSet<string> everApplied;
+                    _everApplied.TryGetValue(group.Name, out everApplied);
+
+                    if (everApplied == null || everApplied.Count == 0)
+                    {
+                        // Not an error: the group's target shaders may simply
+                        // not have been loaded yet, or at all on this render
+                        // path.
+                        _logger.Notification("[VintageVisuals] patch group '" + group.Name +
+                                             "': loaded but not applied to any shader yet.");
+                    }
+                    else
+                    {
+                        _logger.Notification("[VintageVisuals] patch group '" + group.Name + "': OK (" +
+                                             string.Join(", ", everApplied) + ")");
+                    }
                 }
             }
         }

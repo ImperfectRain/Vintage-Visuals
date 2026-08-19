@@ -81,8 +81,11 @@ namespace VintageVisuals.Common
         public float NormalStrength { get; set; } = 1.0f;
 
         /// <summary>
-        /// Global multiplier on the specular highlight, on top of the
-        /// per-material ceiling already baked into the atlas.
+        /// Global multiplier on the microfacet specular, and on the energy it
+        /// takes back out of the diffuse.
+        ///
+        /// Both, deliberately, so 0 is exactly vanilla. A player who turns the
+        /// effect off has to get their old image back, not a darker one.
         /// </summary>
         public float SpecularStrength { get; set; } = 1.0f;
 
@@ -96,6 +99,7 @@ namespace VintageVisuals.Common
         ///   4  relief contribution, biased so "no change" is mid grey
         ///   5  specular highlight on its own
         ///   6  perturbed normal in world space
+        ///   7  reflectance at normal incidence (grey = dielectric, coloured = metal)
         ///
         /// A float rather than an int because ConfigLib's float settings are
         /// the ones this mod has confirmed working in game; an integer category
@@ -143,7 +147,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 6.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 7.0f,
                 "PseudoPBR.DebugView", corrections);
         }
     }

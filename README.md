@@ -62,7 +62,7 @@ value.
 | `PseudoPBR.Enabled` | bool | **`false`** | Surface relief. Off by default — it is the only setting that patches the shader drawing the world, and it has not been confirmed working on a GPU |
 | `PseudoPBR.NormalStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the relief. 0 is flat, 1.0 is the tuned look |
 | `PseudoPBR.SpecularStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the specular highlight |
-| `PseudoPBR.DebugView` | 0 – 6 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal |
+| `PseudoPBR.DebugView` | 0 – 7 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal, 7 reflectance |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
 | `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
@@ -92,10 +92,10 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
 | **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
-| **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas |
+| **PBR:** derived material atlas + disk cache | **4 (renders)** — 2 pages derived, uploaded and sampled in game |
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
-| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — ships disabled until seen working; cause of the earlier breakage found and fixed |
-| **PBR:** specular from roughness + spec mask | 2 (compiles) |
+| **PBR:** surface relief in `chunkopaque.fsh` | **4 (renders)** — normals visible in game via the debug views |
+| **PBR:** Cook-Torrance specular + energy conservation | 2 (compiles) |
 | **PBR:** per-layer debug views | 2 (compiles) |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | Everything under Weather / Reflections | not started |

@@ -26,7 +26,7 @@ what that means and what is still unconfirmed.
 | Multi-page block atlases | done, level 2 (compiles) |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
 | `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 49 checks |
-| Specular from the roughness and specular channels | done, level 2 (compiles) |
+| Cook-Torrance specular + energy conservation | done, level 2 (compiles) |
 | Per-layer debug views | done, level 2 (compiles) |
 | `chunktopsoil.fsh` (grass, dirt tops) | not started |
 | Roughness modulates SSR blur | not started (needs Phase 3) |
@@ -236,6 +236,7 @@ system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slide
 | 4 | relief contribution alone, mid-grey biased | Whether the relief is subtle or overdriven, with lighting isolated from albedo |
 | 5 | specular highlight alone | Where highlights land, without albedo hiding them |
 | 6 | perturbed normal in world space | The six block faces should read as six flat colours, with relief as variation inside each |
+| 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is
