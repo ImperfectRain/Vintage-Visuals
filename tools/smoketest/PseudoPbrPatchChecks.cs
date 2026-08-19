@@ -11,49 +11,87 @@ namespace VintageVisuals.SmokeTest
     ///
     /// This patch carries more risk than any other in the mod, because
     /// chunkopaque.fsh draws the world: a patch that half-applies does not lose
-    /// an effect, it fails to compile and loses the terrain. So the checks here
-    /// are weighted toward the failure paths — every anchor is knocked out in
-    /// turn and the group must roll all the way back to vanilla each time.
-    ///
-    /// What these checks CANNOT tell you is whether the anchors match the
-    /// installed game's chunkopaque.fsh. The stand-in below is shaped like
-    /// vanilla, not copied from it.
+    /// an effect, it fails to compile and loses the terrain. So the checks are
+    /// weighted toward the failure paths — every anchor is knocked out in turn
+    /// and the group must roll all the way back to vanilla each time.
     /// </summary>
     public static class PseudoPbrPatchChecks
     {
         /// <summary>
-        /// Stand-in shaped like vanilla chunkopaque.fsh. The lines the patch
-        /// anchors on are the ones corroborated by Volumetric Shading's own
-        /// patch set and by the chunk shader idioms it ships.
+        /// Stand-in for vanilla chunkopaque.fsh, cut down from the real 1.22.7
+        /// file as the game hands it to the compiler. Every line the patch
+        /// touches is reproduced verbatim; the ~1100 lines of noise between
+        /// them are not, and the game's own asset is not vendored into this
+        /// repo.
+        ///
+        /// Three properties of the real file are deliberately preserved,
+        /// because each of them broke an earlier version of this patch:
+        ///
+        ///  - **Includes are already expanded.** The real file has no #include
+        ///    at all; fogandlight.fsh's uniforms and helpers are inlined
+        ///    partway down. So `uniform vec3 lightPosition` appears BELOW the
+        ///    varyings, and anything using it must be injected below that too.
+        ///  - **Normal shading happens in the vertex shader.** `nb` arrives as
+        ///    a varying and applyFogAndShadowWithNormal, though still defined,
+        ///    is never called. Perturbing `normal` in the fragment shader would
+        ///    change nothing.
+        ///  - **`min(b, nb)` appears twice.** The patch must anchor on the full
+        ///    statement, or the engine rejects it as ambiguous.
         /// </summary>
         private const string Vanilla = @"#version 330 core
 #extension GL_ARB_explicit_attrib_location: enable
 
 uniform sampler2D terrainTex;
-uniform float alphaTest;
+uniform sampler2D terrainTexLinear;
 
-in vec2 uv;
 in vec4 rgba;
-in vec4 worldPos;
-in vec3 normal;
+in float fogAmount;
+in vec2 uv;
+in float glowLevel;
 flat in int renderFlags;
+in vec3 normal;
+in vec4 worldPos;
+in float nb;
+
+uniform float alphaTest;
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
 
-#include fogandlight.fsh
-#include vertexflagbits.ash
+uniform vec3 lightPosition;
+uniform float shadowIntensity = 1;
 
-void main()
+float getBrightnessFromShadowMap() { return 1.0; }
+float getUnderwaterMurkiness() { return 0.0; }
+
+float getBrightnessFromNormal(vec3 normal, float normalShadeIntensity, float minNormalShade) {
+	float nb = max(minNormalShade, 0.5 + 0.5 * dot(normal, lightPosition));
+	nb = max(nb, normal.y * 0.95);
+	return mix(1, nb, normalShadeIntensity);
+}
+
+vec4 applyFogAndShadowWithNormal(vec4 rgbaPixel, float fogAmount, vec3 normal, float normalShadeIntensity, float minNormalShade, vec3 worldPos) {
+	float b = getBrightnessFromShadowMap();
+	float nb = getBrightnessFromNormal(normal, normalShadeIntensity, minNormalShade);
+	b = min(b, nb);
+	return rgbaPixel * vec4(b, b, b, 1);
+}
+
+vec4 applyFogAndShadowFromBrightness(vec4 rgbaPixel, float fogAmount, float b, vec3 worldPos) {
+	return rgbaPixel * vec4(b, b, b, 1);
+}
+
+void main() 
 {
-    vec4 texColor = texture(terrainTex, uv) * rgba;
-    if (texColor.a < alphaTest) discard;
+	vec4 texColor = texture(terrainTex, uv) * rgba;
 
-    float intensity = 0.45 + (renderFlags & Lod0BitMask) * 0.1;
-    outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity);
+	float b = getBrightnessFromShadowMap();
 
-    float glow = 0;
-    outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
+	float murkiness=getUnderwaterMurkiness();
+	outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz); 
+
+	float glow = 0;
+	outGlow = vec4(glowLevel + glow, 0, 0, min(1, fogAmount + outColor.a));
 }
 ";
 
@@ -78,11 +116,18 @@ void main()
                 return;
             }
 
-            ok("3 patches produced", patches.Count == 3);
+            ok("4 patches produced", patches.Count == 4);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("all target chunkopaque.fsh", patches.All(p => p.AppliesTo("chunkopaque.fsh")));
+
+            // Every patch must be anchored. A 'start' patch here would inject
+            // above lightPosition's declaration and fail to compile — the
+            // mistake this file's whole layout exists to prevent.
+            ok("every patch is anchored, none injects at the top",
+                patches.All(p => p.Kind == ShaderPatchKind.Token || p.Kind == ShaderPatchKind.Regex));
+
             ok("snippet resolved into content",
-                patches.Any(p => p.Content.Contains("vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)")));
+                patches.Any(p => p.Content.Contains("float vvSurfaceBrightness(float vanillaBrightness")));
 
             // --- the happy path ---
             var logger = new CollectingLogger();
@@ -93,15 +138,30 @@ void main()
 
             ok("group healthy", patcher.IsGroupHealthy("pseudopbr"));
             ok("sampler injected", result.Contains("uniform sampler2D vv_materialTex;"));
-            ok("perturb function injected", result.Contains("mat3 vvTangentFrame(vec3 n)"));
-            ok("uv assertion applied", result.Contains("varying name asserted"));
-            ok("lighting call now takes a perturbed normal",
-                result.Contains("applyFogAndShadowWithNormal(texColor, fogAmount, vvPerturbNormal(normal, uv), 1, intensity)"));
+            ok("tangent frame injected", result.Contains("mat3 vvTangentFrame(vec3 n)"));
+            ok("uv assertion applied", CountOf(result, "in vec2 uv; // vintagevisuals") == 1);
+            ok("normal assertion applied", CountOf(result, "in vec3 normal; // vintagevisuals") == 1);
+            ok("brightness call patched",
+                result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv))"));
 
-            // The flat normal must be gone from the lighting call, or the patch
-            // silently did nothing while reporting success.
-            ok("flat normal no longer reaches the lighting call",
-                !result.Contains("applyFogAndShadowWithNormal(texColor, fogAmount, normal,"));
+            // The unmodulated brightness must be gone from the call, or the
+            // patch reported success while doing nothing.
+            ok("raw nb no longer reaches applyFogAndShadowFromBrightness",
+                !result.Contains("0, 1), min(b, nb), worldPos.xyz)"));
+
+            // The snippet REPLACES the lightPosition declaration, so it has to
+            // paste it back. Losing it would take out every vanilla helper that
+            // reads it, in a way no other check would notice.
+            ok("lightPosition survives being used as the anchor",
+                CountOf(result, "\nuniform vec3 lightPosition;") == 1);
+
+            // Declaration order is the whole reason this patch anchors where it
+            // does, so pin it rather than trusting the anchor's position.
+            int declAt = result.IndexOf("\nuniform vec3 lightPosition;", StringComparison.Ordinal);
+            int usedAt = result.IndexOf("float vvDirectionalShade(vec3 n)", StringComparison.Ordinal);
+            int callAt = result.IndexOf("vvSurfaceBrightness(nb, normal, uv)", StringComparison.Ordinal);
+            ok("lightPosition declared before our functions use it", declAt >= 0 && declAt < usedAt);
+            ok("our functions defined before the call site", usedAt >= 0 && usedAt < callAt);
 
             ok("#version still first line", result.TrimStart().StartsWith("#version"));
             ok("braces balanced", result.Count(c => c == '{') == result.Count(c => c == '}'));
@@ -109,29 +169,37 @@ void main()
             int mainCount = System.Text.RegularExpressions.Regex.Matches(result, @"\bvoid\s+main\s*\(").Count;
             ok("exactly one main()", mainCount == 1);
 
-            // Injection has to land after #version, or the GLSL compiler
-            // rejects the whole file on a directive-order error.
-            ok("injection after #version",
-                result.IndexOf("uniform sampler2D vv_materialTex;", StringComparison.Ordinal) >
-                result.IndexOf("#version", StringComparison.Ordinal));
-
             ok("final.fsh untouched by this group", patcher.Patch("final.fsh", Vanilla) == Vanilla);
 
             // --- every anchor, knocked out in turn ---
             //
-            // This is the check that matters. A rename in any one of these
-            // lines must produce vanilla GLSL, not GLSL that references
-            // vvPerturbNormal without the uv it needs — the latter would take
-            // the terrain down for everyone on the next game update.
-            CheckRollback(repo, resolveSnippet, yaml, check, "uv varying renamed",
+            // This is the set that matters. A rename in any one of these lines
+            // must produce vanilla GLSL, not GLSL that references
+            // vvSurfaceBrightness without the uv or normal it needs — the
+            // latter would take terrain down for everyone on a game update.
+            CheckRollback(resolveSnippet, yaml, check, "uv varying renamed",
                 Vanilla.Replace("in vec2 uv;", "in vec2 texUv;"));
 
-            CheckRollback(repo, resolveSnippet, yaml, check, "lighting call reworded",
-                Vanilla.Replace("applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity)",
-                                "applyFogAndShadow(texColor, fogAmount)"));
+            CheckRollback(resolveSnippet, yaml, check, "normal varying renamed",
+                Vanilla.Replace("in vec3 normal;", "in vec3 faceNormal;"));
+
+            CheckRollback(resolveSnippet, yaml, check, "lightPosition renamed",
+                Vanilla.Replace("uniform vec3 lightPosition;", "uniform vec3 sunDirection;"));
+
+            CheckRollback(resolveSnippet, yaml, check, "brightness call reworded",
+                Vanilla.Replace(
+                    "outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);",
+                    "outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, 0.45, worldPos.xyz);"));
         }
 
-        private static void CheckRollback(string repo, Func<string, string> resolveSnippet, string yaml,
+        private static int CountOf(string haystack, string needle)
+        {
+            int count = 0, i = 0;
+            while ((i = haystack.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { count++; i += needle.Length; }
+            return count;
+        }
+
+        private static void CheckRollback(Func<string, string> resolveSnippet, string yaml,
                                           Action<string, bool, string> check, string label, string vanilla)
         {
             var logger = new CollectingLogger();
@@ -142,7 +210,7 @@ void main()
 
             check(label + ": returns vanilla untouched", rolled == vanilla, "");
             check(label + ": no half-applied GLSL",
-                !rolled.Contains("vvPerturbNormal") && !rolled.Contains("vv_materialTex"), "");
+                !rolled.Contains("vvSurfaceBrightness") && !rolled.Contains("vv_materialTex"), "");
             check(label + ": group marked unhealthy", !patcher.IsGroupHealthy("pseudopbr"), "");
             check(label + ": logged CRITICAL", logger.Lines.Any(l => l.Contains("CRITICAL")), "");
         }

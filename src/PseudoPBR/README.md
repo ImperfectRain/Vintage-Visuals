@@ -24,7 +24,7 @@ what that means and what is still unconfirmed.
 | Disk cache keyed by content fingerprint | done |
 | Preview images for inspection | done |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
-| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 24 checks |
+| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 36 checks |
 | Specular / roughness consumed by a shader | not started — needs a light direction |
 | `chunktopsoil.fsh` (grass, dirt tops) | not started |
 | Roughness modulates SSR blur | not started (needs Phase 3) |
@@ -128,14 +128,48 @@ lines — so the folder should contain its own answer.
 
 The relief effect is deliberately the smallest possible intervention in the
 render pipeline. There is **no second lighting model** and no extra pass — the
-game already shades by normal, so it is given a better normal:
+game already shades by normal, so it is given a better one:
 
 ```glsl
-outColor = applyFogAndShadowWithNormal(texColor, fogAmount, vvPerturbNormal(normal, uv), 1, intensity);
+outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1),
+                                           min(b, vvSurfaceBrightness(nb, normal, uv)), worldPos.xyz);
 ```
 
-That one token replacement in `chunkopaque.fsh` is the whole render-side change.
-Everything else exists to make it possible:
+Two facts about 1.22.7's `chunkopaque.fsh` shaped that line, and both were
+guessed wrong before the real file was read:
+
+- **`#include` directives are already expanded** when the mod sees the source.
+  The shader arrives as one flat ~1180-line file with `vertexflagbits.ash`,
+  `fogandlight.fsh` and `colormap.fsh` inlined. So `fogandlight.fsh` is not a
+  separate patch target — and `uniform vec3 lightPosition` sits around line 171,
+  which means injecting at the top of the file puts our code *above* the uniform
+  it depends on. The snippet is therefore anchored on that declaration: one
+  anchor both places the code in scope and asserts the dependency. It also has
+  to paste the declaration back, since a token patch replaces its anchor.
+- **Normal shading moved to the vertex shader.** 1.22.7 never calls
+  `applyFogAndShadowWithNormal`; the function is still defined but dead. `main()`
+  reads a per-vertex `nb` varying instead. Perturbing `normal` in the fragment
+  shader would have changed nothing at all — the value that has to be modulated
+  is `nb`.
+
+`vvSurfaceBrightness` therefore returns `nb` plus the *difference* the perturbed
+normal makes to vanilla's own directional term, not a replacement for it. A
+difference, for two reasons: `nb`'s absolute value already carries whatever
+`normalShadeIntensity` and `minNormalShade` the vertex shader chose — values
+this shader cannot see and should not guess — and a difference is exactly zero
+where the atlas is flat, so every texture the mod failed to process renders
+precisely as vanilla.
+
+`nb` is wrapped rather than the surrounding `min(b, nb)`, so the shadow map
+keeps its authority and relief cannot light up a face that is in shadow.
+
+The delta uses only the directional half of vanilla's `getBrightnessFromNormal`,
+deliberately dropping its `max(nb, normal.y * 0.95)` sky-bounce term. That term
+saturates every upward-facing surface at 0.95; including it would make floors
+and ground the one place relief could never appear, which is most of what a
+player looks at.
+
+Everything else exists to make that line possible:
 
 - `MaterialAtlasTexture` uploads the derived atlas as one RGBA texture with the
   block atlas's exact dimensions, so it samples with the same `uv`.
@@ -147,6 +181,9 @@ Everything else exists to make it possible:
 - `vvTangentFrame` builds the tangent basis. Chunk geometry carries no tangents,
   and does not need to: every block face is axis-aligned, so one consistent
   frame per axis is exact rather than approximate.
+- The full `applyFogAndShadowFromBrightness` statement is the anchor rather than
+  the `min(b, nb)` fragment inside it, because that fragment appears twice in the
+  file and the patch engine rejects an ambiguous anchor instead of guessing.
 
 `vv_pbrEnabled` follows the same defensive shape as `vv_enabled` in ColorGrade —
 an unset GLSL uniform reads as exactly `0`, so a failure to bind lands on the
@@ -323,20 +360,25 @@ Per [CLAUDE.md](../../CLAUDE.md)'s ladder, honestly:
 |---|---|
 | Classification, report, atlas build, disk cache, previews | **3 (loads)** — run against a real 14,090-block registry and a real 4096×2048 atlas |
 | GPU upload and per-frame binding | **2 (compiles)** |
-| `chunkopaque.fsh` patch | **2 (compiles)** — applies and rolls back correctly against a stand-in shader, 24 smoke-test checks |
+| `chunkopaque.fsh` patch | **2 (compiles)** — all four anchors matched against the real 1.22.7 shader, and the result compiles as GLSL, 36 smoke-test checks |
 | Relief visible in game | **not reached** |
 
-Two specific things are unconfirmed and one of them is the real risk:
+The anchors *are* confirmed, and confirmed against the real thing rather than a
+stand-in. `EnableShaderDebugDump` produced the game's own `chunkopaque.fsh`
+exactly as it reaches the GLSL compiler; the patch engine was run over that file
+and all four anchors matched, in the right order, producing source that
+`glslangValidator` accepts. Vanilla and patched were each compiled across all
+**48** combinations of `SSAOLEVEL`, `SHADOWQUALITY`, `GODRAYS`, `NORMALVIEW` and
+`SHINYEFFECT`; both are clean in all 48, so the patch introduces no error in any
+graphics-settings configuration. That is as far as verification goes without a
+GPU: it proves the shader compiles, not that the relief looks right.
 
-1. **The patch anchors have not been checked against 1.22.7's own
-   `chunkopaque.fsh`.** They come from Volumetric Shading's patch set, which has
-   tracked these same two lines across several game versions, corroborated by
-   the chunk-shader idioms it ships (`uniform sampler2D terrainTex`,
-   `in vec2 uv`, world-space `normal` compared against `vec3(0,1,0)`). If either
-   anchor is wrong the group rolls back to vanilla and logs `CRITICAL` — loud and
-   safe, which is why shipping on best evidence is defensible here and would not
-   be if the patch could half-apply. The `uv` assertion patch exists solely to
-   make that true.
+Two things remain genuinely unconfirmed:
+
+1. **Nothing has been looked at on screen.** Whether the relief reads as grooves
+   rather than as noise, and whether the default strength is right, are questions
+   for eyes. The normal preview suggested the relief may be subtle, which is why
+   `PseudoPBR.NormalStrength` is a live slider.
 2. **Texture unit 6 is a convention, not a reservation.** If the game or another
    mod binds something else there mid-frame, the relief samples the wrong
    texture. Re-binding every frame before terrain draws makes this unlikely
@@ -344,10 +386,13 @@ Two specific things are unconfirmed and one of them is the real risk:
 
 ## What the material system still needs
 
-1. **Specular and roughness are derived, packed, cached and unused.** Consuming
-   them needs a light direction, which `chunkopaque.fsh` does not hand us at the
-   point the patch intervenes. That is the next piece of render work, and it is
-   what turns "metal trim has relief" into "metal trim is reflective".
+1. **Specular and roughness are derived, packed, cached and unused.** The place
+   for them is now known: under `#if SHINYEFFECT > 0`, vanilla already adds a
+   tight power-6 sun glint,
+   `glow += pow(max(0.0, dot(normal, lightPosition)), 6) * 0.125 * shadowIntensity * (1 - fogAmount - murkiness)`.
+   Scaling that by the atlas's specular channel and sharpening its exponent by
+   roughness is what turns "metal trim has relief" into "metal trim is
+   reflective", and it is another single-token patch.
 2. **Grass and dirt tops go through `chunktopsoil.fsh`**, a different shader with
    its own anchors. Left for a separate change: bundling it would mean one
    rollback takes both shaders down, and `git bisect` on broken rendering is the

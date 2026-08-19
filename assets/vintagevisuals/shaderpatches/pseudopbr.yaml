@@ -1,48 +1,69 @@
 # Vintage Visuals - pseudo-PBR patches against vanilla chunkopaque.fsh
 #
-# Group defaults to this file's name ("pseudopbr"). Every entry below succeeds
-# or fails as one unit: if any anchor stops matching, the loader rolls
+# Verified against 1.22.7's own chunkopaque.fsh as the game hands it to the
+# shader compiler. Two things about that file drive every decision here:
+#
+#  1. #include directives are ALREADY EXPANDED when this mod sees the source.
+#     chunkopaque.fsh arrives as one ~1180-line file with vertexflagbits.ash,
+#     fogandlight.fsh and colormap.fsh inlined. So fogandlight.fsh is not a
+#     separate patch target, and injection position within the flat file
+#     matters: `uniform vec3 lightPosition` sits around line 171, so anything
+#     using it must go below that, not at the top.
+#
+#  2. Normal shading moved to the VERTEX shader. 1.22.7 does not call
+#     applyFogAndShadowWithNormal at all — the function is still defined but
+#     dead. main() instead reads a per-vertex `nb` varying and calls
+#     applyFogAndShadowFromBrightness(texColor, fog, min(b, nb), worldPos.xyz).
+#     Perturbing `normal` in the fragment shader would therefore change
+#     nothing; the value that has to be modulated is `nb`.
+#
+# Group defaults to this file's name ("pseudopbr"). Every entry succeeds or
+# fails as one unit: if any anchor stops matching, the loader rolls
 # chunkopaque.fsh back to vanilla and this subsystem goes inert. That matters
-# more here than anywhere else in the mod - chunkopaque.fsh draws the world, so
-# a half-applied patch that fails to compile is a black screen rather than a
-# missing effect.
-#
-# ANCHOR PROVENANCE. The two token anchors below are NOT yet verified against
-# 1.22.7's own assets/game/shaders/chunkopaque.fsh. They are taken from the
-# patch set of Volumetric Shading, which has patched these same two lines
-# across several game versions, and are corroborated by the shader idioms in
-# its own chunk shaders (`uniform sampler2D terrainTex`, `in vec2 uv`,
-# world-space `normal` compared against vec3(0,1,0) for normal shading).
-# Verify them against the installed game before trusting this, per CLAUDE.md.
-# If they are wrong the failure is loud and safe - group rollback plus a
-# CRITICAL log line - which is why shipping on best evidence is reasonable
-# here and would not be if the patch could half-apply.
+# more here than anywhere else in the mod — chunkopaque.fsh draws the world, so
+# a half-applied patch is a black screen rather than a missing effect.
 
-# 1. Inject the sampler, the uniforms and the perturbation function.
-- type: start
-  filename: chunkopaque.fsh
-  snippet: pseudopbr.glsl
-
-# 2. Assert the texture coordinate varying is still called `uv`.
+# 1. Assert `uv`, and let patch 4 pass it safely.
 #
-# Semantically a no-op, and load-bearing anyway: it is the reason patch 3 can
-# safely pass `uv` into our function. Without it, a vanilla rename would leave
-# the injected call referencing an undeclared variable, and chunkopaque.fsh
-# would fail to COMPILE - costing the player the entire world render instead of
-# just this effect. Same pattern as the outColor assertion in colorgrade.yaml.
+# Semantically a no-op and load-bearing anyway: without it, a vanilla rename
+# would leave the injected call referencing an undeclared variable and
+# chunkopaque.fsh would fail to COMPILE, costing the player the entire world
+# render instead of one effect. Same pattern as colorgrade.yaml's outColor
+# assertion, for much higher stakes.
 - type: token
   filename: chunkopaque.fsh
   tokens: in vec2 uv;
   content: |
     in vec2 uv; // vintagevisuals: varying name asserted by pseudopbr.yaml
 
-# 3. Feed vanilla's own lighting call a perturbed normal.
-#
-# Deliberately the smallest possible intervention: no new lighting model, no
-# extra pass, no change to what the shader writes. The game already shades by
-# normal, so handing it relief-bearing normals is the whole effect.
+# 2. Assert `normal` for the same reason.
 - type: token
   filename: chunkopaque.fsh
-  tokens: outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity);
+  tokens: in vec3 normal;
   content: |
-    outColor = applyFogAndShadowWithNormal(texColor, fogAmount, vvPerturbNormal(normal, uv), 1, intensity);
+    in vec3 normal; // vintagevisuals: varying name asserted by pseudopbr.yaml
+
+# 3. Inject the sampler, the uniforms and the shading functions.
+#
+# Anchored on lightPosition's declaration rather than inserted at the top of
+# the file, because the snippet uses that uniform and GLSL requires the
+# declaration first. One anchor therefore does two jobs: it places the code in
+# scope, and it asserts the dependency it needs.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pseudopbr.glsl
+
+# 4. Modulate the per-vertex brightness with per-fragment relief.
+#
+# The full statement is the anchor rather than the `min(b, nb)` fragment: that
+# fragment appears twice in the file, and the patch engine rejects an ambiguous
+# anchor rather than guessing.
+#
+# nb is wrapped, not the min: shadow keeps its authority, so relief does not
+# light up a face the shadow map says is dark.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);
+  content: |
+    outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, vvSurfaceBrightness(nb, normal, uv)), worldPos.xyz);

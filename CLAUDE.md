@@ -67,6 +67,18 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   Before trusting any existing patch, verify its match string against the
   *currently installed* game's `assets/game/shaders/`. A patch that silently
   stops matching produces "mod does nothing", not a crash.
+- **`#include` directives are already expanded when we see the source.** The
+  hook runs on `ShaderRegistry.LoadShader`, and by then `chunkopaque.fsh` is one
+  flat ~1180-line file with `vertexflagbits.ash`, `fogandlight.fsh` and
+  `colormap.fsh` inlined. Two consequences: an include is never its own patch
+  target (unlike in Volumetric Shading, which hooks earlier), and **where** in
+  the file a patch injects matters — a `start` patch lands above declarations
+  that live in the includes, so anything using e.g. `lightPosition` must anchor
+  below it instead. Confirm with `EnableShaderDebugDump`, which writes the exact
+  source handed to the compiler.
+- **A patch that replaces its anchor must paste the anchor back.** Replacement
+  content is literal, never a regex template. `pseudopbr.glsl` re-declares
+  `uniform vec3 lightPosition;` for this reason.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is
@@ -102,6 +114,20 @@ State plainly what was and was not verified. The honest levels are:
 4. *Renders* — the visual change is actually visible and survives a world reload.
 
 Only (4) closes a milestone. Say which level you reached.
+
+Level 2 goes further than `dotnet build` for anything that patches GLSL. Dump
+the real shader, run the patch engine over it, and compile the result:
+
+```sh
+apt-get install -y glslang-tools
+glslangValidator patched.frag      # silence means it compiled
+```
+
+`#version` must stay line 1; strip `#extension` lines glslang does not know and
+inject `#define`s for `SSAOLEVEL`, `SHADOWQUALITY`, `GODRAYS`, `NORMALVIEW` and
+`SHINYEFFECT`, which the game supplies as prefix code. Sweep every combination
+and compile vanilla alongside patched, so a failure is attributable to the patch
+rather than to the harness.
 
 ## Conventions
 

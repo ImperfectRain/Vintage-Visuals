@@ -92,7 +92,7 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
 | **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas |
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
-| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — 24 checks; anchors not yet confirmed against 1.22.7 |
+| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — anchors confirmed against the real 1.22.7 shader, GLSL-validated in all 48 settings combinations; never seen on screen |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
 | **PBR:** specular / roughness consumed by a shader | not started |
 | Everything under Weather / Reflections | not started |
@@ -134,11 +134,11 @@ These are known now, not discovered later. Kept current as the mod grows.
   the patch inserts at the end of `final.fsh`. Highlights already clipped by
   vanilla cannot be recovered by lowering exposure here.
 - **The PseudoPBR shader patch is the riskiest one in the mod.** It patches
-  `chunkopaque.fsh`, which draws the world, and its anchors have not yet been
-  checked against 1.22.7's own copy — they are taken from Volumetric Shading's
-  patch set. A wrong anchor rolls the group back to vanilla and logs `CRITICAL`
-  rather than failing to compile, which is what the deliberately redundant `uv`
-  assertion patch buys. Surface relief also needs a **single-page** block
+  `chunkopaque.fsh`, which draws the world. Its anchors are confirmed against
+  1.22.7 and the patched source is GLSL-validated, but a future game update that
+  rewords any of the four anchored lines disables the effect — loudly, rolling
+  back to vanilla, which is what the deliberately redundant `uv` and `normal`
+  assertion patches buy. Surface relief also needs a **single-page** block
   texture atlas; heavily modded installs that spill onto a second page get
   vanilla rendering and a log line saying so.
 - **Roughness and specular are derived but unused.** They sit in the atlas
