@@ -30,6 +30,14 @@ namespace VintageVisuals.PseudoPBR
     {
         public const string GroupName = "pseudopbr";
 
+        /// <summary>
+        /// Grass and soil tops are drawn by their own program, so they get their
+        /// own patch group. Groups succeed or fail as a unit, and one shared
+        /// group would mean a reworded chunktopsoil line switching relief off
+        /// for every wall, floor and log in the world too.
+        /// </summary>
+        public const string TopsoilGroupName = "pseudopbrtopsoil";
+
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";
 

@@ -253,10 +253,135 @@ void main()
                 Vanilla.Replace("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));",
                                 "outGlow = vec4(glowLevel, 0, 0, outColor.a);"));
 
+            RunTopsoil(repo, check);
+
             CheckRollback(resolveSnippet, yaml, check, "brightness call reworded",
                 Vanilla.Replace(
                     "outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);",
                     "outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, 0.45, worldPos.xyz);"));
+        }
+
+
+        /// <summary>
+        /// Stand-in for vanilla chunktopsoil.fsh. Differs from chunkopaque in
+        /// the two ways that drive its patch: FIVE samplers rather than seven,
+        /// and it still calls applyFogAndShadowWithNormal, which chunkopaque no
+        /// longer does.
+        /// </summary>
+        private const string VanillaTopsoil = @"#version 330 core
+
+uniform sampler2D terrainTex;
+uniform sampler2D terrainTexLinear;
+
+in vec4 rgba;
+in float fogAmount;
+in vec2 uv;
+in float glowLevel;
+flat in int renderFlags;
+in vec3 normal;
+in vec4 worldPos;
+
+uniform float alphaTest;
+
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outGlow;
+
+uniform sampler2DShadow shadowMapFar;
+uniform sampler2DShadow shadowMapNear;
+
+uniform vec3 lightPosition;
+uniform float shadowIntensity = 1;
+
+float getBrightnessFromShadowMap() { return 1.0; }
+
+uniform sampler2D liquidDepth;
+
+float getUnderwaterMurkiness() { return 0.0; }
+
+vec4 applyFogAndShadowWithNormal(vec4 c, float f, vec3 n, float i, float m, vec3 w) { return c; }
+
+void main()
+{
+	outColor = texture(terrainTex, uv) * rgba;
+	float intensity = 0.45;
+	float murkiness=getUnderwaterMurkiness();
+	outColor = applyFogAndShadowWithNormal(outColor, clamp(fogAmount - 50*murkiness, 0, 1), normal, 1, intensity, worldPos.xyz);
+
+	float glow = 0;
+	outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
+}
+";
+
+        private static void RunTopsoil(string repo, Action<string, bool, string> check)
+        {
+            Action<string, bool> ok = (name, condition) => check(name, condition, "");
+
+            Func<string, string> resolveSnippet = name =>
+                File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets", name));
+
+            string yaml = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pseudopbrtopsoil.yaml"));
+
+            List<ShaderPatch> patches = ShaderPatchLoader
+                .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
+
+            ok("pseudopbrtopsoil.yaml parsed into 6 patches", patches.Count == 6);
+            ok("all target chunktopsoil.fsh", patches.All(p => p.AppliesTo("chunktopsoil.fsh")));
+
+            // Its own group. Sharing pseudopbr's would mean a reworded
+            // chunktopsoil line switching relief off for every wall and log too.
+            ok("topsoil is its own patch group",
+                patches.All(p => p.Group == "pseudopbrtopsoil"));
+
+            var patcher = new ShaderPatcher(new CollectingLogger());
+            patcher.SetPatches(patches);
+
+            string result = patcher.Patch("chunktopsoil.fsh", VanillaTopsoil);
+
+            ok("topsoil group healthy", patcher.IsGroupHealthy("pseudopbrtopsoil"));
+            ok("relief goes in through the normal",
+                result.Contains("vvSurfaceNormal(normal, uv, worldPos.xyz), 1, intensity, worldPos.xyz)"));
+            ok("albedo captured before the lighting call",
+                result.IndexOf("vec3 vvAlbedo = outColor.rgb;", StringComparison.Ordinal) <
+                result.IndexOf("outColor = applyFogAndShadowWithNormal", StringComparison.Ordinal));
+            ok("microfacet pass runs on the lit topsoil colour",
+                result.Contains("outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness);"));
+            ok("topsoil braces balanced", result.Count(c => c == '{') == result.Count(c => c == '}'));
+
+            // Same rule as chunkopaque, and it has to hold independently: our
+            // sampler after every one of vanilla's, or their link-time units
+            // shift underneath them.
+            int oursAt = result.IndexOf("uniform sampler2D vv_materialTex;", StringComparison.Ordinal);
+            string[] vanillaSamplers = {
+                "uniform sampler2D terrainTex;",
+                "uniform sampler2D terrainTexLinear;",
+                "uniform sampler2DShadow shadowMapFar;",
+                "uniform sampler2DShadow shadowMapNear;",
+                "uniform sampler2D liquidDepth;",
+            };
+            bool last = oursAt >= 0;
+            foreach (string sampler in vanillaSamplers)
+            {
+                int at = result.IndexOf(sampler, StringComparison.Ordinal);
+                if (at < 0 || at > oursAt) { last = false; break; }
+            }
+            ok("topsoil declares vv_materialTex after every vanilla sampler", last);
+
+            // A chunkopaque rename must not disable the forest floor, and vice
+            // versa. That independence is the entire reason for two groups.
+            var mixed = new ShaderPatcher(new CollectingLogger());
+            var all = new List<ShaderPatch>(patches);
+            all.AddRange(ShaderPatchLoader.ParsePatchFile(
+                File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pseudopbr.yaml")),
+                "pseudopbr", "test", resolveSnippet));
+            mixed.SetPatches(all);
+
+            mixed.Patch("chunkopaque.fsh", Vanilla.Replace("in vec2 uv;", "in vec2 texUv;"));
+            string topsoilAfter = mixed.Patch("chunktopsoil.fsh", VanillaTopsoil);
+
+            ok("a chunkopaque anchor failure leaves topsoil working",
+                mixed.IsGroupHealthy("pseudopbrtopsoil") && !mixed.IsGroupHealthy("pseudopbr") &&
+                topsoilAfter.Contains("vvSurfaceNormal"));
         }
 
         private static int CountOf(string haystack, string needle)

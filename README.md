@@ -95,6 +95,7 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** derived material atlas + disk cache | **4 (renders)** — 2 pages derived, uploaded and sampled in game |
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
 | **PBR:** surface relief in `chunkopaque.fsh` | **4 (renders)** — normals visible in game via the debug views |
+| **PBR:** surface relief in `chunktopsoil.fsh` (forest floor) | 2 (compiles) — anchors confirmed against the real shader |
 | **PBR:** Cook-Torrance specular + energy conservation | **4 (renders)** — confirmed in game, being tuned by eye |
 | **PBR:** per-layer debug views | 2 (compiles) |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |

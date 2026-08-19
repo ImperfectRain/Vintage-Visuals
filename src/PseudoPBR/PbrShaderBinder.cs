@@ -35,6 +35,19 @@ namespace VintageVisuals.PseudoPBR
         public const string NormalStrengthUniform = "vv_pbrNormalStrength";
         public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
         public const string DebugViewUniform = "vv_pbrDebugView";
+        public const string DayLightUniform = "vv_pbrDayLight";
+
+        /// <summary>
+        /// Every vanilla program this subsystem patches. Grass and soil tops go
+        /// through their own program, so uniforms have to reach both or the
+        /// forest floor is the one surface in the world the material system
+        /// does not touch.
+        /// </summary>
+        private static readonly EnumShaderProgram[] PatchedPrograms =
+        {
+            EnumShaderProgram.Chunkopaque,
+            EnumShaderProgram.Chunktopsoil,
+        };
 
         private readonly ICoreClientAPI _capi;
         private readonly MaterialAtlasSet _atlas;
@@ -212,9 +225,11 @@ namespace VintageVisuals.PseudoPBR
 
             if (_programThinksEnabled)
             {
-                IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
-                if (program != null && program.HasUniform(EnabledUniform))
+                foreach (EnumShaderProgram id in PatchedPrograms)
                 {
+                    IShaderProgram program = _capi.Shader.GetProgram((int)id);
+                    if (program == null || !program.HasUniform(EnabledUniform)) continue;
+
                     program.Use();
                     program.Uniform(EnabledUniform, 0f);
                     program.Stop();

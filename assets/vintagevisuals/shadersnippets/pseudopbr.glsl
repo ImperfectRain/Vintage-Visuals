@@ -47,6 +47,13 @@ uniform float vv_pbrSpecularStrength;
 // system so it can be inspected on its own  -  see vvDebugView.
 uniform float vv_pbrDebugView;
 
+// Daylight strength, uploaded by this mod rather than read from vanilla's
+// `dayLight`. chunkopaque.fsh declares that uniform and chunktopsoil.fsh does
+// not, and this snippet is injected into both - depending on a uniform that
+// exists in one shader and not the other would make the shared code compile in
+// one place and fail in the other. Ours exists wherever we put it.
+uniform float vv_pbrDayLight;
+
 // Builds a tangent frame for an axis-aligned block face.
 //
 // A proper renderer would take tangents from the mesh. Chunk geometry carries
@@ -61,11 +68,35 @@ mat3 vvTangentFrame(vec3 n)
     return mat3(tangent, bitangent, n);
 }
 
+// Snaps a coordinate to the centre of its texel.
+//
+// The atlas is uploaded with nearest filtering, so in principle this is
+// redundant. In practice the filter mode is set through the game's texture API
+// on a texture this mod does not fully own, and one round of "still looks
+// muddy" was spent unable to tell from a screenshot whether the setting had
+// taken. Snapping in the shader makes the sampling nearest by construction, at
+// the cost of one textureSize and a floor, and removes the question.
+//
+// It matters because Vintage Story is pixel art: the diffuse steps sharply
+// from texel to texel, and a normal that interpolates smoothly across the same
+// span makes light roll over a surface whose colour does not, which reads as
+// wet clay rather than as stone.
+vec2 vvSnapToTexel(vec2 materialUv)
+{
+    vec2 size = vec2(textureSize(vv_materialTex, 0));
+    return (floor(materialUv * size) + 0.5) / size;
+}
+
+vec4 vvSampleMaterial(vec2 materialUv)
+{
+    return texture(vv_materialTex, vvSnapToTexel(materialUv));
+}
+
 // Pure: no enable check. With vv_pbrNormalStrength unset (0) this returns the
 // face normal unchanged, so it degrades to vanilla on its own.
 vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)
 {
-    vec2 xy = (texture(vv_materialTex, materialUv).rg * 2.0 - 1.0) * vv_pbrNormalStrength;
+    vec2 xy = (vvSampleMaterial(materialUv).rg * 2.0 - 1.0) * vv_pbrNormalStrength;
 
     // Z is reconstructed rather than stored, which is what buys the atlas its
     // fourth channel. Scaling xy first and solving for z afterwards keeps the
@@ -113,6 +144,18 @@ float vvReliefDelta(vec3 faceNormal, vec2 materialUv)
 {
     vec3 n = normalize(faceNormal);
     return vvDirectionalShade(vvPerturbNormal(n, materialUv)) - vvDirectionalShade(n);
+}
+
+// The perturbed normal, gated and distance-faded, for shaders that hand their
+// normal straight to the lighting function instead of a precomputed brightness.
+// chunktopsoil.fsh is one: it still calls applyFogAndShadowWithNormal, so the
+// relief can go in through the normal itself rather than through a delta.
+vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
+{
+    if (vv_pbrEnabled < 0.5) return faceNormal;
+
+    vec3 n = normalize(faceNormal);
+    return normalize(mix(n, vvPerturbNormal(n, materialUv), vvDetailFade(cameraRelativePos)));
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -204,7 +247,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 {
     if (vv_pbrEnabled < 0.5) return litColor;
 
-    vec4 material = texture(vv_materialTex, materialUv);
+    vec4 material = vvSampleMaterial(materialUv);
 
     // Floored rather than clamped to 0: a perfectly smooth surface makes the
     // GGX denominator collapse to a single pixel-wide highlight that aliases
@@ -238,7 +281,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 
     // Everything that should suppress a highlight: shadow, night, fog, water.
     float visibility = clamp(shadowBrightness, 0.0, 1.0)
-                     * clamp(dayLight, 0.0, 1.0)
+                     * clamp(vv_pbrDayLight, 0.0, 1.0)
                      * clamp(1.0 - fog - murkiness, 0.0, 1.0)
                      * vvDetailFade(cameraRelativePos);
 
@@ -271,7 +314,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode <= 0) return color;
 
-    vec4 material = texture(vv_materialTex, materialUv);
+    vec4 material = vvSampleMaterial(materialUv);
 
     // 1: the tangent-space normal as stored, blue forced flat  -  the same view
     // the offline preview PNG writes, so the two can be compared directly.

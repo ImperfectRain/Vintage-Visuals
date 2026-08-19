@@ -1,0 +1,79 @@
+# Vintage Visuals - pseudo-PBR patches against vanilla chunktopsoil.fsh
+#
+# Grass and soil TOP faces are drawn by their own program, not by
+# chunkopaque.fsh, so without this the forest floor is the one surface in the
+# world the material system does not touch. In debug view 1 that showed up as
+# vanilla-coloured ground surrounded by debug-coloured foliage.
+#
+# A SEPARATE GROUP from pseudopbr.yaml, deliberately. Patch groups succeed or
+# fail as a unit, so putting these entries in the same file would mean a game
+# update that reworded one chunktopsoil line also switched relief off for every
+# wall, floor and log in the world. Two shaders, two groups, two independent
+# failure domains.
+#
+# Verified against 1.22.7's own chunktopsoil.fsh as dumped by
+# EnableShaderDebugDump. It differs from chunkopaque.fsh in two ways that
+# matter here:
+#
+#  1. It declares FIVE samplers, not seven - no glow, no sky - and liquidDepth
+#     is still the last of them, so that stays the injection anchor.
+#  2. It still calls applyFogAndShadowWithNormal, which chunkopaque.fsh no
+#     longer does. So relief goes in through the normal itself rather than
+#     through a brightness delta, which is simpler and slightly better: the
+#     normal reaches vanilla's own shading maths intact.
+
+# 1. Assert `uv`.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: in vec2 uv;
+  content: |
+    in vec2 uv; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
+
+# 2. Assert `normal`.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: in vec3 normal;
+  content: |
+    in vec3 normal; // vintagevisuals: varying name asserted by pseudopbrtopsoil.yaml
+
+# 3. Assert `lightPosition`, which the injected shading functions read.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: uniform vec3 lightPosition;
+  content: |
+    uniform vec3 lightPosition; // vintagevisuals: uniform asserted by pseudopbrtopsoil.yaml
+
+# 4. Inject the sampler, the uniforms and the shading functions - after every
+#    vanilla sampler, and before main(). Same reasoning as pseudopbr.yaml:
+#    declaring a sampler above vanilla's shifts their link-time texture units.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: uniform sampler2D liquidDepth;
+  snippet: pseudopbr.glsl
+
+# 5. Relief through the normal, then the microfacet pass on the lit colour.
+#
+# The albedo is captured before the lighting call, because that is the last
+# point outColor holds the surface colour rather than the shaded result - the
+# reflectance model needs the former to tint a metal's highlight.
+#
+# getBrightnessFromShadowMap() is called once more than vanilla does, so a
+# highlight cannot appear on a face the shadow map says is dark. That is a
+# second set of shadow lookups on this pass; topsoil is only ever the top faces
+# of the world, which is what makes it affordable.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: outColor = applyFogAndShadowWithNormal(outColor, clamp(fogAmount - 50*murkiness, 0, 1), normal, 1, intensity, worldPos.xyz);
+  content: |
+    vec3 vvAlbedo = outColor.rgb;
+    float vvShadow = getBrightnessFromShadowMap();
+    outColor = applyFogAndShadowWithNormal(outColor, clamp(fogAmount - 50*murkiness, 0, 1), vvSurfaceNormal(normal, uv, worldPos.xyz), 1, intensity, worldPos.xyz);
+    outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness);
+
+# 6. Debug layer views, applied last so they replace the finished colour.
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
+  content: |
+    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0);
+    outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);

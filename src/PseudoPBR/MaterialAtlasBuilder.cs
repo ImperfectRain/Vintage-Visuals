@@ -10,6 +10,16 @@ namespace VintageVisuals.PseudoPBR
         public int X;
         public int Y;
 
+        /// <summary>
+        /// Size of the slot the game allocated, in atlas pixels.
+        ///
+        /// Not necessarily the source texture's size. The atlas stores textures
+        /// at whatever size the game chose, and the derived maps have to fill
+        /// the slot the shader will sample, not the source they came from.
+        /// </summary>
+        public int Width;
+        public int Height;
+
         /// <summary>Source diffuse, already converted to linear light.</summary>
         public LinearTexture Texture;
 
@@ -99,10 +109,12 @@ namespace VintageVisuals.PseudoPBR
             {
                 if (region?.Texture == null) { skipped++; continue; }
 
-                LinearTexture texture = region.Texture;
+                int width = region.Width > 0 ? region.Width : region.Texture.Width;
+                int height = region.Height > 0 ? region.Height : region.Texture.Height;
+
                 if (region.X < 0 || region.Y < 0 ||
-                    region.X + texture.Width > atlasWidth ||
-                    region.Y + texture.Height > atlasHeight)
+                    region.X + width > atlasWidth ||
+                    region.Y + height > atlasHeight)
                 {
                     skipped++;
                     continue;
@@ -125,14 +137,30 @@ namespace VintageVisuals.PseudoPBR
             // whatever unrelated texture happens to sit beside it in the atlas.
             PbrMaps maps = PbrMapGenerator.Generate(texture, region.Profile.NormalStrength, 1, true);
 
-            for (int y = 0; y < texture.Height; y++)
+            int slotWidth = region.Width > 0 ? region.Width : texture.Width;
+            int slotHeight = region.Height > 0 ? region.Height : texture.Height;
+
+            for (int y = 0; y < slotHeight; y++)
             {
                 int destRow = (region.Y + y) * atlasWidth + region.X;
-                int sourceRow = y * texture.Width;
 
-                for (int x = 0; x < texture.Width; x++)
+                // Nearest sampling from source to slot. The maps are derived at
+                // the source texture's resolution and have to fill whatever slot
+                // the game allocated; interpolating between derived normals
+                // would reintroduce exactly the smoothing the shader snaps away.
+                int sourceY = slotHeight == texture.Height
+                    ? y
+                    : Math.Min(texture.Height - 1, y * texture.Height / slotHeight);
+
+                int sourceRow = sourceY * texture.Width;
+
+                for (int x = 0; x < slotWidth; x++)
                 {
-                    int source = sourceRow + x;
+                    int sourceX = slotWidth == texture.Width
+                        ? x
+                        : Math.Min(texture.Width - 1, x * texture.Width / slotWidth);
+
+                    int source = sourceRow + sourceX;
 
                     float roughness, specular, metalness;
                     MaterialProfiles.Combine(region.Profile,

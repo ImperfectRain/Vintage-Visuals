@@ -249,6 +249,23 @@ call to bind alongside whichever terrain page is active.
 Both were learned from looking at it in game, and neither is obvious from the
 maths.
 
+**Nearest sampling, enforced twice.** The atlas is uploaded with
+`linearMag: false`, *and* the shader snaps every lookup to the texel centre with
+`vvSnapToTexel`. Belt and braces on purpose: the filter mode is set through the
+game's texture API on a texture this mod does not fully own, and a round of
+"still looks muddy" was spent unable to tell from a screenshot whether the
+setting had taken. Snapping makes it nearest by construction, for one
+`textureSize` and a `floor`.
+
+**Derived maps fill the allocated slot, not the source's size.** The atlas
+stores textures at whatever size the game chose, which is not necessarily the
+source PNG's - a texture pack or an upscaled atlas makes them diverge. Writing
+source-sized data into a differently sized slot puts the relief at the wrong
+scale, so it stops lining up with the texture it came from, which looks like
+"soft and muddy" rather than like a bug. The builder maps slot texels back to
+source texels with nearest sampling, and the collector reports how many textures
+needed rescaling.
+
 **Nearest filtering, not linear.** The atlas was uploaded with `linearMag: true`
 on the reasoning that magnified normals want to be smooth. That reasoning
 belongs to a game with high-resolution art. Vintage Story is pixel art: the

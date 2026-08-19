@@ -38,6 +38,7 @@ namespace VintageVisuals.PseudoPBR
             var skipReasons = new Dictionary<string, int>();
             var skipExamples = new Dictionary<string, string>();
             skippedTextures = 0;
+            int resized = 0;
 
             int atlasWidth = capi.BlockTextureAtlas.Size.Width;
             int atlasHeight = capi.BlockTextureAtlas.Size.Height;
@@ -83,8 +84,10 @@ namespace VintageVisuals.PseudoPBR
 
                         string name = block.Code.ToString() + ":" + entry.Key;
                         string reason;
+                        bool rescaled;
                         AtlasRegion region = TryBuildRegion(capi, source, position, profile,
-                            atlasWidth, atlasHeight, name, out reason);
+                            atlasWidth, atlasHeight, name, out reason, out rescaled);
+                        if (rescaled) resized++;
 
                         if (region != null)
                         {
@@ -107,8 +110,34 @@ namespace VintageVisuals.PseudoPBR
                 }
             }
 
-            diagnostics.Note("atlas page " + atlasNumber + " — " + regions.Count +
-                             " texture(s) collected, " + skippedTextures + " skipped.");
+            // Coverage, not just counts. "6735 collected, 0 skipped" reads like
+            // success and says nothing about slots never enumerated at all -
+            // which is exactly how a whole class of blocks came to render with
+            // no surface while the log looked clean.
+            int allocated = 0;
+            TextureAtlasPosition[] allPositions = capi.BlockTextureAtlas.Positions;
+            if (allPositions != null)
+            {
+                foreach (TextureAtlasPosition p in allPositions)
+                {
+                    if (p != null && p.atlasNumber == atlasNumber) allocated++;
+                }
+            }
+
+            diagnostics.Note("atlas page " + atlasNumber + ": " + regions.Count +
+                             " texture(s) collected, " + skippedTextures + " skipped, " +
+                             allocated + " slot(s) allocated" +
+                             (allocated > 0
+                                 ? " (" + (100 * regions.Count / allocated) +
+                                   "% covered; uncovered slots render with no surface detail)"
+                                 : "") + ".");
+
+            if (resized > 0)
+            {
+                diagnostics.Note("  " + resized + " texture(s) were rescaled to their atlas slot; the source " +
+                                 "PNG and the slot were different sizes, which would otherwise misalign the " +
+                                 "derived maps against the diffuse.");
+            }
 
             foreach (KeyValuePair<string, int> reason in skipReasons)
             {
@@ -203,9 +232,10 @@ namespace VintageVisuals.PseudoPBR
         private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, AssetLocation source,
                                                   TextureAtlasPosition position, MaterialProfile profile,
                                                   int atlasWidth, int atlasHeight, string name,
-                                                  out string skipReason)
+                                                  out string skipReason, out bool rescaled)
         {
             skipReason = null;
+            rescaled = false;
 
             try
             {
@@ -236,10 +266,26 @@ namespace VintageVisuals.PseudoPBR
                     // pixels. Rounding rather than truncating because the UVs
                     // carry sub-pixel padding and truncation lands a texture one
                     // pixel left of where the shader will sample it.
+                    // The slot the game allocated, in pixels. It is NOT safe to
+                    // assume this matches the source PNG: the atlas stores
+                    // textures at whatever size the game chose for them, and a
+                    // texture pack or an upscaled atlas makes the two diverge.
+                    // Writing source-sized data into a differently sized slot
+                    // puts the derived maps at the wrong scale, so the relief
+                    // stops lining up with the texture it came from - which
+                    // looks exactly like "soft and muddy" rather than like a
+                    // bug.
+                    int slotWidth = Math.Max(1, (int)Math.Round((position.x2 - position.x1) * atlasWidth));
+                    int slotHeight = Math.Max(1, (int)Math.Round((position.y2 - position.y1) * atlasHeight));
+
+                    rescaled = slotWidth != texture.Width || slotHeight != texture.Height;
+
                     return new AtlasRegion
                     {
                         X = (int)Math.Round(position.x1 * atlasWidth),
                         Y = (int)Math.Round(position.y1 * atlasHeight),
+                        Width = slotWidth,
+                        Height = slotHeight,
                         Texture = texture,
                         Profile = profile,
                         Name = name,

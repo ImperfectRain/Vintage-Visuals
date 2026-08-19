@@ -164,7 +164,7 @@ namespace VintageVisuals
         /// </summary>
         private bool IsPatchGroupEnabled(string group)
         {
-            if (group == PseudoPbrSubsystem.GroupName)
+            if (group == PseudoPbrSubsystem.GroupName || group == PseudoPbrSubsystem.TopsoilGroupName)
             {
                 return ConfigManager.Config.PseudoPBR.Enabled;
             }
