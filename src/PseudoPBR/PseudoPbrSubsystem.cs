@@ -87,7 +87,7 @@ namespace VintageVisuals.PseudoPBR
             if (_binder == null) return;
 
             bool active = config.Enabled && _atlasTexture != null && _atlasTexture.IsUploaded && _atlasIsSinglePage;
-            _binder.SetState(active, config.NormalStrength);
+            _binder.SetState(active, config.NormalStrength, config.SpecularStrength, config.DebugView);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

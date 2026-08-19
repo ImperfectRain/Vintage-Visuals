@@ -76,14 +76,25 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   that live in the includes, so anything using e.g. `lightPosition` must anchor
   below it instead. Confirm with `EnableShaderDebugDump`, which writes the exact
   source handed to the compiler.
+- **Never declare a sampler above vanilla's.** Sampler texture units are
+  assigned at LINK time from the program's active sampler list, so inserting one
+  above vanilla's shifts every sampler below it. In `chunkopaque.fsh` that
+  pushed `liquidDepth` off the end, `getUnderwaterMurkiness()` saturated, and
+  `applyUnderwaterEffects` mixed every terrain fragment to the water murk
+  colour — a world that looked transparent, with only unpatched `chunktopsoil`
+  geometry left. `glslangValidator` passes this happily; the fault is in the
+  driver's link step, not the compile. Anchor injections on the LAST vanilla
+  sampler (`uniform sampler2D liquidDepth`) and pin the ordering with a test.
 - **Texture units in vanilla shaders are all taken.** `chunkopaque.fsh` declares
   seven samplers, so units 0..6 are vanilla's. Binding a mod texture over one of
-  them does not break the mod's effect, it breaks the frame — clobbering
-  `liquidDepth` turned the whole screen sepia. Count the `uniform sampler` lines
-  in the dumped shader before choosing a unit, and prefer the top of the range
-  OpenGL 3.3 guarantees (0..15). Anything a subsystem binds must also be skipped
-  entirely when that subsystem is switched off, or its config flag cannot rescue
-  a player from a corrupted frame.
+  them does not break the mod's effect, it breaks the frame. Count the
+  `uniform sampler` lines in the dumped shader before choosing a unit, and
+  prefer the top of the range OpenGL 3.3 guarantees (0..15).
+- **A config flag for a shader patch must gate the PATCH, not the effect.**
+  Muting a uniform leaves the patched GLSL compiling and occupying a sampler, so
+  when the damage comes from the source existing at all, the player's off switch
+  does nothing. `IsPatchGroupEnabled` in `VintageVisualsModSystem` skips the
+  whole group and reloads shaders, so "off" means vanilla source.
 - **A patch that replaces its anchor must paste the anchor back.** Replacement
   content is literal, never a regex template. `pseudopbr.glsl` re-declares
   `uniform vec3 lightPosition;` for this reason.

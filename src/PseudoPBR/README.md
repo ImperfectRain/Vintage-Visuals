@@ -24,8 +24,9 @@ what that means and what is still unconfirmed.
 | Disk cache keyed by content fingerprint | done |
 | Preview images for inspection | done |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
-| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 36 checks |
-| Specular / roughness consumed by a shader | not started — needs a light direction |
+| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 49 checks |
+| Specular from the roughness and specular channels | done, level 2 (compiles) |
+| Per-layer debug views | done, level 2 (compiles) |
 | `chunktopsoil.fsh` (grass, dirt tops) | not started |
 | Roughness modulates SSR blur | not started (needs Phase 3) |
 
@@ -209,6 +210,51 @@ spare, so this is a guard for heavily modded installs, not the common case.
 Lifting it means one material atlas per page plus a hook into the chunk draw
 call to bind alongside whichever terrain page is active.
 
+## Debug views
+
+`PseudoPBR.DebugView` replaces the finished image with one layer of the material
+system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slider
+— because it is a uniform, not a patch decision.
+
+| Value | Shows | What it tells you |
+|---|---|---|
+| 0 | normal rendering | — |
+| 1 | normal map as stored, blue forced flat | Should match the preview PNG exactly. Block textures here mean `vv_materialTex` is not reading the atlas |
+| 2 | roughness | Metal and water dark, soil and gravel near-white, brick mid-grey |
+| 3 | specular mask | Water, glass and metal bright; soil, wood and leaves near-black |
+| 4 | relief contribution alone, mid-grey biased | Whether the relief is subtle or overdriven, with lighting isolated from albedo |
+| 5 | specular highlight alone | Where highlights land, without albedo hiding them |
+| 6 | perturbed normal in world space | The six block faces should read as six flat colours, with relief as variation inside each |
+
+Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
+*stores*, view 6 is what the shader *derives from it* after the tangent frame is
+applied. If 1 looks right and 6 does not, the tangent frame is wrong; if 1 is
+already wrong, nothing downstream can be right.
+
+This is not just developer scaffolding. Four derived quantities are stacked on
+top of each other here, and when the composite looks wrong there is no way from
+the finished image to tell which layer is at fault. View 1 is also the fastest
+possible check for a sampler problem — the class of bug that has cost this
+subsystem the most time.
+
+## Specular
+
+The atlas's roughness and specular channels feed a Blinn-Phong highlight added
+at the same point vanilla composes its lit colour, so it is shadowed, fogged and
+day-scaled by the same terms.
+
+Blinn-Phong rather than a microfacet BRDF, deliberately. The inputs are
+*derived*, not measured — roughness from local texture variance, the specular
+mask from flood-filled colour regions — and evaluating approximate data
+precisely buys nothing that a half-vector power does not, while costing a square
+root and two divisions on every terrain fragment.
+
+The exponent is what actually reads as material: `mix(256, 4, roughness)`, so
+polished metal gets a tight glint and soil gets a broad soft sheen from the same
+four lines. Everything that should suppress a highlight does — facing away from
+the sun, shadow, night, fog — and the `dot(n, l)` term matters most: without it
+a surface lit from behind catches a rim highlight, which reads as glass.
+
 ## The two sources of material data
 
 This is the central design decision, and it resolves the limitation the offline
@@ -362,7 +408,7 @@ Per [CLAUDE.md](../../CLAUDE.md)'s ladder, honestly:
 |---|---|
 | Classification, report, atlas build, disk cache, previews | **3 (loads)** — run against a real 14,090-block registry and a real 4096×2048 atlas |
 | GPU upload and per-frame binding | **2 (compiles)** |
-| `chunkopaque.fsh` patch | **2 (compiles)** — all four anchors matched against the real 1.22.7 shader, and the result compiles as GLSL, 36 smoke-test checks |
+| `chunkopaque.fsh` patch | **2 (compiles)** — all six anchors matched against the real 1.22.7 shader, result compiles as GLSL, 49 smoke-test checks |
 | Relief visible in game | **not reached** |
 
 The anchors *are* confirmed, and confirmed against the real thing rather than a
@@ -375,16 +421,62 @@ and all four anchors matched, in the right order, producing source that
 graphics-settings configuration. That is as far as verification goes without a
 GPU: it proves the shader compiles, not that the relief looks right.
 
-Two things remain genuinely unconfirmed:
+Three things remain genuinely unconfirmed:
 
-1. **Nothing has been looked at on screen.** Whether the relief reads as grooves
-   rather than as noise, and whether the default strength is right, are questions
-   for eyes. The normal preview suggested the relief may be subtle, which is why
-   `PseudoPBR.NormalStrength` is a live slider.
-2. **Texture unit 15 is a convention, not a reservation.** If the game or
+1. **The sampler-ordering fix has not been seen working.** The reasoning is
+   solid and the ordering is pinned by a test, but link-time unit assignment
+   happens in the driver and no check this repo can run reaches it. Debug view 1
+   answers it in one glance.
+2. **Nothing has been looked at on screen.** Whether the relief reads as grooves
+   rather than as noise, and whether the default strengths are right, are
+   questions for eyes.
+3. **Texture unit 15 is a convention, not a reservation.** If the game or
    another mod binds something else there mid-frame, the relief samples the
    wrong texture. Re-binding every frame before terrain draws makes this
    unlikely rather than impossible.
+
+### Sampler declaration order, and what it cost
+
+The one that took two rounds to find, because the symptom pointed nowhere near
+the cause.
+
+`vv_materialTex` was first declared near the top of the file. Vanilla declares
+seven samplers — `terrainTex`, `terrainTexLinear`, `shadowMapFar`,
+`shadowMapNear`, `glow`, `sky`, `liquidDepth` — and inserting one above them
+shifts the link-time texture unit of every sampler below it. `liquidDepth` fell
+off the end and read a unit nothing was ever bound to.
+
+Nothing about that says "sampler" from inside the game. What it says is:
+
+```glsl
+float getUnderwaterMurkiness() { ... }                        // saturates to 1
+outColor.rgb = applyUnderwaterEffects(outColor.rgb, murkiness); // mix(color, waterMurkColor * 0.4, 1.0)
+```
+
+Every fragment this shader draws becomes flat water murk. In game that reads as
+a world gone transparent — and the only thing left with colour is the grass
+tops, because those come from `chunktopsoil.fsh`, which this mod does not patch.
+Both reported failures were this one cause; only the water colour differed
+between them.
+
+Three things follow, and all three are now enforced:
+
+- **The injection anchors on `uniform sampler2D liquidDepth`** — the last
+  sampler vanilla declares — so ours is always declared after all of them. That
+  position is not a free choice and the patch file says so.
+- **A smoke test pins the ordering** against a fixture carrying all seven
+  vanilla samplers in their real order, so a future edit that moves the
+  injection fails a check rather than a world.
+- **The config flag gates the patch, not the effect.** With `Enabled: false`
+  the group is never handed to the patcher, so `chunkopaque.fsh` reaches the
+  compiler as vanilla source. A flag that merely mutes an effect is no use when
+  the damage comes from the patched source existing at all.
+
+The deeper lesson: `glslangValidator` passed this in all 48 settings
+combinations, and was right to — the shader compiles perfectly. Unit assignment
+happens at link time, in the driver, from the program's active sampler list.
+A compiler check cannot see it, and neither can any test this repo can run
+without a GPU.
 
 ### The unit-6 collision, and what it cost
 
@@ -413,13 +505,10 @@ Two lessons, both now in the code:
 
 ## What the material system still needs
 
-1. **Specular and roughness are derived, packed, cached and unused.** The place
-   for them is now known: under `#if SHINYEFFECT > 0`, vanilla already adds a
-   tight power-6 sun glint,
-   `glow += pow(max(0.0, dot(normal, lightPosition)), 6) * 0.125 * shadowIntensity * (1 - fogAmount - murkiness)`.
-   Scaling that by the atlas's specular channel and sharpening its exponent by
-   roughness is what turns "metal trim has relief" into "metal trim is
-   reflective", and it is another single-token patch.
+1. **Metalness is still not in the atlas** — four channels, five values. Metal
+   currently gets a white highlight rather than one tinted by its own albedo,
+   which is the difference between steel and shiny plastic. Revisit if it reads
+   wrong; the fix is a second atlas, not a cleverer pack.
 2. **Grass and dirt tops go through `chunktopsoil.fsh`**, a different shader with
    its own anchors. Left for a separate change: bundling it would mean one
    rollback takes both shaders down, and `git bisect` on broken rendering is the

@@ -61,6 +61,8 @@ value.
 | `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
 | `PseudoPBR.Enabled` | bool | **`false`** | Surface relief. Off by default — it is the only setting that patches the shader drawing the world, and it has not been confirmed working on a GPU |
 | `PseudoPBR.NormalStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the relief. 0 is flat, 1.0 is the tuned look |
+| `PseudoPBR.SpecularStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the specular highlight |
+| `PseudoPBR.DebugView` | 0 – 6 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal |
 | `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
 | `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
 | `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
@@ -92,9 +94,10 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
 | **PBR:** derived material atlas + disk cache | **3 (loads)** — builds against a real 4096x2048 atlas |
 | **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
-| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — **broken on a real GPU**, ships disabled; anchors confirmed and GLSL-validated, cause under investigation |
+| **PBR:** surface relief in `chunkopaque.fsh` | 2 (compiles) — ships disabled until seen working; cause of the earlier breakage found and fixed |
+| **PBR:** specular from roughness + spec mask | 2 (compiles) |
+| **PBR:** per-layer debug views | 2 (compiles) |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
-| **PBR:** specular / roughness consumed by a shader | not started |
 | Everything under Weather / Reflections | not started |
 
 Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
@@ -133,15 +136,15 @@ These are known now, not discovered later. Kept current as the mod grows.
 - **Color grading runs after the vanilla tonemap**, not instead of it, because
   the patch inserts at the end of `final.fsh`. Highlights already clipped by
   vanilla cannot be recovered by lowering exposure here.
-- **Surface relief does not work yet, and ships off.** It patches
-  `chunkopaque.fsh`, which draws the world, and on a real GPU it has broken that
-  render twice — once to a sepia screen, once to missing terrain. The anchors are
-  confirmed against 1.22.7 and the patched source passes `glslangValidator` in
-  all 48 settings combinations, so the cause is something a compiler check
-  cannot see; it is being tracked down. `PseudoPBR.Enabled: false` now skips the
-  patch entirely rather than muting the effect, so the default install feeds the
-  compiler vanilla source. Everything else in the subsystem — classification,
-  the atlas, the cache, the previews — is diagnostic and unaffected.
+- **The material system ships switched off**, pending one look on a real GPU.
+  It patches `chunkopaque.fsh`, which draws the world, and it broke that render
+  twice before the cause was found: declaring a sampler above vanilla's shifted
+  their link-time texture units, pushing `liquidDepth` off the end and mixing
+  every terrain fragment to the water murk colour. Fixed by declaring ours after
+  all seven of vanilla's, with a test pinning the order — but link-time unit
+  assignment happens in the driver, so no check short of running it proves it.
+  Set `PseudoPBR.Enabled: true` (or tick it on F7) to try it; with it off the
+  patch is skipped entirely and the compiler gets vanilla source.
   Surface relief also needs a **single-page** block texture atlas; heavily
   modded installs that spill onto a second page get vanilla rendering and a log
   line saying so.

@@ -37,6 +37,10 @@ namespace VintageVisuals.SmokeTest
         ///    change nothing.
         ///  - **`min(b, nb)` appears twice.** The patch must anchor on the full
         ///    statement, or the engine rejects it as ambiguous.
+        ///  - **All seven vanilla samplers, in their real order.** Declaring
+        ///    vv_materialTex above any of them shifts that sampler's link-time
+        ///    unit, and pushing liquidDepth off the end is what made the world
+        ///    render as flat water murk. The order is pinned below.
         /// </summary>
         private const string Vanilla = @"#version 330 core
 #extension GL_ARB_explicit_attrib_location: enable
@@ -54,14 +58,25 @@ in vec4 worldPos;
 in float nb;
 
 uniform float alphaTest;
+uniform float dayLight;
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
 
+uniform sampler2DShadow shadowMapFar;
+uniform sampler2DShadow shadowMapNear;
+
 uniform vec3 lightPosition;
 uniform float shadowIntensity = 1;
 
+uniform sampler2D glow;
+uniform sampler2D sky;
+
 float getBrightnessFromShadowMap() { return 1.0; }
+
+uniform sampler2D liquidDepth;
+uniform vec4 waterMurkColor;
+
 float getUnderwaterMurkiness() { return 0.0; }
 
 float getBrightnessFromNormal(vec3 normal, float normalShadeIntensity, float minNormalShade) {
@@ -91,7 +106,8 @@ void main()
 	outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz); 
 
 	float glow = 0;
-	outGlow = vec4(glowLevel + glow, 0, 0, min(1, fogAmount + outColor.a));
+	float godrayLevel = 0;
+	outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
 }
 ";
 
@@ -116,7 +132,7 @@ void main()
                 return;
             }
 
-            ok("4 patches produced", patches.Count == 4);
+            ok("6 patches produced", patches.Count == 6);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("all target chunkopaque.fsh", patches.All(p => p.AppliesTo("chunkopaque.fsh")));
 
@@ -143,6 +159,41 @@ void main()
             ok("normal assertion applied", CountOf(result, "in vec3 normal; // vintagevisuals") == 1);
             ok("brightness call patched",
                 result.Contains("min(b, vvSurfaceBrightness(nb, normal, uv))"));
+            ok("specular added at the lit-colour site",
+                result.Contains("outColor.rgb += vvSpecular(normal, uv, worldPos.xyz, b, fogAmount, murkiness);"));
+            ok("debug view applied before the glow write",
+                result.IndexOf("vvDebugView(outColor", StringComparison.Ordinal) <
+                result.IndexOf("outGlow = vec4(glowLevel", StringComparison.Ordinal));
+            ok("lightPosition assertion applied",
+                CountOf(result, "uniform vec3 lightPosition; // vintagevisuals") == 1);
+
+            // THE check this file exists for. vv_materialTex must be declared
+            // after every vanilla sampler: declaring it earlier shifts the
+            // link-time unit of every sampler below it, and pushing liquidDepth
+            // off the end made getUnderwaterMurkiness() saturate and mixed the
+            // whole world to waterMurkColor.
+            string[] vanillaSamplers = {
+                "uniform sampler2D terrainTex;",
+                "uniform sampler2D terrainTexLinear;",
+                "uniform sampler2DShadow shadowMapFar;",
+                "uniform sampler2DShadow shadowMapNear;",
+                "uniform sampler2D glow;",
+                "uniform sampler2D sky;",
+                "uniform sampler2D liquidDepth;",
+            };
+            int oursAt = result.IndexOf("uniform sampler2D vv_materialTex;", StringComparison.Ordinal);
+            bool declaredLast = oursAt >= 0;
+            string firstAfter = null;
+            foreach (string sampler in vanillaSamplers)
+            {
+                int at = result.IndexOf(sampler, StringComparison.Ordinal);
+                if (at < 0 || at > oursAt) { declaredLast = false; firstAfter = sampler; break; }
+            }
+            check("vv_materialTex declared after every vanilla sampler", declaredLast,
+                firstAfter == null ? "" : firstAfter + " comes after it");
+
+            ok("liquidDepth survives being used as the anchor",
+                CountOf(result, "\nuniform sampler2D liquidDepth;") == 1);
 
             // The unmodulated brightness must be gone from the call, or the
             // patch reported success while doing nothing.
@@ -185,6 +236,13 @@ void main()
 
             CheckRollback(resolveSnippet, yaml, check, "lightPosition renamed",
                 Vanilla.Replace("uniform vec3 lightPosition;", "uniform vec3 sunDirection;"));
+
+            CheckRollback(resolveSnippet, yaml, check, "liquidDepth renamed",
+                Vanilla.Replace("uniform sampler2D liquidDepth;", "uniform sampler2D waterDepth;"));
+
+            CheckRollback(resolveSnippet, yaml, check, "glow write reworded",
+                Vanilla.Replace("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));",
+                                "outGlow = vec4(glowLevel, 0, 0, outColor.a);"));
 
             CheckRollback(resolveSnippet, yaml, check, "brightness call reworded",
                 Vanilla.Replace(

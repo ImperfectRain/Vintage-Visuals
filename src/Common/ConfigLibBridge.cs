@@ -157,6 +157,12 @@ namespace VintageVisuals.Common
                 case "pbr_normalstrength":
                     pbr.NormalStrength = tree.GetFloat("value", pbr.NormalStrength);
                     break;
+                case "pbr_specularstrength":
+                    pbr.SpecularStrength = tree.GetFloat("value", pbr.SpecularStrength);
+                    break;
+                case "pbr_debugview":
+                    pbr.DebugView = tree.GetFloat("value", pbr.DebugView);
+                    break;
                 default:
                     return false;
             }

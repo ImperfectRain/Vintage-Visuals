@@ -25,12 +25,16 @@ namespace VintageVisuals.PseudoPBR
         public const string SamplerUniform = "vv_materialTex";
         public const string EnabledUniform = "vv_pbrEnabled";
         public const string NormalStrengthUniform = "vv_pbrNormalStrength";
+        public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
+        public const string DebugViewUniform = "vv_pbrDebugView";
 
         private readonly ICoreClientAPI _capi;
         private readonly MaterialAtlasTexture _atlas;
 
         private bool _enabled;
         private float _normalStrength = 1f;
+        private float _specularStrength = 1f;
+        private float _debugView;
 
         /// <summary>
         /// Set while the program still believes the effect is on, so switching
@@ -61,10 +65,12 @@ namespace VintageVisuals.PseudoPBR
         /// it deliberately does no GL work of its own — the config thread is not
         /// necessarily a thread with a GL context.
         /// </summary>
-        public void SetState(bool enabled, float normalStrength)
+        public void SetState(bool enabled, float normalStrength, float specularStrength, float debugView)
         {
             _enabled = enabled;
             _normalStrength = normalStrength;
+            _specularStrength = specularStrength;
+            _debugView = debugView;
         }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
@@ -118,6 +124,8 @@ namespace VintageVisuals.PseudoPBR
             program.BindTexture2D(SamplerUniform, _atlas.TextureId, MaterialAtlasTexture.TextureUnit);
             program.Uniform(EnabledUniform, 1f);
             program.Uniform(NormalStrengthUniform, _normalStrength);
+            program.Uniform(SpecularStrengthUniform, _specularStrength);
+            program.Uniform(DebugViewUniform, _debugView);
             program.Stop();
             _programThinksEnabled = true;
         }

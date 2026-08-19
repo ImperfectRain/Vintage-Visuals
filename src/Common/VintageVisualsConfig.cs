@@ -81,6 +81,30 @@ namespace VintageVisuals.Common
         public float NormalStrength { get; set; } = 1.0f;
 
         /// <summary>
+        /// Global multiplier on the specular highlight, on top of the
+        /// per-material ceiling already baked into the atlas.
+        /// </summary>
+        public float SpecularStrength { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Renders one layer of the material system on its own instead of the
+        /// finished image. 0 renders normally.
+        ///
+        ///   1  normal map as stored (blue forced flat, matches the preview PNG)
+        ///   2  roughness
+        ///   3  specular mask
+        ///   4  relief contribution, biased so "no change" is mid grey
+        ///   5  specular highlight on its own
+        ///   6  perturbed normal in world space
+        ///
+        /// A float rather than an int because ConfigLib's float settings are
+        /// the ones this mod has confirmed working in game; an integer category
+        /// would be a second unverified thing in the same change. Stepped by 1
+        /// in the GUI, rounded in the shader.
+        /// </summary>
+        public float DebugView { get; set; } = 0.0f;
+
+        /// <summary>
         /// Writes VintagestoryData/VintageVisuals/material-report.txt listing
         /// how every loaded block was classified.
         ///
@@ -117,6 +141,10 @@ namespace VintageVisuals.Common
             // rendering fault rather than as strong relief.
             NormalStrength = ColorGradeConfig.Clamp(NormalStrength, 0.0f, 2.0f,
                 "PseudoPBR.NormalStrength", corrections);
+            SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
+                "PseudoPBR.SpecularStrength", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 6.0f,
+                "PseudoPBR.DebugView", corrections);
         }
     }
 

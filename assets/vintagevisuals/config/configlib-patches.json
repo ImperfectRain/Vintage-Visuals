@@ -144,6 +144,30 @@
           "max": 2.0,
           "step": 0.05
         }
+      },
+      "pbr_specularstrength": {
+        "ingui": "Specular strength",
+        "comment": "Global multiplier on the specular highlight. 1.0 is the tuned look, 0 is fully matte.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 22,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_debugview": {
+        "ingui": "Debug: show one layer",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 23,
+        "range": {
+          "min": 0.0,
+          "max": 6.0,
+          "step": 1.0
+        }
       }
     }
   }
