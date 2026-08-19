@@ -76,6 +76,14 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   that live in the includes, so anything using e.g. `lightPosition` must anchor
   below it instead. Confirm with `EnableShaderDebugDump`, which writes the exact
   source handed to the compiler.
+- **Texture units in vanilla shaders are all taken.** `chunkopaque.fsh` declares
+  seven samplers, so units 0..6 are vanilla's. Binding a mod texture over one of
+  them does not break the mod's effect, it breaks the frame — clobbering
+  `liquidDepth` turned the whole screen sepia. Count the `uniform sampler` lines
+  in the dumped shader before choosing a unit, and prefer the top of the range
+  OpenGL 3.3 guarantees (0..15). Anything a subsystem binds must also be skipped
+  entirely when that subsystem is switched off, or its config flag cannot rescue
+  a player from a corrupted frame.
 - **A patch that replaces its anchor must paste the anchor back.** Replacement
   content is literal, never a regex template. `pseudopbr.glsl` re-declares
   `uniform vec3 lightPosition;` for this reason.

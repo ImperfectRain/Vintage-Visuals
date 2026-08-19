@@ -18,13 +18,28 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>
         /// Texture unit the material atlas is bound to.
         ///
-        /// Well clear of the units vanilla uses while drawing chunks (the
-        /// terrain atlas, the two shadow maps and the colour map sit at the
-        /// bottom). Unit bindings are global GL state, so this is a
-        /// convention rather than a reservation, and the binder re-binds every
-        /// frame instead of trusting it to survive.
+        /// This was 6, which was a guess, and the guess was wrong in the worst
+        /// available way. Counting the samplers vanilla chunkopaque.fsh
+        /// actually declares gives SEVEN — terrainTex, terrainTexLinear,
+        /// shadowMapFar, shadowMapNear, glow, sky, liquidDepth — so units 0..6
+        /// are all spoken for and binding here overwrote one of the game's own.
+        /// The symptom was not a broken effect but a broken world: a clobbered
+        /// liquidDepth drives getUnderwaterMurkiness() to 1 everywhere, and
+        /// applyUnderwaterEffects then mixes the entire frame to the water murk
+        /// colour.
+        ///
+        /// 15 is the top of the range OpenGL 3.3 guarantees per stage
+        /// (GL_MAX_TEXTURE_IMAGE_UNITS is required to be at least 16, so 0..15
+        /// are always valid). Taking the top rather than "one past vanilla"
+        /// puts eight units of headroom between this and an allocation that
+        /// grows upward from zero.
+        ///
+        /// Unit bindings are still global GL state, so this remains a
+        /// convention rather than a reservation — the binder re-binds every
+        /// frame instead of trusting it to survive, and binds nothing at all
+        /// when the subsystem is switched off.
         /// </summary>
-        public const int TextureUnit = 6;
+        public const int TextureUnit = 15;
 
         private LoadedTexture _texture;
 

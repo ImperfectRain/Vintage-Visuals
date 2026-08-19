@@ -177,7 +177,9 @@ Everything else exists to make that line possible:
   and refreshes the uniforms once per frame at render order **0.35**, which is
   the gap immediately before terrain opaque (0.37). Once-at-startup would be
   cheaper, but texture unit bindings are global GL state that this mod does not
-  own — anything can rebind unit 6, and the failure would be silent and ugly.
+  own — anything can rebind unit 15, and the failure would be silent and ugly.
+  It also binds nothing at all while the subsystem is off, so `Enabled: false`
+  really does mean "touches no shared GL state".
 - `vvTangentFrame` builds the tangent basis. Chunk geometry carries no tangents,
   and does not need to: every block face is axis-aligned, so one consistent
   frame per axis is exact rather than approximate.
@@ -379,10 +381,35 @@ Two things remain genuinely unconfirmed:
    rather than as noise, and whether the default strength is right, are questions
    for eyes. The normal preview suggested the relief may be subtle, which is why
    `PseudoPBR.NormalStrength` is a live slider.
-2. **Texture unit 6 is a convention, not a reservation.** If the game or another
-   mod binds something else there mid-frame, the relief samples the wrong
-   texture. Re-binding every frame before terrain draws makes this unlikely
-   rather than impossible.
+2. **Texture unit 15 is a convention, not a reservation.** If the game or
+   another mod binds something else there mid-frame, the relief samples the
+   wrong texture. Re-binding every frame before terrain draws makes this
+   unlikely rather than impossible.
+
+### The unit-6 collision, and what it cost
+
+Worth writing down, because the failure mode was so much worse than the mistake.
+
+The atlas was first bound to texture unit 6, picked as "well clear of what
+vanilla uses" without counting. Vanilla `chunkopaque.fsh` declares **seven**
+samplers — `terrainTex`, `terrainTexLinear`, `shadowMapFar`, `shadowMapNear`,
+`glow`, `sky`, `liquidDepth` — so units 0..6 were all taken, and this overwrote
+one of them.
+
+The result was not a missing effect. It was a broken world: with `liquidDepth`
+reading the material atlas, `getUnderwaterMurkiness()` saturates to 1
+everywhere, and `applyUnderwaterEffects` then mixes the *entire frame* to the
+water murk colour. The whole screen came out sepia.
+
+Two lessons, both now in the code:
+
+- **Count, do not estimate.** The number was sitting in a file already on disk.
+  A shader's sampler count is not a thing to have an intuition about.
+- **An off switch that still binds is not an off switch.** The binder used to
+  bind every frame and merely vary the uniform, so `PseudoPBR.Enabled: false`
+  kept occupying the unit. At the exact moment the config flag was the player's
+  only escape from a corrupted frame, it did nothing and only a restart helped.
+  Whatever else a renderer does, "off" has to mean it touches no shared state.
 
 ## What the material system still needs
 

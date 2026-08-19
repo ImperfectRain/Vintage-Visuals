@@ -33,6 +33,13 @@ namespace VintageVisuals.PseudoPBR
         private float _normalStrength = 1f;
 
         /// <summary>
+        /// Set while the program still believes the effect is on, so switching
+        /// off pushes vv_pbrEnabled=0 exactly once and then stops touching the
+        /// program at all.
+        /// </summary>
+        private bool _programThinksEnabled;
+
+        /// <summary>
         /// Latched so a missing uniform is reported once rather than at 60Hz.
         /// Cleared when the condition clears, so a problem that returns after
         /// a shader reload is reported again instead of staying silent.
@@ -65,6 +72,16 @@ namespace VintageVisuals.PseudoPBR
             if (stage != EnumRenderStage.Opaque) return;
             if (!_atlas.IsUploaded) return;
 
+            // Nothing to do while switched off — and specifically, no texture
+            // binding. An earlier version bound every frame regardless and only
+            // varied the uniform, which meant PseudoPBR.Enabled=false still
+            // occupied a texture unit. That is not an off switch: when binding
+            // to the wrong unit was corrupting the frame, the config flag that
+            // should have rescued the player did nothing and only a restart
+            // helped. Whatever else this renderer does, "off" has to mean it
+            // touches no shared GL state.
+            if (!_enabled && !_programThinksEnabled) return;
+
             IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
 
             // HasUniform is the ground truth for "did our GLSL reach the GPU",
@@ -86,11 +103,23 @@ namespace VintageVisuals.PseudoPBR
 
             _warnedMissingUniform = false;
 
+            if (!_enabled)
+            {
+                // One last visit to clear the flag the program is still holding,
+                // then leave it alone until the effect is switched back on.
+                program.Use();
+                program.Uniform(EnabledUniform, 0f);
+                program.Stop();
+                _programThinksEnabled = false;
+                return;
+            }
+
             program.Use();
             program.BindTexture2D(SamplerUniform, _atlas.TextureId, MaterialAtlasTexture.TextureUnit);
-            program.Uniform(EnabledUniform, _enabled ? 1f : 0f);
+            program.Uniform(EnabledUniform, 1f);
             program.Uniform(NormalStrengthUniform, _normalStrength);
             program.Stop();
+            _programThinksEnabled = true;
         }
 
         /// <summary>
