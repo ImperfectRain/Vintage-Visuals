@@ -345,6 +345,15 @@ more than rough ones.
 Debug view 8 shows the roughness the model actually uses. Where it is much
 brighter than view 2, a surface was sparkling and is now being held down.
 
+### A note on the F7 panel
+
+Every slider above is declared in `assets/vintagevisuals/config/configlib-patches.json`,
+which is data nothing validates at build time. Two settings sharing a `weight`
+empties the entire panel - every mod setting, not just the two - and neither the
+build nor the log says a word. `tools/smoketest` now checks weights, codes and
+ranges, and that every setting has a matching `case` in `ConfigLibBridge` in
+both directions.
+
 ## Debug views
 
 `PseudoPBR.DebugView` replaces the finished image with one layer of the material

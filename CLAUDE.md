@@ -108,6 +108,13 @@ python3 -m pytest tools/pbrgen/                          # its tests DO run in C
   `capi.Render.CurrentActiveShader != null`. The same applies to creating
   textures: `LoadOrUpdateTextureFromRgba` binds to the active unit as a side
   effect.
+- **`configlib-patches.json` is unvalidated data with a silent failure mode.**
+  ConfigLib parses it, builds the F7 panel from it, and raises events back by
+  setting code - every link is a string. Two settings sharing a `weight` blanks
+  the WHOLE panel, not one row. A settings array instead of a keyed object
+  yields zero settings. Neither shows up in a build or a log.
+  `tools/smoketest` now checks weights, codes, ranges, and that every setting
+  has a `case` in `ConfigLibBridge` and vice versa.
 - **A config flag for a shader patch must gate the PATCH, not the effect.**
   Muting a uniform leaves the patched GLSL compiling and occupying a sampler, so
   when the damage comes from the source existing at all, the player's off switch

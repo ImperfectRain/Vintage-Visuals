@@ -222,7 +222,7 @@
         "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 23,
+        "weight": 28,
         "range": {
           "min": 0.0,
           "max": 8.0,
