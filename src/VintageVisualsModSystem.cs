@@ -187,6 +187,13 @@ namespace VintageVisuals
                 return ConfigManager.Config.ColorGrade.Enabled;
             }
 
+            if (group == WeatherSubsystem.GroupName ||
+                group == WeatherSubsystem.SkyGroupName ||
+                group == WeatherSubsystem.CloudGroupName)
+            {
+                return ConfigManager.Config.Weather.Enabled;
+            }
+
             return true;
         }
 
@@ -194,7 +201,8 @@ namespace VintageVisuals
         private string PatchGatingSignature()
         {
             return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
-                   (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-");
+                   (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
+                   (ConfigManager.Config.Weather.Enabled ? "W" : "-");
         }
 
         /// <summary>

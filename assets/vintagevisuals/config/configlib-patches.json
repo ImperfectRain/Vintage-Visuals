@@ -272,12 +272,108 @@
           "step": 5.0
         }
       },
+      "weather_raincover": {
+        "ingui": "Rain cover threshold",
+        "comment": "How exposed to the sky a surface must be before rain reaches it. Raise it to keep porches, canopy and doorways dry.",
+        "default": 0.82,
+        "clientSide": true,
+        "weight": 43,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.02
+        }
+      },
+      "weather_fogstrength": {
+        "ingui": "Rain fog",
+        "comment": "How much rain thickens the air. 0 leaves vanilla fog alone.",
+        "default": 0.35,
+        "clientSide": true,
+        "weight": 44,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_fogtint": {
+        "ingui": "Rain fog tint",
+        "comment": "How much rain drains colour from the fog and cools it. Shifts vanilla's fog colour rather than replacing it.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 45,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_cloudshadow": {
+        "ingui": "Cloud shadows",
+        "comment": "Depth of cloud shadows on the ground. Follows the game's own cloud cover, so shadows agree with the sky above them.",
+        "default": 0.45,
+        "clientSide": true,
+        "weight": 46,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_cloudscale": {
+        "ingui": "Cloud shadow size (blocks)",
+        "comment": "Blocks across one cloud cell. Larger means broader, slower-moving shadows.",
+        "default": 190.0,
+        "clientSide": true,
+        "weight": 47,
+        "range": {
+          "min": 32.0,
+          "max": 512.0,
+          "step": 10.0
+        }
+      },
+      "weather_clouddrift": {
+        "ingui": "Cloud drift speed",
+        "comment": "How fast cloud shadows travel, in cells per minute.",
+        "default": 0.9,
+        "clientSide": true,
+        "weight": 48,
+        "range": {
+          "min": 0.0,
+          "max": 8.0,
+          "step": 0.1
+        }
+      },
+      "weather_clouddetail": {
+        "ingui": "Cloud detail",
+        "comment": "Extra high-frequency shaping on the volumetric clouds. 0 is vanilla's smooth billow; higher gives a ragged cumulus fringe.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 49,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_clouddensity": {
+        "ingui": "Cloud density",
+        "comment": "Multiplies volumetric cloud opacity. 1 is vanilla. Rain thickens clouds further on top of this.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 50,
+        "range": {
+          "min": 0.25,
+          "max": 3.0,
+          "step": 0.05
+        }
+      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
         "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 30,
+        "weight": 60,
         "range": {
           "min": 0.0,
           "max": 10.0,

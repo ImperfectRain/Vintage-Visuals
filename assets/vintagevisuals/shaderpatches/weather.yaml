@@ -1,0 +1,52 @@
+# Vintage Visuals - weather patches against the terrain shaders
+#
+# Two effects, one group, because they share an injection point: rain-thickened
+# fog and cloud shadows.
+#
+# The cloud shadow is applied by WRAPPING getBrightnessFromShadowMap rather than
+# by editing the places light is used. A cloud occludes the sun, so it belongs
+# wherever the sun's occlusion is already decided - every caller picks it up,
+# including this mod's own specular term, and no line another patch group has
+# already rewritten needs touching. That last part is not a nicety: pseudopbr
+# owns the lighting call in both of these files, and two groups editing one line
+# means whichever runs second finds its anchor gone.
+#
+# Verified against 1.22.7 with tools/verifypatches.
+
+# --- chunkopaque.fsh --------------------------------------------------------
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "float getBrightnessFromShadowMap() {"
+  content: |
+    float vvVanillaShadowMap() {
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: weather.glsl
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vec4(mix(rgbaPixel.rgb, vvWeatherFogColor(rgbaFog.rgb), vvWeatherFogAmount(fogWeight)), rgbaPixel.a);
+
+# --- chunktopsoil.fsh -------------------------------------------------------
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: "float getBrightnessFromShadowMap() {"
+  content: |
+    float vvVanillaShadowMap() {
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: weather.glsl
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vec4(mix(rgbaPixel.rgb, vvWeatherFogColor(rgbaFog.rgb), vvWeatherFogAmount(fogWeight)), rgbaPixel.a);

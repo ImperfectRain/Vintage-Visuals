@@ -4,16 +4,18 @@ What the weather does to how the world looks.
 
 ## Status
 
-**Wet surfaces in rain.** Clouds, cloud shadows and sky tint are not started.
+**Wet surfaces, rain fog, cloud shadows and cloud shaping.** All verified
+against the game's own shaders with `tools/verifypatches`; none seen on screen
+yet beyond wetness.
 
 | Piece | State |
 |---|---|
 | Wetness model (`WetnessTracker`) | done, level 2 (compiles) |
 | Rain response in the material shaders | done, level 2 (compiles) |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
-| Fog and sky tint by weather state | not started |
-| Cloud shadows | not started |
-| Volumetric cloud shaping | not started |
+| Fog and sky tint by weather state | done, level 2 (compiles) |
+| Cloud shadows | done, level 2 (compiles) |
+| Volumetric cloud shaping | done, level 2 (compiles) |
 
 ## Wet surfaces
 
@@ -78,3 +80,69 @@ Two thresholds worth knowing:
 Wetness is not linear in rainfall — it rises steeply and flattens. Light rain
 already darkens and glosses a surface almost as much as heavy rain does; what
 heavy rain adds is runoff and puddles, which this does not model.
+
+
+## Rain fog
+
+Rain thickens the air and drains the colour out of it. Two details matter:
+
+- **Fog is added as a fraction of what is left**, not as a sum. Heavy rain
+  approaches full fog without ever exceeding it; a plain addition makes distant
+  terrain pop to solid grey the moment a shower starts.
+- **The fog colour is shifted, not replaced.** Vanilla's already tracks time of
+  day, biome and altitude, and a fixed rain grey would fight every sunset it was
+  drawn over. Rain pulls it toward its own luminance and slightly blue.
+
+Driven by `Rain`, not by wetness. Fog belongs to the rain that is *falling*;
+wetness belongs to the rain that *fell*. One number for both would leave the air
+thick with fog for a minute after the sky cleared — the wrong half to linger.
+
+The sky shader gets the same treatment from its own group, `weathersky`, since
+it shares nothing with the terrain patches.
+
+## Cloud shadows
+
+Applied by **wrapping `getBrightnessFromShadowMap`** rather than by editing the
+places light is used. A cloud occludes the sun, so it belongs wherever the sun's
+occlusion is already decided — every caller picks it up, including this mod's
+own specular term, and no line another patch group has already rewritten needs
+touching. That last part is not a nicety: `pseudopbr` owns the lighting call in
+both terrain shaders, and two groups editing one line means whichever runs
+second finds its anchor gone.
+
+Three practical decisions:
+
+- **Cover moves the threshold, not the amplitude.** A clear sky gets no shadows
+  at all rather than faint ones everywhere, and an overcast sky goes fully
+  shaded rather than uniformly grey. Cover comes from the game's own
+  `RainCloudOverlay`, so shadows agree with the sky above them.
+- **The shadow is projected along the sun direction**, walking from the fragment
+  up to the cloud deck. At a low sun that is a long way sideways, which is what
+  makes cloud shadows read as three-dimensional rather than as a texture on the
+  ground.
+- **The deck sits at 160 blocks, not at vanilla's cloud altitude.** Using the
+  real height slides the shadow almost a kilometre at a low sun, which reads as
+  a bug.
+
+Noise is vanilla's own `gnoise`, already compiled into both shaders — so this
+costs instructions rather than a texture fetch or a second implementation to
+keep in step.
+
+## Volumetric cloud shaping
+
+A small intervention in vanilla's raymarcher, not a replacement for it. Its
+traversal, lighting and depth handling are all doing work there is no reason to
+redo; shape and density are the parts that read as weather.
+
+- **A third noise octave** in `octave()`. Vanilla mixes two frequencies, which
+  gives a smooth billow and no edge; a third at roughly three times the second
+  breaks the silhouette into the ragged fringe real cumulus have. Blended rather
+  than added, so 0 is exactly vanilla and sharpening a cloud does not also
+  inflate it.
+- **Density scales vanilla's `f`**, inside the exponential. That is Beer's law,
+  so it is the physically meaningful place to make cloud thicker — scaling the
+  result afterwards would flatten the falloff and make thin and thick cloud look
+  equally solid at the edges.
+
+Rain thickens clouds further on top of the slider, because a sky that is raining
+on you should not be the same sky as a clear one with the fog turned up.

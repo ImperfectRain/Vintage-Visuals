@@ -1,0 +1,37 @@
+# Vintage Visuals - volumetric cloud shaping
+#
+# Its own group, patching only cloudvolumetric.fsh. Nothing else in the mod
+# touches this shader, so a failure here costs cloud shape and nothing more.
+#
+# Both patches are small edits to functions vanilla already has. That is the
+# point: the raymarcher, its lighting and its depth handling are all doing work
+# there is no reason to redo, and shape and density are the two parts that read
+# as weather.
+#
+# Verified against 1.22.7 with tools/verifypatches.
+
+# 1. Replace octave() with a version carrying a third frequency.
+#
+# The anchor is the WHOLE function, not just its signature. Anchoring on the
+# signature alone leaves vanilla's body stranded after the replacement, which
+# fails to compile on an orphaned return - caught by tools/verifypatches rather
+# than in game, which is the entire reason that tool exists.
+- type: token
+  filename: cloudvolumetric.fsh
+  tokens: |
+    float octave(vec3 p){
+        return (noise(p * 2.0) * 0.66 + noise(p * 6.0) * 0.33) * 2.0 - 1.0;
+    }
+  snippet: cloudshape.glsl
+
+# 2. Scale optical density.
+#
+# `f` is vanilla's density factor and the exponential is Beer's law, so
+# multiplying f is the physically meaningful place to make clouds thicker -
+# scaling the result afterwards would flatten the falloff and make thin cloud
+# and thick cloud look equally solid at the edges.
+- type: token
+  filename: cloudvolumetric.fsh
+  tokens: "return 1.0 - exp(-max(0.0, min(max(m.x, m.y), t) - max(0.0, min(m.x, m.y))) * f);"
+  content: |
+    return 1.0 - exp(-max(0.0, min(max(m.x, m.y), t) - max(0.0, min(m.x, m.y))) * f * max(0.0, vv_cloudDensity));

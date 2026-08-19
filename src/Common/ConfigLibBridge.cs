@@ -191,6 +191,30 @@ namespace VintageVisuals.Common
                 case "weather_dryingseconds":
                     weather.DryingSeconds = tree.GetFloat("value", weather.DryingSeconds);
                     break;
+                case "weather_raincover":
+                    weather.RainCoverThreshold = tree.GetFloat("value", weather.RainCoverThreshold);
+                    break;
+                case "weather_fogstrength":
+                    weather.FogStrength = tree.GetFloat("value", weather.FogStrength);
+                    break;
+                case "weather_fogtint":
+                    weather.FogTint = tree.GetFloat("value", weather.FogTint);
+                    break;
+                case "weather_cloudshadow":
+                    weather.CloudShadowStrength = tree.GetFloat("value", weather.CloudShadowStrength);
+                    break;
+                case "weather_cloudscale":
+                    weather.CloudScale = tree.GetFloat("value", weather.CloudScale);
+                    break;
+                case "weather_clouddrift":
+                    weather.CloudDriftSpeed = tree.GetFloat("value", weather.CloudDriftSpeed);
+                    break;
+                case "weather_clouddetail":
+                    weather.CloudDetail = tree.GetFloat("value", weather.CloudDetail);
+                    break;
+                case "weather_clouddensity":
+                    weather.CloudDensity = tree.GetFloat("value", weather.CloudDensity);
+                    break;
                 case "pbr_blocklightdir":
                     pbr.BlockLightDirectionality = tree.GetFloat("value", pbr.BlockLightDirectionality);
                     break;

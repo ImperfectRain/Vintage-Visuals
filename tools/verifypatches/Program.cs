@@ -28,14 +28,28 @@ namespace VintageVisuals.VerifyPatches
         // The game supplies these as prefix code, so glslang has to be told.
         // Every combination is swept because a patch can compile under one and
         // fail under another - anything guarded by #if is invisible otherwise.
-        static readonly (string Name, int[] Values)[] Defines =
+        //
+        // Which ones apply is derived per shader rather than fixed, because
+        // they are not universal: the terrain shaders want the first five and
+        // know nothing of OIT, while cloudvolumetric.fsh will not compile
+        // without it. A fixed list made vanilla itself fail to build, which the
+        // tool then correctly reported as its own fault rather than the patch's.
+
+        static readonly (string Name, int[] Values)[] CandidateDefines =
         {
             ("SSAOLEVEL", new[] { 0, 1 }),
             ("SHADOWQUALITY", new[] { 0, 1, 2 }),
             ("GODRAYS", new[] { 0, 1 }),
             ("NORMALVIEW", new[] { 0, 1 }),
             ("SHINYEFFECT", new[] { 0, 1 }),
+            ("USEOIT", new[] { 0, 1 }),
         };
+
+        /// <summary>The defines a given shader actually mentions.</summary>
+        static (string Name, int[] Values)[] DefinesFor(string source)
+        {
+            return CandidateDefines.Where(d => source.Contains(d.Name)).ToArray();
+        }
 
         static int failures;
 
@@ -156,14 +170,25 @@ namespace VintageVisuals.VerifyPatches
 
         static void Compile(string filename, string vanilla, string patched)
         {
-            int combinations = 0, patchedFailures = 0, vanillaFailures = 0;
+            int compared = 0, skipped = 0, patchedFailures = 0;
             string firstError = null;
 
-            foreach (Dictionary<string, int> defines in Combinations())
+            foreach (Dictionary<string, int> defines in Combinations(DefinesFor(vanilla)))
             {
-                combinations++;
+                // Vanilla first, and it decides whether the combination counts.
+                // Some shaders genuinely do not build under every setting -
+                // cloudvolumetric.fsh needs OIT on and defines its own
+                // constants when it is - and a configuration the game itself
+                // cannot compile is not this patch's to answer for. Comparing
+                // against vanilla rather than against an absolute is what keeps
+                // the tool from reporting its own gaps as patch failures.
+                if (!TryCompile(vanilla, defines, filename, out _))
+                {
+                    skipped++;
+                    continue;
+                }
 
-                if (!TryCompile(vanilla, defines, filename, out _)) vanillaFailures++;
+                compared++;
 
                 string error;
                 if (!TryCompile(patched, defines, filename, out error))
@@ -173,41 +198,45 @@ namespace VintageVisuals.VerifyPatches
                 }
             }
 
-            if (patchedFailures == 0 && vanillaFailures == 0)
+            if (compared == 0)
             {
-                Pass(filename + ": compiles in all " + combinations + " settings combinations");
+                Fail(filename + ": vanilla compiles in none of the " + skipped +
+                     " combinations tried, so the patch could not be checked at all");
                 return;
             }
 
-            if (vanillaFailures > 0 && patchedFailures > 0)
+            if (patchedFailures == 0)
             {
-                // Vanilla failing too means the harness is wrong, not the patch.
-                // Saying so is the difference between a lead and a wild goose
-                // chase.
-                Fail(filename + ": VANILLA fails " + vanillaFailures + "/" + combinations +
-                     " too - the compile harness is at fault, not this patch");
+                Pass(filename + ": compiles in all " + compared + " combinations vanilla supports" +
+                     (skipped > 0 ? " (" + skipped + " skipped, vanilla does not build there either)" : ""));
                 return;
             }
 
-            Fail(filename + ": patched fails " + patchedFailures + "/" + combinations +
-                 " while vanilla passes. " + firstError);
+            Fail(filename + ": patched fails " + patchedFailures + "/" + compared +
+                 " combinations where vanilla compiles. " + firstError);
         }
 
-        static IEnumerable<Dictionary<string, int>> Combinations()
+        static IEnumerable<Dictionary<string, int>> Combinations((string Name, int[] Values)[] defines)
         {
-            var indices = new int[Defines.Length];
+            if (defines.Length == 0)
+            {
+                yield return new Dictionary<string, int>();
+                yield break;
+            }
+
+            var indices = new int[defines.Length];
 
             while (true)
             {
                 var result = new Dictionary<string, int>();
-                for (int i = 0; i < Defines.Length; i++) result[Defines[i].Name] = Defines[i].Values[indices[i]];
+                for (int i = 0; i < defines.Length; i++) result[defines[i].Name] = defines[i].Values[indices[i]];
                 yield return result;
 
-                int carry = Defines.Length - 1;
+                int carry = defines.Length - 1;
                 while (carry >= 0)
                 {
                     indices[carry]++;
-                    if (indices[carry] < Defines[carry].Values.Length) break;
+                    if (indices[carry] < defines[carry].Values.Length) break;
                     indices[carry] = 0;
                     carry--;
                 }

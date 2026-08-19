@@ -64,6 +64,7 @@ uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to noth
 uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
 uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully trusts the gradient
 uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
+uniform float vv_weatherCover;       // sky exposure a surface needs before rain reaches it
 
 // Sky exposure, added to the vertex shader by the weather patch: vanilla's own
 // per-vertex sun light level, which is 0 under a roof and 1 in the open. Rain
@@ -208,7 +209,18 @@ float vvWetness(vec3 faceNormal)
 
     float facing = clamp(faceNormal.y * 0.5 + 0.5, 0.0, 1.0);
 
-    return clamp(vv_weatherWetness * facing * facing * clamp(vv_sunExposure, 0.0, 1.0), 0.0, 1.0);
+    // A THRESHOLD on sun exposure, not a straight multiply. Vanilla's sun light
+    // bleeds sideways under an overhang, so reading it linearly only ever dries
+    // out fully enclosed spaces - a porch stays as wet as the lawn beside it.
+    // Requiring near-full exposure gets overhangs, canopy and doorways back.
+    //
+    // This is still a threshold on a soft signal rather than a rain occlusion
+    // test. The game has a real one, which is how torches are extinguished, but
+    // it answers per block on the CPU and this question is per fragment.
+    float exposure = smoothstep(vv_weatherCover - 0.12, vv_weatherCover + 0.06,
+                                clamp(vv_sunExposure, 0.0, 1.0));
+
+    return clamp(vv_weatherWetness * facing * facing * exposure, 0.0, 1.0);
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.

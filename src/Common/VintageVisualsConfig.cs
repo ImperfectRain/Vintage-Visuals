@@ -76,12 +76,71 @@ namespace VintageVisuals.Common
         /// </summary>
         public float DryingSeconds { get; set; } = 60.0f;
 
+        /// <summary>
+        /// How exposed to the sky a surface must be before rain reaches it.
+        ///
+        /// The signal is vanilla's per-vertex sun light, which bleeds sideways
+        /// under an overhang - so a linear reading only ever dries out fully
+        /// enclosed spaces, and a porch stays as wet as the lawn. Raising this
+        /// requires near-full exposure and gets overhangs, tree canopy and
+        /// doorways back.
+        ///
+        /// It is a threshold on a soft signal, not a rain occlusion test. The
+        /// game does have one - it is how torches are extinguished - but it
+        /// answers per block on the CPU, and this question is per fragment.
+        /// </summary>
+        public float RainCoverThreshold { get; set; } = 0.82f;
+
+        /// <summary>How much rain thickens the air. 0 leaves vanilla fog alone.</summary>
+        public float FogStrength { get; set; } = 0.35f;
+
+        /// <summary>How much rain drains colour from the fog and cools it.</summary>
+        public float FogTint { get; set; } = 0.6f;
+
+        /// <summary>Depth of cloud shadows on the ground. 0 is off.</summary>
+        public float CloudShadowStrength { get; set; } = 0.45f;
+
+        /// <summary>Blocks across one cloud cell. Larger means broader, slower shadows.</summary>
+        public float CloudScale { get; set; } = 190.0f;
+
+        /// <summary>How fast cloud shadows drift, in cells per minute.</summary>
+        public float CloudDriftSpeed { get; set; } = 0.9f;
+
+        /// <summary>
+        /// Extra high-frequency shaping on the volumetric clouds. 0 is vanilla.
+        ///
+        /// Vanilla mixes two noise frequencies, which gives a smooth billow and
+        /// no edge. A third breaks the silhouette into the ragged fringe real
+        /// cumulus have, which is the detail the eye uses to read something as
+        /// a cloud rather than a soft grey shape.
+        /// </summary>
+        public float CloudDetail { get; set; } = 0.6f;
+
+        /// <summary>Multiplies volumetric cloud opacity. 1 is vanilla.</summary>
+        public float CloudDensity { get; set; } = 1.0f;
+
         internal void ClampToValidRanges(List<string> corrections)
         {
             WetnessStrength = ColorGradeConfig.Clamp(WetnessStrength, 0.0f, 2.0f,
                 "Weather.WetnessStrength", corrections);
             DryingSeconds = ColorGradeConfig.Clamp(DryingSeconds, 1.0f, 600.0f,
                 "Weather.DryingSeconds", corrections);
+            RainCoverThreshold = ColorGradeConfig.Clamp(RainCoverThreshold, 0.0f, 1.0f,
+                "Weather.RainCoverThreshold", corrections);
+            FogStrength = ColorGradeConfig.Clamp(FogStrength, 0.0f, 1.0f,
+                "Weather.FogStrength", corrections);
+            FogTint = ColorGradeConfig.Clamp(FogTint, 0.0f, 1.0f,
+                "Weather.FogTint", corrections);
+            CloudShadowStrength = ColorGradeConfig.Clamp(CloudShadowStrength, 0.0f, 1.0f,
+                "Weather.CloudShadowStrength", corrections);
+            CloudScale = ColorGradeConfig.Clamp(CloudScale, 32.0f, 512.0f,
+                "Weather.CloudScale", corrections);
+            CloudDriftSpeed = ColorGradeConfig.Clamp(CloudDriftSpeed, 0.0f, 8.0f,
+                "Weather.CloudDriftSpeed", corrections);
+            CloudDetail = ColorGradeConfig.Clamp(CloudDetail, 0.0f, 1.0f,
+                "Weather.CloudDetail", corrections);
+            CloudDensity = ColorGradeConfig.Clamp(CloudDensity, 0.25f, 3.0f,
+                "Weather.CloudDensity", corrections);
         }
     }
 

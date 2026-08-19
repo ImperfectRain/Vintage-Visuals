@@ -24,47 +24,64 @@ namespace VintageVisuals.SmokeTest
     {
         public static void Run(string repo, Action<string, bool, string> check)
         {
-            string snippet = File.ReadAllText(
-                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pseudopbr.glsl"));
-            string binder = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+            // Every snippet against every binder. Scoping this to one pair
+            // let vv_weatherCover through: it is declared in pseudopbr.glsl and
+            // uploaded by WeatherShaderBinder, so a check that knew about only
+            // one of the two reported a bug that was not there and would have
+            // missed a real one going the other way.
+            string snippetDir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
+            string snippets = string.Join("\n",
+                Directory.GetFiles(snippetDir, "*.glsl").OrderBy(f => f).Select(File.ReadAllText));
 
-            // Samplers are bound with BindTexture2D rather than Uniform, so they
-            // are checked separately below.
-            var declared = Regex.Matches(snippet, @"^uniform\s+float\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+            string binders = string.Join("\n",
+                Directory.GetFiles(Path.Combine(repo, "src"), "*.cs", SearchOption.AllDirectories)
+                    .OrderBy(f => f)
+                    .Select(File.ReadAllText));
+
+            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec3)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
                 .OrderBy(n => n)
                 .ToList();
 
-            check("the shader declares float uniforms to check", declared.Count > 0, declared.Count.ToString());
+            check("the shaders declare uniforms to check", declared.Count > 0, declared.Count.ToString());
 
             // The name has to reach an actual Uniform() call, not merely exist
             // as a const. A declared-but-unused constant is exactly the bug.
-            var uploads = Regex.Matches(binder, @"Uniform\(\s*(\w+)\s*,")
+            var uploads = Regex.Matches(binders, @"Uniform\(\s*(\w+)\s*,")
                 .Select(m => m.Groups[1].Value)
                 .ToHashSet();
 
-            var constants = Regex.Matches(binder, @"const string (\w+)\s*=\s*""(vv_\w+)""")
-                .ToDictionary(m => m.Groups[2].Value, m => m.Groups[1].Value);
+            var constants = Regex.Matches(binders, @"const string (\w+)\s*=\s*""(vv_\w+)""")
+                .ToDictionary(m => m.Groups[2].Value, m => m.Groups[1].Value, StringComparer.Ordinal);
+
+            // ColorGrade names its uniforms inline rather than through
+            // constants, which is just as valid - what matters is that the name
+            // reaches a Uniform call, not how it got there.
+            var literals = Regex.Matches(binders, @"Uniform\(\s*""(vv_\w+)""")
+                .Select(m => m.Groups[1].Value)
+                .ToHashSet(StringComparer.Ordinal);
 
             var missing = declared
-                .Where(u => !constants.ContainsKey(u) || !uploads.Contains(constants[u]))
+                .Where(u => !literals.Contains(u) &&
+                            (!constants.ContainsKey(u) || !uploads.Contains(constants[u])))
                 .ToList();
 
-            check("every shader uniform is uploaded by the binder", missing.Count == 0,
+            check("every shader uniform is uploaded by some binder", missing.Count == 0,
                 missing.Count == 0
                     ? ""
                     : string.Join(", ", missing.Select(u =>
                         u + (constants.ContainsKey(u) ? " (constant exists, never uploaded)" : " (no constant)"))));
 
-            var orphans = constants.Keys
-                .Where(u => !declared.Contains(u) && !snippet.Contains("uniform sampler2D " + u))
+            var orphans = constants.Keys.Concat(literals)
+                .Distinct()
+                .Where(u => !declared.Contains(u) && !snippets.Contains("uniform sampler2D " + u))
                 .ToList();
 
-            check("every uploaded uniform is declared in the shader", orphans.Count == 0,
+            check("every uploaded uniform is declared in a shader", orphans.Count == 0,
                 string.Join(", ", orphans));
 
-            check("the material sampler is bound", binder.Contains("BindTexture2D(SamplerUniform"), "");
+            check("the material sampler is bound", binders.Contains("BindTexture2D(SamplerUniform"), "");
         }
     }
 }
