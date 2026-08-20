@@ -27,14 +27,9 @@ uniform float vv_weatherFogTint;     // how much rain drains colour from it
 uniform float vv_cloudShadowStrength; // already scaled by daylight on the CPU
 uniform float vv_cloudCover;         // 0 clear, 1 overcast - the game's own figure
 uniform float vv_cloudScale;         // blocks across one cloud cell
+uniform float vv_cloudHeight;        // world height the shadow-casting deck sits at
 uniform vec2  vv_cloudDrift;         // advanced on the CPU along the real wind
 uniform vec3  vv_cloudOrigin;        // camera world position
-
-// Height the shadow-casting cloud deck sits at, in blocks above the fragment.
-// Vanilla's clouds are far higher than this; using their real altitude makes
-// the shadow slide almost a kilometre sideways at a low sun, which reads as a
-// bug rather than as weather.
-const float VV_CLOUD_HEIGHT = 160.0;
 
 // ---------------------------------------------------------------------------
 // Fog
@@ -79,46 +74,73 @@ vec3 vvWeatherFogColor(vec3 fogColor)
 // these shaders, so this costs instructions rather than a texture fetch or a
 // second implementation to keep in step.
 //
-// This is the mod's own field, NOT the tile map vanilla draws its clouds from.
+// This is the mod's own field, NOT the tile map vanilla places its clouds from.
 // That map is built on the CPU and handed to the renderers as mapData1 and
 // mapData2 (see cloudmap.fsh), so it is not reachable from a terrain shader,
-// and both cloud renderers read it from there. What can be matched without it
-// is the statistics and the motion: how much of the sky is covered, and which
-// way it is going. Both come straight from the game - cover from the ambient
-// manager's own cloud density, drift from the wind at the player.
-float vvCloudDensity(vec2 worldXZ)
+// and both cloud renderers read the clouds' positions out of it. What can be
+// taken from the game without it is everything except position - how much of
+// the sky is covered, which way it is going, and where the sun is - and all
+// three are.
+float vvCloudField(vec2 p)
+{
+    float n = gnoise(p) * 0.6 + gnoise(p * 2.3) * 0.3 + gnoise(p * 5.1) * 0.1;
+
+    // Normalised by the deviation this sum actually HAS, not by the range it
+    // could theoretically reach. That distinction is why the first version
+    // showed nothing.
+    //
+    // Two-dimensional gnoise peaks near +-0.7 but spends nearly all its time
+    // inside +-0.2, and a weighted sum of three octaves is narrower still: call
+    // it a standard deviation of 0.14 around zero. Mapping that raw onto 0..1
+    // and then thresholding puts every threshold worth using outside the band
+    // the field ever visits, so the ground comes out either untouched or
+    // uniformly dark depending on which side of the pile the threshold landed.
+    // Both failures have now shipped, one after the other.
+    return clamp(n * 1.55 + 0.5, 0.0, 1.0);
+}
+
+float vvCloudDensity(vec2 worldXZ, vec3 toSun)
 {
     vec2 p = worldXZ / max(32.0, vv_cloudScale) - vv_cloudDrift;
 
-    float n = gnoise(p) * 0.6 + gnoise(p * 2.3) * 0.3 + gnoise(p * 5.1) * 0.1;
-    n = n * 0.5 + 0.5;
-
-    // Expand the distribution before thresholding it.
+    // Stretch the field along the sun's azimuth as the sun drops.
     //
-    // This line is the difference between cloud shadows and a haze blanket.
-    // A sum of gradient noise is not spread evenly over 0..1 - it piles up
-    // hard around the middle, and almost nothing reaches either end. Threshold
-    // the raw sum and the whole ramp sits inside that pile, so every fragment
-    // in the world lands somewhere on it and comes out slightly darkened. That
-    // is not a shadow with an edge; it is an everywhere-dimmer world, which is
-    // exactly what it looked like.
-    n = clamp((n - 0.5) * 2.3 + 0.5, 0.0, 1.0);
+    // A cloud's shadow is its cross-section projected along the ray. With the
+    // sun overhead that is the cloud's own footprint; with the sun low it is
+    // the same footprint smeared out along the direction the light comes from,
+    // which is why late-afternoon cloud shadows are long streaks rather than
+    // blobs. Without this the shadows keep their noon shape all day and merely
+    // slide sideways, which reads as a texture scrolling under the world.
+    vec2 azimuth = toSun.xz;
+    float azimuthLength = length(azimuth);
+    if (azimuthLength > 0.001)
+    {
+        azimuth /= azimuthLength;
 
-    // Cover moves the threshold rather than scaling the result, so a clear sky
-    // has a few shadows rather than faint ones everywhere.
+        // Capped at 3. The true projection goes to infinity at the horizon,
+        // and anything past about three times reads as smearing rather than as
+        // a long shadow.
+        float stretch = clamp(1.0 / max(0.2, abs(toSun.y)), 1.0, 3.0);
+
+        float along = dot(p, azimuth);
+        p = (p - azimuth * along) + azimuth * (along / stretch);
+    }
+
+    float n = vvCloudField(p);
+
+    // Cover chooses how much of the ground ends up shaded, by moving the
+    // threshold through the part of the range the field actually occupies.
     //
-    // It deliberately stops short of both ends. Overcast in vanilla is still a
-    // cloud LAYER with thin patches in it, and letting cover reach 1 shades the
-    // whole ground evenly - the same failure as above, arrived at from the
-    // other side.
-    float cover = clamp(vv_cloudCover, 0.0, 1.0) * 0.8 + 0.06;
-    float threshold = 1.0 - cover;
+    // Both ends stop short of the extremes on purpose. Overcast in vanilla is
+    // still a cloud LAYER with thin patches in it, and a clear sky still has
+    // the odd cloud in it - a day with no shadows at all anywhere is rarer
+    // than either.
+    float threshold = mix(0.80, 0.30, clamp(vv_cloudCover, 0.0, 1.0));
 
     // One-sided and narrow: wide enough not to alias into shimmer at draw
     // distance, narrow enough that a shadow has an edge you can watch cross a
-    // field. The old band was 0.36 wide and centred on the threshold, which
-    // put the entire field on the ramp.
-    return smoothstep(threshold, threshold + 0.16, n);
+    // field.
+    return smoothstep(threshold, threshold + 0.14, n);
 }
 
 // Prototype. The vanilla function is renamed to this by the same patch that
@@ -137,10 +159,15 @@ float vvCloudShadow(vec3 cameraRelativePos)
     // straight above. At a low sun this is a long way sideways, which is
     // exactly what makes cloud shadows read as three-dimensional.
     vec3 toSun = normalize(lightPosition);
-    float climb = max(0.0, VV_CLOUD_HEIGHT - world.y);
+
+    // Floored rather than used raw: an unset uniform reads as 0, and a deck at
+    // world height zero is below the ground everywhere, which would collapse
+    // the offset to nothing and cast every shadow straight down.
+    float deck = max(32.0, vv_cloudHeight);
+    float climb = max(0.0, deck - world.y);
     vec2 at = world.xz + toSun.xz * (climb / max(0.15, abs(toSun.y)));
 
-    return 1.0 - vvCloudDensity(at) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+    return 1.0 - vvCloudDensity(at, toSun) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
 }
 
 // Replaces vanilla's shadow lookup everywhere it is used.

@@ -137,23 +137,61 @@ Matching the sky cloud for cloud would need the tile array out of
 `VintagestoryLib`. Matching how much of it is covered and where it is heading
 does not, and is most of what the eye reads from the ground.
 
-### Why the first version was a blanket
+### Two failures, one cause
 
-It darkened the whole world evenly instead of casting shadows, and the cause was
-one line of statistics rather than anything about clouds.
+The field shipped wrong twice in opposite directions, and both times the cause
+was the same: **a threshold applied to a distribution nobody had measured.**
 
-A sum of gradient noise octaves is **not spread evenly over 0..1**. It piles up
-hard around the middle and almost never reaches either end. The threshold was
-applied straight to that sum with a band 0.36 wide centred on it - so the entire
-world sat somewhere on the smoothstep ramp, and every fragment came out slightly
-darkened. That is not a shadow with an edge; it is an everywhere-dimmer world,
-which is exactly what it looked like.
+A sum of gradient noise octaves is not spread evenly over its range. Vanilla's
+2D `gnoise` peaks near +-0.7 but spends nearly all its time inside +-0.2, and
+the weighted three-octave sum used here has a standard deviation of **0.150**
+around zero - measured, not estimated.
 
-The fix is to expand the distribution before thresholding it, and to narrow the
-ramp to one side. Cover then also stops short of both ends: overcast in vanilla
-is still a cloud *layer* with thin patches in it, and letting cover reach 1
-shades the whole ground evenly - the same failure arrived at from the other
-side.
+- **First version - the blanket.** The raw sum was mapped onto 0..1 (giving a
+  field with a standard deviation of 0.075, hugging 0.5) and thresholded with a
+  band 0.36 wide centred on the threshold. At cover 0.7 the mean shade came out
+  at **0.967, with a minimum of 0.04** - the entire world darkened, no gaps
+  anywhere. Not a shadow with an edge; an everywhere-dimmer world.
+- **Second version - nothing at all.** The distribution was expanded 2.3x and
+  the band narrowed, which was right, but coverage was driven straight from
+  `BlendedCloudDensity` as though it were a fraction of sky. It is not - it is
+  the game's density parameter, and it sits low. At a realistic 0.05-0.2 the
+  threshold landed at 0.86-0.90 and the mean shade was **0.4% to 2%**:
+  invisible.
+
+The fix is to normalise the field by the deviation it actually has (x1.55, so
+its standard deviation is 0.224 and it uses the range), and to move the
+threshold through the band the field genuinely occupies rather than through
+0..1. Measured across the whole cover range:
+
+| cover | threshold | ground in shadow |
+|---|---|---|
+| 0.00 | 0.80 | 6% |
+| 0.25 | 0.68 | 14% |
+| 0.50 | 0.55 | 30% |
+| 0.75 | 0.43 | 51% |
+| 1.00 | 0.30 | 72% |
+
+Both ends stop short of the extremes deliberately. Overcast in vanilla is still
+a cloud *layer* with thin patches in it, and a clear sky still has the odd cloud
+in it - a day with no shadow anywhere is rarer than either. And because the
+range gives visible shadows even at cover 0, a miscalibrated cover input can no
+longer take the feature to zero; it only decides how much *more* shade a cloudy
+day gets.
+
+### Sun directionality
+
+A cloud's shadow is its cross-section projected along the sun ray. Two things
+follow, and the field does both:
+
+- **The shadow is offset**, by walking from the fragment up to the cloud deck
+  along the sun direction. At a low sun that is a long way sideways.
+- **The shadow is stretched along the sun's azimuth**, by the reciprocal of the
+  sun's elevation, capped at 3x. With the sun overhead a shadow is the cloud's
+  own footprint; late in the day it is that footprint smeared into a long streak
+  pointing at the sun. Without this the shadows keep their noon shape all day
+  and merely slide, which reads as a texture scrolling under the world rather
+  than as something being cast.
 
 ### The rest of it
 
@@ -161,9 +199,12 @@ side.
   up to the cloud deck. At a low sun that is a long way sideways, which is what
   makes cloud shadows read as three-dimensional rather than as a texture on the
   ground.
-- **The deck sits at 160 blocks, not at vanilla's cloud altitude.** Using the
-  real height slides the shadow almost a kilometre at a low sun, which reads as
-  a bug.
+- **The deck sits at 160 blocks by default, not at vanilla's cloud altitude**,
+  and is now a setting. It is what decides how far a shadow slides from what
+  casts it, so it is the control for whether shadows sit under the clouds or off
+  to one side. Vanilla's clouds are far higher; using their real altitude moves
+  the shadow the better part of a kilometre at a low sun, which reads as a bug
+  rather than as evening.
 - **Strength is scaled by daylight on the CPU.** A cloud shadow is the sun being
   blocked; at night there is nothing to block. Folding it into the strength
   keeps that as one uniform whose zero already means vanilla, rather than a

@@ -28,6 +28,7 @@ namespace VintageVisuals.Weather
         public const string CloudCoverUniform = "vv_cloudCover";
         public const string CloudScaleUniform = "vv_cloudScale";
         public const string CloudDriftUniform = "vv_cloudDrift";
+        public const string CloudHeightUniform = "vv_cloudHeight";
         public const string CloudOriginUniform = "vv_cloudOrigin";
 
         /// <summary>
@@ -147,6 +148,7 @@ namespace VintageVisuals.Weather
                 program.Uniform(CloudShadowUniform, strength);
                 program.Uniform(CloudCoverUniform, _weather.CloudCover);
                 program.Uniform(CloudScaleUniform, config.CloudScale);
+                program.Uniform(CloudHeightUniform, config.CloudHeight);
                 program.Uniform(CloudDriftUniform, _weather.CloudDrift);
 
                 // Camera world position, so cloud shadows stay put on the

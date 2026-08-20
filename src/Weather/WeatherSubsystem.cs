@@ -32,12 +32,19 @@ namespace VintageVisuals.Weather
         /// </summary>
         private const float SampleIntervalSeconds = 1.0f;
 
+        /// <summary>
+        /// Turns the game's cloud density into something that reads as a
+        /// fraction of sky covered. See SampleClouds for why it is not 1.
+        /// </summary>
+        private const float CloudCoverGain = 2.0f;
+
         private VintageVisualsModSystem _mod;
         private readonly WetnessTracker _wetness = new WetnessTracker();
 
         private readonly WetnessTracker _rain = new WetnessTracker();
 
         private WeatherShaderBinder _binder;
+        private bool _reportedCloudDensity;
         private float _sinceSample;
         private float _rainfall;
         private float _temperature = 20f;
@@ -228,7 +235,24 @@ namespace VintageVisuals.Weather
         {
             if (_mod.Capi.Ambient != null)
             {
-                _cloudCover = GameMath.Clamp(_mod.Capi.Ambient.BlendedCloudDensity, 0f, 1f);
+                float density = _mod.Capi.Ambient.BlendedCloudDensity;
+
+                // Gained before clamping. BlendedCloudDensity is the game's own
+                // density parameter, not a fraction of sky covered, and it sits
+                // low - so read as a 0..1 coverage it says "nearly clear" under
+                // a sky full of cloud. The shader's threshold now spans a range
+                // that gives visible shadows at any value including zero, so
+                // this only decides how much MORE shade a cloudy day gets.
+                _cloudCover = GameMath.Clamp(density * CloudCoverGain, 0f, 1f);
+
+                if (!_reportedCloudDensity)
+                {
+                    _reportedCloudDensity = true;
+                    _mod.Mod.Logger.Notification(
+                        "[VintageVisuals] weather: cloud cover source BlendedCloudDensity = " +
+                        density.ToString("0.###") + ", used as cover " +
+                        _cloudCover.ToString("0.###") + ".");
+                }
             }
 
             Vec3d wind = _mod.Capi.World.BlockAccessor.GetWindSpeedAt(pos);

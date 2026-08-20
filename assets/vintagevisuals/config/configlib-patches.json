@@ -344,6 +344,18 @@
           "step": 0.1
         }
       },
+      "weather_cloudheight": {
+        "ingui": "Cloud shadow height (blocks)",
+        "comment": "World height the shadow-casting cloud deck sits at. Decides how far a shadow slides from what casts it as the sun drops.",
+        "default": 160.0,
+        "clientSide": true,
+        "weight": 49,
+        "range": {
+          "min": 40.0,
+          "max": 400.0,
+          "step": 10.0
+        }
+      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
         "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness.",

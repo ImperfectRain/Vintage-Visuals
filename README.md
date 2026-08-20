@@ -82,6 +82,7 @@ value.
 | `Weather.CloudShadowStrength` | 0.0 – 1.0 | `0.35` | Depth of cloud shadows on the ground |
 | `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |
 | `Weather.CloudDriftSpeed` | 0 – 8 | `0.9` | Cloud shadow speed, cells per minute |
+| `Weather.CloudHeight` | 40 – 400 | `160` | Height the shadow-casting cloud deck sits at |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →

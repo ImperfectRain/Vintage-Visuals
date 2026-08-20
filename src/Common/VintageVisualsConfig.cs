@@ -111,6 +111,18 @@ namespace VintageVisuals.Common
         /// <summary>How fast cloud shadows drift, in cells per minute, along the world's wind.</summary>
         public float CloudDriftSpeed { get; set; } = 0.9f;
 
+        /// <summary>
+        /// World height the shadow-casting cloud deck sits at, in blocks.
+        ///
+        /// This is what decides how far a shadow slides from the thing casting
+        /// it as the sun drops, so it is the control for whether shadows sit
+        /// under the clouds or somewhere off to the side of them. Vanilla's
+        /// clouds are much higher than this default; using their real altitude
+        /// moves the shadow the better part of a kilometre at a low sun, which
+        /// reads as a bug rather than as evening.
+        /// </summary>
+        public float CloudHeight { get; set; } = 160.0f;
+
         internal void ClampToValidRanges(List<string> corrections)
         {
             WetnessStrength = ColorGradeConfig.Clamp(WetnessStrength, 0.0f, 2.0f,
@@ -129,6 +141,8 @@ namespace VintageVisuals.Common
                 "Weather.CloudScale", corrections);
             CloudDriftSpeed = ColorGradeConfig.Clamp(CloudDriftSpeed, 0.0f, 8.0f,
                 "Weather.CloudDriftSpeed", corrections);
+            CloudHeight = ColorGradeConfig.Clamp(CloudHeight, 40.0f, 400.0f,
+                "Weather.CloudHeight", corrections);
         }
     }
 
