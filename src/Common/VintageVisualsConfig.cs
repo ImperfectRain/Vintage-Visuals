@@ -197,6 +197,17 @@ namespace VintageVisuals.Common
         public float CloudShadowStrength { get; set; } = 0.35f;
 
         /// <summary>
+        /// Read cloud positions from the game's own cloud renderer, so shadows
+        /// land under the clouds that cast them.
+        ///
+        /// Off falls back to a noise field of the mod's own, which moves and
+        /// covers correctly but cannot line up with the sky. The fallback also
+        /// happens by itself if a game update moves the cloud renderer out of
+        /// reach - see CloudTileReader, and the log line it writes.
+        /// </summary>
+        public bool CloudsFromGame { get; set; } = true;
+
+        /// <summary>
         /// Shows the cloud shadow field on its own, at full strength, with
         /// vanilla's shadow map out of the way.
         ///

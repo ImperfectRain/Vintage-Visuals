@@ -192,7 +192,14 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   `cloudmap.fsh` turns that into `cloudMap`, and `cloudvolumetric.fsh` only
   shades what it already placed. Nothing a fragment shader can reach decides
   where a cloud is. The same is true of the sky: patch neither, and the clouds
-  stay vanilla in both renderers - see `src/Weather/README.md`.
+  stay vanilla in both renderers - see `src/Weather/README.md`. Anything that
+  has to AGREE with cloud positions must read that CPU array
+  (`src/Weather/CloudTileReader.cs`); three versions of a noise field failed at
+  this, and the last failed for a reason tuning cannot fix.
+- **Prefer a uniform array to a second sampler.** 64 vec4s cost nothing and
+  need no texture unit. Adding a sampler to `chunkopaque.fsh` has twice cost
+  the entire world render — once through link-time unit reassignment, once
+  through a unit collision. Below roughly a thousand values, use `Uniforms4`.
 - **World coordinates and accumulating clocks are unusable raw in float32.**
   Vintage Story worlds run to ~500,000 blocks from the origin, where a float32
   resolves about SIXTEEN positions inside a half-block cell — so any fine field

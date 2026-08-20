@@ -233,30 +233,70 @@ touching. That last part is not a nicety: `pseudopbr` owns the lighting call in
 both terrain shaders, and two groups editing one line means whichever runs
 second finds its anchor gone.
 
-### What comes from the game, and what does not
+### They come from the game's own clouds
 
-The shadow field is the mod's own noise. It is **not** the map vanilla places
-its clouds from, and it cannot be: that map is built on the CPU and handed to
-the renderers as `mapData1`/`mapData2` (see `cloudmap.fsh`), so a terrain shader
-has no way to sample it. Both cloud renderers, classic and volumetric, read the
-clouds' positions from there.
+Three versions of this were a noise field of the mod's own, and the last of them
+failed for a reason no amount of tuning fixes: **an invented field cannot line
+up with clouds it knows nothing about.** Cover and drift direction were taken
+from the game, which got the amount and the heading right and the positions
+wrong, and "not representative of the actual clouds" is the correct verdict on
+that.
 
-What can be taken from the game without it is everything except position, and
-both halves are:
+Cloud placement in **both** renderers comes from one per-tile array the CPU
+builds and uploads as `mapData1`/`mapData2` - `cloudmap.fsh` turns it into the
+`cloudMap` the volumetric raymarcher shades, and the classic renderer builds its
+quads from the same data. Nothing a fragment shader can reach decides where a
+cloud is. So `CloudTileReader` reads that array.
 
-- **How much of the sky is covered** - `capi.Ambient.BlendedCloudDensity`, the
-  same figure the cloud renderers are driven by. The climate map's
-  `RainCloudOverlay` used to fill this role and was wrong for it: it is only the
-  storm component, so it reads as clear on an ordinarily cloudy day.
-- **Which way the clouds are going** - the wind at the player, which is what
-  pushes vanilla's cloud tiles along. Drift is a vector accumulated along it,
-  so the shadows and the clouds travel the same way. Below a breath of wind the
-  direction is numerical noise, so the last heading is held rather than letting
-  the shadows shimmer in place.
+It lives in `VintagestoryLib`, which is explicitly not a stable API, so the
+reader is built to survive it moving:
 
-Matching the sky cloud for cloud would need the tile array out of
-`VintagestoryLib`. Matching how much of it is covered and where it is heading
-does not, and is most of what the eye reads from the ground.
+- The renderer is found by **type name** (`*CloudRenderer*`), searched across
+  the client's fields and through any collection among them - not by field name,
+  and not by assuming it is held directly.
+- The tile array is found by **shape**: an array field whose element type is
+  called something like `CloudTile`.
+- The density member is picked from a priority list (`SelfThickness`,
+  `Thickness`, ...) with a contains-match fallback, then multiplied by an
+  opacity member if one exists - mirroring `cloudmap.fsh`'s own
+  `cloudOpaqueness * min(1, 10 * selfThickness)`.
+- Every failure logs **once, with the member names it did find**, so a version
+  that renames something is a one-round fix rather than another guess.
+- Any failure falls back to the noise field. Worse, but not nothing.
+
+**No origin field has to be found.** The game's grid follows the camera -
+`cloudmap.fsh` places tile *(i, j)* at `mapOffset + (i - width/2) * 50`, and
+`mapOffset` tracks the player - so the centre of the array is where the player
+is, and the window's world corner follows from the player's own position snapped
+to the 50-block tile grid.
+
+Tile values are whatever integer scale the game happens to use, so they are
+normalised against a **decaying peak** rather than a guessed divisor: it settles
+on the busiest sky seen recently, and an emptying sky fades instead of rescaling
+itself brighter.
+
+### Getting 256 numbers to the shader
+
+The window is 16 tiles square - 800 blocks, a little more than the default view
+distance - and travels as a **uniform array of 64 vec4s**, not a texture.
+
+That is a deliberate choice against the obvious one. Adding a second sampler to
+`chunkopaque.fsh` is the change that has twice cost this project the entire
+world render, once through link-time unit reassignment and once through a
+texture-unit collision. It is not a trade worth making for 256 numbers.
+
+The lookup is bilinear with a smoothstep weight. Vanilla's clouds are drawn from
+50-block tiles and look like it, which is part of the art direction; their
+*shadows* looking like it is not, and a hard tile edge on the ground reads as a
+bug rather than as a cloud.
+
+`vv_cloudMapValid` is uploaded either way and its zero selects the fallback, so
+a program that never received the window - unpatched, unbound, rolled back -
+behaves exactly as a failed tile read does rather than sampling an array of
+zeros as though it meant a cloudless sky.
+
+`Weather.CloudsFromGame` turns the whole path off and returns to the noise
+field.
 
 ### Two failures, one cause
 

@@ -29,6 +29,15 @@ namespace VintageVisuals.Weather
         private WeatherShaderBinder _binder;
 
         /// <summary>
+        /// The game's own cloud placement. Owned here rather than by the shared
+        /// environment tracker because it is not a fact about the world so much
+        /// as a read of another renderer's internals - reflection into
+        /// VintagestoryLib, which is exactly the kind of thing that should sit
+        /// inside the subsystem that needs it and degrade there.
+        /// </summary>
+        private CloudTileReader _clouds;
+
+        /// <summary>
         /// Accumulated cloud drift in cloud cells.
         ///
         /// The one piece of weather state this subsystem still owns, because it
@@ -38,6 +47,11 @@ namespace VintageVisuals.Weather
         /// the shared environment state.
         /// </summary>
         private readonly Vec2f _drift = new Vec2f();
+
+        /// <summary>Seconds between reads of the game's cloud tiles.</summary>
+        private const float CloudReadSeconds = 0.25f;
+
+        private float _sinceCloudRead = CloudReadSeconds;
 
         private EnvironmentState World
         {
@@ -90,6 +104,12 @@ namespace VintageVisuals.Weather
             get { return _drift; }
         }
 
+        /// <summary>The game's own cloud tiles, or an unavailable reader when they could not be found.</summary>
+        public CloudTileReader Clouds
+        {
+            get { return _clouds; }
+        }
+
         /// <summary>0 at midnight, 1 at noon. From the shared state, so nothing here reads the clock twice.</summary>
         public float DayLight
         {
@@ -122,6 +142,7 @@ namespace VintageVisuals.Weather
             // is smooth, and this is the stage that is guaranteed quiet.
             mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-weather");
 
+            _clouds = new CloudTileReader(mod.Capi, mod.Mod.Logger);
             _binder = new WeatherShaderBinder(mod.Capi, this);
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-weather-uniforms");
         }
@@ -148,6 +169,15 @@ namespace VintageVisuals.Weather
             // accumulator so the shader never needs a clock and the speed can
             // change without the shadows jumping - a new rate bends the path
             // from here on rather than teleporting the pattern.
+            // A few times a second is plenty: the cloud tiles are rebuilt as
+            // the player crosses one, which is 50 blocks.
+            _sinceCloudRead += deltaTime;
+            if (_sinceCloudRead >= CloudReadSeconds && config.CloudShadowStrength > 0.001f)
+            {
+                _sinceCloudRead = 0f;
+                if (config.CloudsFromGame) _clouds.Update();
+            }
+
             Vec2f wind = World.WindDirection;
             float step = deltaTime * config.CloudDriftSpeed / 60f;
             _drift.X += wind.X * step;
@@ -176,6 +206,7 @@ namespace VintageVisuals.Weather
             }
 
             _binder = null;
+            _clouds = null;
             _drift.X = 0f;
             _drift.Y = 0f;
             _mod = null;

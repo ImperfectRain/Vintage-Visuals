@@ -70,6 +70,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _enabled;
         private PseudoPbrConfig _look = new PseudoPbrConfig();
         private SceneInputs _weather = SceneInputs.None;
+        private readonly Func<SceneInputs> _readScene;
 
         /// <summary>
         /// Set while a program still believes the effect is on, so switching
@@ -88,11 +89,13 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedBusy;
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas,
-                               Func<Dictionary<int, int>> buildPageMap)
+                               Func<Dictionary<int, int>> buildPageMap,
+                               Func<SceneInputs> readScene)
         {
             _capi = capi;
             _atlas = atlas;
             _buildPageMap = buildPageMap;
+            _readScene = readScene;
         }
 
         public double RenderOrder { get { return BindBeforeTerrainOpaque; } }
@@ -103,12 +106,16 @@ namespace VintageVisuals.PseudoPBR
         /// Sets what the next frame will do. Called from config changes, so it
         /// deliberately does no GL work of its own - the config path is not
         /// guaranteed to be a thread with a GL context.
+        ///
+        /// Config only. What the WORLD is doing is pulled per frame instead -
+        /// see _readScene. Pushing that here as well is how the rain ripples
+        /// ended up frozen between slider movements: Apply() runs on config
+        /// change, and a config change is not a clock.
         /// </summary>
-        public void SetState(bool enabled, PseudoPbrConfig look, SceneInputs weather)
+        public void SetState(bool enabled, PseudoPbrConfig look)
         {
             _enabled = enabled;
             _look = look;
-            _weather = weather;
         }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
@@ -176,6 +183,11 @@ namespace VintageVisuals.PseudoPBR
             // a stale map is a page rendering with another page's material
             // data - silent and wrong, the worst of the two failure modes.
             TerrainTextureBindInterceptor.SetPages(_buildPageMap());
+
+            // Pulled every frame, not pushed on config change. Wetness, the
+            // ripple clock and the camera origin all move continuously, and a
+            // config change is not a clock.
+            if (_readScene != null) _weather = _readScene();
 
             int uploaded = 0;
             foreach (EnumShaderProgram id in PatchedPrograms)

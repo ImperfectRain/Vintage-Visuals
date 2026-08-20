@@ -96,6 +96,7 @@ value.
 | `Weather.OvercastStrength` | 0.0 – 1.0 | `0.7` | How completely cloud cover diffuses the sun |
 | `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air over terrain (never the sky) |
 | `Weather.FogTint` | 0.0 – 1.0 | `0.6` | How much rain drains colour from the fog |
+| `Weather.CloudsFromGame` | bool | `true` | Shadows follow the game's own clouds rather than a noise field |
 | `Weather.CloudShadowStrength` | 0.0 – 1.0 | `0.35` | Depth of cloud shadows on the ground |
 | `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |
 | `Weather.CloudDriftSpeed` | 0 – 8 | `0.9` | Cloud shadow speed, cells per minute |

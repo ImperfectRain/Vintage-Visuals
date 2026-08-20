@@ -32,6 +32,23 @@ uniform vec2  vv_cloudDrift;         // advanced on the CPU along the real wind
 uniform vec3  vv_cloudOrigin;        // camera world position, wrapped on the CPU
 uniform float vv_cloudDebug;         // 1 shows the cloud field alone; 0 is normal rendering
 
+// The game's OWN cloud placement, read off the cloud renderer's tile array on
+// the CPU and handed over as a window centred on the player.
+//
+// A uniform array rather than a texture. It is 64 vec4s, and adding a second
+// sampler to chunkopaque.fsh is the change that has twice cost this project the
+// entire world render - not a trade worth making for 256 numbers.
+//
+// vv_cloudMapValid is 0 when the tile array could not be read, which is also
+// what an unpatched or unbound program reads, so the fallback below is what
+// happens by default rather than by accident.
+#define VV_CLOUD_TILES 16
+#define VV_CLOUD_TILE_SIZE 50.0
+
+uniform vec4  vv_cloudTiles[VV_CLOUD_TILES * VV_CLOUD_TILES / 4];
+uniform vec2  vv_cloudMapOrigin;     // world XZ of the corner of tile [0,0]
+uniform float vv_cloudMapValid;      // 0 falls back to the noise field
+
 // ---------------------------------------------------------------------------
 // Fog
 // ---------------------------------------------------------------------------
@@ -149,6 +166,39 @@ float vvCloudDensity(vec2 worldXZ, vec3 toSun)
 // declaration first.
 float vvVanillaShadowMap();
 
+// One tile of the game's cloud map, or clear outside the window.
+//
+// Outside rather than clamped: a clamped edge smears the last row of tiles to
+// the horizon, which reads as a shadow that follows the player.
+float vvCloudTile(ivec2 t)
+{
+    if (t.x < 0 || t.y < 0 || t.x >= VV_CLOUD_TILES || t.y >= VV_CLOUD_TILES) return 0.0;
+
+    int i = t.y * VV_CLOUD_TILES + t.x;
+    return vv_cloudTiles[i >> 2][i & 3];
+}
+
+// The game's cloud cover at a world position, smoothly interpolated.
+//
+// Vanilla's clouds are drawn from 50-block tiles and look like it, which is
+// part of the art direction. Their SHADOWS looking like it is not: a hard tile
+// edge on the ground reads as a bug rather than as a cloud, so the lookup is
+// bilinear with a smoothstep weight. The shadow stays where the cloud is and
+// stops being square.
+float vvCloudMap(vec2 worldXZ)
+{
+    vec2 p = (worldXZ - vv_cloudMapOrigin) / VV_CLOUD_TILE_SIZE;
+
+    ivec2 t = ivec2(floor(p));
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float a = mix(vvCloudTile(t),                 vvCloudTile(t + ivec2(1, 0)), f.x);
+    float b = mix(vvCloudTile(t + ivec2(0, 1)),   vvCloudTile(t + ivec2(1, 1)), f.x);
+
+    return clamp(mix(a, b, f.y), 0.0, 1.0);
+}
+
 // The raw cloud field over this fragment, 0 in the clear to 1 fully under
 // cloud.
 //
@@ -172,6 +222,12 @@ float vvCloudCoverage(vec3 cameraRelativePos)
     float deck = max(32.0, vv_cloudHeight);
     float climb = max(0.0, deck - world.y);
     vec2 at = world.xz + toSun.xz * (climb / max(0.15, abs(toSun.y)));
+
+    // The game's own clouds when they can be read, and the mod's noise field
+    // when they cannot. Only the first of these can actually line up with the
+    // sky; the second exists so that a version which moves the cloud renderer
+    // out of reach costs the registration rather than the whole effect.
+    if (vv_cloudMapValid > 0.5) return vvCloudMap(at);
 
     return vvCloudDensity(at, toSun);
 }

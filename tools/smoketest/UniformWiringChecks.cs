@@ -38,7 +38,7 @@ namespace VintageVisuals.SmokeTest
                     .OrderBy(f => f)
                     .Select(File.ReadAllText));
 
-            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*(?:\[[^\]]*\])?\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
                 .OrderBy(n => n)
@@ -48,7 +48,11 @@ namespace VintageVisuals.SmokeTest
 
             // The name has to reach an actual Uniform() call, not merely exist
             // as a const. A declared-but-unused constant is exactly the bug.
-            var uploads = Regex.Matches(binders, @"Uniform\(\s*(\w+)\s*,")
+            //
+            // Uniforms4 counts too - it is how an array of vec4s is pushed, and
+            // a check that only knew about Uniform() would report the cloud tile
+            // window as never uploaded.
+            var uploads = Regex.Matches(binders, @"Uniforms?4?\(\s*(\w+)\s*,")
                 .Select(m => m.Groups[1].Value)
                 .ToHashSet();
 

@@ -42,6 +42,15 @@ namespace VintageVisuals.Weather
         public const string CloudHeightUniform = "vv_cloudHeight";
         public const string CloudOriginUniform = "vv_cloudOrigin";
         public const string CloudDebugUniform = "vv_cloudDebug";
+        public const string CloudTilesUniform = "vv_cloudTiles";
+        public const string CloudMapOriginUniform = "vv_cloudMapOrigin";
+        public const string CloudMapValidUniform = "vv_cloudMapValid";
+
+        /// <summary>vec4s in the cloud tile window: four tiles packed per vec4.</summary>
+        private const int CloudVectors = CloudTileReader.Window * CloudTileReader.Window / 4;
+
+        /// <summary>Reused so a per-frame upload allocates nothing.</summary>
+        private readonly float[] _cloudPacked = new float[CloudVectors * 4];
 
         /// <summary>
         /// Every program a weather patch reaches: the two terrain shaders, and
@@ -194,11 +203,44 @@ namespace VintageVisuals.Weather
                 program.Uniform(CloudOriginUniform, _weather.CameraOrigin);
                 program.Uniform(CloudDebugUniform, config.CloudShadowDebug ? 1f : 0f);
 
+                UploadCloudMap(program, config);
+
                 ReportShadowState(id, strength);
             }
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// Hands over the game's own cloud placement, or says it is unavailable.
+        ///
+        /// vv_cloudMapValid is uploaded either way and its zero is the fallback,
+        /// so a program that never received this - unpatched, unbound, rolled
+        /// back - reads exactly what a failed tile read produces rather than
+        /// sampling an array of zeros as though it meant a cloudless sky.
+        /// </summary>
+        private void UploadCloudMap(IShaderProgram program, WeatherConfig config)
+        {
+            if (!program.HasUniform(CloudMapValidUniform)) return;
+
+            CloudTileReader clouds = _weather.Clouds;
+            bool valid = config.CloudsFromGame && clouds != null && clouds.Available;
+
+            program.Uniform(CloudMapValidUniform, valid ? 1f : 0f);
+            if (!valid) return;
+
+            float[] density = clouds.Density;
+            for (int i = 0; i < _cloudPacked.Length && i < density.Length; i++)
+            {
+                _cloudPacked[i] = density[i];
+            }
+
+            // The array name without a subscript. GL accepts the first element's
+            // location for the whole array, and which spelling a given driver
+            // reports through introspection is not something to depend on.
+            program.Uniforms4(CloudTilesUniform, CloudVectors, _cloudPacked);
+            program.Uniform(CloudMapOriginUniform, clouds.Origin);
         }
 
         /// <summary>
@@ -230,6 +272,9 @@ namespace VintageVisuals.Weather
                 ", deck " + _weather.Config.CloudHeight.ToString("0") +
                 ", drift " + _weather.CloudDrift.X.ToString("0.##") + "/" + _weather.CloudDrift.Y.ToString("0.##") +
                 ", origin " + origin.X.ToString("0") + "/" + origin.Y.ToString("0") + "/" + origin.Z.ToString("0") +
+                ", source " + (_weather.Clouds != null && _weather.Clouds.Available && _weather.Config.CloudsFromGame
+                    ? "the game's own cloud tiles"
+                    : "the mod's noise field (will NOT line up with the sky)") +
                 (_weather.Config.CloudShadowDebug ? " [DEBUG VIEW ON]" : ""));
         }
 

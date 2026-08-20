@@ -77,7 +77,7 @@ namespace VintageVisuals.PseudoPBR
             _bindInterceptor = new TerrainTextureBindInterceptor(mod.HarmonyId, mod.Mod.Logger);
             _bindInterceptor.Install();
 
-            _binder = new PbrShaderBinder(mod.Capi, _atlasTexture, BuildPageMap);
+            _binder = new PbrShaderBinder(mod.Capi, _atlasTexture, BuildPageMap, ReadScene);
 
             // Registered up front and left registered. It is a no-op until the
             // atlas is uploaded, and registering it here rather than at upload
@@ -133,7 +133,7 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
-            _binder.SetState(active, config, ReadScene());
+            _binder.SetState(active, config);
         }
 
         /// <summary>

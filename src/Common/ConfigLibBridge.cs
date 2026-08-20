@@ -231,6 +231,9 @@ namespace VintageVisuals.Common
                 case "weather_fogtint":
                     weather.FogTint = tree.GetFloat("value", weather.FogTint);
                     break;
+                case "weather_cloudsfromgame":
+                    weather.CloudsFromGame = tree.GetBool("value", weather.CloudsFromGame);
+                    break;
                 case "weather_cloudshadowdebug":
                     weather.CloudShadowDebug = tree.GetBool("value", weather.CloudShadowDebug);
                     break;
