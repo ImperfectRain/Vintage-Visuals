@@ -196,6 +196,16 @@ namespace VintageVisuals.Common
         /// </summary>
         public float CloudShadowStrength { get; set; } = 0.35f;
 
+        /// <summary>
+        /// Shows the cloud shadow field on its own, at full strength, with
+        /// vanilla's shadow map out of the way.
+        ///
+        /// Not a look control. It answers the question that matters when the
+        /// effect is invisible: is the GLSL running and merely too faint, or is
+        /// it not running at all.
+        /// </summary>
+        public bool CloudShadowDebug { get; set; } = false;
+
         /// <summary>Blocks across one cloud cell. Larger means broader, slower shadows.</summary>
         public float CloudScale { get; set; } = 190.0f;
 

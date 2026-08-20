@@ -170,6 +170,7 @@ void main(void) {
         MaterialAtlasChecks.Run(Check);
 
         Console.WriteLine("Adaptive grading responds to the world");
+        GradeStackChecks.Repo = Repo;
         GradeStackChecks.Run(Check);
 
         Console.WriteLine("Eye adaptation model");

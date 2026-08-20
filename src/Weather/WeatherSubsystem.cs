@@ -123,7 +123,7 @@ namespace VintageVisuals.Weather
             mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-weather");
 
             _binder = new WeatherShaderBinder(mod.Capi, this);
-            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Opaque, "vintagevisuals-weather-uniforms");
+            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-weather-uniforms");
         }
 
         public double RenderOrder { get { return 0.0; } }
@@ -171,7 +171,7 @@ namespace VintageVisuals.Weather
 
                 if (_binder != null)
                 {
-                    _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Opaque);
+                    _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Before);
                 }
             }
 

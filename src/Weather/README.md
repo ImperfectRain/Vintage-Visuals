@@ -122,6 +122,47 @@ already uploaded every frame, so there is no second clock to drift out of step
 with one. A patch asserts that name, so a rename fails the group rather than
 taking the shader down with an undeclared symbol.
 
+### Everything about this field was a precision problem
+
+The first version produced drops that appeared **at the same time and in the
+same place on every block**, which is the one thing rain never does. Neither
+half was the hash, which was the obvious suspect and measured fine.
+
+- **Position.** Vintage Story worlds run to roughly half a million blocks from
+  the origin. A float32 at that magnitude resolves about **sixteen distinct
+  positions inside one ripple cell** - so `fract()` of it gave the same handful
+  of values in every cell and the ring collapsed into a coarse stamp repeated
+  identically everywhere. The camera origin is now wrapped to 4096 blocks in
+  double on the CPU, before it ever becomes a float. Wrapped, a cell holds two
+  thousand positions. The whole frame stays continuous; the pattern shifts once
+  per 4096 blocks travelled.
+- **Time.** Vanilla's `windWaveCounter` was the obvious clock and is the same
+  trap: it accumulates without bound, and past about ten million a float32
+  cannot separate two phases **at all**, so every drop in the world lands on
+  the same frame. The clock is now advanced in double and handed over
+  pre-wrapped to 0..1.
+
+Both octave scales divide the wrap period exactly - cells of half a block and
+of one block - so the wrap lands on a cell boundary rather than cutting a ring
+in half. A smoke check pins the GLSL constant against the C# one.
+
+### Scattered, not stamped
+
+Precision alone would still have left a lattice: one drop per cell, all at cell
+centres. Each cell now draws four values from a bit-mixing integer hash - where
+the drop landed, when, and how often that cell is hit - and the ring is measured
+from the landing point rather than the cell centre. Sampled over 1600 cells:
+
+| | |
+|---|---|
+| drop offset from cell centre | 0.19 cells mean, 0.35 max |
+| distinct phases | 1506 of 1600 |
+| impact rates | three, split evenly |
+| cells showing a fresh drop at any instant | 14% |
+
+Rates are whole numbers of drops per wrap of the clock, not a continuous
+multiplier - anything else would jump when the clock wrapped.
+
 ### Tuned against measurements, not by eye
 
 The first pass was **fifteen times too weak to see** - a median tilt of 0.2
@@ -272,6 +313,24 @@ follow, and the field does both:
   pointing at the sun. Without this the shadows keep their noon shape all day
   and merely slide, which reads as a texture scrolling under the world rather
   than as something being cast.
+
+### When they do not appear
+
+`Weather.CloudShadowDebug` - or **Debug: show cloud shadows only** on F7 - shows
+the field on its own at full strength with vanilla's shadow map out of the way.
+Under cloud the ground goes black; in the clear it stays lit. It is not subtle
+and is not meant to be.
+
+It exists because this effect has now failed to appear three times, and each
+round was spent guessing which of five multiplied terms - config strength,
+daylight, cover, the vanilla shadow, the uniform upload itself - was the zero.
+The debug path bypasses all of them, so it separates the only two cases that
+matter: the GLSL is running and is too faint, or it is not running at all.
+
+Alongside it, the binder now logs what it is actually driving the shadows with,
+once and again on change, and warns if it has been unable to upload for several
+seconds. A binder that silently returns is indistinguishable from one that is
+working, which is how three rounds were lost.
 
 ### The rest of it
 

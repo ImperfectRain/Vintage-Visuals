@@ -88,11 +88,32 @@ namespace VintageVisuals.Common.Scene
 
         private bool _reportedFirstSample;
 
+        /// <summary>
+        /// Advanced in double and handed over wrapped, for the same reason the
+        /// camera position is.
+        /// </summary>
+        private double _rippleClock;
+
         public EnvironmentTracker(ICoreClientAPI capi, ILogger logger)
         {
             _capi = capi;
             _logger = logger;
         }
+
+        /// <summary>
+        /// Animation clock for the rain ripples, already wrapped to 0..1.
+        ///
+        /// Wrapped here rather than in the shader because a shader can only
+        /// wrap what it can still resolve. Vanilla's windWaveCounter was the
+        /// obvious clock and is the same trap as the world coordinate: it
+        /// accumulates without bound, and past about ten million a float32
+        /// cannot separate two phases at all - so every drop in the world lands
+        /// on the same frame. Which is what happened.
+        /// </summary>
+        public float RippleClock { get; private set; }
+
+        /// <summary>Seconds for one full ripple lifetime at the slowest per-cell rate.</summary>
+        private const double RippleSeconds = 1.5;
 
         /// <summary>
         /// The world as of the last tick. Never null, never uninitialised: it
@@ -140,6 +161,9 @@ namespace VintageVisuals.Common.Scene
 
             SampleObserver();
             SampleSky();
+
+            _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
+            RippleClock = (float)_rippleClock;
 
             // Rain and snow are the same precipitation seen through the
             // thermometer. Below freezing it falls as snow, and a snowstorm
@@ -250,7 +274,11 @@ namespace VintageVisuals.Common.Scene
                 if (player?.Entity == null) return;
 
                 EntityPos position = player.Entity.Pos;
-                _camera.Set((float)position.X, (float)position.Y, (float)position.Z);
+
+                // Wrapped in double, before the value ever becomes a float.
+                // See EnvironmentState.CameraPosition for why this is not
+                // tidiness.
+                _camera.Set((float)Wrap(position.X), (float)position.Y, (float)Wrap(position.Z));
 
                 BlockPos pos = position.AsBlockPos;
 
@@ -271,11 +299,21 @@ namespace VintageVisuals.Common.Scene
             }
         }
 
+        /// <summary>Positive modulo, so the wrap behaves the same either side of the world origin.</summary>
+        private static double Wrap(double v)
+        {
+            double period = EnvironmentState.CameraPeriod;
+            double wrapped = v % period;
+            return wrapped < 0 ? wrapped + period : wrapped;
+        }
+
         public void Dispose()
         {
             _wetness.Reset();
             _rain.Reset();
             _snow.Reset();
+            _rippleClock = 0;
+            RippleClock = 0f;
             Current = EnvironmentState.Clear;
         }
     }

@@ -159,7 +159,7 @@ namespace VintageVisuals.PseudoPBR
 
             if (!weather.Enabled)
             {
-                return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f,
+                return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f, 0f,
                                        world.CameraPosition);
             }
 
@@ -172,6 +172,7 @@ namespace VintageVisuals.PseudoPBR
                 // Ripples stop the moment the shower does; the ground stays wet
                 // for another minute, which is the half that should linger.
                 world.Rain * weather.RippleStrength,
+                _mod.Environment.RippleClock,
 
                 world.CloudCover * weather.OvercastStrength,
                 world.CameraPosition);

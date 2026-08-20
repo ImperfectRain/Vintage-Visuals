@@ -47,6 +47,7 @@ namespace VintageVisuals.PseudoPBR
         public const string WetnessUniform = "vv_weatherWetness";
         public const string RainCoverUniform = "vv_weatherRainCover";
         public const string RipplesUniform = "vv_weatherRipples";
+        public const string RippleTimeUniform = "vv_weatherRippleTime";
         public const string OvercastUniform = "vv_weatherOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
 
@@ -251,6 +252,7 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(WetnessUniform, _weather.Wetness);
             program.Uniform(RainCoverUniform, _weather.RainCover);
             program.Uniform(RipplesUniform, _weather.Ripples);
+            program.Uniform(RippleTimeUniform, _weather.RippleTime);
             program.Uniform(OvercastUniform, _weather.Overcast);
             program.Uniform(OriginUniform, _weather.Origin);
 

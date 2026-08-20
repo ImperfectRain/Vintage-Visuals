@@ -22,6 +22,8 @@ namespace VintageVisuals.SmokeTest
     /// </summary>
     public static class GradeStackChecks
     {
+        public static string Repo;
+
         public static void Run(Action<string, bool, string> check)
         {
             Action<string, bool> ok = (name, condition) => check(name, condition, "");
@@ -158,6 +160,23 @@ namespace VintageVisuals.SmokeTest
                 WetnessTracker.SnowTargetFor(0.8f, -12f) > 0f && WetnessTracker.TargetFor(0.8f, -12f) == 0f);
             ok("a storm does not change intensity as it crosses freezing",
                 Math.Abs(WetnessTracker.SnowTargetFor(0.8f, -1f) - WetnessTracker.TargetFor(0.8f, 1f)) < 1e-6f);
+            // --- the coordinate wrap the shaders assume ---
+            //
+            // The GLSL builds its ripple grid on a coordinate the CPU wraps.
+            // If the two constants ever differ, the wrap lands mid-cell and
+            // cuts a ring in half - a seam nobody would trace back to a number
+            // in a C# file.
+            string glsl = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                Repo, "assets/vintagevisuals/shadersnippets/pseudopbr.glsl"));
+            ok("the GLSL wrap period matches EnvironmentState.CameraPeriod",
+                glsl.Contains("const float VV_ORIGIN_PERIOD = " +
+                              EnvironmentState.CameraPeriod.ToString("0.0") + ";"));
+
+            // Both ripple octaves have to tile that period exactly.
+            ok("both ripple octave scales tile the wrap period",
+                (EnvironmentState.CameraPeriod * 2.0f) % 1f == 0f &&
+                (EnvironmentState.CameraPeriod * 1.0f) % 1f == 0f);
+
             ok("drizzle is ignored whichever way it falls",
                 WetnessTracker.SnowTargetFor(0.01f, -12f) == 0f && WetnessTracker.TargetFor(0.01f, 12f) == 0f);
         }

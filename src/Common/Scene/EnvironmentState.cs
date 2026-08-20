@@ -110,11 +110,24 @@ namespace VintageVisuals.Common.Scene
         public readonly float Underwater;
 
         /// <summary>
-        /// SAMPLED. Camera world position.
+        /// SAMPLED. Camera world position, WRAPPED to <see cref="CameraPeriod"/>.
         ///
         /// Every chunk shader works in camera-relative coordinates, so any
         /// effect that has to stay nailed to the ground - cloud shadows, rain
         /// ripples - needs this to get back to world space.
+        ///
+        /// It is wrapped because the unwrapped value is unusable. Vintage Story
+        /// worlds run to roughly half a million blocks from the origin, and a
+        /// float32 at that magnitude holds about sixteen distinct positions
+        /// inside a half-block cell - so a fine-grained field built on it
+        /// collapses into a coarse stamp repeated identically everywhere. That
+        /// is what the first rain ripples looked like.
+        ///
+        /// Nothing in this mod needs absolute world position; everything needs
+        /// a coordinate that is stable relative to the ground. Wrapping in
+        /// double here and adding the camera-relative position in the shader
+        /// gives that, with the whole frame continuous. The pattern shifts once
+        /// per 4096 blocks travelled, which no one has ever seen happen.
         /// </summary>
         public readonly Vec3f CameraPosition;
 
@@ -165,5 +178,15 @@ namespace VintageVisuals.Common.Scene
 
         /// <summary>Degrees C that counts as neither hot nor cold. Shared so two subsystems cannot disagree.</summary>
         public const float TemperateCelsius = 8f;
+
+        /// <summary>
+        /// Blocks between repeats of <see cref="CameraPosition"/>.
+        ///
+        /// Any shader field built on that coordinate must tile evenly into this
+        /// or the wrap cuts one of its cells in half. A smoke check pins this
+        /// value against the constant in the GLSL, because the two being
+        /// silently different is a seam nobody would trace back to here.
+        /// </summary>
+        public const float CameraPeriod = 4096f;
     }
 }

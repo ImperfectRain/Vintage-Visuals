@@ -147,6 +147,17 @@ namespace VintageVisuals.VerifyPatches
 
                 string patched = patcher.Patch(filename, vanilla);
 
+                // Dump on request. "The patch compiles" and "the patched code
+                // runs" are different claims, and reading the merged source is
+                // the only way to check the second without a GPU - which is how
+                // the cloud-shadow wrapper was finally pinned down.
+                string dumpDir = Environment.GetEnvironmentVariable("VINTAGE_VISUALS_DUMP");
+                if (!string.IsNullOrEmpty(dumpDir))
+                {
+                    Directory.CreateDirectory(dumpDir);
+                    File.WriteAllText(Path.Combine(dumpDir, group + "." + filename), patched);
+                }
+
                 if (!patcher.IsGroupHealthy(group))
                 {
                     string reason = logger.Lines.FirstOrDefault(l => l.Contains("anchor not found"))

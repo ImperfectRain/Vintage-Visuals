@@ -35,6 +35,9 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>0 still water, 1 rain landing hard in it.</summary>
         public readonly float Ripples;
 
+        /// <summary>Ripple animation clock, already wrapped to 0..1. See EnvironmentTracker.RippleClock.</summary>
+        public readonly float RippleTime;
+
         /// <summary>0 clear sky, 1 sun fully diffused by cloud.</summary>
         public readonly float Overcast;
 
@@ -46,8 +49,9 @@ namespace VintageVisuals.PseudoPBR
         public readonly Vec3f Origin;
 
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
-                           float overcast, Vec3f origin)
+                           float rippleTime, float overcast, Vec3f origin)
         {
+            RippleTime = rippleTime;
             DayLight = dayLight;
             Wetness = wetness;
             RainCover = rainCover;
@@ -59,7 +63,7 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>What the shader sees before anything has told it otherwise: vanilla, at noon.</summary>
         public static SceneInputs None
         {
-            get { return new SceneInputs(1f, 0f, 0.82f, 0f, 0f, new Vec3f()); }
+            get { return new SceneInputs(1f, 0f, 0.82f, 0f, 0f, 0f, new Vec3f()); }
         }
     }
 }

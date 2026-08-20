@@ -137,8 +137,8 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **Environment state:** one shared worldview | 2 (compiles) — the only place the game is asked what is happening |
 | **Weather:** wetness model and surface response | **4 (renders)** — confirmed in game |
 | **Weather:** rain fog | 2 (compiles) — verified against the game's own shaders |
-| **Weather:** cloud shadows | 2 (compiles) — field distribution measured, never seen on screen |
-| **Weather:** rain ripples, overcast light | 2 (compiles) — ripple tilt distribution measured |
+| **Weather:** cloud shadows | 2 (compiles) — reported invisible three times; debug view and binder logging added to find out why |
+| **Weather:** rain ripples, overcast light | 2 (compiles) — first version was float32-quantised; field now measured for scatter and phase spread |
 | Atmosphere, shadows, water, vegetation, post FX | not started — `src/Reflections/` is an empty directory |
 
 Levels are the ones defined in [CLAUDE.md](CLAUDE.md).

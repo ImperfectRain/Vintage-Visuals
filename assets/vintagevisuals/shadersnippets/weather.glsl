@@ -29,7 +29,8 @@ uniform float vv_cloudCover;         // 0 clear, 1 overcast - the game's own fig
 uniform float vv_cloudScale;         // blocks across one cloud cell
 uniform float vv_cloudHeight;        // world height the shadow-casting deck sits at
 uniform vec2  vv_cloudDrift;         // advanced on the CPU along the real wind
-uniform vec3  vv_cloudOrigin;        // camera world position
+uniform vec3  vv_cloudOrigin;        // camera world position, wrapped on the CPU
+uniform float vv_cloudDebug;         // 1 shows the cloud field alone; 0 is normal rendering
 
 // ---------------------------------------------------------------------------
 // Fog
@@ -148,10 +149,15 @@ float vvCloudDensity(vec2 worldXZ, vec3 toSun)
 // declaration first.
 float vvVanillaShadowMap();
 
-float vvCloudShadow(vec3 cameraRelativePos)
+// The raw cloud field over this fragment, 0 in the clear to 1 fully under
+// cloud.
+//
+// Split out from vvCloudShadow so it can be shown on its own. Cloud shadows
+// have now failed to appear three times, and each round was spent guessing at
+// which of five multiplied terms was zero. This function is deliberately
+// independent of every one of them.
+float vvCloudCoverage(vec3 cameraRelativePos)
 {
-    if (vv_cloudShadowStrength < 0.001) return 1.0;
-
     vec3 world = cameraRelativePos + vv_cloudOrigin;
 
     // Walk from the fragment up to the cloud deck along the sun direction, so
@@ -167,7 +173,14 @@ float vvCloudShadow(vec3 cameraRelativePos)
     float climb = max(0.0, deck - world.y);
     vec2 at = world.xz + toSun.xz * (climb / max(0.15, abs(toSun.y)));
 
-    return 1.0 - vvCloudDensity(at, toSun) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+    return vvCloudDensity(at, toSun);
+}
+
+float vvCloudShadow(vec3 cameraRelativePos)
+{
+    if (vv_cloudShadowStrength < 0.001) return 1.0;
+
+    return 1.0 - vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
 }
 
 // Replaces vanilla's shadow lookup everywhere it is used.
@@ -179,6 +192,18 @@ float vvCloudShadow(vec3 cameraRelativePos)
 // this group needing to touch a line another group has already rewritten.
 float getBrightnessFromShadowMap()
 {
+    // Debug: the cloud field alone, at full strength, with vanilla's own
+    // shadow map taken out of the way. Under cloud the ground goes black and
+    // in the clear it stays lit, which is not subtle and is not meant to be.
+    //
+    // It answers the one question that matters when the effect is invisible:
+    // is the GLSL running with sane uniforms and merely too faint, or is it not
+    // running at all? Every multiplied term that could be silently zero -
+    // strength, daylight, the vanilla shadow - is bypassed here, so if this
+    // shows nothing the fault is upstream of the shader and the binder's own
+    // log line says where.
+    if (vv_cloudDebug > 0.5) return 1.0 - vvCloudCoverage(worldPos.xyz);
+
     return vvVanillaShadowMap() * vvCloudShadow(worldPos.xyz);
 }
 

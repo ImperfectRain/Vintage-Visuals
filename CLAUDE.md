@@ -193,6 +193,22 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   shades what it already placed. Nothing a fragment shader can reach decides
   where a cloud is. The same is true of the sky: patch neither, and the clouds
   stay vanilla in both renderers - see `src/Weather/README.md`.
+- **World coordinates and accumulating clocks are unusable raw in float32.**
+  Vintage Story worlds run to ~500,000 blocks from the origin, where a float32
+  resolves about SIXTEEN positions inside a half-block cell — so any fine field
+  built on `worldPos + origin` collapses into one coarse stamp repeated
+  identically everywhere. The same applies to `windWaveCounter`: past ~1e7 a
+  float32 cannot separate two phases at all. Wrap both on the CPU in double
+  before they become uniforms (`EnvironmentState.CameraPeriod`), and make every
+  shader grid tile that period exactly so the wrap lands on a cell boundary.
+  Both rain-ripple symptoms — "same place on every block" and "same time" —
+  were this, and neither was the hash.
+- **A binder that silently returns is indistinguishable from one that works.**
+  `IShaderProgram.Use()` throws if a program is bound, so every binder skips the
+  frame when `CurrentActiveShader != null`. If that condition is permanent at
+  the stage it registered for, the subsystem never uploads anything and nothing
+  says so. Count consecutive skips and log. `EnumRenderStage.Before` is the one
+  stage documented as quiet; `Opaque` is only confirmed at order 0.35.
 - **A threshold on summed noise is not a threshold on a uniform variable.**
   fBm piles up hard around the middle of its range and almost never reaches
   either end, so a smoothstep band placed straight on the sum puts the WHOLE

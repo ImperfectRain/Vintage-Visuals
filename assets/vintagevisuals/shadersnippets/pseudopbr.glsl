@@ -66,13 +66,18 @@ uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully
 uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
+uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
 uniform float vv_weatherOvercast;    // 0 clear sky, 1 sun fully diffused by cloud
 
-// Camera world position, so the ripple field stays nailed to the ground rather
-// than swimming with the player. Duplicated from the weather group's own
-// vv_cloudOrigin on purpose: a varying or a uniform shared across two patch
-// groups is a dependency between them, and either has to be able to roll back
-// without the other losing a declaration it relies on.
+// Camera world position, WRAPPED to VV_ORIGIN_PERIOD on the CPU, so the ripple
+// field stays nailed to the ground rather than swimming with the player.
+//
+// The wrap is not tidiness, it is the whole reason the ripples work. See the
+// note above vvRippleSlope.
+//
+// Duplicated from the weather group's own vv_cloudOrigin on purpose: a uniform
+// shared across two patch groups is a dependency between them, and either has
+// to be able to roll back without the other losing a declaration it needs.
 uniform vec3 vv_pbrOrigin;
 
 // Sky exposure, added to the vertex shader by the weather patch: vanilla's own
@@ -242,66 +247,118 @@ float vvWetness(vec3 faceNormal)
 // Rain landing in the water it left
 // ---------------------------------------------------------------------------
 
-// How far a ripple tilts the normal, and how wide and how fast the ring is.
+// How far a ripple tilts the normal, and the shape of the ring.
 //
 // Measured, not chosen by eye. Transcribing this field into Python and
-// sampling it says that at full rain these three give a median tilt of 0.5
-// degrees - most of the ground is between rings and undisturbed - rising to 5
-// degrees at the 90th percentile and about 38 at the crest of a fresh drop,
-// with roughly a quarter of the surface tilted more than 2 degrees at any
-// instant. That is what a highlight needs in order to break up: an average
-// small enough that still water stays still, and a peak large enough to
-// scatter the specular where a drop just landed. The first pass was fifteen
-// times weaker than this and would have been invisible.
+// sampling it says these give a median tilt of about half a degree - most of
+// the ground is between rings and undisturbed - rising to 5 degrees at the
+// 90th percentile and around 38 at the crest of a fresh drop. That is what a
+// highlight needs in order to break up: an average small enough that still
+// water stays still, and a peak large enough to scatter the specular where a
+// drop just landed.
 const float VV_RIPPLE_DEPTH = 1.2;
 const float VV_RIPPLE_BAND = 14.0;
 const float VV_RIPPLE_WAVE = 30.0;
 
-// Drops per second per cell. Vanilla's windWaveCounter is the clock - it is
-// already declared in both chunk shaders and already uploaded every frame, so
-// this needs no clock of its own and cannot drift out of step with one.
-const float VV_RIPPLE_RATE = 1.2;
+// How far a drop may land from the centre of its cell, in cell widths.
+//
+// Without this every drop sits dead centre and the field is a lattice, which
+// is the one thing rain never looks like.
+const float VV_RIPPLE_JITTER = 0.5;
+
+// Blocks between repeats of the world coordinate, matching the wrap the CPU
+// applies to vv_pbrOrigin. Both octave scales below divide into it exactly, so
+// the wrap lands on a cell boundary and never cuts a ring in half.
+const float VV_ORIGIN_PERIOD = 4096.0;
+
+// A bit-mixing integer hash, not the usual fract(sin(dot(p, k)) * 43758.5453).
+//
+// Integer mixing is exact at any coordinate, and it is worth the few extra
+// instructions here because everything else about this field turned out to be
+// a precision problem and the hash should not be the next one.
+uint vvHashU(uint x)
+{
+    x ^= x >> 16; x *= 0x7feb352du;
+    x ^= x >> 15; x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+// Four independent values per cell: where the drop landed (two), when it
+// landed, and how big it is.
+vec4 vvCellRandom(vec2 cell)
+{
+    uvec2 c = uvec2(ivec2(cell));
+    uint h = vvHashU(c.x * 0x9e3779b9u ^ vvHashU(c.y + 0x85ebca6bu));
+
+    return vec4(float(vvHashU(h)),
+                float(vvHashU(h ^ 0x68bc21ebu)),
+                float(vvHashU(h ^ 0x02e5be93u)),
+                float(vvHashU(h ^ 0x9c8f2d3bu))) / 4294967295.0;
+}
 
 // One drop impact per grid cell.
 //
 // Returned as a SLOPE rather than a height. The lighting reads a normal, and
 // building a height field only to difference it costs three more evaluations
-// for an answer this can give directly.
+// for an answer the slope gives directly.
+//
+// EVERYTHING here depends on the coordinate arriving pre-wrapped. The first
+// version of this did the arithmetic on a raw world position, and Vintage
+// Story worlds run to roughly half a million blocks from the origin - at which
+// point a float32 holds about sixteen distinct positions inside one ripple
+// cell. The rings collapsed into a coarse stamp repeated identically
+// everywhere, which is exactly what it looked like. Wrapped, the coordinate
+// stays under five thousand and a cell holds two thousand positions.
 vec2 vvRippleSlope(vec2 p, float t, float density)
 {
     vec2 cell  = floor(p);
-    vec2 local = fract(p) - 0.5;
+    vec2 local = fract(p);
 
-    // Circles inscribed in their cells, so a ring never runs into the next
-    // cell's and leaves a straight edge along the grid.
-    float r = length(local);
-    if (r > 0.5) return vec2(0.0);
+    vec4 rnd = vvCellRandom(cell);
 
-    // Two hashes per cell, not one. The first decides whether this cell is
-    // being rained into at all, which is what makes heavy rain visibly denser
-    // instead of merely faster - sampled, it takes the disturbed fraction of
-    // the ground from 8% in light rain to 36% in heavy. The second offsets the
-    // cell's phase, without which every drop in the world lands on one frame.
-    if (fract(sin(dot(cell, vec2(269.5, 183.3))) * 43758.5453) > density) return vec2(0.0);
+    // Is this cell being rained into at all? This is what makes heavy rain
+    // visibly denser rather than merely faster - sampled, it takes the
+    // disturbed fraction of the ground from 8% in light rain to 36% in heavy.
+    if (rnd.x > density) return vec2(0.0);
 
-    float phase = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
-    float age = fract(t + phase);
+    // Where the drop landed, and how far its ring may travel without leaving
+    // the cell. A ring clipped by a cell boundary shows the boundary.
+    vec2 centre = vec2(0.5) + (rnd.yz - 0.5) * VV_RIPPLE_JITTER;
+    float reach = 0.5 - VV_RIPPLE_JITTER * 0.5;
+
+    vec2 offset = local - centre;
+    float r = length(offset);
+    if (r > reach) return vec2(0.0);
+
+    // How often this cell is hit, as a whole number of drops per wrap of the
+    // clock. Whole numbers rather than a continuous rate because the clock is
+    // pre-wrapped to 0..1: any other multiplier would jump when it wrapped.
+    float rate = 1.0 + floor(rnd.w * 3.0);
+
+    // Phase from the cell's own position hash rather than a fifth random,
+    // so neighbouring drops are out of step without another hash.
+    float age = fract(t * rate + rnd.y * 0.61 + rnd.z * 0.39);
 
     // The crest travels out from the impact and the whole ring dies as it
     // goes. Without the decay a drop reads as a permanent bump in the surface
     // rather than as something that happened.
-    float front = age * 0.45;
+    float front = age * reach;
     float band = exp(-abs(r - front) * VV_RIPPLE_BAND);
     float decay = (1.0 - age) * (1.0 - age);
 
-    return normalize(local + vec2(1e-5)) * sin((r - front) * VV_RIPPLE_WAVE) * band * decay;
+    return normalize(offset + vec2(1e-5)) * sin((r - front) * VV_RIPPLE_WAVE) * band * decay;
 }
 
-// Two scales of drop, at unrelated rates. One grid on its own reads as a grid.
+// Two scales of drop, at unrelated rates. One grid on its own reads as a grid
+// however well the drops inside it are scattered.
+//
+// Both scales divide VV_ORIGIN_PERIOD exactly - cells of half a block and of
+// one block - so the coordinate wrap lands on a cell boundary in both.
 vec2 vvRainRipples(vec2 worldXZ, float t, float density)
 {
-    return vvRippleSlope(worldXZ * 1.7, t, density)
-         + vvRippleSlope(worldXZ * 0.83 + vec2(37.0, 11.0), t * 0.71 + 0.37, density) * 0.7;
+    return vvRippleSlope(worldXZ * 2.0, t, density)
+         + vvRippleSlope(worldXZ * 1.0 + vec2(31.0, 17.0), t * 0.5 + 0.37, density) * 0.7;
 }
 
 // Perturbs the surface normal with rain landing in standing water.
@@ -325,7 +382,12 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
     // player walks.
     vec3 world = cameraRelativePos + vv_pbrOrigin;
 
-    vec2 slope = vvRainRipples(world.xz, windWaveCounter * VV_RIPPLE_RATE,
+    // The clock arrives already wrapped to 0..1. Vanilla's windWaveCounter was
+    // the obvious candidate and is the same trap as the world coordinate: it
+    // accumulates without bound, and once it passes about ten million a float32
+    // cannot separate two phases at all, so every drop in the world lands on
+    // the same frame.
+    vec2 slope = vvRainRipples(world.xz, vv_weatherRippleTime,
                                clamp(vv_weatherRipples, 0.0, 1.0));
 
     // fade is vvDetailFade, the same distance falloff the relief uses. Ripples

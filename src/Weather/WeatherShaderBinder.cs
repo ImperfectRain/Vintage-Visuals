@@ -1,3 +1,4 @@
+using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
@@ -16,8 +17,19 @@ namespace VintageVisuals.Weather
     /// </summary>
     public sealed class WeatherShaderBinder : IRenderer
     {
-        /// <summary>Before the sky (0.1) and before terrain (0.37), so every consumer sees this frame's values.</summary>
-        private const double UploadBeforeEverything = 0.05;
+        /// <summary>
+        /// Runs at EnumRenderStage.Before, like ColorGrade.
+        ///
+        /// It used to run at Opaque with order 0.05, which is a stage this mod
+        /// has only ever confirmed working at 0.35 (PseudoPBR). If anything
+        /// holds a program that early in the stage, Use() would throw - so the
+        /// binder skips the frame, forever, without a word. Cloud shadows
+        /// failing to appear three times with nothing in the log is exactly the
+        /// shape that bug would have, and Before is the one stage this project
+        /// has documented as guaranteed quiet. See _consecutiveSkips for the
+        /// change that makes this class of failure impossible to miss again.
+        /// </summary>
+        private const double UploadOrder = 0.1;
 
         public const string RainUniform = "vv_weatherRain";
         public const string FogStrengthUniform = "vv_weatherFogStrength";
@@ -29,6 +41,7 @@ namespace VintageVisuals.Weather
         public const string CloudDriftUniform = "vv_cloudDrift";
         public const string CloudHeightUniform = "vv_cloudHeight";
         public const string CloudOriginUniform = "vv_cloudOrigin";
+        public const string CloudDebugUniform = "vv_cloudDebug";
 
         /// <summary>
         /// Every program a weather patch reaches: the two terrain shaders, and
@@ -51,23 +64,53 @@ namespace VintageVisuals.Weather
         private bool _reportedMissing;
         private bool _reportedActive;
 
+        /// <summary>
+        /// Frames skipped in a row because a program was already bound.
+        ///
+        /// A binder that silently returns is indistinguishable from a binder
+        /// that is working, and this mod has now lost three rounds of debugging
+        /// to effects that were simply never uploaded. After a few seconds of
+        /// it, say so.
+        /// </summary>
+        private int _consecutiveSkips;
+        private bool _reportedSkipping;
+
+        /// <summary>What was last uploaded, so the log fires on a change instead of every frame.</summary>
+        private float _loggedStrength = -1f;
+        private float _loggedCover = -1f;
+
         public WeatherShaderBinder(ICoreClientAPI capi, WeatherSubsystem weather)
         {
             _capi = capi;
             _weather = weather;
         }
 
-        public double RenderOrder { get { return UploadBeforeEverything; } }
+        public double RenderOrder { get { return UploadOrder; } }
 
         public int RenderRange { get { return 0; } }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
-            if (stage != EnumRenderStage.Opaque) return;
+            if (stage != EnumRenderStage.Before) return;
 
             // Use() throws if a program is already bound and the client does
             // not recover. See ColorGrade for the full story.
-            if (_capi.Render.CurrentActiveShader != null) return;
+            if (_capi.Render.CurrentActiveShader != null)
+            {
+                _consecutiveSkips++;
+
+                if (_consecutiveSkips > 300 && !_reportedSkipping)
+                {
+                    _reportedSkipping = true;
+                    _capi.Logger.Warning("[VintageVisuals] weather: a shader program has been bound on every " +
+                        "frame for several seconds, so no weather uniform has been uploaded at all. Rain fog " +
+                        "and cloud shadows are inactive, and nothing else will say so.");
+                }
+
+                return;
+            }
+
+            _consecutiveSkips = 0;
 
             WeatherConfig config = _weather.Config;
 
@@ -149,10 +192,45 @@ namespace VintageVisuals.Weather
                 // ground instead of sliding with the player. The chunk shaders
                 // only have camera-relative positions.
                 program.Uniform(CloudOriginUniform, _weather.CameraOrigin);
+                program.Uniform(CloudDebugUniform, config.CloudShadowDebug ? 1f : 0f);
+
+                ReportShadowState(id, strength);
             }
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// Says what the cloud shadows are actually being driven with, once and
+        /// again whenever it meaningfully changes.
+        ///
+        /// Every term here has been suspected of being the zero that made the
+        /// effect invisible, and each round was spent guessing which. One log
+        /// line ends that: if the shadows are absent and this says the strength
+        /// is 0.3 with cover 0.4, the fault is in the GLSL, and if it never
+        /// appears at all the fault is that this code does not run.
+        /// </summary>
+        private void ReportShadowState(EnumShaderProgram id, float strength)
+        {
+            if (Math.Abs(strength - _loggedStrength) < 0.02f &&
+                Math.Abs(_weather.CloudCover - _loggedCover) < 0.05f) return;
+
+            _loggedStrength = strength;
+            _loggedCover = _weather.CloudCover;
+
+            Vec3f origin = _weather.CameraOrigin;
+
+            _capi.Logger.Notification("[VintageVisuals] weather: cloud shadows on " + id +
+                " - strength " + strength.ToString("0.###") +
+                " (config " + _weather.Config.CloudShadowStrength.ToString("0.##") +
+                " x daylight " + _weather.DayLight.ToString("0.##") + ")" +
+                ", cover " + _weather.CloudCover.ToString("0.##") +
+                ", scale " + _weather.Config.CloudScale.ToString("0") +
+                ", deck " + _weather.Config.CloudHeight.ToString("0") +
+                ", drift " + _weather.CloudDrift.X.ToString("0.##") + "/" + _weather.CloudDrift.Y.ToString("0.##") +
+                ", origin " + origin.X.ToString("0") + "/" + origin.Y.ToString("0") + "/" + origin.Z.ToString("0") +
+                (_weather.Config.CloudShadowDebug ? " [DEBUG VIEW ON]" : ""));
         }
 
         /// <summary>

@@ -23,6 +23,13 @@
         "clientSide": true,
         "weight": 6
       },
+      "weather_cloudshadowdebug": {
+        "ingui": "Debug: show cloud shadows only",
+        "comment": "Shows the cloud shadow field on its own at full strength, with vanilla's shadow map out of the way. Under cloud the ground goes black. Use this to find out whether the effect is running and too faint, or not running at all.",
+        "default": false,
+        "clientSide": true,
+        "weight": 7
+      },
       "pbr_enabled": {
         "ingui": "Surface relief (PBR)",
         "comment": "Derived normal maps give stone, wood and gravel real surface relief. Off by default: this is the only setting that patches the shader drawing the world.",

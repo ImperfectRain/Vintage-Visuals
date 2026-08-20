@@ -76,8 +76,6 @@ uniform sampler2D sky;
 
 float getBrightnessFromShadowMap() { return 1.0; }
 
-uniform float windWaveCounter;
-
 uniform sampler2D liquidDepth;
 uniform vec4 waterMurkColor;
 
@@ -136,7 +134,7 @@ void main()
                 return;
             }
 
-            ok("11 patches produced", patches.Count == 11);
+            ok("10 patches produced", patches.Count == 10);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("targets both stages of the chunkopaque program",
                 patches.All(p => p.AppliesTo("chunkopaque.fsh") || p.AppliesTo("chunkopaque.vsh")) &&
@@ -316,8 +314,6 @@ uniform float shadowIntensity = 1;
 
 float getBrightnessFromShadowMap() { return 1.0; }
 
-uniform float windWaveCounter;
-
 uniform sampler2D liquidDepth;
 
 float getUnderwaterMurkiness() { return 0.0; }
@@ -349,7 +345,7 @@ void main()
             List<ShaderPatch> patches = ShaderPatchLoader
                 .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
 
-            ok("pseudopbrtopsoil.yaml parsed into 11 patches", patches.Count == 11);
+            ok("pseudopbrtopsoil.yaml parsed into 10 patches", patches.Count == 10);
             ok("targets both stages of the chunktopsoil program",
                 patches.All(p => p.AppliesTo("chunktopsoil.fsh") || p.AppliesTo("chunktopsoil.vsh")) &&
                 patches.Any(p => p.AppliesTo("chunktopsoil.vsh")));
