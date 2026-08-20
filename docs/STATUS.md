@@ -204,3 +204,81 @@ Kept so they are not proposed again without new information.
 | Reading metalness from pixels | Pixels cannot answer "is this metal"; `EnumBlockMaterial` can |
 | A second sampler in `chunkopaque.fsh` | Twice cost the entire world render. Uniform arrays below ~1000 values |
 | Ripple clock from `windWaveCounter` | Unbounded float32 clock collapses every phase to one value |
+
+---
+
+## 11. Ranked backlog
+
+The 44 unstarted entries above, ordered by **idea quality x visual payoff in
+game**. Cost and risk are noted but are not what the order is built on - a cheap
+idea that changes nothing still ranks low.
+
+Four entries were demoted after re-reading the vanilla shaders: the game already
+ships **bloom** (`bloomParts` in `final.fsh`, plus the `Findbright` and `Blur`
+programs), **SSAO** (`SSAOLEVEL`, and `ssao.fsh`), **godrays** (`GODRAYS`,
+`godrays.fsh`) and **per-vertex vegetation wind** (`windWaveCounter` and
+`windWaveCounterHighFreq` in `chunkopaque.vsh`, with its own bend counters).
+Building any of those from scratch is not a feature, it is a duplicate.
+
+### Tier S - the four that would change the mod
+
+| # | Feature | Why |
+|---|---|---|
+| 1 | **Emissive materials** | Vintage Story is a game about fire. Forges, bloomeries, firepits, torches, lava, lamps are all bright *textures* today. Making them light sources with colour temperature and flicker transforms night and interiors - the two places players spend most of their time. One system also feeds bloom, reflections and exposure, so it pays for four |
+| 2 | **Lighting reach: entities and held items** | Not glamorous; it is a correctness fix. A mob standing on PBR-lit ground is shaded by a different model than the ground. Every future lighting feature is worth half until this lands. This is what makes the material system a pipeline rather than a terrain effect |
+| 3 | **Foliage translucency** | Sunlight through leaves is the single strongest cue that a renderer is modern, and this game is *full* of foliage. Vanilla's wind deformation does not touch shading, so the gap is real. Technically it is a wrap-lighting term on the lobe that already exists, gated on a leaf class already classified |
+| 4 | **Contact shadows + crevice shading** | One idea at two scales, and worth more here than in most games: a blocky world has little geometric detail to carry form, so occlusion does that work instead. Needs no new buffer - the material system already produces the normal and implied height. This is the gap vanilla's SSAO does *not* cover |
+
+### Tier A - strong
+
+| # | Feature | Why |
+|---|---|---|
+| 5 | Snow as a material transformation | Best abstraction on the list, and wetness already proves it works. Caveat that keeps it out of S: the game renders snow blocks and layers itself, so this has to be about what vanilla does *not* cover - roofs, leaves, partial melt, the transition - or it duplicates the game |
+| 6 | Aerial perspective / distance haze | Huge payoff for scale, and the foundation for atmosphere as a system rather than a rain modifier. Docked slightly because vanilla has fog already, so much of it is a re-grade, and because "the whole world is hazy" is a failure this project has already shipped once |
+| 7 | Underwater absorption, attenuation, caustics, distortion | Underwater currently reads flat. Caustics are high-impact and cheap. Self-contained: almost no risk to the surface render |
+| 8 | Water: Fresnel + depth colouration + waves | The cheap two thirds of water, and most of what makes water read as water. None of it needs SSR |
+| 9 | Sky scattering and horizon colouration | Sunrise and sunset are when people take screenshots. Held back by a hard-won lesson - patching the sky dome went badly once - and by overlap with adaptive grading, which already warms golden hour |
+| 10 | Weather transitions as first-class state | No new visual at all, and it makes every existing weather effect better. Each one currently eases independently, so a storm arriving is not a coordinated event |
+
+### Tier B - worth doing
+
+| # | Feature | Why |
+|---|---|---|
+| 11 | Exposure responding to fire, lava, lightning | Walking into a forge and having your eyes adjust is memorable. Cheap once emissive exists, which is why it sits below it |
+| 12 | Persistent `MaterialDefinition` per block | Infrastructure with no direct visual, and the prerequisite for emissive, snow response and subsurface |
+| 13 | Rendering debug HUD | Would have saved several of the last ten rounds outright. Given how much of this project's time has gone to "is it even running", the return is real |
+| 14 | Height fog | Valley mist at dawn is beautiful and cheap. Docked because it is an effect rather than a system, and vanilla has `flatFogDensity` already |
+| 15 | Rain streaks on vertical wet faces | Completes wetness, rides the existing path, modest and honest |
+| 16 | Split-toning | Would do more for golden hour than any other single grading control. A look control, not a system |
+| 17 | Cloud attenuation of direct sunlight | Partly done as the overcast term; belongs in atmosphere rather than weather |
+| 18 | Camera state as shared state | Infrastructure for motion effects and underwater |
+| 19 | Rain disturbance of the water surface | Composes well - the ripple field already exists. Blocked on there being a water renderer |
+| 20 | Refraction | Real payoff, moderate risk, needs the scene texture |
+| 21 | Sun and moon attenuation through atmosphere | Small on its own, part of the atmosphere system |
+| 22 | Frost as a second environmental layer | Good abstraction, only meaningful after snow lands |
+| 23 | Separate local contrast from albedo before the Sobel pass | Fixes the known "dark is deep" weakness. High idea quality, subtle result, and real work in `tools/pbrgen` with a fixture regeneration |
+| 24 | One shared lighting snippet across programs | Pure hygiene, but a prerequisite for doing #2 properly rather than by copy |
+| 25 | Environmental camera effects | Heat shimmer and screen frost are good; rain-on-lens is a generic-shader-pack tell |
+| 26 | Seasonal foliage response | Autumn colour would be lovely, but overlaps what the game already does to foliage and risks fighting it |
+| 27 | Quality tiers | Necessary eventually. Premature: there are not yet enough expensive systems to tier |
+| 28 | Godray interaction | Vanilla has godrays; modulating them by cloud cover is a small addition to someone else's effect |
+| 29 | GPU/VRAM detection | Only useful once tiers exist |
+
+### Tier C - low value, or actively wrong for this game
+
+| # | Feature | Why |
+|---|---|---|
+| 30 | Bloom | **Vanilla already has it.** This is driving `bloomParts`, not building a bloom - cheaper than it looks, and the marginal gain is smaller than it sounds. Over-bloom is also the fastest way to break this game's art direction |
+| 31 | SSAO | **Vanilla already has it.** The gap is at the contact and crevice scales, which is #4 |
+| 32 | Vegetation wind | **Vanilla already has it**, including a high-frequency term and per-class bend counters. Marginal |
+| 33 | Puddles pooling in depressions | Good idea, poor feasibility: needs a height or flow signal the terrain shader does not have. High risk of becoming a second cloud-shadow saga |
+| 34 | Screen-space reflections | The entry to push back on hardest. Expensive, artefact-prone, needs depth and normal buffers that are not wired - and in a blocky, low-detail world the artefacts are more visible than the benefit. Real chance of looking *worse* |
+| 35 | Event camera effects | Damage flash and explosion distortion are game feel, not rendering. Arguably out of scope |
+| 36 | Camera effects (vignette, grain, chromatic aberration, lens dirt) | The plan's own note is right: these are the fastest way to make the mod feel like a generic shader pack. Ship them off by default, or not at all |
+| 37 | Depth of field | Actively wrong for a first-person survival game - you look where you look. Screenshot mode only |
+| 38 | Parallax / relief mapping | Fights the art direction hardest of anything here. Flat faces *are* the aesthetic, and it is expensive and artefact-prone at block edges |
+| 39 | Temporal accumulation / TAA | Enormous complexity, needs motion vectors that are not obtainable, and ghosting is very visible on a blocky world |
+| 40 | Dynamic resolution | Not this mod's layer |
+
+Forty rows for forty-four entries: contact shadows and crevice shading are ranked
+together at #4, and Fresnel, depth colouration and waves together at #8.
