@@ -4,18 +4,17 @@ What the weather does to how the world looks.
 
 ## Status
 
-**Wet surfaces, rain fog, cloud shadows and cloud shaping.** All verified
-against the game's own shaders with `tools/verifypatches`; none seen on screen
-yet beyond wetness.
+**Wet surfaces, rain fog and cloud shadows.** All verified against the game's
+own shaders with `tools/verifypatches`; only wetness has been seen on screen.
 
 | Piece | State |
 |---|---|
-| Wetness model (`WetnessTracker`) | done, level 2 (compiles) |
-| Rain response in the material shaders | done, level 2 (compiles) |
+| Wetness model (`WetnessTracker`) | done, level 4 (renders) |
+| Rain response in the material shaders | done, level 4 (renders) |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
-| Fog and sky tint by weather state | done, level 2 (compiles) |
-| Cloud shadows | done, level 2 (compiles) |
-| Volumetric cloud shaping | done, level 2 (compiles) |
+| Fog and tint by weather state | terrain only, level 2 (compiles) |
+| Cloud shadows | reworked, level 2 (compiles) |
+| Cloud shaping | **removed** - not possible from a cloud shader, see below |
 
 ## Wet surfaces
 
@@ -99,35 +98,65 @@ thick with fog for a minute after the sky cleared — the wrong half to linger.
 
 ### Terrain only, never the sky
 
-An earlier version patched `sky.fsh` the same way, reasoning that rain should
-thicken the whole scene. It does not work, and the reason is worth keeping.
-
-The sky dome is not something you look *through* - it is the thing at the far
-end. Fogging it flattens the contrast between cloud and sky into a uniform haze,
-so clouds stop reading as clouds and become a blanket with the cloud layer's
-tile seams showing through in perspective. It happened with the classic and the
-volumetric renderer alike, because neither of them was the problem: the sky
-behind them was.
-
-Vanilla already has `horizonFog` for the sky's own weather response. The
-`weathersky` group is gone.
+Rain fog is applied to the two terrain shaders and to nothing else. See "The
+clouds themselves are vanilla" below for what happened when it was applied to
+the sky dome as well.
 
 ## Cloud shadows
 
 Applied by **wrapping `getBrightnessFromShadowMap`** rather than by editing the
 places light is used. A cloud occludes the sun, so it belongs wherever the sun's
-occlusion is already decided — every caller picks it up, including this mod's
+occlusion is already decided - every caller picks it up, including this mod's
 own specular term, and no line another patch group has already rewritten needs
 touching. That last part is not a nicety: `pseudopbr` owns the lighting call in
 both terrain shaders, and two groups editing one line means whichever runs
 second finds its anchor gone.
 
-Three practical decisions:
+### What comes from the game, and what does not
 
-- **Cover moves the threshold, not the amplitude.** A clear sky gets no shadows
-  at all rather than faint ones everywhere, and an overcast sky goes fully
-  shaded rather than uniformly grey. Cover comes from the game's own
-  `RainCloudOverlay`, so shadows agree with the sky above them.
+The shadow field is the mod's own noise. It is **not** the map vanilla places
+its clouds from, and it cannot be: that map is built on the CPU and handed to
+the renderers as `mapData1`/`mapData2` (see `cloudmap.fsh`), so a terrain shader
+has no way to sample it. Both cloud renderers, classic and volumetric, read the
+clouds' positions from there.
+
+What can be taken from the game without it is everything except position, and
+both halves are:
+
+- **How much of the sky is covered** - `capi.Ambient.BlendedCloudDensity`, the
+  same figure the cloud renderers are driven by. The climate map's
+  `RainCloudOverlay` used to fill this role and was wrong for it: it is only the
+  storm component, so it reads as clear on an ordinarily cloudy day.
+- **Which way the clouds are going** - the wind at the player, which is what
+  pushes vanilla's cloud tiles along. Drift is a vector accumulated along it,
+  so the shadows and the clouds travel the same way. Below a breath of wind the
+  direction is numerical noise, so the last heading is held rather than letting
+  the shadows shimmer in place.
+
+Matching the sky cloud for cloud would need the tile array out of
+`VintagestoryLib`. Matching how much of it is covered and where it is heading
+does not, and is most of what the eye reads from the ground.
+
+### Why the first version was a blanket
+
+It darkened the whole world evenly instead of casting shadows, and the cause was
+one line of statistics rather than anything about clouds.
+
+A sum of gradient noise octaves is **not spread evenly over 0..1**. It piles up
+hard around the middle and almost never reaches either end. The threshold was
+applied straight to that sum with a band 0.36 wide centred on it - so the entire
+world sat somewhere on the smoothstep ramp, and every fragment came out slightly
+darkened. That is not a shadow with an edge; it is an everywhere-dimmer world,
+which is exactly what it looked like.
+
+The fix is to expand the distribution before thresholding it, and to narrow the
+ramp to one side. Cover then also stops short of both ends: overcast in vanilla
+is still a cloud *layer* with thin patches in it, and letting cover reach 1
+shades the whole ground evenly - the same failure arrived at from the other
+side.
+
+### The rest of it
+
 - **The shadow is projected along the sun direction**, walking from the fragment
   up to the cloud deck. At a low sun that is a long way sideways, which is what
   makes cloud shadows read as three-dimensional rather than as a texture on the
@@ -135,25 +164,61 @@ Three practical decisions:
 - **The deck sits at 160 blocks, not at vanilla's cloud altitude.** Using the
   real height slides the shadow almost a kilometre at a low sun, which reads as
   a bug.
+- **Strength is scaled by daylight on the CPU.** A cloud shadow is the sun being
+  blocked; at night there is nothing to block. Folding it into the strength
+  keeps that as one uniform whose zero already means vanilla, rather than a
+  second one the first depends on being uploaded.
 
-Noise is vanilla's own `gnoise`, already compiled into both shaders — so this
+Noise is vanilla's own `gnoise`, already compiled into both shaders - so this
 costs instructions rather than a texture fetch or a second implementation to
 keep in step.
 
-## Volumetric cloud shaping
+## The clouds themselves are vanilla
 
-A small intervention in vanilla's raymarcher, not a replacement for it. Its
-traversal, lighting and depth handling are all doing work there is no reason to
-redo; shape and density are the parts that read as weather.
+The mod patches **no cloud shader and no sky shader**. Two attempts to change
+how clouds look have been made and both are gone; what they cost is worth
+keeping written down.
 
-- **A third noise octave** in `octave()`. Vanilla mixes two frequencies, which
-  gives a smooth billow and no edge; a third at roughly three times the second
-  breaks the silhouette into the ragged fringe real cumulus have. Blended rather
-  than added, so 0 is exactly vanilla and sharpening a cloud does not also
-  inflate it.
+### Fogging the sky (`weathersky`)
+
+An earlier version patched `sky.fsh` the same way as the terrain, reasoning that
+rain should thicken the whole scene. The sky dome is not something you look
+*through* - it is the thing at the far end. Fogging it flattens the contrast
+between cloud and sky into a uniform haze, so clouds stop reading as clouds and
+become a blanket with the cloud layer's tile seams showing through in
+perspective. It happened with the classic and the volumetric renderer alike,
+because neither of them was the problem: the sky behind them was. Vanilla
+already has `horizonFog` for the sky's own weather response.
+
+### Reshaping the clouds (`cloudshape`)
+
+A patch replaced `octave()` in `cloudvolumetric.fsh` with a version carrying a
+third noise frequency, on the theory that this would break the smooth billow
+into a ragged cumulus fringe. It could not have. Two things were wrong with it,
+and only the second was visible from the diff:
+
+- **Cloud shape is not decided in the cloud shader.** `cloudvolumetric.fsh`
+  fetches shape out of `cloudMap`, which `cloudmap.fsh` builds from the per-tile
+  `mapData1`/`mapData2` arrays the CPU uploads. The raymarcher shades what those
+  arrays already placed. There is no noise call anywhere in the silhouette.
+- **`octave()` is only reachable from `warp()`**, which perturbs the ray
+  *direction*, and which early-returns on `if (f < 0.0001)`. Its only caller
+  passes `PerceptionEffectIntensity * 0.03`, and that is zero unless the player
+  is under a perception effect. In normal play the function never ran.
+
+So a slider sat in the config panel reading "Cloud detail 1.000" while doing
+nothing at all, which is worse than doing something wrong - it invites the
+player to blame it for whatever else they are seeing. Both the group and the
+setting are gone, and the clouds are byte-for-byte vanilla in both renderers.
+
+The lesson generalises past clouds: **check that a function is reachable before
+patching it.** Grep its call sites in the dumped shader, and follow the guards.
+`tools/verifypatches` confirms a patch compiles, not that the code it changed is
+ever executed.
+
 ### The density patch, and why it is gone
 
-A second patch scaled vanilla's density term inside `volume()`. It was removed
+A patch also scaled vanilla's density term inside `volume()`. It was removed
 after it deleted every cloud in the sky.
 
 `volume()` has exactly one caller, and its result gates `if (v > 0.0)` - the
@@ -163,9 +228,8 @@ not mean "vanilla density", it meant **no clouds anywhere**.
 The rule it broke is the one this whole mod runs on: an unset GLSL uniform reads
 as zero, and a uniform can be unset for many reasons - the binder skipped, the
 program was not patched, a group rolled back - so zero has to be the harmless
-value. Every other uniform here satisfies that. Rain 0 is dry, cloud shadow 0 is
-unshadowed, cloud detail 0 is vanilla's own two octaves. That one inverted it,
-and the failure was total rather than partial.
+value. Every other uniform here satisfies that: rain 0 is dry, cloud shadow 0 is
+unshadowed. That one inverted it, and the failure was total rather than partial.
 
-Density can come back, through a term where zero is harmless rather than fatal,
-once the shaping patch has been seen working.
+If clouds are ever to be restyled, the place to do it is the tile data, not the
+shader that draws it.

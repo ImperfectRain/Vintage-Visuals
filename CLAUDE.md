@@ -158,6 +158,28 @@ nothing. `verifypatches` refuses such a file by name rather than trusting it.
   is invisible from C# and from the log. Five shipped that way at once. The
   fix is `tools/smoketest`'s uniform-wiring check, which compares the shader's
   declarations against the binder's uploads in both directions.
+- **Check a function is REACHABLE before patching it.** `tools/verifypatches`
+  proves a patch compiles, never that the code it changed runs. `cloudshape`
+  replaced `octave()` in `cloudvolumetric.fsh` for two versions; `octave()` is
+  called only from `warp()`, and `warp()` early-returns on `if (f < 0.0001)`
+  with its one caller passing `PerceptionEffectIntensity * 0.03` - zero unless
+  the player is under a perception effect. The slider read "Cloud detail 1.000"
+  and did nothing, which is worse than doing something wrong: it invites the
+  player to blame it for whatever else they are seeing. Grep the call sites in
+  the dumped shader and follow the guards.
+- **Cloud shape is not decided in a cloud shader.** Both renderers draw clouds
+  from a per-tile map the CPU uploads as `mapData1`/`mapData2`;
+  `cloudmap.fsh` turns that into `cloudMap`, and `cloudvolumetric.fsh` only
+  shades what it already placed. Nothing a fragment shader can reach decides
+  where a cloud is. The same is true of the sky: patch neither, and the clouds
+  stay vanilla in both renderers - see `src/Weather/README.md`.
+- **A threshold on summed noise is not a threshold on a uniform variable.**
+  fBm piles up hard around the middle of its range and almost never reaches
+  either end, so a smoothstep band placed straight on the sum puts the WHOLE
+  world somewhere on the ramp. The cloud-shadow field did this and produced an
+  everywhere-slightly-darker world rather than shadows with edges. Expand the
+  distribution before thresholding, and keep the coverage control away from
+  both ends of the range.
 - **A patch that replaces its anchor must paste the anchor back.** Replacement
   content is literal, never a regex template. `pseudopbr.glsl` re-declares
   `uniform vec3 lightPosition;` for this reason.

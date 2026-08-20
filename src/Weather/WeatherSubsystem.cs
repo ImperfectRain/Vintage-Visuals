@@ -24,13 +24,6 @@ namespace VintageVisuals.Weather
         public const string GroupName = "weather";
 
         /// <summary>
-        /// The volumetric clouds are a separate program sharing nothing with
-        /// the terrain patches, so they get their own group: a reworded line in
-        /// one should not switch off the other.
-        /// </summary>
-        public const string CloudGroupName = "cloudshape";
-
-        /// <summary>
         /// Seconds between climate samples.
         ///
         /// Climate lookups are not free and weather does not change in a
@@ -49,7 +42,8 @@ namespace VintageVisuals.Weather
         private float _rainfall;
         private float _temperature = 20f;
         private float _cloudCover = 0.35f;
-        private float _drift;
+        private readonly Vec2f _drift = new Vec2f();
+        private readonly Vec2f _wind = new Vec2f(1f, 0f);
         private Vec3f _cameraOrigin = new Vec3f();
 
         /// <summary>0 dry, 1 as wet as it gets. Read by PseudoPBR each frame.</summary>
@@ -71,14 +65,29 @@ namespace VintageVisuals.Weather
             get { return _rain.Current; }
         }
 
-        /// <summary>0 clear, 1 overcast. Sets how much of the sky casts shadow.</summary>
+        /// <summary>
+        /// 0 clear, 1 overcast. Sets how much of the sky casts shadow.
+        ///
+        /// This is the ambient manager's own blended cloud density - the same
+        /// number the game hands its cloud renderers - rather than the climate
+        /// map's RainCloudOverlay, which is only the storm component and reads
+        /// as clear on a normally cloudy day.
+        /// </summary>
         public float CloudCover
         {
             get { return _cloudCover; }
         }
 
-        /// <summary>Accumulated cloud drift, so shadows move without the shader knowing the time.</summary>
-        public float CloudDrift
+        /// <summary>
+        /// Accumulated cloud drift in cloud cells, so shadows move without the
+        /// shader knowing the time.
+        ///
+        /// A vector rather than a scalar because it follows the world's actual
+        /// wind. Vanilla's clouds are pushed by that same wind, so shadows
+        /// crossing the ground the other way is a tell that they are not being
+        /// cast by anything.
+        /// </summary>
+        public Vec2f CloudDrift
         {
             get { return _drift; }
         }
@@ -148,8 +157,12 @@ namespace VintageVisuals.Weather
             _rain.Step(target, deltaTime, WetnessTracker.WettingSeconds);
 
             // Cells per minute, kept as a plain accumulator so the shader never
-            // needs a clock and the speed can change without the clouds jumping.
-            _drift += deltaTime * config.CloudDriftSpeed / 60f;
+            // needs a clock and the speed can change without the shadows
+            // jumping - changing the rate bends the path from here on rather
+            // than teleporting the pattern.
+            float step = deltaTime * config.CloudDriftSpeed / 60f;
+            _drift.X += _wind.X * step;
+            _drift.Y += _wind.Y * step;
 
             IClientPlayer trackedPlayer = _mod.Capi.World?.Player;
             if (trackedPlayer?.Entity != null)
@@ -182,10 +195,7 @@ namespace VintageVisuals.Weather
                 _rainfall = climate.Rainfall;
                 _temperature = climate.Temperature;
 
-                // RainCloudOverlay is the game's own cloud cover, so shadows on
-                // the ground agree with the sky the player is looking at rather
-                // than being an unrelated noise field that happens to move.
-                _cloudCover = GameMath.Clamp(climate.RainCloudOverlay, 0f, 1f);
+                SampleClouds(pos);
             }
             catch (Exception ex)
             {
@@ -196,6 +206,45 @@ namespace VintageVisuals.Weather
                                         "stop tracking the weather: " + ex.Message);
                 _rainfall = 0f;
             }
+        }
+
+        /// <summary>
+        /// Reads how cloudy it is, and which way the clouds are going.
+        ///
+        /// Both come from the game rather than from anything this mod invents.
+        /// Cover is the ambient manager's blended cloud density, which is the
+        /// figure the cloud renderers themselves are driven by - so the ground
+        /// darkens on the days the sky is actually full. Direction is the wind
+        /// at the player, which is what pushes vanilla's cloud tiles along.
+        ///
+        /// What this does NOT get is where each cloud is. That lives in the
+        /// cloud renderer's tile array on the CPU, in VintagestoryLib, and both
+        /// the classic and the volumetric renderer read it from there rather
+        /// than from anything a terrain shader can sample. Matching the sky
+        /// cloud-for-cloud needs that array; matching how much of it is covered
+        /// and where it is heading does not, and is most of what the eye reads.
+        /// </summary>
+        private void SampleClouds(BlockPos pos)
+        {
+            if (_mod.Capi.Ambient != null)
+            {
+                _cloudCover = GameMath.Clamp(_mod.Capi.Ambient.BlendedCloudDensity, 0f, 1f);
+            }
+
+            Vec3d wind = _mod.Capi.World.BlockAccessor.GetWindSpeedAt(pos);
+            if (wind == null) return;
+
+            float x = (float)wind.X;
+            float z = (float)wind.Z;
+            float length = MathF.Sqrt(x * x + z * z);
+
+            // Below a breath of wind the direction is numerical noise, and a
+            // drift direction that jitters frame to frame reads as the shadows
+            // shimmering in place. Hold the last heading instead.
+            if (length < 0.02f) return;
+
+            _wind.X = x / length;
+            _wind.Y = z / length;
         }
 
         /// <summary>

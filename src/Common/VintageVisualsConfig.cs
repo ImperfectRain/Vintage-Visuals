@@ -97,24 +97,19 @@ namespace VintageVisuals.Common
         /// <summary>How much rain drains colour from the fog and cools it.</summary>
         public float FogTint { get; set; } = 0.6f;
 
-        /// <summary>Depth of cloud shadows on the ground. 0 is off.</summary>
-        public float CloudShadowStrength { get; set; } = 0.45f;
+        /// <summary>
+        /// Depth of cloud shadows on the ground. 0 is off.
+        ///
+        /// Scaled by daylight before it reaches the shader, so this is the
+        /// depth at noon rather than a constant darkening.
+        /// </summary>
+        public float CloudShadowStrength { get; set; } = 0.35f;
 
         /// <summary>Blocks across one cloud cell. Larger means broader, slower shadows.</summary>
         public float CloudScale { get; set; } = 190.0f;
 
-        /// <summary>How fast cloud shadows drift, in cells per minute.</summary>
+        /// <summary>How fast cloud shadows drift, in cells per minute, along the world's wind.</summary>
         public float CloudDriftSpeed { get; set; } = 0.9f;
-
-        /// <summary>
-        /// Extra high-frequency shaping on the volumetric clouds. 0 is vanilla.
-        ///
-        /// Vanilla mixes two noise frequencies, which gives a smooth billow and
-        /// no edge. A third breaks the silhouette into the ragged fringe real
-        /// cumulus have, which is the detail the eye uses to read something as
-        /// a cloud rather than a soft grey shape.
-        /// </summary>
-        public float CloudDetail { get; set; } = 0.6f;
 
         internal void ClampToValidRanges(List<string> corrections)
         {
@@ -134,9 +129,6 @@ namespace VintageVisuals.Common
                 "Weather.CloudScale", corrections);
             CloudDriftSpeed = ColorGradeConfig.Clamp(CloudDriftSpeed, 0.0f, 8.0f,
                 "Weather.CloudDriftSpeed", corrections);
-            CloudDetail = ColorGradeConfig.Clamp(CloudDetail, 0.0f, 1.0f,
-                "Weather.CloudDetail", corrections);
-
         }
     }
 

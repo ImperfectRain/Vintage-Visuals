@@ -38,7 +38,7 @@ namespace VintageVisuals.SmokeTest
                     .OrderBy(f => f)
                     .Select(File.ReadAllText));
 
-            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec3)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
                 .OrderBy(n => n)

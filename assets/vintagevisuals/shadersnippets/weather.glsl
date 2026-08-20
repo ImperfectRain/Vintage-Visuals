@@ -24,10 +24,10 @@ uniform float vv_weatherRain;        // 0..1 precipitation intensity, smoothed
 uniform float vv_weatherFogStrength; // how much rain thickens the air
 uniform float vv_weatherFogTint;     // how much rain drains colour from it
 
-uniform float vv_cloudShadowStrength;
-uniform float vv_cloudCover;         // 0 clear, 1 overcast
+uniform float vv_cloudShadowStrength; // already scaled by daylight on the CPU
+uniform float vv_cloudCover;         // 0 clear, 1 overcast - the game's own figure
 uniform float vv_cloudScale;         // blocks across one cloud cell
-uniform float vv_cloudDrift;         // advanced on the CPU so clouds move
+uniform vec2  vv_cloudDrift;         // advanced on the CPU along the real wind
 uniform vec3  vv_cloudOrigin;        // camera world position
 
 // Height the shadow-casting cloud deck sits at, in blocks above the fragment.
@@ -78,19 +78,47 @@ vec3 vvWeatherFogColor(vec3 fogColor)
 // shipping a noise function matters here: it is already compiled into both of
 // these shaders, so this costs instructions rather than a texture fetch or a
 // second implementation to keep in step.
+//
+// This is the mod's own field, NOT the tile map vanilla draws its clouds from.
+// That map is built on the CPU and handed to the renderers as mapData1 and
+// mapData2 (see cloudmap.fsh), so it is not reachable from a terrain shader,
+// and both cloud renderers read it from there. What can be matched without it
+// is the statistics and the motion: how much of the sky is covered, and which
+// way it is going. Both come straight from the game - cover from the ambient
+// manager's own cloud density, drift from the wind at the player.
 float vvCloudDensity(vec2 worldXZ)
 {
-    vec2 p = worldXZ / max(8.0, vv_cloudScale) + vec2(vv_cloudDrift, vv_cloudDrift * 0.6);
+    vec2 p = worldXZ / max(32.0, vv_cloudScale) - vv_cloudDrift;
 
     float n = gnoise(p) * 0.6 + gnoise(p * 2.3) * 0.3 + gnoise(p * 5.1) * 0.1;
     n = n * 0.5 + 0.5;
 
-    // Cover moves the threshold rather than scaling the result, so a clear sky
-    // has no shadows at all instead of faint ones everywhere, and an overcast
-    // one goes fully shaded instead of uniformly grey.
-    float threshold = 1.0 - clamp(vv_cloudCover, 0.0, 1.0);
+    // Expand the distribution before thresholding it.
+    //
+    // This line is the difference between cloud shadows and a haze blanket.
+    // A sum of gradient noise is not spread evenly over 0..1 - it piles up
+    // hard around the middle, and almost nothing reaches either end. Threshold
+    // the raw sum and the whole ramp sits inside that pile, so every fragment
+    // in the world lands somewhere on it and comes out slightly darkened. That
+    // is not a shadow with an edge; it is an everywhere-dimmer world, which is
+    // exactly what it looked like.
+    n = clamp((n - 0.5) * 2.3 + 0.5, 0.0, 1.0);
 
-    return smoothstep(threshold - 0.18, threshold + 0.18, n);
+    // Cover moves the threshold rather than scaling the result, so a clear sky
+    // has a few shadows rather than faint ones everywhere.
+    //
+    // It deliberately stops short of both ends. Overcast in vanilla is still a
+    // cloud LAYER with thin patches in it, and letting cover reach 1 shades the
+    // whole ground evenly - the same failure as above, arrived at from the
+    // other side.
+    float cover = clamp(vv_cloudCover, 0.0, 1.0) * 0.8 + 0.06;
+    float threshold = 1.0 - cover;
+
+    // One-sided and narrow: wide enough not to alias into shimmer at draw
+    // distance, narrow enough that a shadow has an edge you can watch cross a
+    // field. The old band was 0.36 wide and centred on the threshold, which
+    // put the entire field on the ramp.
+    return smoothstep(threshold, threshold + 0.16, n);
 }
 
 // Prototype. The vanilla function is renamed to this by the same patch that

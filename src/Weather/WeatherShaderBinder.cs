@@ -1,4 +1,5 @@
 using Vintagestory.API.Client;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 
 namespace VintageVisuals.Weather
@@ -7,12 +8,11 @@ namespace VintageVisuals.Weather
     /// Uploads the weather uniforms into the vanilla programs the weather
     /// patches touch.
     ///
-    /// Separate from PbrShaderBinder rather than folded into it. The two reach
-    /// different programs - weather also patches the sky and the volumetric
-    /// clouds, neither of which knows anything about materials - and a single
-    /// binder for both would have to keep straight which uniforms exist in
-    /// which shader. Every uniform here goes to every program in its own list,
-    /// and programs that were not patched fall out on HasUniform.
+    /// Separate from PbrShaderBinder rather than folded into it. The two are
+    /// different patch groups and either has to be able to roll back without
+    /// the other noticing, which a shared binder would quietly prevent. Every
+    /// uniform here goes to every program in its own list, and a program the
+    /// group did not reach falls out on HasUniform.
     /// </summary>
     public sealed class WeatherShaderBinder : IRenderer
     {
@@ -30,22 +30,19 @@ namespace VintageVisuals.Weather
         public const string CloudDriftUniform = "vv_cloudDrift";
         public const string CloudOriginUniform = "vv_cloudOrigin";
 
-        public const string CloudDetailUniform = "vv_cloudDetail";
-
         /// <summary>
-        /// Every program a weather patch reaches. Chunkopaque and Chunktopsoil
-        /// take fog and cloud shadows, Cloudvolumetric takes cloud shaping -
-        /// but nothing here needs to know that, because each program only
-        /// accepts the uniforms it actually declares.
+        /// Every program a weather patch reaches: the two terrain shaders, and
+        /// nothing else.
         ///
-        /// The sky is deliberately absent. Fogging the sky dome flattens cloud
-        /// against sky into a uniform haze; see weather.glsl.
+        /// Neither the sky nor either cloud renderer is patched, deliberately.
+        /// Fogging the sky dome flattens cloud against sky into a uniform haze,
+        /// and the clouds' own shape is not something a cloud shader decides -
+        /// see weather.glsl and src/Weather/README.md.
         /// </summary>
         private static readonly EnumShaderProgram[] PatchedPrograms =
         {
             EnumShaderProgram.Chunkopaque,
             EnumShaderProgram.Chunktopsoil,
-            EnumShaderProgram.Cloudvolumetric,
         };
 
         private readonly ICoreClientAPI _capi;
@@ -86,9 +83,8 @@ namespace VintageVisuals.Weather
                 {
                     _reportedMissing = true;
                     _capi.Logger.Warning("[VintageVisuals] weather: no patched program exposes " + RainUniform +
-                        " or " + CloudDetailUniform + ", so the weather GLSL did not reach any compiled " +
-                        "program. Fog, cloud shadows and cloud shaping are inactive - look for a weather, " +
-                        "weathersky or cloudshape patch failure above.");
+                        ", so the weather GLSL did not reach any compiled program. Rain fog and cloud " +
+                        "shadows are inactive - look for a weather patch failure above.");
                 }
                 return;
             }
@@ -106,10 +102,8 @@ namespace VintageVisuals.Weather
         /// <summary>
         /// Pushes whichever of the weather uniforms this program declares.
         ///
-        /// HasUniform per name rather than per program, so the same code serves
-        /// the terrain shaders, the sky and the cloud raymarcher without a
-        /// table saying which is which - and a group that rolled back simply
-        /// stops matching instead of needing to be tracked.
+        /// HasUniform per name rather than per program, so a group that rolled
+        /// back simply stops matching instead of needing to be tracked.
         /// </summary>
         private bool Upload(EnumShaderProgram id, WeatherConfig config)
         {
@@ -117,10 +111,9 @@ namespace VintageVisuals.Weather
             if (program == null) return false;
 
             bool fog = program.HasUniform(RainUniform);
-            bool clouds = program.HasUniform(CloudDetailUniform);
             bool shadows = program.HasUniform(CloudShadowUniform);
 
-            if (!fog && !clouds && !shadows) return false;
+            if (!fog && !shadows) return false;
 
             bool enabled = config.Enabled;
 
@@ -143,7 +136,15 @@ namespace VintageVisuals.Weather
 
             if (shadows)
             {
-                program.Uniform(CloudShadowUniform, enabled ? config.CloudShadowStrength : 0f);
+                // Scaled by daylight here rather than in the shader. A cloud
+                // shadow is the sun being blocked, so at night there is nothing
+                // to block and the ground should be exactly as vanilla left it.
+                // Folding it into the strength keeps that as one uniform whose
+                // zero already means "vanilla", instead of a second one that
+                // has to be uploaded for the first to behave.
+                float strength = enabled ? config.CloudShadowStrength * DayLight() : 0f;
+
+                program.Uniform(CloudShadowUniform, strength);
                 program.Uniform(CloudCoverUniform, _weather.CloudCover);
                 program.Uniform(CloudScaleUniform, config.CloudScale);
                 program.Uniform(CloudDriftUniform, _weather.CloudDrift);
@@ -154,13 +155,25 @@ namespace VintageVisuals.Weather
                 program.Uniform(CloudOriginUniform, _weather.CameraOrigin);
             }
 
-            if (clouds)
-            {
-                program.Uniform(CloudDetailUniform, enabled ? config.CloudDetail : 0f);
-            }
-
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// How much sun there is to be blocked, 0..1.
+        ///
+        /// Squared toward the end of the day rather than used raw: the calendar
+        /// still reports a good fraction of full daylight while the sun is on
+        /// the horizon, and a cloud shadow at that point falls across ground the
+        /// sun is barely reaching anyway.
+        /// </summary>
+        private float DayLight()
+        {
+            var calendar = _capi.World?.Calendar;
+            if (calendar == null) return 1f;
+
+            float light = GameMath.Clamp(calendar.DayLightStrength, 0f, 1f);
+            return light * light;
         }
 
         public void Dispose()

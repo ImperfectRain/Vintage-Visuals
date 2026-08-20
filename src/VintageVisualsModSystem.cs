@@ -187,8 +187,7 @@ namespace VintageVisuals
                 return ConfigManager.Config.ColorGrade.Enabled;
             }
 
-            if (group == WeatherSubsystem.GroupName ||
-                group == WeatherSubsystem.CloudGroupName)
+            if (group == WeatherSubsystem.GroupName)
             {
                 return ConfigManager.Config.Weather.Enabled;
             }
