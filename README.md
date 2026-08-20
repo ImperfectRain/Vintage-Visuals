@@ -1,18 +1,34 @@
 # Vintage Visuals
 
-A client-side visual overhaul mod for [Vintage Story](https://www.vintagestory.at/):
-color grading, weather and sky, screen-space reflections, and a pseudo-PBR
-texture pipeline that derives normal/roughness/specular maps from the vanilla
-diffuse textures.
+A client-side **rendering framework** for [Vintage Story](https://www.vintagestory.at/)
+that ships a visual overhaul: colour grading that responds to the world, a
+pseudo-PBR material and lighting model derived from the vanilla textures, and a
+weather system that changes how surfaces respond to light.
 
-Built as GLSL patches against the vanilla shaders plus a C# code mod. Four
-subsystems, each independently toggleable, each degrading gracefully if it
-cannot load.
+Built as GLSL patches against the vanilla shaders plus a C# code mod. The goal
+is not to make Vintage Story look like another game - it is to reconstruct as
+much of a modern physically-inspired pipeline as the existing renderer allows
+**while preserving the game's art direction**. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-> **Status: pre-alpha (0.0.1).** Colour grading works in game on 1.22.7 —
-> Phase 1 of the plan is complete. Weather, reflections and the in-game PBR
-> pipeline are not started. See [Current state](#current-state) for exactly what
-> has and has not been verified.
+> **Status: pre-alpha (0.0.1).** Colour grading and the PBR material response
+> are confirmed rendering in game on 1.22.7. Weather is partly confirmed -
+> wetness renders; rain fog, cloud shadows, rain ripples and overcast light
+> compile against the game's own shaders but have not been seen on screen.
+> Water and reflections have not been started. See
+> [Current state](#current-state) for exactly what has and has not been
+> verified.
+
+## Systems
+
+| System | State | Docs |
+|---|---|---|
+| **Colour management** | renders | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
+| **Material system** | renders | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
+| **Lighting** | renders on terrain only | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
+| **Environment state** | done | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| **Weather** | partly confirmed | [src/Weather/README.md](src/Weather/README.md) |
+| **Atmosphere, shadows, water, vegetation, post FX** | not started | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
 
 ## Install
 
@@ -24,15 +40,6 @@ cannot load.
    without restarting. With the optional
    [ConfigLib](https://mods.vintagestory.at/configlib) mod installed you get
    sliders on <kbd>F7</kbd> instead.
-
-## Subsystems
-
-| Subsystem | What it does | Docs |
-|---|---|---|
-| **ColorGrade** | Eye adaptation, filmic tonemap, exposure, saturation, contrast, white-balance | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
-| **Weather** | Wet surfaces in rain, rain fog, cloud shadows, cloud shaping | [src/Weather/README.md](src/Weather/README.md) |
-| **Reflections** | Screen-space reflections on water | not implemented |
-| **PseudoPBR** | Derived normal/roughness/spec atlases from vanilla textures | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
 
 ## Configuration
 
@@ -126,7 +133,13 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **PBR:** Cook-Torrance specular + energy conservation | **4 (renders)** — confirmed in game, being tuned by eye |
 | **PBR:** per-layer debug views | 2 (compiles) |
 | **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
-| Everything under Weather / Reflections | not started |
+| **Adaptive grading:** world-driven exposure/contrast/saturation/tint | 2 (compiles) — 34 rule checks pass, never run in game |
+| **Environment state:** one shared worldview | 2 (compiles) — the only place the game is asked what is happening |
+| **Weather:** wetness model and surface response | **4 (renders)** — confirmed in game |
+| **Weather:** rain fog | 2 (compiles) — verified against the game's own shaders |
+| **Weather:** cloud shadows | 2 (compiles) — field distribution measured, never seen on screen |
+| **Weather:** rain ripples, overcast light | 2 (compiles) — ripple tilt distribution measured |
+| Atmosphere, shadows, water, vegetation, post FX | not started — `src/Reflections/` is an empty directory |
 
 Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
 
@@ -177,9 +190,13 @@ These are known now, not discovered later. Kept current as the mod grows.
   Multi-page block atlases are supported via a Harmony hook on the moment
   vanilla selects an atlas page; if that hook cannot be installed, a multi-page
   atlas falls back to vanilla rendering with a log line saying so.
-- **Roughness and specular are derived but unused.** They sit in the atlas
-  waiting for a lighting term, which needs a light direction the patch site does
-  not currently provide. Today's effect is surface relief only.
+- **Roughness and specular shade the world.** `pseudopbr.glsl` evaluates
+  Cook-Torrance - GGX distribution, Smith-Schlick geometry, Schlick Fresnel,
+  energy-conserving - against the sun, sky irradiance, block light with a
+  recovered direction, and shadow-map occlusion. What is still missing is
+  *reach*: the model is welded to `chunkopaque` and `chunktopsoil`, so entities,
+  held items and liquids are still lit by vanilla and a mob standing on PBR-lit
+  ground is shaded by a different model than the ground.
 - **Texture analysis infers detail, not identity.** Sobel edge detection reads
   *painted-on* shading as real geometry, and variance cannot distinguish "rough
   surface" from "busy pattern". Both are inherent to reading pixels. What pixels

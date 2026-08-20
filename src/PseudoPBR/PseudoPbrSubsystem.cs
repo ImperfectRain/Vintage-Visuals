@@ -6,6 +6,7 @@ using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
 
 namespace VintageVisuals.PseudoPBR
 {
@@ -132,37 +133,48 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
-            _binder.SetState(active, config, ReadWeather());
+            _binder.SetState(active, config, ReadScene());
         }
 
         /// <summary>
-        /// What the weather is doing, in the terms this shader thinks in.
+        /// What the world is doing, in the terms this shader thinks in.
         ///
-        /// It comes from the weather subsystem, not from this one's config.
-        /// Rain changes how surfaces respond to light and that response is
-        /// modelled here, but whether it is raining is not this subsystem's
-        /// business to decide. When there is no weather subsystem the defaults
-        /// are the vanilla ones, so the material system still works on its own.
+        /// Read from the shared environment state rather than from the weather
+        /// subsystem. Rain changes how surfaces respond to light and that
+        /// response is modelled here, but whether it is raining is not this
+        /// subsystem's business to decide - and asking the world rather than
+        /// another subsystem means the material system keeps working whether or
+        /// not that subsystem is loaded.
+        ///
+        /// The config scaling happens HERE and not in the shared state, because
+        /// a strength slider is a statement about what the player wants rather
+        /// than about the world.
         /// </summary>
-        private WeatherInputs ReadWeather()
+        private SceneInputs ReadScene()
         {
+            if (_mod.Environment == null) return SceneInputs.None;
+
+            EnvironmentState world = _mod.Environment.Current;
             WeatherConfig weather = _mod.ConfigManager.Config.Weather;
 
-            if (_mod.Weather == null || !weather.Enabled) return WeatherInputs.None;
+            if (!weather.Enabled)
+            {
+                return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f,
+                                       world.CameraPosition);
+            }
 
-            float wetness = _mod.Weather.Wetness * weather.WetnessStrength;
-
-            return new WeatherInputs(
-                wetness,
+            return new SceneInputs(
+                world.DayLight,
+                world.Wetness * weather.WetnessStrength,
                 weather.RainCoverThreshold,
 
                 // Driven by the rain FALLING, not by the wetness left behind.
                 // Ripples stop the moment the shower does; the ground stays wet
                 // for another minute, which is the half that should linger.
-                _mod.Weather.Rain * weather.RippleStrength,
+                world.Rain * weather.RippleStrength,
 
-                _mod.Weather.CloudCover * weather.OvercastStrength,
-                _mod.Weather.CameraOrigin);
+                world.CloudCover * weather.OvercastStrength,
+                world.CameraPosition);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

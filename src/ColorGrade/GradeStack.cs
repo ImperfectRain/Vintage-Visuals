@@ -1,5 +1,6 @@
 using System;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
 
 namespace VintageVisuals.ColorGrade
 {
@@ -93,32 +94,33 @@ namespace VintageVisuals.ColorGrade
     /// GLSL runs on and it matters for the same reason: this is the subsystem
     /// that grades the entire frame, so "off" has to mean off.
     ///
-    /// Pure and free of game types so the rules can be driven through every
-    /// combination in tools/smoketest.
+    /// Pure, and reading the shared EnvironmentState rather than sampling the
+    /// world itself. This subsystem used to own a private sampler that asked
+    /// the game the same questions the weather subsystem was already asking,
+    /// on its own timer and through its own copy of the cloud-density gain.
+    /// Two copies of a constant drift apart quietly, and the symptom would have
+    /// been the grade and the cloud shadows disagreeing about the sky.
     /// </summary>
     public static class GradeStack
     {
-        /// <summary>Degrees C the biome influence treats as neither hot nor cold.</summary>
-        public const float TemperateCelsius = 8f;
-
         /// <summary>Degrees C either side of temperate that reaches full weight.</summary>
         private const float ClimateSpanCelsius = 24f;
 
-        /// <summary>Climate rainfall that is neither arid nor lush.</summary>
-        private const float TemperateRainfall = 0.5f;
+        /// <summary>Worldgen rainfall that is neither arid nor lush.</summary>
+        private const float TemperateHumidity = 0.5f;
 
         /// <summary>
         /// Evaluates the stack.
         /// </summary>
         /// <param name="basis">The player's own settings, untouched by anything here.</param>
-        public static GradeSample Evaluate(GradeSample basis, GradeContext ctx, AdaptiveGradeConfig weights)
+        public static GradeSample Evaluate(GradeSample basis, EnvironmentState world, AdaptiveGradeConfig weights)
         {
             if (weights == null || !weights.Enabled) return basis;
 
             var stack = new Accumulator(basis);
 
-            float sky = Clamp01(ctx.SkyExposure);
-            float dayLight = Clamp01(ctx.DayLight);
+            float sky = Clamp01(world.SkyExposure);
+            float dayLight = Clamp01(world.DayLight);
 
             // --- Time of day ------------------------------------------------
             //
@@ -147,10 +149,10 @@ namespace VintageVisuals.ColorGrade
             // Both gated on sky exposure: rain does not change the colour of a
             // room with no windows.
 
-            stack.Add(Clamp01(ctx.Rain) * weights.WeatherStrength * sky,
+            stack.Add(Clamp01(world.Rain) * weights.WeatherStrength * sky,
                       0.93f, -0.14f, -0.28f, -0.16f, 0.98f, 1.00f, 1.03f);
 
-            stack.Add(Clamp01(ctx.CloudCover) * weights.WeatherStrength * sky,
+            stack.Add(Clamp01(world.CloudCover) * weights.WeatherStrength * sky,
                       0.97f, -0.10f, -0.12f, -0.08f, 1.00f, 1.00f, 1.00f);
 
             // --- Where the player is ----------------------------------------
@@ -163,13 +165,13 @@ namespace VintageVisuals.ColorGrade
             // Underground. Stacks with enclosed rather than replacing it: a
             // cave is both, and the deep part of it is the part that should
             // drain the colour rather than merely warm it.
-            stack.Add(Clamp01(ctx.Depth) * weights.DepthStrength,
+            stack.Add(Clamp01(world.Depth) * weights.DepthStrength,
                       1.05f, +0.06f, -0.22f, -0.10f, 0.98f, 0.99f, 1.02f);
 
             // Submerged. Water absorbs red first and blue last, which is why
             // everything below a few metres goes blue-green, and why this is
             // the one influence with a tint strong enough to see on its own.
-            stack.Add(Clamp01(ctx.Underwater) * weights.UnderwaterStrength,
+            stack.Add(Clamp01(world.Underwater) * weights.UnderwaterStrength,
                       0.95f, -0.10f, -0.18f, -0.30f, 0.86f, 0.98f, 1.08f);
 
             // --- Biome ------------------------------------------------------
@@ -182,8 +184,8 @@ namespace VintageVisuals.ColorGrade
             // All four gated on sky exposure, for the same reason as weather -
             // the inside of a building is the same colour in every biome.
 
-            float heat = Clamp((ctx.Temperature - TemperateCelsius) / ClimateSpanCelsius, -1f, 1f);
-            float humidity = Clamp((ctx.Rainfall - TemperateRainfall) / TemperateRainfall, -1f, 1f);
+            float heat = Clamp((world.Temperature - EnvironmentState.TemperateCelsius) / ClimateSpanCelsius, -1f, 1f);
+            float humidity = Clamp((world.Humidity - TemperateHumidity) / TemperateHumidity, -1f, 1f);
 
             float biome = weights.BiomeStrength * sky;
 

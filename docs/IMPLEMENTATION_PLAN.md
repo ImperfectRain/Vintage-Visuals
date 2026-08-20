@@ -1,11 +1,127 @@
-# Vintage Story Visual Overhaul Mod — Implementation Plan
+# Vintage Visuals - Implementation Plan
 
-Scope: color grading, weather/sky, screen-space reflections, and a pseudo-PBR
-texture pipeline (derived normal/roughness/specular from vanilla diffuse
-textures), built as GLSL shader patches + a C# code mod on top of Vintage
-Story's rendering pipeline.
+Vintage Visuals is a client-side **rendering framework** for Vintage Story that
+ships a visual overhaul. See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering
+and for what belongs where; this file is the order of work and the honest state
+of each system.
+
+## The ten systems
+
+| System | Layer | State |
+|---|---|---|
+| Colour management | Image Processing | **renders** - exposure, tonemap, contrast, saturation, white balance, plus an adaptive stack driven by time of day, weather, biome, indoors, depth and underwater |
+| Material system | Scene Understanding | **renders** - derived normal/roughness/specular/metal atlas from vanilla textures, keyed on `EnumBlockMaterial`, multi-page, cached |
+| Lighting | World Rendering | **renders on terrain only** - full Cook-Torrance with sun, sky, block light and shadow occlusion, but reaching only `chunkopaque` and `chunktopsoil` |
+| Environment state | Scene Understanding | **done** - one shared worldview, the only place the game is asked what is happening |
+| Weather | Environment | **partly renders** - wetness confirmed on screen; rain fog, cloud shadows, ripples and overcast light compile and are unconfirmed |
+| Atmosphere | World Rendering | **not started** - currently a rain modifier inside Weather rather than a system of its own |
+| Shadows | World Rendering | **not started** beyond cloud occlusion |
+| Water | World Rendering | **not started**. `src/Reflections/` is an empty directory |
+| Vegetation | World Rendering | **not started** |
+| Post-processing (AO, bloom, DOF) | Image Processing | **not started** |
+
+Two entries in that table are corrections to what the README used to claim.
+`src/Reflections/` has always been empty - reflections were never begun - and
+the old status text said the PBR pipeline was "not started" and that roughness
+and specular were "waiting for a lighting term" long after both had shipped. An
+outside review read those lines and concluded the project's top priority was a
+lighting model it already has.
+
+## Order of work
+
+Ordered by what unblocks the most, not by visual impact.
+
+### Phase 1 - Foundation (done)
+
+Patch engine with per-group rollback, config with live reload, ConfigLib bridge,
+colour grading, eye adaptation, material extraction, PseudoPBR, debug views,
+`verifypatches` and `smoketest`.
+
+### Phase 2 - Scene understanding (done)
+
+`EnvironmentState` and its tracker. Everything after this point reads one
+worldview rather than sampling the game itself.
+
+### Phase 3 - Lighting reach (next)
+
+The lighting model exists; it reaches two shaders. This phase is about the
+other surfaces in the frame, and it is a patching problem rather than a
+lighting-theory one.
+
+1. **Entities and held items.** A mob standing on PBR-lit ground is currently
+   shaded by a different model than the ground. `entityanimated` and
+   `helditem` need the same material lookup and the same lobe.
+2. **A shared lighting snippet.** Three programs evaluating the same
+   Cook-Torrance means one snippet included by three patch groups, not three
+   copies to keep in step.
+3. **Contact shadows and crevice shading.** The material system already
+   produces a normal and an implied height; short-range occlusion derived from
+   them is the cheapest depth cue available and needs no new buffer.
+
+### Phase 4 - Atmosphere as its own system
+
+Split the concept properly. Today "rain fog" is a weather effect that reaches
+into vanilla's fog. It should be:
+
+```
+Atmosphere (always present)  +  Weather modifiers  ->  final atmospheric state
+```
+
+so that a future weather type inherits the rendering rather than adding another
+special case. Aerial perspective, distance haze, sun and moon attenuation,
+horizon colour.
+
+### Phase 5 - Weather as a material transformation
+
+The abstraction to aim for is:
+
+```
+Base material  +  environmental layer(s)  ->  surface response
+Stone + wetness + snow + frost
+```
+
+Wetness already works this way. Snow should too - smoother normal, higher
+roughness, lighter albedo, accumulated height on up-facing sky-exposed
+surfaces - rather than being particles that happen to fall.
+
+### Phase 6 - Water
+
+Fresnel, screen-space reflection, refraction, wave normals, depth colouration,
+rain disturbance, and underwater absorption and caustics. Coherent as one
+renderer; incoherent as "SSR bolted onto vanilla water".
+
+### Phase 7 - Emissive materials
+
+`EmissionColor`, `EmissionStrength`, `EmissionFlicker`, `EmissionTemperature`
+as material properties, so a forge produces illumination, highlights on metal,
+warm reflections and atmospheric glow rather than an orange texture.
+
+### Phase 8 - Vegetation
+
+Wind deformation by plant class, backface translucency, leaf-specific
+roughness, seasonal response.
+
+### Phase 9 - Image processing
+
+Restrained bloom driven by actual emissive intensity rather than brightness.
+SSAO separated from contact shadows and crevice shading, so the three scales of
+occlusion stay independent. Optional camera effects, all defaulting to off -
+mandatory grain and chromatic aberration are the fastest way to make this feel
+like a generic shader pack.
+
+### Phase 10 - Performance and temporal
+
+Quality tiers, a rendering debug HUD, and temporal accumulation if the renderer
+turns out to allow it. Tiers should be built before the expensive systems land,
+not after: a preset that configures subsystem quality, which configures
+individual settings, with every individual setting still reachable.
 
 ---
+
+# Original plan (Phase 1 detail, retained)
+
+The material below is the original day-zero plan. It is kept because its
+decision table is still the record of *why* the foundation is shaped as it is.
 
 ## 0. Architecture Decisions (lock these before writing code)
 

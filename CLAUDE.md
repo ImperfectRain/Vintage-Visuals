@@ -64,9 +64,25 @@ this produces clean vanilla source - a dump taken with the mod half on contains
 the mod's own injections, and patching that reports success while proving
 nothing. `verifypatches` refuses such a file by name rather than trusting it.
 
+## What this project is
+
+A client-side **rendering framework** that ships a visual overhaul, not a shader
+pack. Read `docs/ARCHITECTURE.md` before adding a system: it defines the five
+layers, the rule that dependencies point down and inward only, and why a
+config-scaled value must never enter the shared environment state.
+
+The one-line goal: reconstruct as much of a modern physically-inspired pipeline
+as Vintage Story's renderer allows, *while preserving the game's art direction*.
+
 ## Where things live
 
 - `src/Common/` — shader patch engine, config, Harmony hooks. Subsystem-agnostic.
+- `src/Common/Scene/` — `EnvironmentState` and its tracker: the ONE place the
+  mod asks the game what is happening. A subsystem that samples the world
+  itself is a bug — three of them used to, and the climate was being read twice
+  a second through two copies of the same gain constant. The namespace is
+  `Scene` rather than `Environment` because the latter shadows
+  `System.Environment` for every file in `VintageVisuals.Common`.
 - `src/ColorGrade/`, `src/Weather/`, `src/Reflections/`, `src/PseudoPBR/` — one
   folder per subsystem, each with its own `README.md`.
 - `assets/vintagevisuals/shaderpatches/*.yaml` — regex/token patches against
@@ -137,6 +153,10 @@ nothing. `verifypatches` refuses such a file by name rather than trusting it.
   yields zero settings. Neither shows up in a build or a log.
   `tools/smoketest` now checks weights, codes, ranges, and that every setting
   has a `case` in `ConfigLibBridge` and vice versa.
+- **Config-scaled values must never enter `EnvironmentState`.** A strength
+  slider states what the player wants; the state describes what the world is
+  doing. Mixing them is how "off" stops meaning off. The product of the two
+  belongs in a per-subsystem input struct — `SceneInputs` is the pattern.
 - **A config flag for a shader patch must gate the PATCH, not the effect.**
   Muting a uniform leaves the patched GLSL compiling and occupying a sampler, so
   when the damage comes from the source existing at all, the player's off switch

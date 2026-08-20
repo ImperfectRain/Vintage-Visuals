@@ -3,6 +3,7 @@ using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
 
 namespace VintageVisuals.Weather
 {
@@ -23,40 +24,30 @@ namespace VintageVisuals.Weather
     {
         public const string GroupName = "weather";
 
-        /// <summary>
-        /// Seconds between climate samples.
-        ///
-        /// Climate lookups are not free and weather does not change in a
-        /// hurry - the easing between samples is what the player sees, not the
-        /// sampling itself.
-        /// </summary>
-        private const float SampleIntervalSeconds = 1.0f;
-
-        /// <summary>
-        /// Turns the game's cloud density into something that reads as a
-        /// fraction of sky covered. See SampleClouds for why it is not 1.
-        /// </summary>
-        private const float CloudCoverGain = 2.0f;
-
         private VintageVisualsModSystem _mod;
-        private readonly WetnessTracker _wetness = new WetnessTracker();
-
-        private readonly WetnessTracker _rain = new WetnessTracker();
 
         private WeatherShaderBinder _binder;
-        private bool _reportedCloudDensity;
-        private float _sinceSample;
-        private float _rainfall;
-        private float _temperature = 20f;
-        private float _cloudCover = 0.35f;
+
+        /// <summary>
+        /// Accumulated cloud drift in cloud cells.
+        ///
+        /// The one piece of weather state this subsystem still owns, because it
+        /// is not a fact about the world: it is the world's wind integrated at
+        /// a speed the player chose. Everything factual - how hard it is
+        /// raining, which way the wind blows, how wet things are - comes from
+        /// the shared environment state.
+        /// </summary>
         private readonly Vec2f _drift = new Vec2f();
-        private readonly Vec2f _wind = new Vec2f(1f, 0f);
-        private Vec3f _cameraOrigin = new Vec3f();
+
+        private EnvironmentState World
+        {
+            get { return _mod == null || _mod.Environment == null ? EnvironmentState.Clear : _mod.Environment.Current; }
+        }
 
         /// <summary>0 dry, 1 as wet as it gets. Read by PseudoPBR each frame.</summary>
         public float Wetness
         {
-            get { return _wetness.Current; }
+            get { return World.Wetness; }
         }
 
         /// <summary>
@@ -69,7 +60,7 @@ namespace VintageVisuals.Weather
         /// </summary>
         public float Rain
         {
-            get { return _rain.Current; }
+            get { return World.Rain; }
         }
 
         /// <summary>
@@ -82,7 +73,7 @@ namespace VintageVisuals.Weather
         /// </summary>
         public float CloudCover
         {
-            get { return _cloudCover; }
+            get { return World.CloudCover; }
         }
 
         /// <summary>
@@ -99,6 +90,12 @@ namespace VintageVisuals.Weather
             get { return _drift; }
         }
 
+        /// <summary>0 at midnight, 1 at noon. From the shared state, so nothing here reads the clock twice.</summary>
+        public float DayLight
+        {
+            get { return World.DayLight; }
+        }
+
         /// <summary>
         /// Camera world position. The chunk shaders only have camera-relative
         /// coordinates, so without this cloud shadows slide along the ground
@@ -106,7 +103,7 @@ namespace VintageVisuals.Weather
         /// </summary>
         public Vec3f CameraOrigin
         {
-            get { return _cameraOrigin; }
+            get { return World.CameraPosition; }
         }
 
         public WeatherConfig Config
@@ -140,135 +137,21 @@ namespace VintageVisuals.Weather
 
             WeatherConfig config = _mod.ConfigManager.Config.Weather;
 
-            if (!config.Enabled)
-            {
-                // Ease back to dry rather than snapping, so switching the
-                // subsystem off mid-storm is not a visible jolt.
-                _wetness.Step(0f, deltaTime, config.DryingSeconds);
-                return;
-            }
+            // Drying is a matter of taste rather than of physics, so the number
+            // lives in this subsystem's config - but the wetness it governs is
+            // shared state, so the tracker is told rather than asked.
+            if (_mod.Environment != null) _mod.Environment.DryingSeconds = config.DryingSeconds;
 
-            _sinceSample += deltaTime;
-            if (_sinceSample >= SampleIntervalSeconds)
-            {
-                _sinceSample = 0f;
-                SampleClimate();
-            }
+            if (!config.Enabled) return;
 
-            float target = WetnessTracker.TargetFor(_rainfall, _temperature);
-
-            _wetness.Step(target, deltaTime, config.DryingSeconds);
-
-            // Rain itself settles in seconds either way. Only the surface stays
-            // wet afterwards.
-            _rain.Step(target, deltaTime, WetnessTracker.WettingSeconds);
-
-            // Cells per minute, kept as a plain accumulator so the shader never
-            // needs a clock and the speed can change without the shadows
-            // jumping - changing the rate bends the path from here on rather
-            // than teleporting the pattern.
+            // Cells per minute along the world's own wind, kept as a plain
+            // accumulator so the shader never needs a clock and the speed can
+            // change without the shadows jumping - a new rate bends the path
+            // from here on rather than teleporting the pattern.
+            Vec2f wind = World.WindDirection;
             float step = deltaTime * config.CloudDriftSpeed / 60f;
-            _drift.X += _wind.X * step;
-            _drift.Y += _wind.Y * step;
-
-            IClientPlayer trackedPlayer = _mod.Capi.World?.Player;
-            if (trackedPlayer?.Entity != null)
-            {
-                _cameraOrigin.Set((float)trackedPlayer.Entity.Pos.X,
-                                  (float)trackedPlayer.Entity.Pos.Y,
-                                  (float)trackedPlayer.Entity.Pos.Z);
-            }
-        }
-
-        /// <summary>
-        /// Reads rainfall and temperature where the player is standing.
-        ///
-        /// Temperature matters as much as rainfall: below freezing the same
-        /// precipitation falls as snow, and a snowstorm making the ground look
-        /// rained on would be the wrong effect at exactly the moment the player
-        /// is most likely to be looking at the sky.
-        /// </summary>
-        private void SampleClimate()
-        {
-            try
-            {
-                IClientPlayer player = _mod.Capi.World?.Player;
-                if (player?.Entity == null) return;
-
-                BlockPos pos = player.Entity.Pos.AsBlockPos;
-                ClimateCondition climate = _mod.Capi.World.BlockAccessor.GetClimateAt(pos);
-                if (climate == null) return;
-
-                _rainfall = climate.Rainfall;
-                _temperature = climate.Temperature;
-
-                SampleClouds(pos);
-            }
-            catch (Exception ex)
-            {
-                // A climate lookup that throws must cost the wetness effect,
-                // not the frame. Sampling stops updating and the surface dries
-                // out, which is the safe direction to fail in.
-                _mod.Mod.Logger.Warning("[VintageVisuals] weather: climate lookup failed, so wetness will " +
-                                        "stop tracking the weather: " + ex.Message);
-                _rainfall = 0f;
-            }
-        }
-
-        /// <summary>
-        /// Reads how cloudy it is, and which way the clouds are going.
-        ///
-        /// Both come from the game rather than from anything this mod invents.
-        /// Cover is the ambient manager's blended cloud density, which is the
-        /// figure the cloud renderers themselves are driven by - so the ground
-        /// darkens on the days the sky is actually full. Direction is the wind
-        /// at the player, which is what pushes vanilla's cloud tiles along.
-        ///
-        /// What this does NOT get is where each cloud is. That lives in the
-        /// cloud renderer's tile array on the CPU, in VintagestoryLib, and both
-        /// the classic and the volumetric renderer read it from there rather
-        /// than from anything a terrain shader can sample. Matching the sky
-        /// cloud-for-cloud needs that array; matching how much of it is covered
-        /// and where it is heading does not, and is most of what the eye reads.
-        /// </summary>
-        private void SampleClouds(BlockPos pos)
-        {
-            if (_mod.Capi.Ambient != null)
-            {
-                float density = _mod.Capi.Ambient.BlendedCloudDensity;
-
-                // Gained before clamping. BlendedCloudDensity is the game's own
-                // density parameter, not a fraction of sky covered, and it sits
-                // low - so read as a 0..1 coverage it says "nearly clear" under
-                // a sky full of cloud. The shader's threshold now spans a range
-                // that gives visible shadows at any value including zero, so
-                // this only decides how much MORE shade a cloudy day gets.
-                _cloudCover = GameMath.Clamp(density * CloudCoverGain, 0f, 1f);
-
-                if (!_reportedCloudDensity)
-                {
-                    _reportedCloudDensity = true;
-                    _mod.Mod.Logger.Notification(
-                        "[VintageVisuals] weather: cloud cover source BlendedCloudDensity = " +
-                        density.ToString("0.###") + ", used as cover " +
-                        _cloudCover.ToString("0.###") + ".");
-                }
-            }
-
-            Vec3d wind = _mod.Capi.World.BlockAccessor.GetWindSpeedAt(pos);
-            if (wind == null) return;
-
-            float x = (float)wind.X;
-            float z = (float)wind.Z;
-            float length = MathF.Sqrt(x * x + z * z);
-
-            // Below a breath of wind the direction is numerical noise, and a
-            // drift direction that jitters frame to frame reads as the shadows
-            // shimmering in place. Hold the last heading instead.
-            if (length < 0.02f) return;
-
-            _wind.X = x / length;
-            _wind.Y = z / length;
+            _drift.X += wind.X * step;
+            _drift.Y += wind.Y * step;
         }
 
         /// <summary>
@@ -293,9 +176,8 @@ namespace VintageVisuals.Weather
             }
 
             _binder = null;
-
-            _wetness.Reset();
-            _rain.Reset();
+            _drift.X = 0f;
+            _drift.Y = 0f;
             _mod = null;
         }
 

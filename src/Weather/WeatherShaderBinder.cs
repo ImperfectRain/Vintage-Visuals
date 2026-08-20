@@ -162,13 +162,14 @@ namespace VintageVisuals.Weather
         /// still reports a good fraction of full daylight while the sun is on
         /// the horizon, and a cloud shadow at that point falls across ground the
         /// sun is barely reaching anyway.
+        ///
+        /// Read from the shared environment state rather than from the calendar
+        /// directly, so this subsystem and colour grading cannot end up
+        /// disagreeing about what time it is.
         /// </summary>
         private float DayLight()
         {
-            var calendar = _capi.World?.Calendar;
-            if (calendar == null) return 1f;
-
-            float light = GameMath.Clamp(calendar.DayLightStrength, 0f, 1f);
+            float light = GameMath.Clamp(_weather.DayLight, 0f, 1f);
             return light * light;
         }
 

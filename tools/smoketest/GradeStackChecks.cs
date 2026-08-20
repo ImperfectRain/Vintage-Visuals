@@ -1,6 +1,8 @@
 using System;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
+using VintageVisuals.Weather;
 
 namespace VintageVisuals.SmokeTest
 {
@@ -28,7 +30,7 @@ namespace VintageVisuals.SmokeTest
 
             // A world doing everything at once, so "off" is tested against the
             // largest pull the stack can exert rather than against a calm day.
-            GradeContext extreme = new GradeContext(
+            EnvironmentState extreme = Build(
                 dayLight: 0.0f, rain: 1f, cloudCover: 1f, skyExposure: 0f,
                 depth: 1f, temperature: -30f, rainfall: 0f, underwater: 1f);
 
@@ -45,14 +47,14 @@ namespace VintageVisuals.SmokeTest
                 Identical(GradeStack.Evaluate(basis, extreme, null), basis));
 
             ok("the neutral context changes nothing",
-                Identical(GradeStack.Evaluate(basis, GradeContext.Neutral, Weights(1f)), basis));
+                Identical(GradeStack.Evaluate(basis, EnvironmentState.Clear, Weights(1f)), basis));
 
             AdaptiveGradeConfig on = Weights(1f);
 
             // --- time of day ---
-            GradeSample noon = GradeStack.Evaluate(basis, With(GradeContext.Neutral, dayLight: 1f), on);
-            GradeSample night = GradeStack.Evaluate(basis, With(GradeContext.Neutral, dayLight: 0f), on);
-            GradeSample dusk = GradeStack.Evaluate(basis, With(GradeContext.Neutral, dayLight: 0.4f), on);
+            GradeSample noon = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, dayLight: 1f), on);
+            GradeSample night = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, dayLight: 0f), on);
+            GradeSample dusk = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, dayLight: 0.4f), on);
 
             ok("night drains colour", night.Saturation < noon.Saturation - 0.2f);
             ok("night is cooler than noon", night.Temperature < noon.Temperature - 0.1f);
@@ -61,32 +63,32 @@ namespace VintageVisuals.SmokeTest
             ok("golden hour leans warm", dusk.TintR > dusk.TintB);
 
             // --- weather ---
-            GradeSample dry = GradeStack.Evaluate(basis, GradeContext.Neutral, on);
-            GradeSample wet = GradeStack.Evaluate(basis, With(GradeContext.Neutral, rain: 1f), on);
+            GradeSample dry = GradeStack.Evaluate(basis, EnvironmentState.Clear, on);
+            GradeSample wet = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, rain: 1f), on);
             ok("rain drains colour", wet.Saturation < dry.Saturation - 0.1f);
             ok("rain flattens contrast", wet.Contrast < dry.Contrast - 0.05f);
 
-            GradeSample overcast = GradeStack.Evaluate(basis, With(GradeContext.Neutral, cloudCover: 1f), on);
+            GradeSample overcast = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, cloudCover: 1f), on);
             ok("overcast flattens contrast", overcast.Contrast < dry.Contrast - 0.05f);
 
             // --- where the player is ---
-            GradeSample inside = GradeStack.Evaluate(basis, With(GradeContext.Neutral, skyExposure: 0f), on);
+            GradeSample inside = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, skyExposure: 0f), on);
             ok("indoors is warmer than outdoors", inside.Temperature > dry.Temperature + 0.05f);
 
-            GradeSample deep = GradeStack.Evaluate(basis, With(GradeContext.Neutral, depth: 1f), on);
+            GradeSample deep = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, depth: 1f), on);
             ok("depth drains colour", deep.Saturation < dry.Saturation - 0.1f);
 
-            GradeSample under = GradeStack.Evaluate(basis, With(GradeContext.Neutral, underwater: 1f), on);
+            GradeSample under = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, underwater: 1f), on);
             ok("underwater loses red first", under.TintR < under.TintB - 0.1f);
 
             // --- biome ---
-            GradeSample hot = GradeStack.Evaluate(basis, With(GradeContext.Neutral, temperature: 34f), on);
-            GradeSample cold = GradeStack.Evaluate(basis, With(GradeContext.Neutral, temperature: -18f), on);
+            GradeSample hot = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, temperature: 34f), on);
+            GradeSample cold = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, temperature: -18f), on);
             ok("a hot biome is warmer than a cold one", hot.Temperature > cold.Temperature + 0.2f);
             ok("a cold biome drains colour", cold.Saturation < dry.Saturation - 0.05f);
 
-            GradeSample lush = GradeStack.Evaluate(basis, With(GradeContext.Neutral, rainfall: 1f), on);
-            GradeSample arid = GradeStack.Evaluate(basis, With(GradeContext.Neutral, rainfall: 0f), on);
+            GradeSample lush = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, rainfall: 1f), on);
+            GradeSample arid = GradeStack.Evaluate(basis, With(EnvironmentState.Clear, rainfall: 0f), on);
             ok("a lush biome is more saturated than an arid one",
                 lush.Saturation > arid.Saturation + 0.1f);
             ok("a lush biome leans green", lush.TintG > lush.TintR);
@@ -98,13 +100,13 @@ namespace VintageVisuals.SmokeTest
             // followed the weather indoors would make every doorway a lie.
             AdaptiveGradeConfig weatherOnly = Weights(0f);
             weatherOnly.WeatherStrength = 1f;
-            GradeContext stormInside = With(GradeContext.Neutral, rain: 1f, cloudCover: 1f, skyExposure: 0f);
+            EnvironmentState stormInside = With(EnvironmentState.Clear, rain: 1f, cloudCover: 1f, skyExposure: 0f);
             ok("weather does not reach a fully enclosed space",
                 Identical(GradeStack.Evaluate(basis, stormInside, weatherOnly), basis));
 
             AdaptiveGradeConfig biomeOnly = Weights(0f);
             biomeOnly.BiomeStrength = 1f;
-            GradeContext desertInside = With(GradeContext.Neutral, temperature: 40f, rainfall: 0f, skyExposure: 0f);
+            EnvironmentState desertInside = With(EnvironmentState.Clear, temperature: 40f, rainfall: 0f, skyExposure: 0f);
             ok("biome does not reach a fully enclosed space",
                 Identical(GradeStack.Evaluate(basis, desertInside, biomeOnly), basis));
 
@@ -123,8 +125,8 @@ namespace VintageVisuals.SmokeTest
                 piled.TintR >= 0.5f && piled.TintG >= 0.5f && piled.TintB >= 0.5f);
 
             // --- a context full of nonsense must not reach the uniforms ---
-            GradeContext broken = new GradeContext(float.NaN, float.NaN, float.NaN, float.NaN,
-                                                   float.NaN, float.NaN, float.NaN, float.NaN);
+            EnvironmentState broken = Build(float.NaN, float.NaN, float.NaN, float.NaN,
+                                            float.NaN, float.NaN, float.NaN, float.NaN);
             GradeSample fromBroken = GradeStack.Evaluate(basis, broken, on);
             ok("a NaN context produces a finite grade", Finite(fromBroken));
 
@@ -144,6 +146,20 @@ namespace VintageVisuals.SmokeTest
 
             ok("a zero timestep does not move the grade",
                 Identical(far.EaseTo(start, 0f, 2.5f), far));
+
+            // --- rain and snow are one storm seen through a thermometer ---
+            //
+            // Exactly one of the two is non-zero at any temperature. If both
+            // could fire, a storm at freezing point would drive wetness and
+            // snow at once and the ground would read as wet snow.
+            ok("above freezing it rains and does not snow",
+                WetnessTracker.TargetFor(0.8f, 12f) > 0f && WetnessTracker.SnowTargetFor(0.8f, 12f) == 0f);
+            ok("below freezing it snows and does not rain",
+                WetnessTracker.SnowTargetFor(0.8f, -12f) > 0f && WetnessTracker.TargetFor(0.8f, -12f) == 0f);
+            ok("a storm does not change intensity as it crosses freezing",
+                Math.Abs(WetnessTracker.SnowTargetFor(0.8f, -1f) - WetnessTracker.TargetFor(0.8f, 1f)) < 1e-6f);
+            ok("drizzle is ignored whichever way it falls",
+                WetnessTracker.SnowTargetFor(0.01f, -12f) == 0f && WetnessTracker.TargetFor(0.01f, 12f) == 0f);
         }
 
         private static AdaptiveGradeConfig Weights(float strength)
@@ -160,21 +176,39 @@ namespace VintageVisuals.SmokeTest
             };
         }
 
-        /// <summary>Copies a context with named overrides, so each check reads as one difference.</summary>
-        private static GradeContext With(GradeContext b, float? dayLight = null, float? rain = null,
-                                         float? cloudCover = null, float? skyExposure = null,
-                                         float? depth = null, float? temperature = null,
-                                         float? rainfall = null, float? underwater = null)
+        /// <summary>Copies a state with named overrides, so each check reads as one difference.</summary>
+        private static EnvironmentState With(EnvironmentState b, float? dayLight = null, float? rain = null,
+                                             float? cloudCover = null, float? skyExposure = null,
+                                             float? depth = null, float? temperature = null,
+                                             float? rainfall = null, float? underwater = null)
         {
-            return new GradeContext(
+            return Build(
                 dayLight ?? b.DayLight,
                 rain ?? b.Rain,
                 cloudCover ?? b.CloudCover,
                 skyExposure ?? b.SkyExposure,
                 depth ?? b.Depth,
                 temperature ?? b.Temperature,
-                rainfall ?? b.Rainfall,
+                rainfall ?? b.Humidity,
                 underwater ?? b.Underwater);
+        }
+
+        /// <summary>
+        /// Only the fields grading reads. EnvironmentState carries more than
+        /// that - wind, moonlight, camera position - and spelling all of it out
+        /// at every call site would bury the one value each check is varying.
+        /// </summary>
+        private static EnvironmentState Build(float dayLight, float rain, float cloudCover,
+                                              float skyExposure, float depth, float temperature,
+                                              float rainfall, float underwater)
+        {
+            return new EnvironmentState(
+                dayLight: dayLight, moonLight: 0f, cloudCover: cloudCover,
+                windDirection: new Vintagestory.API.MathTools.Vec2f(1f, 0f), windSpeed: 0f,
+                precipitation: rain, rain: rain, snow: 0f, wetness: rain,
+                temperature: temperature, humidity: rainfall,
+                skyExposure: skyExposure, depth: depth, underwater: underwater,
+                cameraPosition: new Vintagestory.API.MathTools.Vec3f());
         }
 
         private static bool Identical(GradeSample a, GradeSample b)

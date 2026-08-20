@@ -6,6 +6,7 @@ using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
+using VintageVisuals.Common.Scene;
 using VintageVisuals.Weather;
 
 namespace VintageVisuals
@@ -60,6 +61,16 @@ namespace VintageVisuals
         /// respond to light, and that response already has a shader.
         /// </summary>
         public WeatherSubsystem Weather { get; private set; }
+
+        /// <summary>
+        /// The one place this mod asks the game what is going on.
+        ///
+        /// Owned here rather than by a subsystem, and running whether or not
+        /// any subsystem is enabled: state is what the WORLD is doing, not what
+        /// the player asked for, and a tracker that switched itself off with
+        /// Weather would leave colour grading unable to tell it was raining.
+        /// </summary>
+        public EnvironmentTracker Environment { get; private set; }
 
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
@@ -242,6 +253,9 @@ namespace VintageVisuals
 
         private void RegisterSubsystems()
         {
+            Environment = new EnvironmentTracker(Capi, Mod.Logger);
+            Capi.Event.RegisterRenderer(Environment, EnumRenderStage.Before, "vintagevisuals-environment");
+
             _subsystems.Add(new ColorGradeSubsystem());
             Weather = new WeatherSubsystem();
             _subsystems.Add(Weather);
@@ -372,6 +386,13 @@ namespace VintageVisuals
 
         public override void Dispose()
         {
+            if (Environment != null && Capi != null)
+            {
+                Capi.Event.UnregisterRenderer(Environment, EnumRenderStage.Before);
+                Environment.Dispose();
+                Environment = null;
+            }
+
             foreach (IVisualSubsystem subsystem in _subsystems)
             {
                 try

@@ -3,6 +3,7 @@ using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
 
 namespace VintageVisuals.ColorGrade
 {
@@ -40,8 +41,6 @@ namespace VintageVisuals.ColorGrade
         private readonly AdaptiveExposure _adaptation = new AdaptiveExposure();
         private float _lastUploadedAdaptation = -1f;
 
-        private WorldGradeSampler _sampler;
-
         /// <summary>The grade currently on screen, and the one the world is asking for.</summary>
         private GradeSample _grade = GradeSample.Neutral;
         private GradeSample _lastUploadedGrade = GradeSample.Neutral;
@@ -56,8 +55,7 @@ namespace VintageVisuals.ColorGrade
         /// </summary>
         private bool _gradeSeeded;
 
-        /// <summary>Seconds since the climate was last read. See ClimateTickSeconds.</summary>
-        private float _sinceClimateSample = ClimateTickSeconds;
+
 
         /// <summary>
         /// Set by Apply(), consumed by the next frame.
@@ -83,16 +81,6 @@ namespace VintageVisuals.ColorGrade
         /// path than it needs to be.
         /// </summary>
         private const int AdaptationTickMs = 100;
-
-        /// <summary>
-        /// Seconds between climate lookups.
-        ///
-        /// A climate lookup is the one expensive thing this subsystem does, and
-        /// biomes are not crossed in under a second. Everything else the grade
-        /// reads is a field access or a light-level lookup and is read on the
-        /// adaptation tick with them.
-        /// </summary>
-        private const float ClimateTickSeconds = 1.0f;
 
         /// <summary>
         /// How far the grade has to move before it is worth re-uploading.
@@ -121,8 +109,6 @@ namespace VintageVisuals.ColorGrade
             // per-program state that survives until the program is relinked, so
             // this does no per-frame work beyond an early return once the
             // config has settled and adaptation has converged.
-            _sampler = new WorldGradeSampler(mod.Capi);
-
             mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-colorgrade");
         }
 
@@ -221,14 +207,11 @@ namespace VintageVisuals.ColorGrade
             }
             else
             {
-                _sinceClimateSample += deltaSeconds;
-                if (_sinceClimateSample >= ClimateTickSeconds)
-                {
-                    _sinceClimateSample = 0f;
-                    _sampler.SampleClimate();
-                }
+                EnvironmentState world = _mod.Environment == null
+                    ? EnvironmentState.Clear
+                    : _mod.Environment.Current;
 
-                target = GradeStack.Evaluate(basis, _sampler.Read(), adaptive);
+                target = GradeStack.Evaluate(basis, world, adaptive);
             }
 
             if (_gradeSeeded)
@@ -407,7 +390,6 @@ namespace VintageVisuals.ColorGrade
 
             _adaptation.Reset();
             _gradeSeeded = false;
-            _sampler = null;
             _mod = null;
         }
 

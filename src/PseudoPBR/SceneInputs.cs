@@ -1,0 +1,65 @@
+using Vintagestory.API.MathTools;
+
+namespace VintageVisuals.PseudoPBR
+{
+    /// <summary>
+    /// Everything outside the material system that the material shader needs,
+    /// as one value.
+    ///
+    /// The split it enforces is between fact and preference. EnvironmentState
+    /// says what the world is doing; the config says how much of that the
+    /// player wants to see; and this is the product, which is the only form the
+    /// shader has any use for. Keeping config-scaled values OUT of the shared
+    /// state is what stops "off" quietly meaning "slightly different".
+    ///
+    /// Every field's zero is its harmless value, matching the rule the GLSL
+    /// runs on: an unset uniform reads as zero, so zero has to mean vanilla.
+    /// </summary>
+    public readonly struct SceneInputs
+    {
+        /// <summary>
+        /// 0 at midnight, 1 at noon.
+        ///
+        /// Vanilla's own dayLight uniform is declared in chunkopaque.fsh and
+        /// not in chunktopsoil.fsh, so the shared snippet reads ours instead
+        /// and this is where it comes from.
+        /// </summary>
+        public readonly float DayLight;
+
+        /// <summary>0 dry, 1 as wet as rain makes it.</summary>
+        public readonly float Wetness;
+
+        /// <summary>Sky exposure a surface needs before rain is treated as reaching it.</summary>
+        public readonly float RainCover;
+
+        /// <summary>0 still water, 1 rain landing hard in it.</summary>
+        public readonly float Ripples;
+
+        /// <summary>0 clear sky, 1 sun fully diffused by cloud.</summary>
+        public readonly float Overcast;
+
+        /// <summary>
+        /// Camera world position. The chunk shaders only have camera-relative
+        /// coordinates, and a ripple field built on those swims across the
+        /// ground as the player walks.
+        /// </summary>
+        public readonly Vec3f Origin;
+
+        public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
+                           float overcast, Vec3f origin)
+        {
+            DayLight = dayLight;
+            Wetness = wetness;
+            RainCover = rainCover;
+            Ripples = ripples;
+            Overcast = overcast;
+            Origin = origin;
+        }
+
+        /// <summary>What the shader sees before anything has told it otherwise: vanilla, at noon.</summary>
+        public static SceneInputs None
+        {
+            get { return new SceneInputs(1f, 0f, 0.82f, 0f, 0f, new Vec3f()); }
+        }
+    }
+}

@@ -68,7 +68,7 @@ namespace VintageVisuals.PseudoPBR
 
         private bool _enabled;
         private PseudoPbrConfig _look = new PseudoPbrConfig();
-        private WeatherInputs _weather = WeatherInputs.None;
+        private SceneInputs _weather = SceneInputs.None;
 
         /// <summary>
         /// Set while a program still believes the effect is on, so switching
@@ -103,7 +103,7 @@ namespace VintageVisuals.PseudoPBR
         /// deliberately does no GL work of its own - the config path is not
         /// guaranteed to be a thread with a GL context.
         /// </summary>
-        public void SetState(bool enabled, PseudoPbrConfig look, WeatherInputs weather)
+        public void SetState(bool enabled, PseudoPbrConfig look, SceneInputs weather)
         {
             _enabled = enabled;
             _look = look;
@@ -176,15 +176,10 @@ namespace VintageVisuals.PseudoPBR
             // data - silent and wrong, the worst of the two failure modes.
             TerrainTextureBindInterceptor.SetPages(_buildPageMap());
 
-            // Vanilla's own dayLight uniform is declared in chunkopaque.fsh and
-            // not in chunktopsoil.fsh, so the shared snippet reads ours instead
-            // and this is where it comes from.
-            float daylight = _capi.World?.Calendar == null ? 1f : _capi.World.Calendar.DayLightStrength;
-
             int uploaded = 0;
             foreach (EnumShaderProgram id in PatchedPrograms)
             {
-                if (Upload(id, daylight)) uploaded++;
+                if (Upload(id, _weather.DayLight)) uploaded++;
             }
 
             if (uploaded == 0)

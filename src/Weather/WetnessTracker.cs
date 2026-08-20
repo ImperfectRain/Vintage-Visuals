@@ -53,6 +53,25 @@ namespace VintageVisuals.Weather
         }
 
         /// <summary>
+        /// How hard it is snowing, on the same 0..1 scale.
+        ///
+        /// The mirror of <see cref="TargetFor"/> rather than a second model:
+        /// rain and snow are the same precipitation seen through the
+        /// thermometer, so the falloff has to be the same curve or a storm
+        /// would change intensity as it crossed freezing.
+        /// </summary>
+        public static float SnowTargetFor(float rainfall, float temperature)
+        {
+            if (temperature > FreezingTemperature) return 0f;
+
+            // Evaluated just above freezing, which is the only temperature at
+            // which TargetFor does not zero itself. The two functions gate on
+            // opposite sides of the same threshold, so exactly one of them is
+            // non-zero at any temperature and neither can double-count.
+            return TargetFor(rainfall, FreezingTemperature + 1f);
+        }
+
+        /// <summary>
         /// Advances toward <paramref name="target"/>.
         ///
         /// Asymmetric on purpose, and the asymmetry is the whole effect: a
