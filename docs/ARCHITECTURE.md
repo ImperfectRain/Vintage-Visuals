@@ -122,6 +122,16 @@ particles are lit by vanilla, so a mob standing on a PBR-lit floor is shaded by
 a different model than the floor. Closing that is the next milestone, and it is
 a patching-and-plumbing problem rather than a lighting-theory one.
 
+## Related reading
+
+[INSPIRATION.md](INSPIRATION.md) records what was taken from
+[Dalashade](https://github.com/ImperfectRain/Dalashade), the same author's
+scene-aware ReShade preset generator for FFXIV, and - more usefully - what was
+deliberately not taken. The short version: Dalashade is post-process only with
+no G-buffer, so much of its machinery exists to *infer* what a pixel is from
+image evidence. This project patches the geometry shaders and knows. Copy the
+layers above that inference; never the inference.
+
 ## Verification
 
 Nothing that touches GLSL or the render pipeline can be verified by building.

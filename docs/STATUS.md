@@ -67,6 +67,15 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
 | `[ ]` | Emissive metadata (colour, strength, flicker, temperature) | — | prerequisite for §7 |
 | `[ ]` | Camera state (velocity, FOV, underwater depth) as shared state | — | needed by motion effects and underwater |
+| `[ ]` | **Scene intent channels** between state and subsystems | — | named 0..1 vocabulary (wetness, cold, heat, haze, readability...) so ten subsystems share one reading. See [INSPIRATION.md](INSPIRATION.md) §1 |
+| `[ ]` | **Per-contribution caps and contribution records** | — | `GradeStack` clamps only the final result, so a saturated grade cannot say which of nine influences did it. §2 |
+| `[ ]` | **Stack budgets** so one idea cannot apply twice | — | *a real defect today*: in rain, grading, overcast and fog all press the same direction with no budget. §3 |
+| `[ ]` | **Gameplay readability constraint** | — | effects must yield to playability: caves navigable, rain fog not hiding a drifter, storms not also doing something clever. §4 |
+| `[ ]` | Shared scene vocabulary snippet (the `pbrcore.glsl` idea for semantics) | — | §5 |
+| `[ ]` | Receiver masks (may this pixel receive this effect) | — | needed before water and emissive. §6 |
+| `[ ]` | Effect authorities and dampening | — | ColorGrade contrast, crevice occlusion, rain fog and overcast all own contrast today with no arbitration. Also covers other shader mods. §6 |
+| `[ ]` | Per-shader debug enums instead of one global 0..13 list | — | §7 |
+| `[ ]` | Reference-image style matching ("make it look like this") | — | §9 |
 
 ## 3. Colour management
 
@@ -278,7 +287,7 @@ Building any of those from scratch is not a feature, it is a duplicate.
 | 31 | SSAO | **Vanilla already has it.** The gap is at the contact and crevice scales, which is #4 |
 | 32 | Vegetation wind | **Vanilla already has it**, including a high-frequency term and per-class bend counters. Marginal |
 | 33 | Puddles pooling in depressions | Good idea, poor feasibility: needs a height or flow signal the terrain shader does not have. High risk of becoming a second cloud-shadow saga |
-| 34 | Screen-space reflections | The entry to push back on hardest. Expensive, artefact-prone, needs depth and normal buffers that are not wired - and in a blocky, low-detail world the artefacts are more visible than the benefit. Real chance of looking *worse* |
+| 34 | Screen-space reflections | **Ranked too low; see [INSPIRATION.md](INSPIRATION.md).** The objection to *true* SSR stands - expensive, artefact-prone, depth and normal buffers not wired. But Dalashade ships a bounded reflection *impression* with strictly less to work with, and this project has real geometry, normals and material identity. Reflections deserve a higher place than SSR-the-technique does |
 | 35 | Event camera effects | Damage flash and explosion distortion are game feel, not rendering. Arguably out of scope |
 | 36 | Camera effects (vignette, grain, chromatic aberration, lens dirt) | The plan's own note is right: these are the fastest way to make the mod feel like a generic shader pack. Ship them off by default, or not at all |
 | 37 | Depth of field | Actively wrong for a first-person survival game - you look where you look. Screenshot mode only |
