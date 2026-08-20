@@ -188,7 +188,6 @@ namespace VintageVisuals
             }
 
             if (group == WeatherSubsystem.GroupName ||
-                group == WeatherSubsystem.SkyGroupName ||
                 group == WeatherSubsystem.CloudGroupName)
             {
                 return ConfigManager.Config.Weather.Enabled;

@@ -97,8 +97,20 @@ Driven by `Rain`, not by wetness. Fog belongs to the rain that is *falling*;
 wetness belongs to the rain that *fell*. One number for both would leave the air
 thick with fog for a minute after the sky cleared — the wrong half to linger.
 
-The sky shader gets the same treatment from its own group, `weathersky`, since
-it shares nothing with the terrain patches.
+### Terrain only, never the sky
+
+An earlier version patched `sky.fsh` the same way, reasoning that rain should
+thicken the whole scene. It does not work, and the reason is worth keeping.
+
+The sky dome is not something you look *through* - it is the thing at the far
+end. Fogging it flattens the contrast between cloud and sky into a uniform haze,
+so clouds stop reading as clouds and become a blanket with the cloud layer's
+tile seams showing through in perspective. It happened with the classic and the
+volumetric renderer alike, because neither of them was the problem: the sky
+behind them was.
+
+Vanilla already has `horizonFog` for the sky's own weather response. The
+`weathersky` group is gone.
 
 ## Cloud shadows
 

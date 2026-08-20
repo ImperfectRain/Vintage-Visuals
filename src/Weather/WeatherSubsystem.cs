@@ -24,11 +24,10 @@ namespace VintageVisuals.Weather
         public const string GroupName = "weather";
 
         /// <summary>
-        /// The sky and the volumetric clouds are separate programs sharing
-        /// nothing with the terrain patches, so they get separate groups: a
-        /// reworded line in one should not switch off the others.
+        /// The volumetric clouds are a separate program sharing nothing with
+        /// the terrain patches, so they get their own group: a reworded line in
+        /// one should not switch off the other.
         /// </summary>
-        public const string SkyGroupName = "weathersky";
         public const string CloudGroupName = "cloudshape";
 
         /// <summary>

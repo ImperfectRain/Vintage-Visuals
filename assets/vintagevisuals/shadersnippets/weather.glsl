@@ -9,6 +9,17 @@
 // separate patch groups and either must be able to roll back without taking
 // the other's declarations with it.
 
+// NOTE: this is applied to TERRAIN ONLY, never to the sky.
+//
+// An earlier version patched sky.fsh the same way, on the reasoning that rain
+// should thicken the whole scene. It does not work: the sky dome is not
+// something you look THROUGH, it is the thing at the far end, and fogging it
+// flattens the contrast between cloud and sky into a uniform haze. Clouds
+// stopped reading as clouds and became a blanket with the layer's tile seams
+// showing through in perspective - with both the classic and the volumetric
+// renderer, because neither was the problem. Vanilla already has horizonFog for
+// the sky's own weather response.
+
 uniform float vv_weatherRain;        // 0..1 precipitation intensity, smoothed
 uniform float vv_weatherFogStrength; // how much rain thickens the air
 uniform float vv_weatherFogTint;     // how much rain drains colour from it
@@ -31,23 +42,32 @@ const float VV_CLOUD_HEIGHT = 160.0;
 
 float vvWeatherFogAmount(float fogWeight)
 {
+    float extra = clamp(vv_weatherRain * vv_weatherFogStrength, 0.0, 1.0);
+
+    // Returns the input untouched when it is not raining, rather than a clamped
+    // copy of it. Callers do pass values outside 0..1 and vanilla's mix handles
+    // that; quietly clamping them is a behaviour change dressed up as a no-op,
+    // and "identity" has to mean identity.
+    if (extra <= 0.0) return fogWeight;
+
     // Added as a fraction of what is LEFT rather than as a sum, so heavy rain
     // approaches full fog without ever exceeding it. A plain addition makes
     // distant terrain pop to solid grey the moment a shower starts.
-    float extra = clamp(vv_weatherRain * vv_weatherFogStrength, 0.0, 1.0);
-
     return clamp(fogWeight + (1.0 - fogWeight) * extra, 0.0, 1.0);
 }
 
 vec3 vvWeatherFogColor(vec3 fogColor)
 {
+    float blend = clamp(vv_weatherRain * vv_weatherFogTint, 0.0, 1.0);
+    if (blend <= 0.0) return fogColor;
+
     // Shifts vanilla's fog colour rather than replacing it. That colour already
     // tracks time of day, biome and altitude, and a fixed rain grey would fight
     // every sunset it was drawn over.
     float luma = dot(fogColor, vec3(0.2126, 0.7152, 0.0722));
     vec3 overcast = mix(vec3(luma), vec3(luma) * vec3(0.94, 0.97, 1.06), 0.6);
 
-    return mix(fogColor, overcast, clamp(vv_weatherRain * vv_weatherFogTint, 0.0, 1.0));
+    return mix(fogColor, overcast, blend);
 }
 
 // ---------------------------------------------------------------------------

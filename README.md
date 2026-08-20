@@ -77,7 +77,7 @@ value.
 | `Weather.WetnessStrength` | 0.0 – 2.0 | `1.0` | How wet rain makes surfaces look |
 | `Weather.DryingSeconds` | 1 – 600 | `60` | How long a soaked surface takes to dry once rain stops |
 | `Weather.RainCoverThreshold` | 0.0 – 1.0 | `0.82` | Sky exposure a surface needs before rain reaches it. Raise to keep porches dry |
-| `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air |
+| `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air over terrain (never the sky) |
 | `Weather.FogTint` | 0.0 – 1.0 | `0.6` | How much rain drains colour from the fog |
 | `Weather.CloudShadowStrength` | 0.0 – 1.0 | `0.45` | Depth of cloud shadows on the ground |
 | `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |

@@ -34,15 +34,17 @@ namespace VintageVisuals.Weather
 
         /// <summary>
         /// Every program a weather patch reaches. Chunkopaque and Chunktopsoil
-        /// take fog and cloud shadows, Sky takes fog only, Cloudvolumetric
-        /// takes cloud shaping - but nothing here needs to know that, because
-        /// each program only accepts the uniforms it actually declares.
+        /// take fog and cloud shadows, Cloudvolumetric takes cloud shaping -
+        /// but nothing here needs to know that, because each program only
+        /// accepts the uniforms it actually declares.
+        ///
+        /// The sky is deliberately absent. Fogging the sky dome flattens cloud
+        /// against sky into a uniform haze; see weather.glsl.
         /// </summary>
         private static readonly EnumShaderProgram[] PatchedPrograms =
         {
             EnumShaderProgram.Chunkopaque,
             EnumShaderProgram.Chunktopsoil,
-            EnumShaderProgram.Sky,
             EnumShaderProgram.Cloudvolumetric,
         };
 
