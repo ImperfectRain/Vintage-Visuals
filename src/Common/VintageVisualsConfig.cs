@@ -91,6 +91,27 @@ namespace VintageVisuals.Common
         /// </summary>
         public float RainCoverThreshold { get; set; } = 0.82f;
 
+        /// <summary>
+        /// How hard rain lands in the water it left. 0 is still water.
+        ///
+        /// Rides the material shader's normal, like wetness does, rather than
+        /// drawing anything: a ripple is a disturbance of the water film, and
+        /// what the eye reads is the highlight it breaks up. It needs wetness
+        /// to be doing something first - a dry surface has nothing to ripple.
+        /// </summary>
+        public float RippleStrength { get; set; } = 0.8f;
+
+        /// <summary>
+        /// How completely cloud cover diffuses the sun. 0 leaves lighting alone.
+        ///
+        /// A clear sky is a small, very bright source and makes sharp
+        /// highlights; an overcast one is a source the size of the sky, dimmer
+        /// and coming from everywhere. So the direct lobe weakens and the sky
+        /// term gains. Modelling it as "everything gets darker" is the usual
+        /// way of getting an overcast day wrong.
+        /// </summary>
+        public float OvercastStrength { get; set; } = 0.7f;
+
         /// <summary>How much rain thickens the air. 0 leaves vanilla fog alone.</summary>
         public float FogStrength { get; set; } = 0.35f;
 
@@ -131,6 +152,10 @@ namespace VintageVisuals.Common
                 "Weather.DryingSeconds", corrections);
             RainCoverThreshold = ColorGradeConfig.Clamp(RainCoverThreshold, 0.0f, 1.0f,
                 "Weather.RainCoverThreshold", corrections);
+            RippleStrength = ColorGradeConfig.Clamp(RippleStrength, 0.0f, 1.0f,
+                "Weather.RippleStrength", corrections);
+            OvercastStrength = ColorGradeConfig.Clamp(OvercastStrength, 0.0f, 1.0f,
+                "Weather.OvercastStrength", corrections);
             FogStrength = ColorGradeConfig.Clamp(FogStrength, 0.0f, 1.0f,
                 "Weather.FogStrength", corrections);
             FogTint = ColorGradeConfig.Clamp(FogTint, 0.0f, 1.0f,

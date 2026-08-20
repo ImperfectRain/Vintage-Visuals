@@ -45,6 +45,10 @@ namespace VintageVisuals.PseudoPBR
         public const string BlockLightUniform = "vv_pbrBlockLight";
         public const string BlockLightDirUniform = "vv_pbrBlockLightDir";
         public const string WetnessUniform = "vv_weatherWetness";
+        public const string RainCoverUniform = "vv_weatherRainCover";
+        public const string RipplesUniform = "vv_weatherRipples";
+        public const string OvercastUniform = "vv_weatherOvercast";
+        public const string OriginUniform = "vv_pbrOrigin";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -64,7 +68,7 @@ namespace VintageVisuals.PseudoPBR
 
         private bool _enabled;
         private PseudoPbrConfig _look = new PseudoPbrConfig();
-        private float _wetness;
+        private WeatherInputs _weather = WeatherInputs.None;
 
         /// <summary>
         /// Set while a program still believes the effect is on, so switching
@@ -99,11 +103,11 @@ namespace VintageVisuals.PseudoPBR
         /// deliberately does no GL work of its own - the config path is not
         /// guaranteed to be a thread with a GL context.
         /// </summary>
-        public void SetState(bool enabled, PseudoPbrConfig look, float wetness)
+        public void SetState(bool enabled, PseudoPbrConfig look, WeatherInputs weather)
         {
             _enabled = enabled;
             _look = look;
-            _wetness = wetness;
+            _weather = weather;
         }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
@@ -249,7 +253,11 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(DetailDistanceUniform, _look.DetailDistance);
             program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
             program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
-            program.Uniform(WetnessUniform, _wetness);
+            program.Uniform(WetnessUniform, _weather.Wetness);
+            program.Uniform(RainCoverUniform, _weather.RainCover);
+            program.Uniform(RipplesUniform, _weather.Ripples);
+            program.Uniform(OvercastUniform, _weather.Overcast);
+            program.Uniform(OriginUniform, _weather.Origin);
 
             program.Stop();
             return true;

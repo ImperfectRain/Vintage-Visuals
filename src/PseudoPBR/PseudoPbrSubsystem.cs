@@ -132,15 +132,37 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
-            // Wetness comes from the weather subsystem, not from this one's
-            // config. Rain changes how surfaces respond to light and that
-            // response is modelled here, but whether it is raining is not this
-            // subsystem's business to decide.
-            float wetness = _mod.Weather == null
-                ? 0f
-                : _mod.Weather.Wetness * _mod.ConfigManager.Config.Weather.WetnessStrength;
+            _binder.SetState(active, config, ReadWeather());
+        }
 
-            _binder.SetState(active, config, wetness);
+        /// <summary>
+        /// What the weather is doing, in the terms this shader thinks in.
+        ///
+        /// It comes from the weather subsystem, not from this one's config.
+        /// Rain changes how surfaces respond to light and that response is
+        /// modelled here, but whether it is raining is not this subsystem's
+        /// business to decide. When there is no weather subsystem the defaults
+        /// are the vanilla ones, so the material system still works on its own.
+        /// </summary>
+        private WeatherInputs ReadWeather()
+        {
+            WeatherConfig weather = _mod.ConfigManager.Config.Weather;
+
+            if (_mod.Weather == null || !weather.Enabled) return WeatherInputs.None;
+
+            float wetness = _mod.Weather.Wetness * weather.WetnessStrength;
+
+            return new WeatherInputs(
+                wetness,
+                weather.RainCoverThreshold,
+
+                // Driven by the rain FALLING, not by the wetness left behind.
+                // Ripples stop the moment the shower does; the ground stays wet
+                // for another minute, which is the half that should linger.
+                _mod.Weather.Rain * weather.RippleStrength,
+
+                _mod.Weather.CloudCover * weather.OvercastStrength,
+                _mod.Weather.CameraOrigin);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

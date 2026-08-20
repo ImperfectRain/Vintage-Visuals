@@ -344,6 +344,30 @@
           "step": 0.1
         }
       },
+      "weather_ripples": {
+        "ingui": "Rain ripples",
+        "comment": "How hard rain lands in the water it left. Rides the material shader's normal, so it needs PseudoPBR on and a wet, up-facing, sky-exposed surface.",
+        "default": 0.8,
+        "clientSide": true,
+        "weight": 50,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_overcast": {
+        "ingui": "Overcast light",
+        "comment": "How completely cloud cover diffuses the sun. Weakens direct highlights and lifts the sky term, rather than darkening everything.",
+        "default": 0.7,
+        "clientSide": true,
+        "weight": 51,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
       "weather_cloudheight": {
         "ingui": "Cloud shadow height (blocks)",
         "comment": "World height the shadow-casting cloud deck sits at. Decides how far a shadow slides from what casts it as the sun drops.",
@@ -358,13 +382,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 10.0,
+          "max": 11.0,
           "step": 1.0
         }
       }

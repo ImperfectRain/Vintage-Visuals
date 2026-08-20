@@ -67,6 +67,18 @@
   content: |
     in vec3 blockLight; // vintagevisuals: varying name asserted by pseudopbr.yaml
 
+# 2c. Assert `windWaveCounter`, which the rain ripples use as their clock.
+#
+# Vanilla already uploads it every frame for the wind wave, so the ripples need
+# no clock of their own and cannot drift out of step with one. If it is ever
+# renamed, this fails the group rather than letting an undeclared symbol take
+# the whole shader down.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: uniform float windWaveCounter;
+  content: |
+    uniform float windWaveCounter; // vintagevisuals: uniform name asserted by pseudopbr.yaml
+
 # 3. Assert `lightPosition`, which the injected shading functions read.
 #
 # A separate assertion rather than the injection point, because the injection

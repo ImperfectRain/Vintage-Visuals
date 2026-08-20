@@ -11,6 +11,8 @@ own shaders with `tools/verifypatches`; only wetness has been seen on screen.
 |---|---|
 | Wetness model (`WetnessTracker`) | done, level 4 (renders) |
 | Rain response in the material shaders | done, level 4 (renders) |
+| Rain ripples in standing water | done, level 2 (compiles) |
+| Overcast light response | done, level 2 (compiles) |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
 | Fog and tint by weather state | terrain only, level 2 (compiles) |
 | Cloud shadows | reworked, level 2 (compiles) |
@@ -80,6 +82,84 @@ Wetness is not linear in rainfall — it rises steeply and flattens. Light rain
 already darkens and glosses a surface almost as much as heavy rain does; what
 heavy rain adds is runoff and puddles, which this does not model.
 
+
+## Rain ripples
+
+Rain landing in the water it left. Like wetness, this owns no shader patch: it
+perturbs the normal the material system already computes, because a ripple is a
+disturbance of the water film rather than of the stone under it, and what the
+eye actually reads is the **highlight it breaks up** - not any visible
+displacement.
+
+**One drop impact per grid cell**, returned as a slope rather than a height.
+The lighting reads a normal, and building a height field only to difference it
+costs three more evaluations for an answer the slope gives directly. Two grids
+at unrelated scales and rates, because one grid on its own reads as a grid.
+
+Two hashes per cell, and both earn their place:
+
+- The first decides whether the cell is being rained into **at all**. This is
+  what makes heavy rain visibly denser rather than merely faster - sampled, it
+  moves the disturbed fraction of ground from 8% in light rain to 36% in heavy.
+- The second offsets the cell's phase. Without it every drop in the world lands
+  on the same frame.
+
+Three gates, all different questions:
+
+| gate | asks |
+|---|---|
+| wetness | can rain reach this surface at all |
+| `faceNormal.y` squared | did what reached it *stay* - a wall sheds it |
+| `vvDetailFade` | is a cell still bigger than a pixel at this distance |
+
+The last one is not optional. Ripples are the highest-frequency thing this
+shader produces and therefore the first to alias into sparkle.
+
+Driven by the rain **falling**, not by the wetness left behind: ripples stop the
+moment the shower does, while the ground stays wet for another minute. Vanilla's
+`windWaveCounter` is the clock - already declared in both chunk shaders and
+already uploaded every frame, so there is no second clock to drift out of step
+with one. A patch asserts that name, so a rename fails the group rather than
+taking the shader down with an undeclared symbol.
+
+### Tuned against measurements, not by eye
+
+The first pass was **fifteen times too weak to see** - a median tilt of 0.2
+degrees and a peak of 9, which no highlight would notice. Transcribing the field
+into Python and sampling it is how that was caught before shipping rather than
+after. The shipped constants measure as:
+
+| | tilt |
+|---|---|
+| median | 0.5 deg (most ground is between rings) |
+| 90th percentile | 5 deg |
+| crest of a fresh drop | ~38 deg |
+| ground disturbed past 2 deg | ~25% at full rain |
+
+An average small enough that still water stays still, and a peak large enough to
+scatter the specular where a drop just landed.
+
+Debug view 11 shows the field directly: rings appearing and dying on up-facing
+wet ground and nowhere else, so a wall beside a puddle is the check that all
+three gates work.
+
+## Overcast light
+
+What cloud cover does to the *quality* of light, which is a different question
+from what cloud shadows do to its quantity.
+
+A clear sky lights the world with a small, very bright source - that is what
+makes a sharp highlight. An overcast sky replaces it with a source the size of
+the sky: dimmer per unit area and arriving from every direction. So the direct
+lobe loses most of its strength (down to 35% under full overcast) and the sky
+term gains half again.
+
+The redistribution is the point. Modelling an overcast day as "everything gets
+darker" is the usual way of getting it wrong: what actually happens is that
+shadows go soft and surfaces flatten, while the total light barely changes.
+
+Driven by the same cover figure the cloud shadows use, so the two agree about
+what kind of day it is.
 
 ## Rain fog
 

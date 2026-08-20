@@ -20,7 +20,6 @@ namespace VintageVisuals.Weather
         private const double UploadBeforeEverything = 0.05;
 
         public const string RainUniform = "vv_weatherRain";
-        public const string CoverUniform = "vv_weatherCover";
         public const string FogStrengthUniform = "vv_weatherFogStrength";
         public const string FogTintUniform = "vv_weatherFogTint";
 
@@ -128,11 +127,6 @@ namespace VintageVisuals.Weather
                 program.Uniform(RainUniform, enabled ? _weather.Rain : 0f);
                 program.Uniform(FogStrengthUniform, config.FogStrength);
                 program.Uniform(FogTintUniform, config.FogTint);
-            }
-
-            if (program.HasUniform(CoverUniform))
-            {
-                program.Uniform(CoverUniform, config.RainCoverThreshold);
             }
 
             if (shadows)

@@ -194,6 +194,12 @@ namespace VintageVisuals.Common
                 case "weather_raincover":
                     weather.RainCoverThreshold = tree.GetFloat("value", weather.RainCoverThreshold);
                     break;
+                case "weather_ripples":
+                    weather.RippleStrength = tree.GetFloat("value", weather.RippleStrength);
+                    break;
+                case "weather_overcast":
+                    weather.OvercastStrength = tree.GetFloat("value", weather.OvercastStrength);
+                    break;
                 case "weather_fogstrength":
                     weather.FogStrength = tree.GetFloat("value", weather.FogStrength);
                     break;

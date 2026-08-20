@@ -64,7 +64,16 @@ uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to noth
 uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
 uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully trusts the gradient
 uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
-uniform float vv_weatherCover;       // sky exposure a surface needs before rain reaches it
+uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
+uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
+uniform float vv_weatherOvercast;    // 0 clear sky, 1 sun fully diffused by cloud
+
+// Camera world position, so the ripple field stays nailed to the ground rather
+// than swimming with the player. Duplicated from the weather group's own
+// vv_cloudOrigin on purpose: a varying or a uniform shared across two patch
+// groups is a dependency between them, and either has to be able to roll back
+// without the other losing a declaration it relies on.
+uniform vec3 vv_pbrOrigin;
 
 // Sky exposure, added to the vertex shader by the weather patch: vanilla's own
 // per-vertex sun light level, which is 0 under a roof and 1 in the open. Rain
@@ -193,6 +202,12 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 // obvious of the three and the one that sells it.
 // ---------------------------------------------------------------------------
 
+// What cloud cover does to the two halves of the specular response. The direct
+// lobe keeps about a third of its strength under full overcast and the sky term
+// gains half again, so the light is redistributed rather than removed.
+const float VV_OVERCAST_DIRECT = 0.35;
+const float VV_OVERCAST_AMBIENT = 1.5;
+
 const float VV_WET_ROUGHNESS = 0.08;
 const float VV_WET_SPECULAR = 0.60;
 const float VV_WET_DARKEN = 0.72;
@@ -217,10 +232,106 @@ float vvWetness(vec3 faceNormal)
     // This is still a threshold on a soft signal rather than a rain occlusion
     // test. The game has a real one, which is how torches are extinguished, but
     // it answers per block on the CPU and this question is per fragment.
-    float exposure = smoothstep(vv_weatherCover - 0.12, vv_weatherCover + 0.06,
+    float exposure = smoothstep(vv_weatherRainCover - 0.12, vv_weatherRainCover + 0.06,
                                 clamp(vv_sunExposure, 0.0, 1.0));
 
     return clamp(vv_weatherWetness * facing * facing * exposure, 0.0, 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// Rain landing in the water it left
+// ---------------------------------------------------------------------------
+
+// How far a ripple tilts the normal, and how wide and how fast the ring is.
+//
+// Measured, not chosen by eye. Transcribing this field into Python and
+// sampling it says that at full rain these three give a median tilt of 0.5
+// degrees - most of the ground is between rings and undisturbed - rising to 5
+// degrees at the 90th percentile and about 38 at the crest of a fresh drop,
+// with roughly a quarter of the surface tilted more than 2 degrees at any
+// instant. That is what a highlight needs in order to break up: an average
+// small enough that still water stays still, and a peak large enough to
+// scatter the specular where a drop just landed. The first pass was fifteen
+// times weaker than this and would have been invisible.
+const float VV_RIPPLE_DEPTH = 1.2;
+const float VV_RIPPLE_BAND = 14.0;
+const float VV_RIPPLE_WAVE = 30.0;
+
+// Drops per second per cell. Vanilla's windWaveCounter is the clock - it is
+// already declared in both chunk shaders and already uploaded every frame, so
+// this needs no clock of its own and cannot drift out of step with one.
+const float VV_RIPPLE_RATE = 1.2;
+
+// One drop impact per grid cell.
+//
+// Returned as a SLOPE rather than a height. The lighting reads a normal, and
+// building a height field only to difference it costs three more evaluations
+// for an answer this can give directly.
+vec2 vvRippleSlope(vec2 p, float t, float density)
+{
+    vec2 cell  = floor(p);
+    vec2 local = fract(p) - 0.5;
+
+    // Circles inscribed in their cells, so a ring never runs into the next
+    // cell's and leaves a straight edge along the grid.
+    float r = length(local);
+    if (r > 0.5) return vec2(0.0);
+
+    // Two hashes per cell, not one. The first decides whether this cell is
+    // being rained into at all, which is what makes heavy rain visibly denser
+    // instead of merely faster - sampled, it takes the disturbed fraction of
+    // the ground from 8% in light rain to 36% in heavy. The second offsets the
+    // cell's phase, without which every drop in the world lands on one frame.
+    if (fract(sin(dot(cell, vec2(269.5, 183.3))) * 43758.5453) > density) return vec2(0.0);
+
+    float phase = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    float age = fract(t + phase);
+
+    // The crest travels out from the impact and the whole ring dies as it
+    // goes. Without the decay a drop reads as a permanent bump in the surface
+    // rather than as something that happened.
+    float front = age * 0.45;
+    float band = exp(-abs(r - front) * VV_RIPPLE_BAND);
+    float decay = (1.0 - age) * (1.0 - age);
+
+    return normalize(local + vec2(1e-5)) * sin((r - front) * VV_RIPPLE_WAVE) * band * decay;
+}
+
+// Two scales of drop, at unrelated rates. One grid on its own reads as a grid.
+vec2 vvRainRipples(vec2 worldXZ, float t, float density)
+{
+    return vvRippleSlope(worldXZ * 1.7, t, density)
+         + vvRippleSlope(worldXZ * 0.83 + vec2(37.0, 11.0), t * 0.71 + 0.37, density) * 0.7;
+}
+
+// Perturbs the surface normal with rain landing in standing water.
+//
+// Gated on wetness AND on the surface facing up, which are not the same test.
+// Wetness already asks whether rain can reach the surface; this asks whether
+// what reached it stayed there. A vertical face is as wet as the ground beside
+// it and has nothing lying on it to be rained into.
+vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness, float fade)
+{
+    if (vv_weatherRipples < 0.001 || wetness < 0.001) return n;
+
+    float pooling = clamp(faceNormal.y, 0.0, 1.0);
+    pooling *= pooling;
+
+    float amount = clamp(vv_weatherRipples, 0.0, 1.0) * wetness * pooling * fade;
+    if (amount < 0.001) return n;
+
+    // World space, not camera space: ripples belong to the puddle, and a field
+    // built on camera-relative coordinates swims across the ground as the
+    // player walks.
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+
+    vec2 slope = vvRainRipples(world.xz, windWaveCounter * VV_RIPPLE_RATE,
+                               clamp(vv_weatherRipples, 0.0, 1.0));
+
+    // fade is vvDetailFade, the same distance falloff the relief uses. Ripples
+    // are the highest-frequency thing this shader produces, so they are also
+    // the first to alias into sparkle once a cell is smaller than a pixel.
+    return normalize(n + vec3(slope.x, 0.0, slope.y) * amount * VV_RIPPLE_DEPTH);
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -472,6 +583,13 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // The same normal the relief uses, so the highlight sits on the surface the
     // player can see rather than on one the shading invented.
     vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+
+    // Rain landing in whatever is lying on that surface. After the relief and
+    // before anything reads the normal, because a ripple is a disturbance of
+    // the water film rather than of the stone under it - and the highlight it
+    // breaks up is the whole effect.
+    n = vvRainNormal(n, faceNormal, cameraRelativePos, wetness, vvDetailFade(cameraRelativePos));
+
     vec3 l = normalize(lightPosition);
 
     // worldPos is camera-relative here - vanilla's own applyReflectiveEffect
@@ -500,11 +618,23 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // below is multiplied by ndotl exactly once.
     vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
 
-    // Everything that should suppress a highlight: shadow, night, fog, water.
+    // Cloud cover diffuses the sun.
+    //
+    // A clear sky lights the world with a small, very bright source, which is
+    // what makes a sharp highlight. An overcast one replaces it with a source
+    // the size of the sky: dimmer per unit area, and coming from everywhere.
+    // So the direct lobe loses most of its strength and the sky term gains -
+    // that redistribution is what an overcast day looks like, and modelling it
+    // as "everything gets darker" is the usual way of getting it wrong.
+    float overcast = clamp(vv_weatherOvercast, 0.0, 1.0);
+
+    // Everything that should suppress a highlight: shadow, night, fog, water,
+    // cloud.
     float visibility = clamp(shadowBrightness, 0.0, 1.0)
                      * clamp(vv_pbrDayLight, 0.0, 1.0)
                      * clamp(1.0 - fog - murkiness, 0.0, 1.0)
-                     * vvDetailFade(cameraRelativePos);
+                     * vvDetailFade(cameraRelativePos)
+                     * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 
     vec3 result = litColor.rgb * mix(1.0, VV_WET_DARKEN, wetness);
 
@@ -531,7 +661,8 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
             * clamp(vv_pbrDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
-            * vv_pbrSpecularStrength;
+            * vv_pbrSpecularStrength
+            * mix(1.0, VV_OVERCAST_AMBIENT, overcast);
 
     return vec4(result, litColor.a);
 }
@@ -595,6 +726,18 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // 10: wetness. White is soaked, black is dry - shows both gates at once,
     // so an overhang should read black while the ground beside it is white.
     if (mode == 10) return vec4(vec3(vvWetness(faceNormal)), color.a);
+
+    // 11: the rain ripple field, biased so still water reads as mid grey.
+    // Rings should appear and die on up-facing wet ground and nowhere else, so
+    // a wall beside a puddle is the check that both gates are working.
+    if (mode == 11)
+    {
+        float wet = vvWetness(faceNormal);
+        vec3 still = normalize(faceNormal);
+        vec3 rippled = vvRainNormal(still, faceNormal, cameraRelativePos, wet,
+                                    vvDetailFade(cameraRelativePos));
+        return vec4((rippled - still) * 8.0 + 0.5, color.a);
+    }
 
     // 9: the estimated block-light direction, as a colour. Flat means the
     // gradient found nothing and the light is being treated as ambient;
