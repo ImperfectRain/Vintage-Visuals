@@ -123,6 +123,26 @@ section nobody's currently working on. Instead:
 Root `README.md` stays high-level: what the mod is, install instructions,
 credits, and links down into subsystem READMEs.
 
+### Keep docs/STATUS.md current in EVERY commit
+
+`CHANGELOG.md` records milestones for users. `docs/STATUS.md` records the state
+of every feature and idea for whoever picks this up next, and it is the only
+place a half-finished thought is safe from being forgotten.
+
+Update it in the **same commit** as the work, not afterwards:
+
+- A feature that started, finished, or changed verification level moves.
+- A feature seen working in game moves to **L4** — that is the only level that
+  closes anything, and it is the one most likely to go unrecorded because it
+  happens outside the repo.
+- An idea that was tried and rejected goes to the abandoned log **with the
+  reason**, so it is not proposed again without new information.
+- A new idea, however speculative, gets a row rather than living in a commit
+  message nobody will search for.
+
+A commit that changes what the mod does and leaves STATUS.md alone is
+incomplete.
+
 ### Keep a CHANGELOG.md, update it every milestone (not every commit)
 Commits are for developers/agents; CHANGELOG is for users. Update it at
 phase milestones (matches the implementation plan's milestone gates), using
@@ -184,6 +204,7 @@ Before ending any Claude Code session on this repo:
 - [ ] Commit messages follow Conventional Commits, explain *why* in the body
 - [ ] `CLAUDE.md` updated if a convention or constraint changed
 - [ ] Subsystem README updated if that subsystem's behavior changed
+- [ ] `docs/STATUS.md` updated — **every commit that changes behaviour**
 - [ ] `CHANGELOG.md` updated if a milestone was hit
 - [ ] No generated/cached files committed
 - [ ] Any partial/unfinished work has a context-rich `TODO` comment

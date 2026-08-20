@@ -94,6 +94,10 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   runtime code; never reference it from the C# build. `src/PseudoPBR/` is a
   **port** of it: `tools/smoketest` asserts the two agree on a fixture, so a
   retune means editing both and regenerating `tools/pbrgen/parity_fixture.json`.
+- `docs/STATUS.md` — the checklist of every feature and idea: done, partial,
+  planned, abandoned. **Update it in the same commit as the work**, including
+  when something is finally seen working in game. It is the only place a
+  half-finished thought is safe.
 - `docs/WORKFLOW.md` — the commit/doc conventions this repo follows. Read it
   before committing.
 - `docs/IMPLEMENTATION_PLAN.md` — phase order and the MVP checklist. Phases are

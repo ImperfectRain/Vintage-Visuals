@@ -30,6 +30,9 @@ much of a modern physically-inspired pipeline as the existing renderer allows
 | **Weather** | partly confirmed | [src/Weather/README.md](src/Weather/README.md) |
 | **Atmosphere, shadows, water, vegetation, post FX** | not started | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
 
+Feature-by-feature state, including everything planned but unbuilt, is tracked
+in **[docs/STATUS.md](docs/STATUS.md)**.
+
 ## Install
 
 1. Install the mod: drop `vintagevisuals_<version>.zip` into your
