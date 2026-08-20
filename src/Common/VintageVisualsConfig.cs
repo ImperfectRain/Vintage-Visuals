@@ -23,6 +23,8 @@ namespace VintageVisuals.Common
 
         public AdaptiveExposureConfig AdaptiveExposure { get; set; } = new AdaptiveExposureConfig();
 
+        public AdaptiveGradeConfig AdaptiveGrade { get; set; } = new AdaptiveGradeConfig();
+
         public PseudoPbrConfig PseudoPBR { get; set; } = new PseudoPbrConfig();
 
         public WeatherConfig Weather { get; set; } = new WeatherConfig();
@@ -41,9 +43,77 @@ namespace VintageVisuals.Common
             var corrections = new List<string>();
             ColorGrade.ClampToValidRanges(corrections);
             AdaptiveExposure.ClampToValidRanges(corrections);
+            AdaptiveGrade.ClampToValidRanges(corrections);
             PseudoPBR.ClampToValidRanges(corrections);
             Weather.ClampToValidRanges(corrections);
             return corrections;
+        }
+    }
+
+    /// <summary>
+    /// How much the world is allowed to grade itself.
+    ///
+    /// One strength per influence rather than one master dial, because these
+    /// are matters of taste that pull in different directions: a player who
+    /// wants caves to drain of colour may well not want their deserts tinted,
+    /// and vice versa. Every one of them is zero-is-off, so the panel also
+    /// works as a way of finding out which influence is responsible for
+    /// something the player does not like.
+    /// </summary>
+    public class AdaptiveGradeConfig
+    {
+        /// <summary>
+        /// Master toggle. Off means the player's own grading settings reach the
+        /// screen unmodified - not that grading stops.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>Golden hour and the Purkinje shift at night.</summary>
+        public float TimeOfDayStrength { get; set; } = 1.0f;
+
+        /// <summary>Rain and cloud cover draining colour and contrast.</summary>
+        public float WeatherStrength { get; set; } = 1.0f;
+
+        /// <summary>Heat, cold, aridity and lushness at the player's position.</summary>
+        public float BiomeStrength { get; set; } = 0.7f;
+
+        /// <summary>Firelight warmth and harder shadows in an enclosed space.</summary>
+        public float IndoorStrength { get; set; } = 0.8f;
+
+        /// <summary>Colour draining out with depth below sea level.</summary>
+        public float DepthStrength { get; set; } = 0.8f;
+
+        /// <summary>The blue-green shift of being submerged.</summary>
+        public float UnderwaterStrength { get; set; } = 0.6f;
+
+        /// <summary>
+        /// Seconds for the grade to travel most of the way to a new one.
+        ///
+        /// Slow on purpose. Every influence changes discontinuously somewhere -
+        /// a doorway, a shower starting, the camera going under - and the
+        /// easing is what makes those read as the world changing rather than as
+        /// the renderer glitching. Too fast and stepping through a door is a
+        /// flash; too slow and the grade is still catching up with the last
+        /// biome.
+        /// </summary>
+        public float ResponseSeconds { get; set; } = 2.5f;
+
+        internal void ClampToValidRanges(List<string> corrections)
+        {
+            TimeOfDayStrength = ColorGradeConfig.Clamp(TimeOfDayStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.TimeOfDayStrength", corrections);
+            WeatherStrength = ColorGradeConfig.Clamp(WeatherStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.WeatherStrength", corrections);
+            BiomeStrength = ColorGradeConfig.Clamp(BiomeStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.BiomeStrength", corrections);
+            IndoorStrength = ColorGradeConfig.Clamp(IndoorStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.IndoorStrength", corrections);
+            DepthStrength = ColorGradeConfig.Clamp(DepthStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.DepthStrength", corrections);
+            UnderwaterStrength = ColorGradeConfig.Clamp(UnderwaterStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.UnderwaterStrength", corrections);
+            ResponseSeconds = ColorGradeConfig.Clamp(ResponseSeconds, 0.1f, 30.0f,
+                "AdaptiveGrade.ResponseSeconds", corrections);
         }
     }
 

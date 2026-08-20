@@ -8,7 +8,7 @@ Patches vanilla `final.fsh` to run every output pixel through a grading
 function before it is written. Five controls, applied in this order:
 
 ```
-exposure -> white balance -> tonemap -> contrast -> saturation
+exposure -> white balance -> tint -> tonemap -> contrast -> saturation
 ```
 
 The split is not arbitrary. Exposure and white balance are *scene-referred*
@@ -24,8 +24,8 @@ mid-grey you would use in linear space.
 |---|---|
 | **Input** | `outColor` as vanilla `final.fsh` leaves it |
 | **Output** | the same variable, graded |
-| **Uniforms** | `vv_enabled`, `vv_exposure`, `vv_contrast`, `vv_saturation`, `vv_temperature`, `vv_tonemapStrength`, `vv_adaptation` |
-| **Config** | `ColorGrade` section of `ModConfig/vintagevisuals.json` |
+| **Uniforms** | `vv_enabled`, `vv_exposure`, `vv_contrast`, `vv_saturation`, `vv_temperature`, `vv_tint`, `vv_tonemapStrength`, `vv_adaptation` |
+| **Config** | `ColorGrade` and `AdaptiveGrade` sections of `ModConfig/vintagevisuals.json` |
 | **Patch group** | `colorgrade` (from `assets/vintagevisuals/shaderpatches/colorgrade.yaml`) |
 
 ## How the patch works
@@ -154,3 +154,96 @@ failed upload must not black out the screen — but when debugging, trust
 - **The HUD is assumed to be drawn after this pass** and therefore ungraded.
   Not yet verified — if the hotbar changes color when saturation is dropped,
   this assumption is wrong and the patch needs to move.
+
+
+## Adaptive grading
+
+The five controls above are the player's. This is what the *world* adds on top
+of them.
+
+A weighted stack of looks, which is how post-process volumes work in every
+engine that has them: each influence contributes a **delta** scaled by how much
+it currently applies, and they sum. Nothing here replaces the player's grade -
+a look that overrode it would make every slider in the config panel a lie the
+moment it started raining.
+
+### The influences
+
+| influence | weight from | what it does |
+|---|---|---|
+| golden hour | daylight partway up | warms, saturates, softens contrast |
+| night | daylight down | drains colour, shifts blue, lifts exposure |
+| rain | precipitation now | drains colour and contrast, cools |
+| overcast | cloud density | flattens contrast, mild desaturation |
+| enclosed | sunlight can't reach you | warms toward firelight, harder shadows |
+| depth | blocks below sea level | drains colour, cools |
+| underwater | camera submerged | strong blue-green, loses red |
+| biome: hot / cold | air temperature | desert glare / tundra drain |
+| biome: lush / arid | worldgen rainfall | greener and richer / amber and flat |
+
+Four one-sided biome influences rather than two signed ones, because hot and
+cold are not each other's negative: a desert reads as glare and haze, tundra
+reads as colour draining out. Sharing one slider keeps that a single idea in the
+config panel.
+
+### Three decisions worth knowing
+
+**Weather, biome and golden hour are gated on sky exposure.** A cellar is the
+same colour whatever the sky is doing, and a grade that followed the weather
+indoors would make every doorway a lie. Sky exposure is vanilla's sunlight level
+at the player's head, which is a *soft* signal on purpose - a porch is neither
+in nor out, and grading that snapped between two looks as the player stepped
+under an awning would be worse than one that leans. Two smoke checks pin this:
+a storm and a desert both have to leave a fully enclosed space bit-for-bit
+unchanged.
+
+**Exposure and tint multiply; contrast, saturation and temperature add.** Not
+arbitrary. Exposure and tint are gains, so two influences that each halve the
+light should quarter it rather than remove it twice. Contrast and saturation are
+distances from a pivot, and two influences that each flatten the image should
+flatten it further rather than compound toward grey faster than either asked
+for.
+
+**The night look is a blue desaturation, not a dim warm one.** The Purkinje
+shift: at scotopic levels the eye's cones stop contributing, colour drains, and
+sensitivity moves toward blue. Getting this backwards is what makes a night
+scene look like a badly exposed day.
+
+### Where the game gets read
+
+`WorldGradeSampler` is the only file in the subsystem that knows about the game,
+and `GradeStack` is the only one that knows what the numbers mean. That split is
+the point: the rules decide what the entire screen looks like, and they are
+ordinary arithmetic, so they get driven through every world state in
+`tools/smoketest` rather than only in a running client. Thirty checks, and the
+load-bearing one is that **every strength at zero returns the player's grade bit
+for bit** - not close, exactly.
+
+Two sampling choices are easy to get wrong:
+
+- **Sky exposure uses `OnlySunLight`, not `MaxTimeOfDayLight`.** Eye adaptation
+  uses the latter, and the two ask different questions: adaptation wants to know
+  how bright it is here right now and would happily count a torch, while this
+  wants to know whether the player is indoors, and a torch is evidence of
+  nothing.
+- **The biome influence uses `WorldgenRainfall`, not `Rainfall`.** `Rainfall` is
+  how hard it is raining at this moment. A rainforest in a dry spell is still a
+  rainforest, and grading it as a desert until the next shower would be worse
+  than not grading it at all.
+
+### Easing
+
+Every influence changes discontinuously somewhere - a doorway, a shower
+starting, the camera going under - and the easing is what makes those read as
+the world changing rather than as the renderer glitching. One time constant for
+all seven fields, because they describe one look and letting saturation arrive
+before temperature would pass through grades that are not on the path between
+the two.
+
+The first tick jumps rather than eases. Fading in from neutral would make
+loading a world a two-and-a-half second colour shift that nothing in the world
+caused.
+
+Uploads stop once the grade settles: uniform values are per-program state that
+survives until the program is relinked, so a still scene costs a comparison per
+tick and nothing else.

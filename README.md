@@ -54,6 +54,14 @@ value.
 | `ColorGrade.Saturation` | 0.0 – 2.0 | `1.0` | 0 is greyscale, 1.0 is neutral |
 | `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
 | `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
+| `AdaptiveGrade.Enabled` | bool | `true` | Let the world grade itself |
+| `AdaptiveGrade.TimeOfDayStrength` | 0.0 – 2.0 | `1.0` | Golden hour, and the blue drain of night |
+| `AdaptiveGrade.WeatherStrength` | 0.0 – 2.0 | `1.0` | Rain and cloud draining colour and contrast |
+| `AdaptiveGrade.BiomeStrength` | 0.0 – 2.0 | `0.7` | Heat, cold, aridity and lushness |
+| `AdaptiveGrade.IndoorStrength` | 0.0 – 2.0 | `0.8` | Firelight warmth once the sky cannot reach you |
+| `AdaptiveGrade.DepthStrength` | 0.0 – 2.0 | `0.8` | Colour draining out underground |
+| `AdaptiveGrade.UnderwaterStrength` | 0.0 – 2.0 | `0.6` | The blue-green shift of being submerged |
+| `AdaptiveGrade.ResponseSeconds` | 0.1 – 30 | `2.5` | How fast the grade follows the world |
 | `AdaptiveExposure.Enabled` | bool | `true` | Eye adaptation: brightens dark places, settles in light |
 | `AdaptiveExposure.DarkGain` | 0.25 – 4.0 | `1.6` | Exposure multiplier in pitch darkness |
 | `AdaptiveExposure.BrightGain` | 0.25 – 4.0 | `1.0` | Exposure multiplier in full light |

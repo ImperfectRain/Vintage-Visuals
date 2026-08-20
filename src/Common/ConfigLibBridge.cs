@@ -116,6 +116,7 @@ namespace VintageVisuals.Common
             AdaptiveExposureConfig adaptive = _mod.ConfigManager.Config.AdaptiveExposure;
             PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
             WeatherConfig weather = _mod.ConfigManager.Config.Weather;
+            AdaptiveGradeConfig adaptiveGrade = _mod.ConfigManager.Config.AdaptiveGrade;
 
             switch (code)
             {
@@ -193,6 +194,30 @@ namespace VintageVisuals.Common
                     break;
                 case "weather_raincover":
                     weather.RainCoverThreshold = tree.GetFloat("value", weather.RainCoverThreshold);
+                    break;
+                case "grade_adaptive":
+                    adaptiveGrade.Enabled = tree.GetBool("value", adaptiveGrade.Enabled);
+                    break;
+                case "grade_timeofday":
+                    adaptiveGrade.TimeOfDayStrength = tree.GetFloat("value", adaptiveGrade.TimeOfDayStrength);
+                    break;
+                case "grade_weather":
+                    adaptiveGrade.WeatherStrength = tree.GetFloat("value", adaptiveGrade.WeatherStrength);
+                    break;
+                case "grade_biome":
+                    adaptiveGrade.BiomeStrength = tree.GetFloat("value", adaptiveGrade.BiomeStrength);
+                    break;
+                case "grade_indoor":
+                    adaptiveGrade.IndoorStrength = tree.GetFloat("value", adaptiveGrade.IndoorStrength);
+                    break;
+                case "grade_depth":
+                    adaptiveGrade.DepthStrength = tree.GetFloat("value", adaptiveGrade.DepthStrength);
+                    break;
+                case "grade_underwater":
+                    adaptiveGrade.UnderwaterStrength = tree.GetFloat("value", adaptiveGrade.UnderwaterStrength);
+                    break;
+                case "grade_response":
+                    adaptiveGrade.ResponseSeconds = tree.GetFloat("value", adaptiveGrade.ResponseSeconds);
                     break;
                 case "weather_ripples":
                     weather.RippleStrength = tree.GetFloat("value", weather.RippleStrength);

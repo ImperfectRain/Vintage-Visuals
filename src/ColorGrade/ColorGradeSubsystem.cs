@@ -32,10 +32,32 @@ namespace VintageVisuals.ColorGrade
         /// <summary>Eye-adaptation multiplier, updated on a timer rather than on config change.</summary>
         private const string AdaptationUniform = "vv_adaptation";
 
+        /// <summary>Per-channel gain the adaptive stack derives from world state.</summary>
+        private const string TintUniform = "vv_tint";
+
         private VintageVisualsModSystem _mod;
 
         private readonly AdaptiveExposure _adaptation = new AdaptiveExposure();
         private float _lastUploadedAdaptation = -1f;
+
+        private WorldGradeSampler _sampler;
+
+        /// <summary>The grade currently on screen, and the one the world is asking for.</summary>
+        private GradeSample _grade = GradeSample.Neutral;
+        private GradeSample _lastUploadedGrade = GradeSample.Neutral;
+
+        /// <summary>
+        /// Whether the grade has a real value yet.
+        ///
+        /// The first tick jumps straight to the target instead of easing to it.
+        /// Easing in from neutral would make loading a world a two-and-a-half
+        /// second colour fade that nothing in the world caused, which looks
+        /// like the mod warming up rather than like the world being graded.
+        /// </summary>
+        private bool _gradeSeeded;
+
+        /// <summary>Seconds since the climate was last read. See ClimateTickSeconds.</summary>
+        private float _sinceClimateSample = ClimateTickSeconds;
 
         /// <summary>
         /// Set by Apply(), consumed by the next frame.
@@ -62,6 +84,25 @@ namespace VintageVisuals.ColorGrade
         /// </summary>
         private const int AdaptationTickMs = 100;
 
+        /// <summary>
+        /// Seconds between climate lookups.
+        ///
+        /// A climate lookup is the one expensive thing this subsystem does, and
+        /// biomes are not crossed in under a second. Everything else the grade
+        /// reads is a field access or a light-level lookup and is read on the
+        /// adaptation tick with them.
+        /// </summary>
+        private const float ClimateTickSeconds = 1.0f;
+
+        /// <summary>
+        /// How far the grade has to move before it is worth re-uploading.
+        ///
+        /// Uniform values are per-program state that survives until the program
+        /// is relinked, so a settled grade should cost nothing. Summed across
+        /// seven fields, this is below what any of them can show.
+        /// </summary>
+        private const float GradeUploadEpsilon = 2e-3f;
+
         // Apply() runs on every config change and shader reload; these keep a
         // recurring problem to one log line instead of one per reload. They are
         // cleared whenever the condition clears, so a problem that comes back
@@ -80,6 +121,8 @@ namespace VintageVisuals.ColorGrade
             // per-program state that survives until the program is relinked, so
             // this does no per-frame work beyond an early return once the
             // config has settled and adaptation has converged.
+            _sampler = new WorldGradeSampler(mod.Capi);
+
             mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-colorgrade");
         }
 
@@ -104,6 +147,7 @@ namespace VintageVisuals.ColorGrade
             if (_sinceAdaptationStep >= AdaptationTickMs / 1000f)
             {
                 StepAdaptation(_sinceAdaptationStep);
+                StepGrade(_sinceAdaptationStep);
                 _sinceAdaptationStep = 0f;
             }
 
@@ -148,6 +192,83 @@ namespace VintageVisuals.ColorGrade
             program.Stop();
 
             _lastUploadedAdaptation = adaptation;
+        }
+
+        /// <summary>
+        /// Eases the grade toward what the world is currently asking for, and
+        /// pushes it when it has actually moved.
+        ///
+        /// The same shape as StepAdaptation, and for the same reason: this runs
+        /// ten times a second, and once the player stops moving between
+        /// conditions it settles into a read and an early return rather than a
+        /// uniform upload every tick.
+        /// </summary>
+        private void StepGrade(float deltaSeconds)
+        {
+            ColorGradeConfig grading = _mod.ConfigManager.Config.ColorGrade;
+            AdaptiveGradeConfig adaptive = _mod.ConfigManager.Config.AdaptiveGrade;
+
+            GradeSample basis = new GradeSample(grading.Exposure, grading.Contrast, grading.Saturation,
+                                                grading.Temperature, 1f, 1f, 1f);
+
+            GradeSample target;
+            if (!grading.Enabled || adaptive == null || !adaptive.Enabled)
+            {
+                // The player's own settings, unmodified. Eased toward rather
+                // than snapped to, so switching adaptive grading off is a fade
+                // back rather than a cut.
+                target = basis;
+            }
+            else
+            {
+                _sinceClimateSample += deltaSeconds;
+                if (_sinceClimateSample >= ClimateTickSeconds)
+                {
+                    _sinceClimateSample = 0f;
+                    _sampler.SampleClimate();
+                }
+
+                target = GradeStack.Evaluate(basis, _sampler.Read(), adaptive);
+            }
+
+            if (_gradeSeeded)
+            {
+                float response = adaptive == null ? 2.5f : adaptive.ResponseSeconds;
+                _grade = _grade.EaseTo(target, deltaSeconds, response);
+            }
+            else
+            {
+                _gradeSeeded = true;
+                _grade = target;
+            }
+
+            if (_grade.DistanceTo(_lastUploadedGrade) < GradeUploadEpsilon) return;
+
+            IShaderProgram program = ResolveFinalProgram();
+            if (program == null || !program.HasUniform(EnabledUniform)) return;
+
+            // Safe here: the caller has already established that this is the
+            // render thread at a stage with no program bound.
+            program.Use();
+            UploadGrade(program, _grade);
+            program.Stop();
+        }
+
+        /// <summary>
+        /// Pushes one grade. Shared by the tick and by the config path so the
+        /// two can never disagree about which uniforms a grade consists of -
+        /// this mod has already shipped five uniforms that were declared and
+        /// never uploaded.
+        /// </summary>
+        private void UploadGrade(IShaderProgram program, GradeSample grade)
+        {
+            program.Uniform("vv_exposure", grade.Exposure);
+            program.Uniform("vv_contrast", grade.Contrast);
+            program.Uniform("vv_saturation", grade.Saturation);
+            program.Uniform("vv_temperature", grade.Temperature);
+            program.Uniform(TintUniform, new Vec3f(grade.TintR, grade.TintG, grade.TintB));
+
+            _lastUploadedGrade = grade;
         }
 
         /// <summary>
@@ -250,10 +371,13 @@ namespace VintageVisuals.ColorGrade
 
             if (active)
             {
-                program.Uniform("vv_exposure", config.Exposure);
-                program.Uniform("vv_contrast", config.Contrast);
-                program.Uniform("vv_saturation", config.Saturation);
-                program.Uniform("vv_temperature", config.Temperature);
+                // The eased grade rather than the raw config values. A config
+                // change must not snap the screen back to an unadapted look and
+                // then ease into it again over the next few seconds - that is
+                // a visible jolt every time the player moves a slider, and the
+                // slider they moved gets blamed for it.
+                UploadGrade(program, _grade);
+
                 program.Uniform("vv_tonemapStrength", config.TonemapStrength);
                 program.Uniform(AdaptationUniform, _adaptation.Current);
                 _lastUploadedAdaptation = _adaptation.Current;
@@ -264,10 +388,13 @@ namespace VintageVisuals.ColorGrade
             _uniformsDirty = false;
 
             _mod.Mod.Logger.Notification("[VintageVisuals] colorgrade: uniforms uploaded, active=" + active +
-                " (exposure=" + config.Exposure.ToString("0.##") +
-                " contrast=" + config.Contrast.ToString("0.##") +
-                " saturation=" + config.Saturation.ToString("0.##") +
-                " temperature=" + config.Temperature.ToString("0.##") +
+                ", adaptive=" + _mod.ConfigManager.Config.AdaptiveGrade.Enabled +
+                " (exposure=" + _grade.Exposure.ToString("0.##") +
+                " contrast=" + _grade.Contrast.ToString("0.##") +
+                " saturation=" + _grade.Saturation.ToString("0.##") +
+                " temperature=" + _grade.Temperature.ToString("0.##") +
+                " tint=" + _grade.TintR.ToString("0.##") + "/" + _grade.TintG.ToString("0.##") +
+                "/" + _grade.TintB.ToString("0.##") +
                 " tonemap=" + config.TonemapStrength.ToString("0.##") + ")");
         }
 
@@ -279,6 +406,8 @@ namespace VintageVisuals.ColorGrade
             }
 
             _adaptation.Reset();
+            _gradeSeeded = false;
+            _sampler = null;
             _mod = null;
         }
 

@@ -22,6 +22,16 @@ uniform float vv_tonemapStrength;
 // replacing it, so a manually dialled exposure survives.
 uniform float vv_adaptation;
 
+// Per-channel gain the CPU derives from what the world is doing - time of day,
+// weather, biome, whether the player is inside, how deep they are, whether the
+// camera is under water. A general form of vv_temperature, which stays a
+// separate control because it is the player's own and this is not.
+//
+// White rather than black is neutral here, so the zero case needs a guard: an
+// unset uniform reads as (0,0,0), which as a multiplier is a black screen. Same
+// defensive reasoning as vv_adaptation below it.
+uniform vec3 vv_tint;
+
 // Rec.709 luma weights, matching the primaries the game renders in.
 const vec3 VV_LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
@@ -95,6 +105,16 @@ vec4 vvApplyColorGrade(vec4 color)
 
     graded *= vv_exposure * adaptation;
     graded = vvWhiteBalance(graded, vv_temperature);
+
+    // Scene-referred, so it goes before the tonemap alongside white balance
+    // rather than after it with the look controls. A tint is a property of the
+    // light in the scene - low sun, cloud, water overhead - and applying it in
+    // display space would have the curve's shoulder roll off highlights the
+    // tint was meant to colour.
+    //
+    // A tint that is all zeros was never uploaded, and multiplying by it would
+    // black the screen out with no way for the player to tell why.
+    graded *= (vv_tint.r + vv_tint.g + vv_tint.b) > 0.001 ? vv_tint : vec3(1.0);
 
     // Blend rather than branch: the tonemap can be dialled back to compare
     // against vanilla output without recompiling the shader.
