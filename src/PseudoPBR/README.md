@@ -723,3 +723,112 @@ the one failure mode that would be silent.
    implementation.
 4. **No mipmaps on the material atlas.** Magnified normals are smooth, minified
    ones alias. The fix is a mipped upload, not nearest sampling.
+
+
+## The lighting core is shared
+
+`pbrcore.glsl` holds the one evaluation of Cook-Torrance in this mod - GGX,
+Smith-Schlick, Schlick Fresnel, specular antialiasing, ambient and block-light
+specular - and is injected into **three** programs: `chunkopaque`,
+`chunktopsoil` and `entityanimated`.
+
+It deliberately knows nothing about where its inputs come from. Terrain reads
+roughness and a specular mask out of the derived atlas; entities have no such
+atlas and use a default material; a future water surface will supply its own.
+All three want the same lobe, and the difference between them is which material
+reaches it, not how light behaves once it does.
+
+Injected per group rather than shared at runtime, because a group has to be able
+to roll back to vanilla without taking another group's declarations with it. The
+anchor is `uniform vec3 lightPosition;`, which all three shaders declare and the
+core needs - pasted back, because replacement content is literal.
+
+A smoke check asserts `vvDistributionGGX` is defined **exactly once** across
+every snippet. Copies would get edited one at a time whenever a highlight looked
+wrong, and nothing else would notice them drifting apart.
+
+## Entities
+
+Mobs, animals and players now use that lobe. Before this they did not, and the
+inconsistency is obvious once looked for: a creature standing on PBR-lit ground
+was shaded by a completely different model than the ground. The floor had a
+specular response to the sun, a sky term, torch highlights and a wet response;
+the thing standing on it had vanilla's flat diffuse.
+
+**There is no material atlas here, on purpose.** Entities draw from `entityTex`,
+a different atlas from the block one this system derives from, and running Sobel
+over a mob skin would be the "dark is deep" fallacy at its worst - painted-on
+fur shading read as geometry, a face coming out with cheekbones wherever the
+artist put shadow. So entities get a default material: one roughness, one
+dielectric reflectance at 0.04 (skin, fur, cloth, chitin and horn all sit within
+a whisker of it), and the mesh's own normals - which, unlike a block face, are
+real per-vertex geometry and are better than anything an atlas could have given.
+
+Rain darkens creatures more than it glosses them, which is the opposite of what
+happens to stone: fur and cloth hold water rather than filming it. There is no
+sky-exposure test, unlike terrain - an entity is a moving thing with no such
+varying, and creatures indoors getting slightly wet in a storm is a smaller
+wrong answer than a mob standing in the rain looking bone dry.
+
+`helditem.fsh` is **not** patched. It has no `worldPos`, no `blockLight` and no
+`rgbaFog`, so there is far less to work with and far less to gain.
+
+## Light through leaves
+
+A leaf is thin and translucent: light hitting its far side scatters through
+rather than stopping, so a canopy with the sun behind it glows. Vanilla shades
+foliage with the same opaque diffuse it uses for stone - its own wind
+deformation moves leaves without touching how they are shaded - so this is a gap
+rather than a re-tint.
+
+Which fragments count as foliage comes from **vanilla's own answer**: the
+wind-mode bits it already sets on anything that bends, which in practice is
+exactly the set of things thin enough to transmit light. `chunkopaque.vsh` uses
+the same test for its own `isLeaves`, so there is no second guess to disagree
+with the first.
+
+Two details carry it:
+
+- **Distortion in the bent light direction.** Without it the effect is a
+  mirror-sharp hotspot that reads as a bug; with it, the soft wrap real foliage
+  has.
+- **A yellow-green tint on the transmitted colour.** Light that came through a
+  leaf was filtered by chlorophyll on the way out and leaves warmer and more
+  saturated than light reflected off the same leaf. Skipping this is what makes
+  cheap foliage translucency read as grey haze.
+
+Shadowed leaves do not glow - there is no sun behind them to come through - and
+wetness is deliberately absent, because a wet leaf transmits no differently, it
+only reflects more. Debug view **13** shows the transmission alone.
+
+## Crevice shading
+
+Occlusion at the scale nothing else in the frame covers. Vanilla ships SSAO, and
+SSAO works on **geometry**: it knows a block sits in a corner and darkens the
+corner. It has no idea that the mortar line between two bricks is a groove,
+because at the depth buffer's resolution it is not one.
+
+The atlas stores a tangent-space normal whose xy **is** the height gradient, so
+the divergence of that gradient - how much the surrounding normals lean toward
+this texel rather than away - is the surface's curvature: positive in a groove,
+negative on a ridge. That is a real cavity estimate rather than an edge
+detector, and the difference matters: an edge detector darkens ridges too, and
+the result reads as dirt rather than as depth. Only the concave half darkens.
+
+**It multiplies the diffuse and the hemispherical terms, and not the direct
+lobe.** That split is the whole of why it is physical rather than a texture: a
+crevice is dark because most of the sky cannot see into it, while the sun either
+reaches it or does not and the normal already decides which. Multiplying the
+highlight by cavity as well is the usual mistake and leaves polished stone
+looking dusty.
+
+Four extra texture samples, which is why it has its own control and rides the
+same distance fade the relief does - once a texel is smaller than a pixel the
+taps are sampling noise. Debug view **12** shows the occlusion alone: mortar
+lines, plank gaps and bark furrows should read, and a flat painted texture
+should stay white, which is also the check that this is finding curvature rather
+than contrast.
+
+**Screen-space contact shadows are not here and are blocked**, not merely
+unstarted: they need the depth buffer, which is being written during the opaque
+pass rather than read.

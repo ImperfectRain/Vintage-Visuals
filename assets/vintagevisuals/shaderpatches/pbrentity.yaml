@@ -1,0 +1,90 @@
+# Vintage Visuals - the material response on entities
+#
+# Its own group, patching only entityanimated.fsh. A failure here costs mobs
+# their specular response and nothing else: the terrain groups patch different
+# files and are unaffected.
+#
+# Verified against 1.22.7 with tools/verifypatches.
+#
+# What this does NOT do is give entities a derived material atlas. They draw
+# from entityTex rather than the block atlas, and running Sobel over a mob skin
+# would read painted-on fur shading as geometry - the "dark is deep" fallacy at
+# its worst. Entities get a default material and their mesh's real normals
+# instead; see pbrentity.glsl.
+
+# 1. Assert the varyings the injected code reads.
+#
+# Semantically no-ops and load-bearing anyway: a vanilla rename would otherwise
+# leave the injected code referencing an undeclared name, and entityanimated.fsh
+# would fail to COMPILE - costing the player every mob in the world rather than
+# one effect.
+- type: token
+  filename: entityanimated.fsh
+  tokens: in vec3 normal;
+  content: |
+    in vec3 normal; // vintagevisuals: varying asserted by pbrentity.yaml
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: in vec3 blockLight;
+  content: |
+    in vec3 blockLight; // vintagevisuals: varying asserted by pbrentity.yaml
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: in vec4 rgbaFog;
+  content: |
+    in vec4 rgbaFog; // vintagevisuals: varying asserted by pbrentity.yaml
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: in vec4 worldPos;
+  content: |
+    in vec4 worldPos; // vintagevisuals: varying asserted by pbrentity.yaml
+
+# 2. The shared microfacet core, anchored on lightPosition.
+#
+# The same file the two terrain groups inject, at the same anchor. One
+# evaluation of Cook-Torrance across three programs rather than three copies
+# drifting apart - which is what would happen, because the copies would be
+# edited one at a time whenever a highlight looked wrong.
+- type: token
+  filename: entityanimated.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
+# 3. The entity material response.
+#
+# Anchored on applyFogAndShadow's signature: above main(), and below both
+# getBrightnessFromShadowMap and the core injected at step 2, which is the whole
+# of what GLSL's declaration-before-use rule requires here.
+- type: token
+  filename: entityanimated.fsh
+  tokens: "vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {"
+  snippet: pbrentity.glsl
+
+# 4. The call site.
+#
+# Vanilla has two, one for underwater and one for everything else, and both are
+# rewritten - a mob that lost its highlight the moment it waded into a river
+# would look like a bug in the water rather than a gap in the patch.
+#
+# getBrightnessFromShadowMap() is called again here rather than reusing the `b`
+# that applyFogAndShadowWithNormal computes internally, because that value never
+# leaves the function. It is a shadow-map lookup, not a cheap call, but doing it
+# twice is still cheaper than restructuring vanilla's fog path around us.
+- type: token
+  filename: entityanimated.fsh
+  tokens: "outColor = applyFogAndShadowWithNormal(texColor, 0, normal, 1, intensity, worldPos.xyz);"
+  content: |
+    outColor = applyFogAndShadowWithNormal(texColor, 0, normal, 1, intensity, worldPos.xyz);
+    outColor = vvApplyEntityPbr(outColor, texColor.rgb, normal, worldPos.xyz,
+                                getBrightnessFromShadowMap(), 0, rgbaFog.rgb, blockLight);
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: "outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity, worldPos.xyz);"
+  content: |
+    outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity, worldPos.xyz);
+    outColor = vvApplyEntityPbr(outColor, texColor.rgb, normal, worldPos.xyz,
+                                getBrightnessFromShadowMap(), fogAmount, rgbaFog.rgb, blockLight);

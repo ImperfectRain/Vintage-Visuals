@@ -23,6 +23,13 @@
         "clientSide": true,
         "weight": 6
       },
+      "pbr_entitylighting": {
+        "ingui": "Light mobs like the world",
+        "comment": "Give creatures the same microfacet lighting as the terrain they stand on: sun specular, sky term, torch highlights and a wet response. Off leaves them with vanilla's flat diffuse.",
+        "default": true,
+        "clientSide": true,
+        "weight": 9
+      },
       "weather_cloudsfromgame": {
         "ingui": "Cloud shadows follow real clouds",
         "comment": "Read cloud positions from the game's own cloud renderer so shadows land under the clouds that cast them. Off falls back to a noise field that moves and covers correctly but cannot line up with the sky.",
@@ -485,15 +492,63 @@
           "step": 0.1
         }
       },
+      "pbr_foliage": {
+        "ingui": "Light through leaves",
+        "comment": "Sunlight scattering through foliage, so a canopy with the sun behind it glows. Applies to whatever vanilla treats as wind-affected: leaves, grass, crops, flowers.",
+        "default": 0.7,
+        "clientSide": true,
+        "weight": 52,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_cavity": {
+        "ingui": "Crevice shading",
+        "comment": "Occlusion in the grooves, from the material normal's curvature. The scale vanilla's SSAO cannot see - mortar lines, plank gaps, bark furrows. Costs four extra texture samples.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 53,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_entityroughness": {
+        "ingui": "Creature roughness",
+        "comment": "How matte creatures read. They have no derived material atlas, so one roughness covers all of them.",
+        "default": 0.65,
+        "clientSide": true,
+        "weight": 54,
+        "range": {
+          "min": 0.04,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "pbr_entityspecular": {
+        "ingui": "Creature specular",
+        "comment": "How much of the creature specular lobe reaches the image. 0 is vanilla.",
+        "default": 0.8,
+        "clientSide": true,
+        "weight": 55,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 11.0,
+          "max": 13.0,
           "step": 1.0
         }
       }

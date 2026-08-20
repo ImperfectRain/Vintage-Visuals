@@ -50,6 +50,15 @@ namespace VintageVisuals.PseudoPBR
         public const string RippleTimeUniform = "vv_weatherRippleTime";
         public const string OvercastUniform = "vv_weatherOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
+        public const string FoliageUniform = "vv_pbrFoliage";
+        public const string CavityUniform = "vv_pbrCavity";
+
+        // Entity programme only. Named apart from the terrain controls because
+        // they describe a different material: entities have no derived atlas, so
+        // there is one roughness for all of them rather than one per texel.
+        public const string EntityEnabledUniform = "vv_pbrEntity";
+        public const string EntityRoughnessUniform = "vv_pbrEntityRoughness";
+        public const string EntitySpecularUniform = "vv_pbrEntitySpecular";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -61,6 +70,20 @@ namespace VintageVisuals.PseudoPBR
         {
             EnumShaderProgram.Chunkopaque,
             EnumShaderProgram.Chunktopsoil,
+        };
+
+        /// <summary>
+        /// Programs that shade something other than terrain with the same lobe.
+        ///
+        /// Kept separate from PatchedPrograms because the preconditions differ:
+        /// the terrain path needs a derived material atlas and refuses to run
+        /// without one, and this one deliberately does not have an atlas at all.
+        /// Folding them into one list would mean a missing atlas silently taking
+        /// entity lighting down with it.
+        /// </summary>
+        private static readonly EnumShaderProgram[] EntityPrograms =
+        {
+            EnumShaderProgram.Entityanimated,
         };
 
         private readonly ICoreClientAPI _capi;
@@ -87,6 +110,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedMissingUniform;
         private bool _reportedActive;
         private bool _reportedBusy;
+        private bool _reportedEntities;
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas,
                                Func<Dictionary<int, int>> buildPageMap,
@@ -141,6 +165,18 @@ namespace VintageVisuals.PseudoPBR
 
             _reportedBusy = false;
 
+            // Pulled every frame, not pushed on config change. Wetness, the
+            // ripple clock and the camera origin all move continuously, and a
+            // config change is not a clock.
+            if (_readScene != null) _weather = _readScene();
+
+            // Entities first, and deliberately BEFORE every terrain
+            // precondition below. They share the lobe but not the material: the
+            // terrain path refuses to run without a derived atlas, and letting
+            // that refusal take entity lighting with it would mean a missing
+            // atlas silently un-lighting every mob in the world.
+            UploadEntities();
+
             if (!_enabled)
             {
                 ReleaseWhileDisabled();
@@ -183,11 +219,6 @@ namespace VintageVisuals.PseudoPBR
             // a stale map is a page rendering with another page's material
             // data - silent and wrong, the worst of the two failure modes.
             TerrainTextureBindInterceptor.SetPages(_buildPageMap());
-
-            // Pulled every frame, not pushed on config change. Wetness, the
-            // ripple clock and the camera origin all move continuously, and a
-            // config change is not a clock.
-            if (_readScene != null) _weather = _readScene();
 
             int uploaded = 0;
             foreach (EnumShaderProgram id in PatchedPrograms)
@@ -259,6 +290,8 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(AmbientUniform, _look.AmbientSpecular);
             program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
             program.Uniform(DetailDistanceUniform, _look.DetailDistance);
+            program.Uniform(FoliageUniform, _look.FoliageTranslucency);
+            program.Uniform(CavityUniform, _look.CavityStrength);
             program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
             program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
             program.Uniform(WetnessUniform, _weather.Wetness);
@@ -270,6 +303,47 @@ namespace VintageVisuals.PseudoPBR
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// Pushes the entity material response.
+        ///
+        /// Separate from Upload because almost nothing is shared: no sampler to
+        /// bind, no atlas to require, no page map, and a different set of
+        /// uniforms describing a single default material rather than a derived
+        /// per-texel one.
+        /// </summary>
+        private void UploadEntities()
+        {
+            foreach (EnumShaderProgram id in EntityPrograms)
+            {
+                IShaderProgram program = _capi.Shader.GetProgram((int)id);
+                if (program == null || !program.HasUniform(EntityEnabledUniform)) continue;
+
+                program.Use();
+
+                program.Uniform(EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
+                program.Uniform(EntityRoughnessUniform, _look.EntityRoughness);
+                program.Uniform(EntitySpecularUniform, _look.EntitySpecular);
+                program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
+                program.Uniform(MetalResponseUniform, _look.MetalResponse);
+                program.Uniform(AmbientUniform, _look.AmbientSpecular);
+                program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
+                program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
+                program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
+                program.Uniform(DayLightUniform, _weather.DayLight);
+                program.Uniform(WetnessUniform, _weather.Wetness);
+                program.Uniform(OvercastUniform, _weather.Overcast);
+
+                program.Stop();
+
+                if (!_reportedEntities)
+                {
+                    _reportedEntities = true;
+                    _capi.Logger.Notification("[VintageVisuals] pseudopbr: entity lighting active on " + id +
+                        " - mobs, animals and players now use the same microfacet lobe as the terrain.");
+                }
+            }
         }
 
         /// <summary>

@@ -88,7 +88,11 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
 - `assets/vintagevisuals/shaderpatches/*.yaml` — regex/token patches against
   **vanilla** shaders, one file per subsystem.
 - `assets/vintagevisuals/shadersnippets/*.glsl` — GLSL bodies the patches inject.
-  Kept out of the YAML so the GLSL stays readable and diffable.
+  Kept out of the YAML so the GLSL stays readable and diffable. `pbrcore.glsl`
+  is the ONE evaluation of Cook-Torrance and is injected into all three shading
+  programs (`chunkopaque`, `chunktopsoil`, `entityanimated`); a smoke check
+  asserts it is defined exactly once. Anything that shades a surface uses it
+  rather than copying it.
 - `assets/vintagevisuals/shaders/` — our own standalone shader programs.
 - `tools/pbrgen/` — offline PBR prototype (Python). Content-authoring aid, **not**
   runtime code; never reference it from the C# build. `src/PseudoPBR/` is a
@@ -230,6 +234,12 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
 - **A patch that replaces its anchor must paste the anchor back.** Replacement
   content is literal, never a regex template. `pseudopbr.glsl` re-declares
   `uniform vec3 lightPosition;` for this reason.
+- **A snippet shared by two groups is injected twice, not shared at runtime.**
+  Each group must be able to roll back to vanilla without taking another
+  group's declarations with it, so `pbrcore.glsl` is injected separately into
+  each program at an anchor all three declare (`uniform vec3 lightPosition;`,
+  pasted back). Sharing one injection between groups would couple their
+  rollbacks.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is

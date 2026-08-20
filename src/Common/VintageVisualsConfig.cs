@@ -286,6 +286,59 @@ namespace VintageVisuals.Common
         public bool Enabled { get; set; } = false;
 
         /// <summary>
+        /// Light passing through leaves, grass and crops. 0 is vanilla.
+        ///
+        /// A leaf is thin: light hitting its far side scatters through rather
+        /// than stopping, so a canopy with the sun behind it glows. Vanilla
+        /// shades foliage with the same opaque diffuse it uses for stone, so
+        /// this is a gap rather than a re-tint.
+        ///
+        /// Which fragments count as foliage is the game's own answer - the
+        /// wind-mode bits it already sets on anything that bends - rather than
+        /// a second guess that could disagree with it.
+        /// </summary>
+        public float FoliageTranslucency { get; set; } = 0.7f;
+
+        /// <summary>
+        /// Occlusion in the grooves, derived from the material normal. 0 is
+        /// vanilla.
+        ///
+        /// The scale nothing else in the frame covers. Vanilla ships SSAO and
+        /// SSAO works on geometry: it knows a block sits in a corner. It has no
+        /// idea the mortar line between two bricks is a groove, because at the
+        /// depth buffer's resolution it is not one.
+        ///
+        /// Costs four extra texture samples, which is why it has its own
+        /// control and rides the same distance fade the relief does.
+        /// </summary>
+        public float CavityStrength { get; set; } = 0.6f;
+
+        /// <summary>
+        /// Whether mobs, animals and players get the same lighting model as the
+        /// world they stand in.
+        ///
+        /// Off means they keep vanilla's flat diffuse while the ground beneath
+        /// them has a specular response, a sky term and torch highlights -
+        /// which is what shipped for a long time and is more obvious than it
+        /// sounds once noticed.
+        ///
+        /// Defaults to TRUE unlike the terrain half, because the failure mode
+        /// is milder: this patches only entityanimated.fsh, and a failure costs
+        /// mobs their highlight rather than costing the world its surfaces.
+        /// </summary>
+        public bool EntityLighting { get; set; } = true;
+
+        /// <summary>
+        /// How matte a creature reads. Entities have no derived material atlas
+        /// - deriving normals from a mob skin would read painted-on fur shading
+        /// as geometry - so one roughness covers all of them.
+        /// </summary>
+        public float EntityRoughness { get; set; } = 0.65f;
+
+        /// <summary>How much of the entity specular lobe reaches the image. 0 is vanilla.</summary>
+        public float EntitySpecular { get; set; } = 0.8f;
+
+        /// <summary>
         /// Global multiplier on the surface relief, on top of the per-material
         /// strength already baked into the atlas.
         ///
@@ -456,6 +509,14 @@ namespace VintageVisuals.Common
                 "PseudoPBR.AmbientSpecular", corrections);
             SpecularAntiAliasing = ColorGradeConfig.Clamp(SpecularAntiAliasing, 0.0f, 2.0f,
                 "PseudoPBR.SpecularAntiAliasing", corrections);
+            FoliageTranslucency = ColorGradeConfig.Clamp(FoliageTranslucency, 0.0f, 2.0f,
+                "PseudoPBR.FoliageTranslucency", corrections);
+            CavityStrength = ColorGradeConfig.Clamp(CavityStrength, 0.0f, 2.0f,
+                "PseudoPBR.CavityStrength", corrections);
+            EntityRoughness = ColorGradeConfig.Clamp(EntityRoughness, 0.04f, 1.0f,
+                "PseudoPBR.EntityRoughness", corrections);
+            EntitySpecular = ColorGradeConfig.Clamp(EntitySpecular, 0.0f, 2.0f,
+                "PseudoPBR.EntitySpecular", corrections);
             DetailDistance = ColorGradeConfig.Clamp(DetailDistance, 4.0f, 192.0f,
                 "PseudoPBR.DetailDistance", corrections);
             BlockLightSpecular = ColorGradeConfig.Clamp(BlockLightSpecular, 0.0f, 2.0f,

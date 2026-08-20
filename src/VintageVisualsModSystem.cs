@@ -193,6 +193,16 @@ namespace VintageVisuals
                 return ConfigManager.Config.PseudoPBR.Enabled;
             }
 
+            // Gated apart from the terrain groups, and on its own flag. The
+            // entity path needs no material atlas and patches a different
+            // shader, so there is no reason for it to be switched off by a
+            // terrain problem - and every reason for a player who does not want
+            // it to get vanilla source rather than muted patched source.
+            if (group == PseudoPbrSubsystem.EntityGroupName)
+            {
+                return ConfigManager.Config.PseudoPBR.EntityLighting;
+            }
+
             if (group == ColorGradeSubsystem.GroupName)
             {
                 return ConfigManager.Config.ColorGrade.Enabled;
@@ -210,6 +220,7 @@ namespace VintageVisuals
         private string PatchGatingSignature()
         {
             return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
+                   (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
                    (ConfigManager.Config.Weather.Enabled ? "W" : "-");
         }

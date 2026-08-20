@@ -57,12 +57,11 @@ uniform float vv_pbrDayLight;
 // Look controls. Each is a uniform rather than a rebuild because the whole
 // point is that taste is argued with at runtime, not compiled in.
 uniform float vv_pbrRoughnessBias;   // matte <-> gloss, applied to every material
-uniform float vv_pbrMetalResponse;   // how metallic the reflective materials read
-uniform float vv_pbrAmbient;         // sky/environment reflection strength
-uniform float vv_pbrSpecularAA;      // geometric specular antialiasing strength
+// The rest of the look controls are declared in pbrcore.glsl, which this file
+// is injected below: they belong to the lobe rather than to the atlas.
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
-uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
-uniform float vv_pbrBlockLightDir;   // 0 treats block light as ambient, 1 fully trusts the gradient
+uniform float vv_pbrFoliage;         // light passing through leaves, 0 is vanilla
+uniform float vv_pbrCavity;          // small-scale occlusion from the material normal, 0 is vanilla
 uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
@@ -206,12 +205,6 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 // Miss the darkening and wet stone reads as polished stone. It is the least
 // obvious of the three and the one that sells it.
 // ---------------------------------------------------------------------------
-
-// What cloud cover does to the two halves of the specular response. The direct
-// lobe keeps about a third of its strength under full overcast and the sky term
-// gains half again, so the light is redistributed rather than removed.
-const float VV_OVERCAST_DIRECT = 0.35;
-const float VV_OVERCAST_AMBIENT = 1.5;
 
 const float VV_WET_ROUGHNESS = 0.08;
 const float VV_WET_SPECULAR = 0.60;
@@ -413,210 +406,118 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
     return clamp(vanillaBrightness + delta, 0.0, 1.0);
 }
 
+
 // ---------------------------------------------------------------------------
-// Cook-Torrance microfacet shading
+// Light through leaves
 //
-// Applied on top of vanilla's lit colour rather than replacing it. Vanilla
-// already computes a diffuse term from block light, sun light and the shadow
-// map, and it is the term the whole game is balanced around; throwing it away
-// for a from-scratch lighting model would mean re-deriving light colour,
-// ambient and time of day from uniforms this shader only partly has. So the
-// diffuse stays vanilla's, and this adds what vanilla has no notion of: a
-// microfacet specular lobe whose shape comes from the derived roughness, and
-// the energy that lobe takes back out of the diffuse.
+// The strongest single cue that a renderer is doing something modern, and this
+// game is full of foliage. A leaf is thin and translucent: light that hits its
+// far side does not stop there, it scatters through and leaves the near side
+// travelling roughly the way it came. So a canopy with the sun behind it glows,
+// and that glow is the effect - not a brighter leaf, a LIT-FROM-BEHIND one.
+//
+// A real gap rather than a re-tint: vanilla shades leaves with the same opaque
+// diffuse it uses for stone. Its own wind deformation moves them without
+// touching how they are shaded.
 // ---------------------------------------------------------------------------
 
-const float VV_PI = 3.14159265359;
-
-// GGX / Trowbridge-Reitz normal distribution. This is the term that makes
-// roughness read as material: it concentrates the highlight into a tight core
-// with a wide tail, which is what separates polished metal from worn stone far
-// more convincingly than a Blinn-Phong exponent does.
-float vvDistributionGGX(float NdotH, float roughness)
+// Vanilla sets a wind mode on anything that bends in the wind, which in
+// practice is exactly the set of things thin enough to transmit light: leaves,
+// grass, crops, flowers. chunkopaque.vsh uses this same test for its own
+// `bool isLeaves`, so this borrows the game's answer rather than inventing a
+// second one that could disagree with it.
+bool vvIsFoliage()
 {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / max(1e-5, VV_PI * d * d);
+    return (renderFlags & WindModeBitMask) != 0;
 }
 
-// Smith geometry term with the Schlick-GGX approximation, using the k for
-// direct lighting rather than IBL. Accounts for microfacets shadowing each
-// other, which is what stops rough surfaces blowing out at grazing angles.
-float vvGeometrySmith(float NdotV, float NdotL, float roughness)
+// How much light reaches the eye THROUGH the surface.
+//
+// The cheap standard model: bend the light direction backwards through the
+// surface, then measure how directly the viewer is looking down that bent ray.
+// The distortion term is what turns a hard sun disc into the soft wrap real
+// foliage has - without it the effect is a mirror-sharp hotspot that reads as
+// a bug rather than as light.
+float vvTranslucency(vec3 n, vec3 l, vec3 v)
 {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    float gv = NdotV / (NdotV * (1.0 - k) + k);
-    float gl = NdotL / (NdotL * (1.0 - k) + k);
-    return gv * gl;
+    const float distortion = 0.35;
+    const float power = 3.0;
+
+    vec3 through = normalize(-l + n * distortion);
+
+    return pow(max(0.0, dot(v, -through)), power);
 }
 
-vec3 vvFresnelSchlick(float VdotH, vec3 f0)
+// The colour that comes through, to be added to the lit result.
+//
+// Tinted by the leaf's own albedo and pushed toward yellow-green, because
+// transmitted light has been filtered by chlorophyll on the way out and leaves
+// warmer and more saturated than light reflected off the same leaf. Skipping
+// that tint is what makes cheap foliage translucency read as grey haze.
+vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrightness)
 {
-    return f0 + (1.0 - f0) * pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
-}
+    if (vv_pbrFoliage < 0.001 || !vvIsFoliage()) return vec3(0.0);
 
-// Reflectance at normal incidence.
-//
-// Dielectrics reflect about 4% of light, white; metals reflect their own
-// albedo, which is why copper has an orange highlight and steel a white one.
-// That distinction needs metalness, and metalness is not in the atlas - there
-// are five values worth storing and four channels.
-//
-// The specular mask stands in for it, squared so the interpolation stays near
-// the dielectric end until a surface is genuinely reflective. That works
-// because of how the material table happens to be shaped: among the materials
-// chunkopaque actually draws, SpecularScale tracks metalness closely (Metal
-// 1.00/1.00, Ore 0.85/0.35, Stone 0.25/0, Soil 0.05/0). The materials where
-// the two diverge - water, glass - are drawn by chunkliquid and
-// chunktransparent, not by this shader; ice is the one exception here, and its
-// albedo is near-white, so tinting by it is very close to not tinting at all.
-//
-// If this ever reads wrong, the fix is a second atlas carrying real metalness,
-// not a cleverer curve.
-vec3 vvReflectanceF0(vec3 albedo, float specularMask)
-{
-    return mix(vec3(0.04), albedo, specularMask * specularMask * clamp(vv_pbrMetalResponse, 0.0, 1.0));
-}
+    vec3 tint = albedo * vec3(1.06, 1.12, 0.72);
 
-// Geometric specular antialiasing, after Kaplanyan et al. 2016 and the
-// simplified kernel of Tokuyoshi and Kaplanyan 2019.
-//
-// This is the fix for sparkle, and it is aimed squarely at what this mod does
-// to a surface. The normals here are DERIVED from texture detail, so they are
-// far higher frequency than a hand-authored map - and a normal that changes
-// faster than one screen pixel makes the specular lobe flicker as the camera
-// moves, because each pixel samples a different microfacet orientation every
-// frame. Rough stone with a tight highlight is exactly the worst case.
-//
-// The standard answer is not to smooth the normal - that loses the detail the
-// mod exists to add - but to widen the lobe by however much the normal varies
-// inside the pixel, measured from its screen-space derivative. A surface whose
-// normals scatter within one pixel IS rougher at that scale; this makes the
-// shading model agree with that.
-//
-// Kernel clamped because the derivative estimate degrades badly at grazing
-// angles and silhouettes, which is the known weakness of the screen-space form.
-const float VV_SPECULAR_AA_VARIANCE = 0.25;
-const float VV_SPECULAR_AA_CLAMP = 0.18;
-
-float vvFilteredRoughness(float roughness, vec3 n)
-{
-    if (vv_pbrSpecularAA < 0.001) return roughness;
-
-    vec3 dndx = dFdx(n);
-    vec3 dndy = dFdy(n);
-
-    float variance = VV_SPECULAR_AA_VARIANCE * (dot(dndx, dndx) + dot(dndy, dndy));
-    float kernel = min(2.0 * variance * vv_pbrSpecularAA, VV_SPECULAR_AA_CLAMP);
-
-    // Widening happens in alpha (roughness squared), which is the space the
-    // NDF actually integrates over - adding to roughness directly would widen
-    // smooth surfaces far more than rough ones.
-    return clamp(sqrt(roughness * roughness + kernel), 0.0, 1.0);
-}
-
-// Ambient specular from the sky.
-//
-// Without this, a metal block in shade or indoors has no highlight at all and
-// reads as dark plastic, because the only light this shader knows about is the
-// sun. There is no reflection probe to sample, so vanilla's own fog colour
-// stands in for the sky - it is already the colour the horizon is being blended
-// toward, which makes it a better environment estimate than any constant.
-//
-// Schlick with a roughness-aware ceiling (Karis): a rough surface must not get
-// a mirror-bright rim, which is what plain Fresnel would give it.
-vec3 vvAmbientSpecular(vec3 f0, float roughness, float ndotv, vec3 environment)
-{
-    vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - ndotv, 0.0, 1.0), 5.0);
-
-    return environment * fresnel * max(0.0, vv_pbrAmbient);
+    // Shadowed leaves do not glow - there is no sun behind them to come
+    // through - and daylight scales it for the same reason. Wetness is
+    // deliberately absent: a wet leaf transmits no differently, it only
+    // reflects more, and that half is already handled.
+    return tint
+         * vvTranslucency(n, l, v)
+         * vv_pbrFoliage
+         * clamp(shadowBrightness, 0.0, 1.0)
+         * clamp(vv_pbrDayLight, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------------
-// Block light: torches, lava, lanterns, glowing ore
+// Crevice shading
 //
-// Vanilla bakes all of it into one per-vertex colour, `blockLight`. That gives
-// this shader an intensity and a hue but no position, and a specular highlight
-// needs a direction - which is why, until now, a metal wall beside a lit torch
-// had no highlight at all while the same wall in sunlight did. Underground,
-// where every light is a block light, the material system did nothing.
+// Occlusion at the scale the material atlas can see, which is the scale nothing
+// else in the frame covers. Vanilla ships SSAO, and SSAO works on GEOMETRY: it
+// knows a block sits in a corner and darkens the corner. It has no idea that
+// the mortar line between two bricks is a groove, because at the depth buffer's
+// resolution it is not one.
 //
-// The direction is recoverable without the CPU ever telling us where the lights
-// are. Block light is a scalar field over the surface, and the gradient of that
-// field points toward whatever is emitting it. Both pieces are already to hand:
-// screen-space derivatives of the light and of the world position.
+// Worth more in a blocky game than in most. There is very little geometric
+// detail to carry form, so what the eye reads as shape has to come from
+// shading, and occlusion in the grooves is the strongest cue available.
 // ---------------------------------------------------------------------------
 
-const vec3 VV_PBR_LUMA = vec3(0.2126, 0.7152, 0.0722);
-
-// How far a unit of light gradient tilts the light direction off the normal.
-// Tuned so a torch a couple of blocks away reads as coming from the side
-// rather than from directly overhead.
-const float VV_BLOCKLIGHT_TILT = 6.0;
-
-/// Estimated direction toward the block light illuminating this fragment.
+// Curvature of the surface, from the material atlas's own normal.
 //
-// Mikkelsen's surface-gradient construction: solve for the world-space gradient
-// of the light field that is consistent with both screen derivatives, which
-// lands it in the tangent plane by construction. Then tilt the normal toward
-// it, by an amount that grows with the gradient's magnitude - a steep falloff
-// means the source is close and therefore off to one side, a flat one means it
-// is distant or ambient.
+// The atlas stores a tangent-space normal whose xy IS the height gradient. The
+// divergence of that gradient - how much the surrounding normals lean toward
+// this texel rather than away from it - is the surface's curvature: positive in
+// a groove, negative on a ridge. That is a real cavity estimate rather than an
+// edge detector, and the difference matters: an edge detector darkens ridges
+// too, and the result reads as dirt rather than as depth.
 //
-// Degenerate cases fall back to the normal, which is exactly "treat this light
-// as ambient" and is the right answer when the field is uniform.
-vec3 vvBlockLightDirection(vec3 n, vec3 cameraRelativePos, float intensity)
+// Four extra samples, which is why it is behind its own control and behind the
+// distance fade. Once a texel is smaller than a pixel the taps are sampling
+// noise and the term should already have gone.
+float vvCavity(vec2 materialUv, float fade)
 {
-    vec3 dpdx = dFdx(cameraRelativePos);
-    vec3 dpdy = dFdy(cameraRelativePos);
+    if (vv_pbrCavity < 0.001 || fade < 0.001) return 1.0;
 
-    vec3 r1 = cross(dpdy, n);
-    vec3 r2 = cross(n, dpdx);
+    vec2 texel = 1.0 / max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
 
-    float det = dot(dpdx, r1);
-    if (abs(det) < 1e-8) return n;
+    float left  = vvSampleMaterial(materialUv - vec2(texel.x, 0.0)).r;
+    float right = vvSampleMaterial(materialUv + vec2(texel.x, 0.0)).r;
+    float down  = vvSampleMaterial(materialUv - vec2(0.0, texel.y)).g;
+    float up    = vvSampleMaterial(materialUv + vec2(0.0, texel.y)).g;
 
-    vec3 gradient = (r1 * dFdx(intensity) + r2 * dFdy(intensity)) / det;
+    // Stored 0..1 around 0.5, so these differences are already signed
+    // gradients and no decode is needed.
+    float curvature = (left - right) + (down - up);
 
-    float magnitude = length(gradient);
-    if (magnitude < 1e-4) return n;
+    // Only the concave half darkens. Brightening ridges as well would be the
+    // symmetric thing to do and looks wrong - real cavity occlusion removes
+    // light from crevices, it does not add light to bumps.
+    float occlusion = clamp(curvature * 2.0, 0.0, 1.0);
 
-    float tilt = clamp(magnitude * VV_BLOCKLIGHT_TILT, 0.0, 4.0) * clamp(vv_pbrBlockLightDir, 0.0, 1.0);
-
-    return normalize(n + (gradient / magnitude) * tilt);
-}
-
-// A microfacet highlight from block light, in the light's own colour.
-//
-// Deliberately NOT scaled by the shadow map or by daylight. Block light is
-// independent of both - a torch burns in a cave at midnight - and gating it on
-// either would remove the highlight from precisely the places this exists to
-// light.
-vec3 vvBlockLightSpecular(vec3 f0, float roughness, vec3 n, vec3 v,
-                          vec3 blockLightColor, vec3 cameraRelativePos)
-{
-    if (vv_pbrBlockLight < 0.001) return vec3(0.0);
-
-    float intensity = dot(blockLightColor, VV_PBR_LUMA);
-    if (intensity < 0.004) return vec3(0.0);
-
-    vec3 l = vvBlockLightDirection(n, cameraRelativePos, intensity);
-    vec3 h = normalize(l + v);
-
-    float ndotl = max(dot(n, l), 0.0);
-    float ndotv = max(dot(n, v), 1e-4);
-    float ndoth = max(dot(n, h), 0.0);
-    float vdoth = max(dot(v, h), 0.0);
-
-    vec3 fresnel = vvFresnelSchlick(vdoth, f0);
-    float distribution = vvDistributionGGX(ndoth, roughness);
-    float geometry = vvGeometrySmith(ndotv, ndotl, roughness);
-
-    vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
-
-    return blockLightColor * specular * ndotl * max(0.0, vv_pbrBlockLight);
+    return 1.0 - occlusion * vv_pbrCavity * fade;
 }
 
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
@@ -711,6 +612,17 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 
     result += specular * ndotl * visibility * vv_pbrSpecularStrength;
 
+    // Occlusion in the grooves, applied to the diffuse and to everything
+    // hemispherical, and NOT to the direct lobe.
+    //
+    // That split is the whole of why this is physical rather than a texture. A
+    // crevice is dark because most of the sky cannot see into it; the sun
+    // either reaches it or does not, and the normal already decides which.
+    // Multiplying the highlight by cavity as well is the usual mistake and
+    // leaves polished stone looking dusty.
+    float cavity = vvCavity(materialUv, vvDetailFade(cameraRelativePos));
+    result *= cavity;
+
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
     // metal in a doorway look like painted wood. Daylight and fog still apply.
@@ -718,13 +630,21 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // shadowed and not scaled by daylight - see vvBlockLightSpecular.
     result += vvBlockLightSpecular(f0, roughness, n, v, blockLightColor, cameraRelativePos)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
-            * vv_pbrSpecularStrength;
+            * vv_pbrSpecularStrength
+            * cavity;
 
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
             * clamp(vv_pbrDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * vv_pbrSpecularStrength
-            * mix(1.0, VV_OVERCAST_AMBIENT, overcast);
+            * mix(1.0, VV_OVERCAST_AMBIENT, overcast)
+            * cavity;
+
+    // Light through leaves, last, because it is the one term that is not a
+    // reflection off this surface - it is light that went past it. Fogged like
+    // everything else so a distant canopy does not glow through the haze.
+    result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0);
 
     return vec4(result, litColor.a);
 }
@@ -788,6 +708,22 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // 10: wetness. White is soaked, black is dry - shows both gates at once,
     // so an overhang should read black while the ground beside it is white.
     if (mode == 10) return vec4(vec3(vvWetness(faceNormal)), color.a);
+
+    // 12: crevice occlusion alone. White is open surface, dark is a groove.
+    // Mortar lines, plank gaps and bark furrows should read; a flat painted
+    // texture should stay white, which is also the check that this is finding
+    // curvature rather than contrast.
+    if (mode == 12) return vec4(vec3(vvCavity(materialUv, vvDetailFade(cameraRelativePos))), color.a);
+
+    // 13: which fragments the foliage path treats as foliage, and how much
+    // light it is passing. Black on stone, and brightest on leaves with the sun
+    // behind them.
+    if (mode == 13)
+    {
+        vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        return vec4(vvFoliageTransmission(vec3(1.0), n, normalize(lightPosition),
+                                          normalize(-cameraRelativePos), shadowBrightness), color.a);
+    }
 
     // 11: the rain ripple field, biased so still water reads as mid grey.
     // Rings should appear and die on up-facing wet ground and nowhere else, so

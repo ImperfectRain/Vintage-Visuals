@@ -277,6 +277,44 @@ void main()
                 Vanilla.Replace(
                     "outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);",
                     "outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, 0.45, worldPos.xyz);"));
+            // ---------------------------------------------------------------
+            // One lobe, three programs
+            // ---------------------------------------------------------------
+            //
+            // The microfacet core is injected into chunkopaque, chunktopsoil
+            // and entityanimated. If it is ever copied instead of shared, the
+            // copies get edited one at a time whenever a highlight looks wrong
+            // and quietly stop agreeing. Nothing else would notice.
+            string snippetDir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
+
+            int ggxDefinitions = Directory.GetFiles(snippetDir, "*.glsl")
+                .Count(f => File.ReadAllText(f).Contains("float vvDistributionGGX(float NdotH"));
+
+            ok("Cook-Torrance is defined exactly once across every snippet", ggxDefinitions == 1);
+
+            string core = File.ReadAllText(Path.Combine(snippetDir, "pbrcore.glsl"));
+
+            // The core replaces its anchor, and replacement content is literal
+            // rather than a regex template - so without this the declaration it
+            // is anchored on would be deleted along with the match.
+            ok("pbrcore.glsl pastes its lightPosition anchor back",
+                core.Contains("uniform vec3 lightPosition;"));
+
+            var entity = ShaderPatchLoader.ParsePatchFile(
+                File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrentity.yaml")),
+                "pbrentity", "test", resolveSnippet).ToList();
+
+            ok("pbrentity.yaml parses into 8 patches", entity.Count == 8);
+
+            ok("the entity group patches only entityanimated.fsh",
+                entity.All(x => x.Filename == "entityanimated.fsh"));
+
+            // Entities have no material atlas on purpose: running Sobel over a
+            // mob skin would read painted-on fur shading as geometry. A sampler
+            // appearing here would mean that decision was quietly reversed.
+            string entitySnippet = File.ReadAllText(Path.Combine(snippetDir, "pbrentity.glsl"));
+            ok("the entity path declares no sampler of its own",
+                !entitySnippet.Contains("uniform sampler"));
         }
 
 

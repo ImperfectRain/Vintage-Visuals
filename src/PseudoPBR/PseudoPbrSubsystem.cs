@@ -37,6 +37,8 @@ namespace VintageVisuals.PseudoPBR
         /// group would mean a reworded chunktopsoil line switching relief off
         /// for every wall, floor and log in the world too.
         /// </summary>
+        public const string EntityGroupName = "pbrentity";
+
         public const string TopsoilGroupName = "pseudopbrtopsoil";
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>

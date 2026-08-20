@@ -162,6 +162,21 @@ namespace VintageVisuals.Common
                 case "pbr_specularstrength":
                     pbr.SpecularStrength = tree.GetFloat("value", pbr.SpecularStrength);
                     break;
+                case "pbr_entitylighting":
+                    pbr.EntityLighting = tree.GetBool("value", pbr.EntityLighting);
+                    break;
+                case "pbr_foliage":
+                    pbr.FoliageTranslucency = tree.GetFloat("value", pbr.FoliageTranslucency);
+                    break;
+                case "pbr_cavity":
+                    pbr.CavityStrength = tree.GetFloat("value", pbr.CavityStrength);
+                    break;
+                case "pbr_entityroughness":
+                    pbr.EntityRoughness = tree.GetFloat("value", pbr.EntityRoughness);
+                    break;
+                case "pbr_entityspecular":
+                    pbr.EntitySpecular = tree.GetFloat("value", pbr.EntitySpecular);
+                    break;
                 case "pbr_debugview":
                     pbr.DebugView = tree.GetFloat("value", pbr.DebugView);
                     break;

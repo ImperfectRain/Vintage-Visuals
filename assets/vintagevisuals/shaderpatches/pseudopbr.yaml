@@ -67,16 +67,20 @@
   content: |
     in vec3 blockLight; // vintagevisuals: varying name asserted by pseudopbr.yaml
 
-# 3. Assert `lightPosition`, which the injected shading functions read.
+# 3. Assert `lightPosition`, and inject the shared microfacet core here.
 #
-# A separate assertion rather than the injection point, because the injection
-# has to go after the last SAMPLER (see note 2 above) while this only has to be
-# somewhere above it. Splitting them keeps both requirements explicit.
+# Two jobs in one patch because they want the same place. The core needs
+# lightPosition and blockLight declared above it and nothing else, and it must
+# land ABOVE the material snippet that calls it - GLSL wants a declaration
+# before its use, and the material snippet is anchored on the last sampler for
+# reasons note 2 explains at length.
+#
+# pbrcore.glsl is the same file the entity group injects. One evaluation of
+# Cook-Torrance, three programs, no copies to keep in step.
 - type: token
   filename: chunkopaque.fsh
   tokens: uniform vec3 lightPosition;
-  content: |
-    uniform vec3 lightPosition; // vintagevisuals: uniform asserted by pseudopbr.yaml
+  snippet: pbrcore.glsl
 
 # 4. Inject the sampler, the uniforms and the shading functions  -  after every
 #    vanilla sampler, and before main(). See note 2; this is not a free choice.

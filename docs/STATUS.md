@@ -85,17 +85,19 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | | Feature | Level | Notes |
 |---|---|---|---|
 | `[x]` | Surface relief in `chunkopaque.fsh` | L4 | |
+| `[~]` | **Foliage translucency** | L2 | light through leaves, grass and crops; foliage identified from vanilla's own wind-mode bits |
 | `[~]` | Surface relief in `chunktopsoil.fsh` (forest floor) | L2 | anchors confirmed against the real shader |
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[~]` | Per-layer debug views (0–11) | L2 | 11 modes: normal, roughness, spec, relief, highlight, world normal, reflectance, shaded roughness, block-light dir, wetness, ripples |
+| `[~]` | Per-layer debug views (0–13) | L2 | adds 12 crevice occlusion, 13 foliage transmission |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
-| `[ ]` | **Lighting reach: entities and held items** | — | *highest-value gap.* A mob on PBR-lit ground is shaded by a different model than the ground |
-| `[ ]` | One shared lighting snippet across the three programs | — | three copies of Cook-Torrance is not the answer |
-| `[ ]` | Contact shadows from the material normal/height | — | cheapest depth cue available, needs no new buffer |
-| `[ ]` | Crevice shading (small-scale AO from the derived height) | — | third scale of occlusion, distinct from SSAO |
+| `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
+| `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |
+| `[x]` | One shared lighting snippet (`pbrcore.glsl`) | L2 | injected into all three programs; a smoke check asserts Cook-Torrance is defined exactly once |
+| `[~]` | Crevice shading from the material normal's curvature | L2 | divergence of the stored gradient - a real cavity estimate, not an edge detector |
+| `[ ]` | Screen-space contact shadows | — | **blocked.** Needs the depth buffer, which is being written during the opaque pass, not readable |
 | `[ ]` | Separate local contrast from albedo level before the Sobel pass | — | "dark is deep" is the known weakness; belongs in `tools/pbrgen` first |
 | `[ ]` | Parallax / relief mapping | — | speculative; may fight the art direction |
 
@@ -187,6 +189,10 @@ re-explained rather than quietly dropped.
 - **Nothing in Weather past wetness has reached L4.** Five effects sit at L2.
 - **Adaptive grading has never been seen in game.** 34 rule checks pass; that
   says the arithmetic is right, not that the look is.
+- **Nothing from the entity/foliage/crevice pass has been seen on screen.** Three
+  features, all L2. The entity group is the first patch this mod has ever made
+  to a non-terrain shader, so it is also the first time a failure there could
+  cost every mob in the world rather than the ground.
 - **Dynamic block lighting reads as unnoticeable in play** — the debug view
   shows it working. Either the effect is too subtle or the debug view is
   flattering it.
@@ -225,9 +231,9 @@ Building any of those from scratch is not a feature, it is a duplicate.
 | # | Feature | Why |
 |---|---|---|
 | 1 | **Emissive materials** | Vintage Story is a game about fire. Forges, bloomeries, firepits, torches, lava, lamps are all bright *textures* today. Making them light sources with colour temperature and flicker transforms night and interiors - the two places players spend most of their time. One system also feeds bloom, reflections and exposure, so it pays for four |
-| 2 | **Lighting reach: entities and held items** | Not glamorous; it is a correctness fix. A mob standing on PBR-lit ground is shaded by a different model than the ground. Every future lighting feature is worth half until this lands. This is what makes the material system a pipeline rather than a terrain effect |
-| 3 | **Foliage translucency** | Sunlight through leaves is the single strongest cue that a renderer is modern, and this game is *full* of foliage. Vanilla's wind deformation does not touch shading, so the gap is real. Technically it is a wrap-lighting term on the lobe that already exists, gated on a leaf class already classified |
-| 4 | **Contact shadows + crevice shading** | One idea at two scales, and worth more here than in most games: a blocky world has little geometric detail to carry form, so occlusion does that work instead. Needs no new buffer - the material system already produces the normal and implied height. This is the gap vanilla's SSAO does *not* cover |
+| 2 | ~~Lighting reach: entities~~ **(built, L2)** - held items still open | Not glamorous; it is a correctness fix. A mob standing on PBR-lit ground is shaded by a different model than the ground. Every future lighting feature is worth half until this lands. This is what makes the material system a pipeline rather than a terrain effect |
+| 3 | ~~Foliage translucency~~ **(built, L2)** | Sunlight through leaves is the single strongest cue that a renderer is modern, and this game is *full* of foliage. Vanilla's wind deformation does not touch shading, so the gap is real. Technically it is a wrap-lighting term on the lobe that already exists, gated on a leaf class already classified |
+| 4 | ~~Crevice shading~~ **(built, L2)**. Screen-space contact shadows blocked on depth access | One idea at two scales, and worth more here than in most games: a blocky world has little geometric detail to carry form, so occlusion does that work instead. Needs no new buffer - the material system already produces the normal and implied height. This is the gap vanilla's SSAO does *not* cover |
 
 ### Tier A - strong
 
@@ -257,7 +263,7 @@ Building any of those from scratch is not a feature, it is a duplicate.
 | 21 | Sun and moon attenuation through atmosphere | Small on its own, part of the atmosphere system |
 | 22 | Frost as a second environmental layer | Good abstraction, only meaningful after snow lands |
 | 23 | Separate local contrast from albedo before the Sobel pass | Fixes the known "dark is deep" weakness. High idea quality, subtle result, and real work in `tools/pbrgen` with a fixture regeneration |
-| 24 | One shared lighting snippet across programs | Pure hygiene, but a prerequisite for doing #2 properly rather than by copy |
+| 24 | ~~One shared lighting snippet~~ **(built, L2)** | Pure hygiene, but a prerequisite for doing #2 properly rather than by copy |
 | 25 | Environmental camera effects | Heat shimmer and screen frost are good; rain-on-lens is a generic-shader-pack tell |
 | 26 | Seasonal foliage response | Autumn colour would be lovely, but overlaps what the game already does to foliage and risks fighting it |
 | 27 | Quality tiers | Necessary eventually. Premature: there are not yet enough expensive systems to tier |
