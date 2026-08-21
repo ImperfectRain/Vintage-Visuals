@@ -215,26 +215,48 @@ by reintroducing the bug.
 **None of this is L4.** It raises the odds that a visual test is testing the
 feature rather than a wiring mistake; it does not say anything looks right.
 
-- **Cloud shadows have never been seen working**, but one cause is now
-  identified rather than guessed at. `cloudmap.fsh` computes tile opacity as
-  `min(1, cloudOpaqueness * min(1, 10 * selfThickness))`, and the inner `min`
-  SATURATES - a tile of thickness 0.1 or more is a full cloud, which is why
-  the game's sky is mostly solid tiles with sharp edges. `CloudTileReader` was
-  multiplying the two members raw, so density stayed linear all the way down
-  and a solid cloud scored a fraction of what the game gives it; normalising
-  that against a decaying peak then compressed the whole sky toward the few
-  thickest tiles. **A handful of large soft blobs unrelated to the clouds
-  overhead is precisely what that produces, and precisely what was reported.**
-  Now normalised per member first (the fields' scale is unknown, so the
-  threshold cannot be applied before normalising) and then run through
-  vanilla's formula.
-  **Two things still cannot be ruled out blind:** the array may be indexed
-  `[x*N+z]` rather than `[z*N+x]` (shadows mirrored across the diagonal), and
-  it may scroll with an offset rather than staying camera-centred (a constant
-  shift). The reader now logs the field's mean, peak and covered fraction on
-  the first successful read, so the next round can start from four numbers
-  instead of a screenshot; `Weather.CloudShadowDebug` shows the field alone at
-  full strength.
+- **Cloud shadows are still broken, and the cause is now identified rather than
+  guessed at.** Reported invisible three times, then as three over-large patches
+  unrelated to the sky, then as still horrendously broken. A top-to-bottom audit
+  against the game's own `clouds.vsh` and `cloudmap.fsh` found the field has
+  three separable jobs and only two were ever right:
+  - *Density* now mirrors the game exactly -
+    `min(1, cloudOpaqueness * min(1, 10 * selfThickness))`, the same expression
+    `clouds.vsh` writes into `rgbaCloud.a`. The inner `min` saturates, which is
+    what gives vanilla's sky solid tiles with sharp edges.
+  - *Direction* uses vanilla's own `lightPosition`, the vector the terrain
+    shader lights every face with, so it tracks the sun and moon without this
+    code knowing where either is.
+  - *Registration* - where the tile window sits - was wrong, **twice**, and it
+    is the only one of the three that decides whether a shadow lands under the
+    cloud that cast it.
+
+  **The fatal one, now fixed:** the window corner was handed over as a true
+  world coordinate and compared in the shader against a position built from
+  `vv_cloudOrigin`, which is the camera position *wrapped to 4096 blocks*
+  because a float32 cannot resolve a Vintage Story world coordinate. The residue
+  is whatever multiple of 4096 the player is past, so the lookup landed
+  thousands of tiles outside a sixteen-tile window and **every fragment read
+  clear sky** - the tile path contributed exactly nothing, and what was on
+  screen was the fBm fallback the whole time. At spawn the residue is zero and
+  it works, which is presumably how it survived. The corner is now
+  camera-relative.
+
+  **Still open:** the corner is assumed to be the player snapped down to the
+  50-block grid, not read from the renderer. `clouds.vsh` places each tile at a
+  camera-relative offset the CPU hands it directly, and the game's clouds drift
+  on the wind, so a corner derived from the player's position alone cannot be
+  complete. Cloud diagnostic **view 2** draws the tile field straight down with
+  no throw - stand still, look up, look down - which answers registration
+  directly for the first time, and the reader now logs every member of the cloud
+  renderer that could hold the real offset, with live values.
+- **The cloud deck height is a slider, not a reading.** The game does not expose
+  it: `IAmbientManager` has `BlendedCloudDensity` and `BlendedCloudBrightness`
+  and no Y position, and the renderer that knows lives in `VintagestoryLib`. The
+  height sets how far a shadow is thrown from its cloud, so a wrong value
+  mis-places every shadow except at noon. The throw is capped at 320 blocks
+  because the window is only 800 across and an uncapped throw walks out of the
+  data at exactly the hour shadows would be longest.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that

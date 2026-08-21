@@ -354,18 +354,72 @@ follow, and the field does both:
   and merely slide, which reads as a texture scrolling under the world rather
   than as something being cast.
 
+### Registration: the part that has never worked
+
+The cloud shadow field has three separable jobs, and only the first two have
+ever been right.
+
+1. **Density** - how much of the sun a tile blocks. This mirrors the game:
+   `min(1, cloudOpaqueness * min(1, 10 * selfThickness))`, exactly what
+   `clouds.vsh` writes into `rgbaCloud.a`. The inner `min` saturates, which is
+   why vanilla's sky reads as solid tiles with sharp edges rather than as a
+   gradient.
+2. **Direction** - which way the shadow is thrown. This uses vanilla's own
+   `lightPosition`, the same vector the terrain shader lights every face with,
+   so it follows the sun and the moon without this code having any notion of
+   where either one is.
+3. **Registration** - *where the tile window sits in the world*. This has been
+   wrong every time, and it is the only one that decides whether a shadow lands
+   under the cloud that cast it.
+
+Registration failed twice for different reasons:
+
+- **Mixed coordinate spaces.** The window corner was handed to the shader as a
+  true world coordinate and compared against a position built from
+  `vv_cloudOrigin`, which is the camera position *wrapped to 4096 blocks* - it
+  has to be, because a float32 cannot resolve a Vintage Story world coordinate.
+  The residue is whatever multiple of 4096 the player is past, so the lookup
+  landed thousands of tiles outside a sixteen-tile window and every fragment
+  read clear sky. At spawn the residue is zero and it works. The corner is now
+  **camera-relative** (`vv_cloudMapCorner`), which removes the question instead
+  of answering it.
+- **The corner is still assumed, not read.** It is taken to be the player's
+  position snapped down to the 50-block grid. `clouds.vsh` places each tile at a
+  camera-relative offset the CPU hands it directly, so the renderer knows the
+  true answer - and since the game's clouds drift on the wind, a corner derived
+  from the player's position alone cannot be complete. The reader now logs every
+  member of the cloud renderer that could hold that offset, with live values.
+
 ### When they do not appear
 
-`Weather.CloudShadowDebug` - or **Debug: show cloud shadows only** on F7 - shows
-the field on its own at full strength with vanilla's shadow map out of the way.
-Under cloud the ground goes black; in the clear it stays lit. It is not subtle
-and is not meant to be.
+**Debug: cloud diagnostic** on F7 (`Weather.CloudDebugView`) draws a diagnostic
+instead of shading. Each view answers one question, because four rounds of this
+have been spent blaming a different multiplied term each time.
 
-It exists because this effect has now failed to appear three times, and each
-round was spent guessing which of five multiplied terms - config strength,
-daylight, cover, the vanilla shadow, the uniform upload itself - was the zero.
-The debug path bypasses all of them, so it separates the only two cases that
-matter: the GLSL is running and is too faint, or it is not running at all.
+| View | What it draws | What it tells you |
+|---|---|---|
+| 1 | The field the shadow uses, thrown along the light, at full strength with vanilla's shadow map out of the way | Is the GLSL running at all, or merely too faint |
+| 2 | The tile field **straight down** - no throw toward the sun, no edge fade | **The calibration test.** Stand still, look up, look down. Matching pattern means the window is registered; a shifted pattern means the corner is off by that much; no resemblance means the array is not what this assumes |
+| 3 | The sampling window's own tile grid and edge band | Where it is looking, rather than where it is assumed to look |
+
+View 2 is the one that matters. Every other unknown - deck height, throw
+distance, strength, vanilla's shadow - is downstream of it, and tuning any of
+them while registration is wrong cannot help.
+
+### The cloud deck height is a guess
+
+`Weather.CloudHeight` is a slider, not a reading. The game does not expose the
+altitude it draws clouds at: `IAmbientManager` carries `BlendedCloudDensity` and
+`BlendedCloudBrightness` and no Y position at all, and the renderer that knows
+lives in `VintagestoryLib`. The height decides how far a shadow is thrown from
+the cloud casting it, so a wrong value mis-places every shadow except at noon -
+which is exactly why diagnostic view 2 removes the throw entirely.
+
+The throw is also capped at 320 blocks. The true projection runs to infinity at
+the horizon and the window is only 800 blocks across, so an uncapped throw walks
+out of the data and every shadow disappears at the hour they would be longest.
+Shadows shorten instead, and since strength is already scaled by daylight, the
+hours where the cap bites are the hours the effect is fading out anyway.
 
 Alongside it, the binder now logs what it is actually driving the shadows with,
 once and again on change, and warns if it has been unable to upload for several

@@ -30,7 +30,8 @@ uniform float vv_cloudScale;         // blocks across one cloud cell
 uniform float vv_cloudHeight;        // world height the shadow-casting deck sits at
 uniform vec2  vv_cloudDrift;         // advanced on the CPU along the real wind
 uniform vec3  vv_cloudOrigin;        // camera world position, wrapped on the CPU
-uniform float vv_cloudDebug;         // 1 shows the cloud field alone; 0 is normal rendering
+// Which diagnostic to draw instead of shading, 0 for none. See vvCloudDebug.
+uniform float vv_cloudDebug;
 
 // The game's OWN cloud placement, read off the cloud renderer's tile array on
 // the CPU and handed over as a window centred on the player.
@@ -46,8 +47,40 @@ uniform float vv_cloudDebug;         // 1 shows the cloud field alone; 0 is norm
 #define VV_CLOUD_TILE_SIZE 50.0
 
 uniform vec4  vv_cloudTiles[VV_CLOUD_TILES * VV_CLOUD_TILES / 4];
-uniform vec2  vv_cloudMapOrigin;     // world XZ of the corner of tile [0,0]
 uniform float vv_cloudMapValid;      // 0 falls back to the noise field
+
+// CAMERA-RELATIVE XZ of the corner of tile [0,0], not world XZ.
+//
+// This is the fix for the defect that made the tile path contribute nothing at
+// all. The corner used to be handed over in true world coordinates and then
+// compared against a position built from vv_cloudOrigin - which is the camera
+// position WRAPPED to 4096 blocks, because a float32 cannot hold a Vintage
+// Story world coordinate finely enough to be useful. Subtracting an unwrapped
+// corner from a wrapped position leaves a residue of whatever multiple of 4096
+// the player happened to be past, so the lookup landed thousands of tiles
+// outside a sixteen-tile window and every fragment read clear sky. At spawn the
+// residue is zero and it works, which is presumably how it survived.
+//
+// Camera-relative removes the question rather than answering it: both sides are
+// small numbers near the camera, there is no wrap to agree about, and float32
+// has precision to spare. Renamed from vv_cloudMapOrigin so that a binder still
+// uploading the old meaning fails the wiring check instead of silently
+// disagreeing about what the number means.
+uniform vec2  vv_cloudMapCorner;
+
+// How far a shadow may be thrown sideways from the cloud casting it, in blocks.
+//
+// The true projection runs to infinity as the sun reaches the horizon, and the
+// window is 800 blocks across, so an uncapped throw walks straight out of the
+// data and every shadow vanishes at exactly the hour they would be longest.
+// Capped and then faded at the window edge instead: shadows shorten rather than
+// disappear, and vv_cloudShadowStrength is already scaled by daylight, so the
+// hours where the cap bites are the hours the effect is fading out anyway.
+#define VV_CLOUD_MAX_THROW 320.0
+
+// Tiles of fade at the window edge. Without it the window boundary is a hard
+// line across the world that moves with the player.
+#define VV_CLOUD_EDGE_FADE 2.0
 
 // ---------------------------------------------------------------------------
 // Fog
@@ -185,9 +218,9 @@ float vvCloudTile(ivec2 t)
 // edge on the ground reads as a bug rather than as a cloud, so the lookup is
 // bilinear with a smoothstep weight. The shadow stays where the cloud is and
 // stops being square.
-float vvCloudMap(vec2 worldXZ)
+float vvCloudMapRaw(vec2 cameraRelativeXZ)
 {
-    vec2 p = (worldXZ - vv_cloudMapOrigin) / VV_CLOUD_TILE_SIZE;
+    vec2 p = (cameraRelativeXZ - vv_cloudMapCorner) / VV_CLOUD_TILE_SIZE;
 
     ivec2 t = ivec2(floor(p));
     vec2 f = fract(p);
@@ -199,6 +232,23 @@ float vvCloudMap(vec2 worldXZ)
     return clamp(mix(a, b, f.y), 0.0, 1.0);
 }
 
+// The same lookup, faded toward the window edge.
+//
+// The window is only 800 blocks across and follows the player, so a hard
+// boundary is a line of shadow that ends in mid-field and slides along with
+// them - which reads as a rendering fault, not as weather. Split from the raw
+// lookup so the calibration view can show placement without the fade confusing
+// what it is looking at.
+float vvCloudMap(vec2 cameraRelativeXZ)
+{
+    vec2 p = (cameraRelativeXZ - vv_cloudMapCorner) / VV_CLOUD_TILE_SIZE;
+
+    vec2 fromEdge = min(p, vec2(float(VV_CLOUD_TILES)) - p);
+    float fade = clamp(min(fromEdge.x, fromEdge.y) / VV_CLOUD_EDGE_FADE, 0.0, 1.0);
+
+    return vvCloudMapRaw(cameraRelativeXZ) * fade;
+}
+
 // The raw cloud field over this fragment, 0 in the clear to 1 fully under
 // cloud.
 //
@@ -208,28 +258,43 @@ float vvCloudMap(vec2 worldXZ)
 // independent of every one of them.
 float vvCloudCoverage(vec3 cameraRelativePos)
 {
-    vec3 world = cameraRelativePos + vv_cloudOrigin;
-
-    // Walk from the fragment up to the cloud deck along the sun direction, so
+    // Walk from the fragment up to the cloud deck along the light direction, so
     // the shadow lands where the cloud actually blocks the light rather than
     // straight above. At a low sun this is a long way sideways, which is
     // exactly what makes cloud shadows read as three-dimensional.
+    //
+    // lightPosition is vanilla's own light direction - the same vector the
+    // terrain shader lights every face with, which is why this needs no notion
+    // of its own about where the sun is and why it follows the moon at night
+    // without being told. Directionality comes from using the game's answer.
     vec3 toSun = normalize(lightPosition);
+
+    // Y is the one component of vv_cloudOrigin that is NOT wrapped, precisely
+    // so that a height can still be compared against the cloud deck.
+    float worldY = cameraRelativePos.y + vv_cloudOrigin.y;
 
     // Floored rather than used raw: an unset uniform reads as 0, and a deck at
     // world height zero is below the ground everywhere, which would collapse
     // the offset to nothing and cast every shadow straight down.
     float deck = max(32.0, vv_cloudHeight);
-    float climb = max(0.0, deck - world.y);
-    vec2 at = world.xz + toSun.xz * (climb / max(0.15, abs(toSun.y)));
+    float climb = max(0.0, deck - worldY);
+
+    vec2 thrown = toSun.xz * min(climb / max(0.15, abs(toSun.y)), VV_CLOUD_MAX_THROW);
 
     // The game's own clouds when they can be read, and the mod's noise field
     // when they cannot. Only the first of these can actually line up with the
     // sky; the second exists so that a version which moves the cloud renderer
     // out of reach costs the registration rather than the whole effect.
-    if (vv_cloudMapValid > 0.5) return vvCloudMap(at);
+    //
+    // The two work in DIFFERENT SPACES and that is deliberate. The tile window
+    // is anchored to the camera, so it is sampled camera-relative and never
+    // touches a world coordinate. The noise field has to be anchored to the
+    // world or it would slide along the ground with the player, so it takes the
+    // wrapped world position - and being periodic already, a wrap it repeats on
+    // costs it nothing.
+    if (vv_cloudMapValid > 0.5) return vvCloudMap(cameraRelativePos.xz + thrown);
 
-    return vvCloudDensity(at, toSun);
+    return vvCloudDensity(cameraRelativePos.xz + vv_cloudOrigin.xz + thrown, toSun);
 }
 
 float vvCloudShadow(vec3 cameraRelativePos)
@@ -237,6 +302,72 @@ float vvCloudShadow(vec3 cameraRelativePos)
     if (vv_cloudShadowStrength < 0.001) return 1.0;
 
     return 1.0 - vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+//
+// Cloud shadows have now failed four times, and every round was spent guessing
+// from a screenshot. These views exist to make the next round a measurement.
+//
+// The question that has never actually been answered is REGISTRATION: whether
+// the tile window the CPU hands over describes the piece of sky it is assumed
+// to describe. Every other unknown - deck height, throw distance, strength,
+// vanilla's own shadow map - is downstream of that, and each one has been
+// blamed in turn while the registration went unchecked.
+//
+//   1  the field the shadow actually uses, thrown along the light. What the
+//      effect is doing, with strength and vanilla's shadow out of the way.
+//
+//   2  CALIBRATION. The tile field straight down, with NO throw toward the
+//      light and NO edge fade. Whatever is directly overhead is drawn directly
+//      underfoot, so the test is: stand still, look up, look down. If the
+//      pattern on the ground matches the clouds in the sky, the window is
+//      registered and any remaining error is in the throw. If it matches but is
+//      shifted, the corner is wrong by that much. If it looks nothing like the
+//      sky, the array is not what this assumes and no amount of tuning the
+//      throw will help.
+//
+//   3  the window itself: the tile grid and its edge, so the sampling geometry
+//      can be seen rather than inferred. Every 50-block tile boundary is a dark
+//      line, and the outer two tiles are the fade band. The player stands at
+//      the centre of the middle tile.
+//
+// Deliberately independent of vv_cloudShadowStrength, of daylight and of the
+// vanilla shadow map, all three of which have been the zero at some point.
+float vvCloudDebug(int mode, vec3 cameraRelativePos)
+{
+    if (mode == 1) return 1.0 - vvCloudCoverage(cameraRelativePos);
+
+    // Straight down. No throw, so this is honest about placement even when the
+    // deck height is a guess - which it is, because the game does not expose
+    // the altitude it draws its clouds at.
+    if (mode == 2)
+    {
+        if (vv_cloudMapValid < 0.5) return 1.0;
+        return 1.0 - vvCloudMapRaw(cameraRelativePos.xz);
+    }
+
+    if (mode == 3)
+    {
+        vec2 p = (cameraRelativePos.xz - vv_cloudMapCorner) / VV_CLOUD_TILE_SIZE;
+
+        if (p.x < 0.0 || p.y < 0.0 || p.x >= float(VV_CLOUD_TILES) || p.y >= float(VV_CLOUD_TILES))
+        {
+            return 1.0;
+        }
+
+        vec2 fromEdge = min(p, vec2(float(VV_CLOUD_TILES)) - p);
+        float band = min(fromEdge.x, fromEdge.y) < VV_CLOUD_EDGE_FADE ? 0.55 : 1.0;
+
+        vec2 within = abs(fract(p) - 0.5);
+        float line = max(within.x, within.y) > 0.47 ? 0.25 : 1.0;
+
+        return band * line;
+    }
+
+    return 1.0;
 }
 
 // Replaces vanilla's shadow lookup everywhere it is used.
@@ -258,7 +389,8 @@ float getBrightnessFromShadowMap()
     // strength, daylight, the vanilla shadow - is bypassed here, so if this
     // shows nothing the fault is upstream of the shader and the binder's own
     // log line says where.
-    if (vv_cloudDebug > 0.5) return 1.0 - vvCloudCoverage(worldPos.xyz);
+    int debug = int(vv_cloudDebug + 0.5);
+    if (debug > 0) return vvCloudDebug(debug, worldPos.xyz);
 
     return vvVanillaShadowMap() * vvCloudShadow(worldPos.xyz);
 }

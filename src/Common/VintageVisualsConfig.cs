@@ -267,14 +267,23 @@ namespace VintageVisuals.Common
         public bool CloudsFromGame { get; set; } = true;
 
         /// <summary>
-        /// Shows the cloud shadow field on its own, at full strength, with
-        /// vanilla's shadow map out of the way.
+        /// Which cloud diagnostic to draw instead of shading. 0 is off.
         ///
-        /// Not a look control. It answers the question that matters when the
-        /// effect is invisible: is the GLSL running and merely too faint, or is
-        /// it not running at all.
+        /// Not a look control, and no longer a yes/no. Cloud shadows have
+        /// failed four times and each round blamed a different multiplied term,
+        /// so the views are separated by the question they answer:
+        ///
+        ///   1  the field the shadow uses, thrown along the light - is the GLSL
+        ///      running, and is it merely too faint?
+        ///   2  the tile field straight down, no throw, no fade - does the
+        ///      window describe the sky that is actually overhead? Stand still,
+        ///      look up, look down, compare.
+        ///   3  the window's own tile grid and edge - where is it sampling?
+        ///
+        /// 2 is the one that has never been answered. Everything else is
+        /// downstream of it.
         /// </summary>
-        public bool CloudShadowDebug { get; set; } = false;
+        public float CloudDebugView { get; set; } = 0f;
 
         /// <summary>Blocks across one cloud cell. Larger means broader, slower shadows.</summary>
         public float CloudScale { get; set; } = 190.0f;
@@ -322,6 +331,8 @@ namespace VintageVisuals.Common
                 "Weather.CloudDriftSpeed", corrections);
             CloudHeight = ColorGradeConfig.Clamp(CloudHeight, 40.0f, 400.0f,
                 "Weather.CloudHeight", corrections);
+            CloudDebugView = ColorGradeConfig.Clamp(CloudDebugView, 0.0f, 3.0f,
+                "Weather.CloudDebugView", corrections);
         }
     }
 

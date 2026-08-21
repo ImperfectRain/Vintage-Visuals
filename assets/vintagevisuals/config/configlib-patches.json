@@ -44,13 +44,6 @@
         "clientSide": true,
         "weight": 8
       },
-      "weather_cloudshadowdebug": {
-        "ingui": "Debug: show cloud shadows only",
-        "comment": "Shows the cloud shadow field on its own at full strength, with vanilla's shadow map out of the way. Under cloud the ground goes black. Use this to find out whether the effect is running and too faint, or not running at all.",
-        "default": false,
-        "clientSide": true,
-        "weight": 7
-      },
       "pbr_enabled": {
         "ingui": "Surface relief (PBR)",
         "comment": "Derived normal maps give stone, wood and gravel real surface relief. Off by default: this is the only setting that patches the shader drawing the world.",
@@ -666,6 +659,18 @@
           "max": 14.0,
           "step": 1.0
         }
+      },
+      "weather_clouddebugview": {
+        "ingui": "Debug: cloud diagnostic",
+        "comment": "0 off. 1 shows the cloud shadow field on its own at full strength, with vanilla's shadow map out of the way. 2 is the calibration view: the game's cloud tiles drawn straight down with no offset toward the sun - stand still, look up, look down, and the pattern on the ground should match the clouds in the sky. 3 shows the sampling window's own tile grid and its edge.",
+        "default": 0.0,
+        "range": {
+          "min": 0.0,
+          "max": 3.0,
+          "step": 1.0
+        },
+        "clientSide": true,
+        "weight": 7
       }
     }
   }

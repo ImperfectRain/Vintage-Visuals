@@ -279,8 +279,8 @@ namespace VintageVisuals.Common
                 case "weather_cloudsfromgame":
                     weather.CloudsFromGame = tree.GetBool("value", weather.CloudsFromGame);
                     break;
-                case "weather_cloudshadowdebug":
-                    weather.CloudShadowDebug = tree.GetBool("value", weather.CloudShadowDebug);
+                case "weather_clouddebugview":
+                    weather.CloudDebugView = tree.GetFloat("value", weather.CloudDebugView);
                     break;
                 case "weather_cloudshadow":
                     weather.CloudShadowStrength = tree.GetFloat("value", weather.CloudShadowStrength);

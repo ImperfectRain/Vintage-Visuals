@@ -43,7 +43,7 @@ namespace VintageVisuals.Weather
         public const string CloudOriginUniform = "vv_cloudOrigin";
         public const string CloudDebugUniform = "vv_cloudDebug";
         public const string CloudTilesUniform = "vv_cloudTiles";
-        public const string CloudMapOriginUniform = "vv_cloudMapOrigin";
+        public const string CloudMapCornerUniform = "vv_cloudMapCorner";
         public const string CloudMapValidUniform = "vv_cloudMapValid";
 
         /// <summary>vec4s in the cloud tile window: four tiles packed per vec4.</summary>
@@ -206,7 +206,7 @@ namespace VintageVisuals.Weather
                 // ground instead of sliding with the player. The chunk shaders
                 // only have camera-relative positions.
                 program.Uniform(CloudOriginUniform, _weather.CameraOrigin);
-                program.Uniform(CloudDebugUniform, config.CloudShadowDebug ? 1f : 0f);
+                program.Uniform(CloudDebugUniform, config.CloudDebugView);
 
                 UploadCloudMap(program, config);
 
@@ -245,7 +245,7 @@ namespace VintageVisuals.Weather
             // location for the whole array, and which spelling a given driver
             // reports through introspection is not something to depend on.
             program.Uniforms4(CloudTilesUniform, CloudVectors, _cloudPacked);
-            program.Uniform(CloudMapOriginUniform, clouds.Origin);
+            program.Uniform(CloudMapCornerUniform, clouds.Origin);
         }
 
         /// <summary>
@@ -280,7 +280,9 @@ namespace VintageVisuals.Weather
                 ", source " + (_weather.Clouds != null && _weather.Clouds.Available && _weather.Config.CloudsFromGame
                     ? "the game's own cloud tiles"
                     : "the mod's noise field (will NOT line up with the sky)") +
-                (_weather.Config.CloudShadowDebug ? " [DEBUG VIEW ON]" : ""));
+                (_weather.Config.CloudDebugView > 0.5f
+                    ? " [DEBUG VIEW " + (int)(_weather.Config.CloudDebugView + 0.5f) + "]"
+                    : ""));
         }
 
         /// <summary>
