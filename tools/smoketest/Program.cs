@@ -187,6 +187,7 @@ void main(void) {
 
         Console.WriteLine("Shipped GLSL is plain ASCII");
         AsciiChecks.Run(Repo, Check);
+        AsciiChecks.RunDeadCodeCheck(Repo, Check);
 
         Console.WriteLine("ConfigLib settings file agrees with the bridge");
         ConfigLibChecks.Run(Repo, Check);

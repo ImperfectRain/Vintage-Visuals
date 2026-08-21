@@ -34,7 +34,6 @@ in vec4 rgbaFog; // vintagevisuals: anchor, asserted and pasted back by scene.gl
 uniform float vv_sceneDayLight;        // 0 midnight, 1 noon
 uniform float vv_sceneWetness;         // 0 dry, 1 as wet as rain makes it
 uniform float vv_sceneOvercast;        // 0 clear sky, 1 sun fully diffused
-uniform float vv_sceneEnclosure;       // 0 open sky, 1 fully boxed in
 uniform float vv_sceneArtificialLight; // 0 lit by sky, 1 lit by fire
 
 // A clock, pre-wrapped to 0..1 on the CPU in double precision.
@@ -60,8 +59,20 @@ uniform float vv_sceneClock;
 // change how surfaces RESPOND - what takes water, what frosts - not how they
 // look.
 
-uniform float vv_sceneAutumn;  // 0 away from autumn, 1 at its middle
-uniform float vv_sceneWinter;  // 0 away from winter, 1 at its middle
+// Autumn and winter are NOT declared here yet, deliberately.
+//
+// They are sampled and published on the CPU - EnvironmentState.Autumn and
+// .Winter, from the game's own GetSeason - and the intent stack uses winter to
+// argue for cold. Nothing in GLSL reads them, so declaring them here would
+// leave two uniforms that the compiler optimises out, HasUniform then reports
+// as absent, and the binder goes on uploading to every frame. A declared but
+// unread uniform is not free in this mod; it is a name being written to a
+// program that does not have it.
+//
+// Enclosure is out for the same reason: it is sampled, published and used by
+// the intent stack on the CPU, and no shader reads it yet.
+//
+// Add any of them back in the same commit as the first shader that reads them.
 
 // How much the environmental frost layer is allowed to do, on top of vanilla's
 // own frost mask. 0 leaves vanilla's frost exactly as it was.
@@ -90,16 +101,6 @@ uniform float vv_sceneReadability;
 // written `* vvSceneDampen()` says why it is being scaled; the same expression
 // spelled out inline does not, and gets deleted by whoever tunes it next.
 
-// What a light-removing term is allowed to keep.
-//
-// The floor is not 0. An effect that can be driven to nothing by conditions is
-// an effect that silently stops existing, and nobody ever works out why - so
-// the darkest, most restrained scene still keeps a third of it.
-float vvSceneDampen()
-{
-    return mix(1.0, 0.33, clamp(vv_sceneRestraint, 0.0, 1.0));
-}
-
 // The stronger version, for terms that specifically cost VISIBILITY rather than
 // merely appearance: fog, shadow, anything that hides geometry the player may
 // be about to walk into or be hit by.
@@ -107,18 +108,4 @@ float vvSceneVisibilityDampen()
 {
     float hold = max(clamp(vv_sceneRestraint, 0.0, 1.0), clamp(vv_sceneReadability, 0.0, 1.0));
     return mix(1.0, 0.25, hold);
-}
-
-// True where the sky is doing the lighting. Weather is an outdoor phenomenon
-// and a cellar is the same colour whatever it is doing outside.
-float vvSceneOpenAir()
-{
-    return 1.0 - clamp(vv_sceneEnclosure, 0.0, 1.0);
-}
-
-// Where fire rather than sky is the light source, which is most of this game's
-// interiors and all of its nights.
-float vvSceneFirelit()
-{
-    return clamp(vv_sceneArtificialLight, 0.0, 1.0) * (1.0 - clamp(vv_sceneDayLight, 0.0, 1.0) * 0.5);
 }

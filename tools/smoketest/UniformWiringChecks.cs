@@ -56,6 +56,16 @@ namespace VintageVisuals.SmokeTest
                 .Select(m => m.Groups[1].Value)
                 .ToHashSet();
 
+            // SetIfPresent(program, NameUniform, value) is an upload too. It is
+            // how the shared scene block is pushed, since a snippet injected
+            // into five programs is only partly present in each of them, and
+            // this check reported all thirteen of those uniforms as dead the
+            // moment they moved behind it.
+            foreach (Match m in Regex.Matches(binders, @"SetIfPresent\(\s*\w+\s*,\s*(\w+)\s*,"))
+            {
+                uploads.Add(m.Groups[1].Value);
+            }
+
             var constants = Regex.Matches(binders, @"const string (\w+)\s*=\s*""(vv_\w+)""")
                 .ToDictionary(m => m.Groups[2].Value, m => m.Groups[1].Value, StringComparer.Ordinal);
 
@@ -84,6 +94,120 @@ namespace VintageVisuals.SmokeTest
 
             check("every uploaded uniform is declared in a shader", orphans.Count == 0,
                 string.Join(", ", orphans));
+
+            // ---------------------------------------------------------------
+            // A SHARED SNIPPET NEEDS A SHARED UPLOAD PATH
+            // ---------------------------------------------------------------
+            //
+            // The global check above only asks whether SOMETHING uploads each
+            // uniform. That is not enough for a snippet injected into several
+            // programs: three of scene.glsl's uniforms were uploaded ad hoc by
+            // the terrain and entity paths, so the particle programs - which
+            // inject the same snippet - never received them. vv_sceneDayLight
+            // read as zero, zero multiplied the visibility term, and particle
+            // specular was silently dead.
+            //
+            // The contract is simple enough to enforce: every uniform declared
+            // in scene.glsl is uploaded by UploadScene, and by nothing else.
+            // UploadScene is called from every path, so that makes the coverage
+            // structural rather than something to remember.
+            string sceneGlsl = File.ReadAllText(Path.Combine(snippetDir, "scene.glsl"));
+
+            var sceneUniforms = Regex.Matches(sceneGlsl,
+                    @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+
+            string binderSource = File.ReadAllText(
+                Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+
+            int uploadSceneStart = binderSource.IndexOf("private void UploadScene(", StringComparison.Ordinal);
+            string uploadScene = uploadSceneStart < 0
+                ? ""
+                : binderSource.Substring(uploadSceneStart,
+                    binderSource.IndexOf("\n        }", uploadSceneStart, StringComparison.Ordinal) - uploadSceneStart);
+
+            var constantFor = Regex.Matches(binderSource, @"const string (\w+)\s*=\s*""(vv_\w+)""")
+                .ToDictionary(m => m.Groups[2].Value, m => m.Groups[1].Value);
+
+            var notInUploadScene = sceneUniforms
+                .Where(u => !constantFor.TryGetValue(u, out string c) || !uploadScene.Contains(c))
+                .ToList();
+
+            check("every scene.glsl uniform is uploaded by UploadScene", notInUploadScene.Count == 0,
+                string.Join(", ", notInUploadScene));
+
+            check("UploadScene was found at all", uploadSceneStart >= 0, "");
+
+            // No sentinel, and no unguarded upload.
+            //
+            // UploadScene used to begin "if (!program.HasUniform(
+            // vv_sceneRestraint)) return;" - one uniform standing in for the
+            // whole snippet. That is only sound if every program that injects
+            // scene.glsl reads that uniform, and only the terrain ones do:
+            // vv_sceneRestraint is read from vvSceneVisibilityDampen(), which
+            // lives in pseudopbr.glsl alone. In entityanimated, particlescube
+            // and particlesquad the compiler removed it, HasUniform said no,
+            // and the method returned having uploaded NOTHING - so the fix that
+            // moved vv_sceneDayLight into this method moved it behind a guard
+            // that was already failing for the path that needed it.
+            //
+            // The rule that replaces it: ask per name. These two checks pin it,
+            // because the sentinel is an easy thing to reintroduce as an
+            // optimisation by someone who has not read the paragraph above.
+            check("UploadScene has no sentinel early-return",
+                !uploadScene.Contains("HasUniform") || uploadScene.Contains("SetIfPresent"),
+                "a single HasUniform guard cannot speak for a snippet five programs read differently");
+
+            var unguarded = Regex.Matches(uploadScene, @"^\s*program\.Uniform\(\s*(\w+)",
+                                          RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+
+            check("every UploadScene upload is presence-guarded", unguarded.Count == 0,
+                string.Join(", ", unguarded));
+
+            // Every path that can reach a shaded program has to call it.
+            foreach (string method in new[] { "private bool Upload(", "private void UploadEntities(", "private void UploadParticles(" })
+            {
+                int at = binderSource.IndexOf(method, StringComparison.Ordinal);
+                string body = at < 0 ? "" : binderSource.Substring(at,
+                    Math.Min(4000, binderSource.Length - at));
+
+                check("UploadScene is called from " + method.Trim('(').Split(' ').Last(),
+                    at >= 0 && body.Contains("UploadScene(program)"), method);
+            }
+
+            // pbrcore.glsl is injected into all three shaded programs too, so it
+            // has the same contract - every path that can reach a shaded
+            // program must upload every uniform it declares. It is checked
+            // against the union of the three upload methods rather than against
+            // one, because unlike scene.glsl these are genuinely per-path look
+            // controls rather than one shared block.
+            string coreGlsl = File.ReadAllText(Path.Combine(snippetDir, "pbrcore.glsl"));
+
+            var coreUniforms = Regex.Matches(coreGlsl,
+                    @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value)
+                .ToList();
+
+            foreach (string method in new[] { "private bool Upload(", "private void UploadEntities(", "private void UploadParticles(" })
+            {
+                int at = binderSource.IndexOf(method, StringComparison.Ordinal);
+                if (at < 0) continue;
+
+                string body = binderSource.Substring(at, Math.Min(4000, binderSource.Length - at));
+                bool callsScene = body.Contains("UploadScene(program)");
+
+                var unreached = coreUniforms
+                    .Where(u => constantFor.TryGetValue(u, out string c) &&
+                                !body.Contains(c) &&
+                                !(callsScene && uploadScene.Contains(c)))
+                    .ToList();
+
+                check("every pbrcore.glsl uniform reaches " + method.Trim('(').Split(' ').Last(),
+                    unreached.Count == 0, string.Join(", ", unreached));
+            }
 
             check("the material sampler is bound", binders.Contains("BindTexture2D(SamplerUniform"), "");
         }

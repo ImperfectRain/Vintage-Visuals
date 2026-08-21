@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 
 namespace VintageVisuals.PseudoPBR
@@ -64,13 +65,10 @@ namespace VintageVisuals.PseudoPBR
         // The shared scene vocabulary. Same names in every shaded program, so a
         // creature and the ground it stands on cannot disagree about the
         // weather - see assets/.../shadersnippets/scene.glsl.
-        public const string EnclosureUniform = "vv_sceneEnclosure";
         public const string ArtificialLightUniform = "vv_sceneArtificialLight";
         public const string RestraintUniform = "vv_sceneRestraint";
         public const string ReadabilityUniform = "vv_sceneReadability";
         public const string ClockUniform = "vv_sceneClock";
-        public const string AutumnUniform = "vv_sceneAutumn";
-        public const string WinterUniform = "vv_sceneWinter";
         public const string FrostUniform = "vv_sceneFrost";
         public const string SnowUniform = "vv_sceneSnow";
 
@@ -259,7 +257,7 @@ namespace VintageVisuals.PseudoPBR
             int uploaded = 0;
             foreach (EnumShaderProgram id in PatchedPrograms)
             {
-                if (Upload(id, _weather.DayLight)) uploaded++;
+                if (Upload(id)) uploaded++;
             }
 
             if (uploaded == 0)
@@ -299,7 +297,7 @@ namespace VintageVisuals.PseudoPBR
         /// night. Uniform uploads all live here so that "did I wire this up"
         /// is answerable by looking at one method.
         /// </summary>
-        private bool Upload(EnumShaderProgram id, float daylight)
+        private bool Upload(EnumShaderProgram id)
         {
             IShaderProgram program = _capi.Shader.GetProgram((int)id);
 
@@ -316,26 +314,23 @@ namespace VintageVisuals.PseudoPBR
             // to swap and this is the whole binding.
             program.BindTexture2D(SamplerUniform, _atlas.TextureIdFor(0), MaterialAtlasTexture.TextureUnit);
 
-            program.Uniform(EnabledUniform, 1f);
-            program.Uniform(NormalStrengthUniform, _look.NormalStrength);
-            program.Uniform(SpecularStrengthUniform, _look.SpecularStrength);
-            program.Uniform(DebugViewUniform, _look.DebugView);
-            program.Uniform(DayLightUniform, daylight);
-            program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
-            program.Uniform(MetalResponseUniform, _look.MetalResponse);
-            program.Uniform(AmbientUniform, _look.AmbientSpecular);
-            program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
-            program.Uniform(DetailDistanceUniform, _look.DetailDistance);
-            program.Uniform(FoliageUniform, _look.FoliageTranslucency);
-            program.Uniform(CavityUniform, _look.CavityStrength);
-            program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
-            program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
-            program.Uniform(WetnessUniform, _weather.Wetness);
-            program.Uniform(RainCoverUniform, _weather.RainCover);
-            program.Uniform(RipplesUniform, _weather.Ripples);
-            program.Uniform(RippleTimeUniform, _weather.RippleTime);
-            program.Uniform(OvercastUniform, _weather.Overcast);
-            program.Uniform(OriginUniform, _weather.Origin);
+            SetIfPresent(program, EnabledUniform, 1f);
+            SetIfPresent(program, NormalStrengthUniform, _look.NormalStrength);
+            SetIfPresent(program, SpecularStrengthUniform, _look.SpecularStrength);
+            SetIfPresent(program, DebugViewUniform, _look.DebugView);
+            SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
+            SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
+            SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
+            SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
+            SetIfPresent(program, DetailDistanceUniform, _look.DetailDistance);
+            SetIfPresent(program, FoliageUniform, _look.FoliageTranslucency);
+            SetIfPresent(program, CavityUniform, _look.CavityStrength);
+            SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
+            SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
+            SetIfPresent(program, RainCoverUniform, _weather.RainCover);
+            SetIfPresent(program, RipplesUniform, _weather.Ripples);
+            SetIfPresent(program, RippleTimeUniform, _weather.RippleTime);
+            SetIfPresent(program, OriginUniform, _weather.Origin);
             UploadScene(program);
 
             program.Stop();
@@ -358,14 +353,14 @@ namespace VintageVisuals.PseudoPBR
 
                 program.Use();
 
-                program.Uniform(ParticleUniform, _look.ParticleLighting ? 1f : 0f);
-                program.Uniform(ParticleSpecularUniform, _look.ParticleSpecular);
-                program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
-                program.Uniform(AmbientUniform, _look.AmbientSpecular);
-                program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
-                program.Uniform(MetalResponseUniform, _look.MetalResponse);
-                program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
-                program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
+                SetIfPresent(program, ParticleUniform, _look.ParticleLighting ? 1f : 0f);
+                SetIfPresent(program, ParticleSpecularUniform, _look.ParticleSpecular);
+                SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
+                SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
+                SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
+                SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
+                SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
+                SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
                 UploadScene(program);
 
                 program.Stop();
@@ -382,27 +377,62 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>
         /// Pushes the shared scene vocabulary.
         ///
-        /// The same five values into every shaded program, from one place, so
-        /// there is no way for two of them to be told different things.
+        /// The same values into every shaded program, from one place, so there
+        /// is no way for two of them to be told different things.
+        ///
+        /// EVERY uniform scene.glsl declares goes through here, and nowhere
+        /// else. Three of them used to be uploaded ad hoc by the terrain and
+        /// entity paths instead, which meant the particle programs - which
+        /// inject the same snippet - never received them at all. An unset
+        /// vv_sceneDayLight reads as zero, zero multiplies the visibility term,
+        /// and particle specular was silently dead.
+        ///
+        /// There is deliberately NO sentinel guard on this method. It had one -
+        /// an early return unless the program had vv_sceneRestraint - and that
+        /// guard was itself the bug it was meant to prevent. Only pseudopbr.glsl
+        /// calls vvSceneVisibilityDampen(), so only the terrain programs READ
+        /// vv_sceneRestraint; the compiler eliminates it everywhere else,
+        /// HasUniform reports it absent, and the whole method returned before
+        /// uploading anything to entities or particles. A sentinel is a claim
+        /// that one uniform's fate predicts the rest, and in a snippet shared by
+        /// five programs that shade differently, it does not.
         /// </summary>
         private void UploadScene(IShaderProgram program)
         {
-            if (!program.HasUniform(RestraintUniform)) return;
+            SetIfPresent(program, DayLightUniform, _weather.DayLight);
+            SetIfPresent(program, WetnessUniform, _weather.Wetness);
+            SetIfPresent(program, OvercastUniform, _weather.Overcast);
+            SetIfPresent(program, ArtificialLightUniform, _weather.ArtificialLight);
+            SetIfPresent(program, RestraintUniform, _weather.Restraint);
+            SetIfPresent(program, ReadabilityUniform, _weather.Readability);
+            SetIfPresent(program, ClockUniform, _weather.RippleTime);
+            SetIfPresent(program, FrostUniform, _weather.Frost);
+            SetIfPresent(program, SnowUniform, _weather.Snow);
 
-            program.Uniform(EnclosureUniform, _weather.Enclosure);
-            program.Uniform(ArtificialLightUniform, _weather.ArtificialLight);
-            program.Uniform(RestraintUniform, _weather.Restraint);
-            program.Uniform(ReadabilityUniform, _weather.Readability);
-            program.Uniform(ClockUniform, _weather.RippleTime);
-            program.Uniform(AutumnUniform, _weather.Autumn);
-            program.Uniform(WinterUniform, _weather.Winter);
-            program.Uniform(FrostUniform, _weather.Frost);
-            program.Uniform(SnowUniform, _weather.Snow);
+            SetIfPresent(program, EmissiveUniform, _look.EmissiveStrength);
+            SetIfPresent(program, EmissiveTemperatureUniform, _look.EmissiveTemperature);
+            SetIfPresent(program, EmissiveFlickerUniform, _look.EmissiveFlicker);
+            SetIfPresent(program, EmissiveBloomUniform, _look.EmissiveBloom);
+        }
 
-            program.Uniform(EmissiveUniform, _look.EmissiveStrength);
-            program.Uniform(EmissiveTemperatureUniform, _look.EmissiveTemperature);
-            program.Uniform(EmissiveFlickerUniform, _look.EmissiveFlicker);
-            program.Uniform(EmissiveBloomUniform, _look.EmissiveBloom);
+        /// <summary>
+        /// Uploads a uniform only if the linked program actually has it.
+        ///
+        /// A shared snippet is injected into programs that read different parts
+        /// of it, and GLSL removes what a program does not read - so "declared
+        /// in the snippet" and "present in this program" are different
+        /// questions. Asking per name is a dictionary lookup; assuming from one
+        /// name cost the particle path every scene value it needed.
+        /// </summary>
+        private static void SetIfPresent(IShaderProgram program, string name, float value)
+        {
+            if (program.HasUniform(name)) program.Uniform(name, value);
+        }
+
+        /// <summary>Same rule for the vec3 uploads.</summary>
+        private static void SetIfPresent(IShaderProgram program, string name, Vec3f value)
+        {
+            if (program.HasUniform(name)) program.Uniform(name, value);
         }
 
         /// <summary>
@@ -422,19 +452,16 @@ namespace VintageVisuals.PseudoPBR
 
                 program.Use();
 
-                program.Uniform(EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
-                program.Uniform(EntityRoughnessUniform, _look.EntityRoughness);
-                program.Uniform(EntitySpecularUniform, _look.EntitySpecular);
-                program.Uniform(EntityDebugUniform, _look.EntityDebugView);
-                program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
-                program.Uniform(MetalResponseUniform, _look.MetalResponse);
-                program.Uniform(AmbientUniform, _look.AmbientSpecular);
-                program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
-                program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
-                program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
-                program.Uniform(DayLightUniform, _weather.DayLight);
-                program.Uniform(WetnessUniform, _weather.Wetness);
-                program.Uniform(OvercastUniform, _weather.Overcast);
+                SetIfPresent(program, EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
+                SetIfPresent(program, EntityRoughnessUniform, _look.EntityRoughness);
+                SetIfPresent(program, EntitySpecularUniform, _look.EntitySpecular);
+                SetIfPresent(program, EntityDebugUniform, _look.EntityDebugView);
+                SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
+                SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
+                SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
+                SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
+                SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
+                SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
                 UploadScene(program);
 
                 program.Stop();
@@ -470,7 +497,7 @@ namespace VintageVisuals.PseudoPBR
                     if (program == null || !program.HasUniform(EnabledUniform)) continue;
 
                     program.Use();
-                    program.Uniform(EnabledUniform, 0f);
+                    SetIfPresent(program, EnabledUniform, 0f);
                     program.Stop();
                 }
 

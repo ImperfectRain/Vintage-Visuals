@@ -352,11 +352,17 @@ void main()
             ok("the environmental layer resolve is defined exactly once", layerDefinitions == 1);
 
             // Vanilla owns seasonal colour completely - per block, with climate,
-            // altitude and per-tree variation. Anything here that tinted by
-            // season would be fighting a better implementation.
+            // altitude and per-tree variation - so no shader here may tint by
+            // season. The season is sampled and published on the CPU and used
+            // by the intent stack; the day a shader needs it, it gets declared
+            // in the same commit that reads it.
             string sceneSnippet = File.ReadAllText(Path.Combine(snippetDir, "scene.glsl"));
-            ok("the season lanes exist and are documented as material-only",
-                sceneSnippet.Contains("vv_sceneAutumn") && sceneSnippet.Contains("vv_sceneWinter") &&
+
+            ok("no shader declares a season uniform it does not read",
+                !sceneSnippet.Contains("uniform float vv_sceneAutumn") &&
+                !sceneSnippet.Contains("uniform float vv_sceneWinter"));
+
+            ok("the reason vanilla owns seasonal colour is written down",
                 sceneSnippet.Contains("NOTHING HERE RECOLOURS ANYTHING"));
         }
 
