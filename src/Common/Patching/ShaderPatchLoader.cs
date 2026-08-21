@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -127,8 +128,18 @@ namespace VintageVisuals.Common.Patching
             }
 
             patcher.SetPatches(patches);
+            // NAMED, not just counted. A count is unfalsifiable from a log: a
+            // player's install once loaded eight patch files while the repo had
+            // six, because CopyToOutputDirectory never deletes and two groups
+            // that had been REMOVED for causing visible bugs were still sitting
+            // in their Mods folder. "8 file(s)" looked perfectly healthy. The
+            // names would have said weathersky and cloudshape immediately, and
+            // saved a round of debugging a sky-fogging patch that no longer
+            // exists in the source.
             _logger.Notification("[VintageVisuals] loaded " + patches.Count + " shader patch(es) from " +
-                                 assets.Count + " file(s)." +
+                                 assets.Count + " file(s): " +
+                                 string.Join(", ", assets.Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal)) +
+                                 "." +
                                  (skipped.Count > 0
                                      ? " Skipped " + string.Join(", ", skipped) +
                                        " — disabled in config, so " +

@@ -242,6 +242,34 @@ feature rather than a wiring mistake; it does not say anything looks right.
   it works, which is presumably how it survived. The corner is now
   camera-relative.
 
+  **What the player's log finally settled.** Two things, and the first was not
+  a cloud bug at all:
+  - The install was loading **eight** patch files while the repo has six.
+    `weathersky.yaml` and `cloudshape.yaml` - both DELETED from the repo, the
+    first for fogging the sky dome and flattening clouds into a haze, the second
+    for being inert - were still in the player's Mods folder and still being
+    applied. `CopyToOutputDirectory` copies and never deletes, so every build
+    since carried them along. That is what "the clouds themselves seem broken"
+    was: a removed patch doing exactly what it was removed for. The build now
+    wipes the output asset folder first, and the loader logs patch file NAMES
+    rather than a count, because "8 file(s)" looked perfectly healthy.
+  - The breadth-first search ran out of its 40,000 node budget without arriving.
+    A client's object graph is mostly chunks, meshes and entities, and BFS
+    spends itself on those long before reaching anything that owns a renderer.
+    Raising the budget is guessing at how much of the wrong thing to enumerate,
+    so the search is gone: the type is found by name across loaded assemblies
+    and a Harmony postfix on its own per-frame method hands over the instance
+    the first time it draws.
+
+  **And the diagnostics were useless in the case they exist for.** Views 1 and 2
+  both returned "no change" when the tiles could not be read, which on screen is
+  indistinguishable from a debug option that does nothing - which is exactly how
+  it was reported. Every view now draws unmistakable diagonal bars when there is
+  no cloud data, so "the shader is live and the data is missing" can be told
+  apart from "the shader is not running". View 3's window corner is also
+  uploaded whether or not the read succeeded, since where the window WOULD be is
+  the question it answers.
+
   **The other half, found by audit after the fix above still showed nothing:**
   the reader almost certainly never found the cloud renderer at all.
   `FindCloudRenderer` looked at `ClientMain`'s own fields and one level into any

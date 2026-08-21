@@ -121,6 +121,25 @@
            Text="VintagestoryAPI.dll not found under '$(GameDirectory)'. Point GameDirectory at the folder containing VintagestoryAPI.dll." />
   </Target>
 
+  <!--
+    Removed assets must actually disappear from the output.
+
+    CopyToOutputDirectory copies files and never deletes them, so a YAML patch
+    file deleted from the repo lives on in bin/ - and from there into whatever
+    Mods folder was copied out of it. Two shader patch groups that had been
+    DELETED for causing visible bugs, weathersky and cloudshape, were still
+    being loaded and applied in a player's game weeks later. The log said
+    "loaded 55 shader patch(es) from 8 file(s)" while the repo had six, and the
+    sky-fogging group that was removed for flattening clouds into a haze was
+    doing exactly that again.
+
+    Wiping the asset folder before the copy makes the output a mirror of the
+    repo rather than an accumulation of every build ever run.
+  -->
+  <Target Name="CleanStaleAssets" BeforeTargets="PrepareForBuild" Condition="Exists('$(OutputPath)assets')">
+    <RemoveDir Directories="$(OutputPath)assets" />
+  </Target>
+
   <Target Name="ZipRelease" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <MakeDir Directories="$(ReleasesDir)" />
     <ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(ReleasesDir)\vintagevisuals_$(Version).zip" Overwrite="true" />

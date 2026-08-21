@@ -242,6 +242,13 @@ namespace VintageVisuals.Weather
             // which is indistinguishable from a bug in the shadow itself.
             program.Uniform(CloudFallbackUniform, config.CloudsFromGame ? 0f : 1f);
 
+            // Uploaded whether or not the tiles were read. The corner describes
+            // WHERE the window would be, which diagnostic view 3 draws in order
+            // to answer that question - and leaving it unset when the read fails
+            // meant the one view that still had something to say was anchored on
+            // a zero it never received.
+            program.Uniform(CloudMapCornerUniform, clouds == null ? new Vec2f() : clouds.Origin);
+
             if (!valid) return;
 
             float[] density = clouds.Density;
@@ -254,7 +261,6 @@ namespace VintageVisuals.Weather
             // location for the whole array, and which spelling a given driver
             // reports through introspection is not something to depend on.
             program.Uniforms4(CloudTilesUniform, CloudVectors, _cloudPacked);
-            program.Uniform(CloudMapCornerUniform, clouds.Origin);
         }
 
         /// <summary>

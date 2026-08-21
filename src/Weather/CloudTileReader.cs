@@ -7,6 +7,7 @@ using System.Text;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using HarmonyLib;
 
 namespace VintageVisuals.Weather
 {
@@ -66,7 +67,18 @@ namespace VintageVisuals.Weather
         private MemberInfo _opaqueMember;
         private int _side;
 
+        /// <summary>
+        /// The live cloud renderer, captured by a Harmony postfix on its own
+        /// per-frame method.
+        ///
+        /// Static because a Harmony patch has nowhere else to put it. There is
+        /// only ever one client and one cloud renderer, so this is not the
+        /// compromise it looks like.
+        /// </summary>
+        private static object _captured;
+
         private bool _searched;
+        private bool _installedCapture;
         private bool _reported;
         private float _thicknessPeak = 1f;
         private float _opaquenessPeak = 1f;
@@ -109,6 +121,15 @@ namespace VintageVisuals.Weather
             if (!_searched)
             {
                 _searched = true;
+                InstallCapture();
+            }
+
+            // The Harmony postfix cannot fire before the cloud renderer's first
+            // frame, so discovery is retried rather than done once. Everything
+            // it works out is cached the moment it succeeds.
+            if (_renderer == null && _captured != null)
+            {
+                _renderer = _captured;
                 Discover();
             }
 
@@ -269,14 +290,6 @@ namespace VintageVisuals.Weather
 
         private void Discover()
         {
-            _renderer = FindCloudRenderer();
-            if (_renderer == null)
-            {
-                ReportOnce("no CloudRenderer could be found on the client, so cloud shadows fall back to " +
-                           "the mod's own noise field and will not line up with the sky");
-                return;
-            }
-
             Type type = _renderer.GetType();
 
             _tilesField = type
@@ -382,144 +395,136 @@ namespace VintageVisuals.Weather
         }
 
         /// <summary>
-        /// Walks the client for a cloud renderer.
+        /// Gets hold of the live cloud renderer by patching it, not by hunting
+        /// for it.
         ///
-        /// By type name rather than by field name, because the one thing that
-        /// can be relied on across versions is roughly what the class is
-        /// called - not where it is stored or whether it is held directly.
+        /// Two searches have now failed at this. The first looked at
+        /// ClientMain's own fields and one level into any collection among
+        /// them, which misses entirely because the client groups its renderers
+        /// BY RENDER STAGE - the field holds an array of lists, and the walk was
+        /// asking whether a List&lt;IRenderer&gt; is a CloudRenderer. The second
+        /// walked the graph breadth-first and ran out of its 40,000 node budget
+        /// without arriving: a client's object graph is mostly chunks, meshes
+        /// and entities, and BFS spends itself on them long before it reaches
+        /// anything that owns a renderer. Raising the budget is guessing at how
+        /// much of the wrong thing to enumerate.
         ///
-        /// BREADTH-FIRST, and that is the fix rather than a refinement. The
-        /// previous version looked at ClientMain's own fields and one level
-        /// into any collection among them, which sounds thorough and is not:
-        /// the client keeps its renderers grouped BY RENDER STAGE, so the field
-        /// holds an array of lists and the one-level walk was asking whether a
-        /// List&lt;IRenderer&gt; is a CloudRenderer. It never was. The reader
-        /// reported itself unavailable, the shadow silently fell back to the
-        /// mod's own noise field, and four rounds of debugging were spent on
-        /// shadows that were never reading the game's clouds at all.
+        /// So this stops searching. The type is found by name across the loaded
+        /// assemblies - deterministic, and the one thing that stays roughly
+        /// stable across versions - and a Harmony postfix on its own per-frame
+        /// method hands over the instance the first time it draws. No traversal,
+        /// no budget, no assumption about where the client keeps it.
         ///
-        /// Bounded rather than exhaustive: a client object graph has cycles and
-        /// is large, so this keeps a visited set, a depth limit and a node
-        /// budget, and reports how far it got. Running once at startup, a few
-        /// thousand reflective reads cost nothing anyone can measure.
+        /// Guarded and loud on every branch, per the rule for everything this
+        /// mod touches in VintagestoryLib: a version that renames the class
+        /// costs the cloud shadows and says so, and takes nothing else with it.
         /// </summary>
-        private object FindCloudRenderer()
+        private void InstallCapture()
         {
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-            const int maxDepth = 5;
-            const int maxNodes = 40000;
-            const int maxItemsPerCollection = 1024;
+            if (_installedCapture) return;
+            _installedCapture = true;
 
-            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            var queue = new Queue<(object Node, int Depth)>();
+            Type type = FindCloudRendererType();
+            if (type == null) return;
 
-            foreach (object root in new object[] { _capi.World, _capi })
+            MethodInfo target = AccessTools.Method(type, "OnRenderFrame")
+                                ?? AccessTools.Method(type, "OnRenderFrame3D");
+
+            if (target == null)
             {
-                if (root != null && seen.Add(root)) queue.Enqueue((root, 0));
+                ReportOnce("found " + type.FullName + " but no OnRenderFrame to hook, so its tile array " +
+                           "cannot be reached. Methods: " +
+                           Describe(type.GetMethods(BindingFlags.Instance | BindingFlags.Public |
+                                                    BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                                        .Select(m => m.Name).Distinct()));
+                return;
             }
 
-            int visited = 0;
-
-            while (queue.Count > 0)
+            try
             {
-                if (++visited > maxNodes) break;
+                new Harmony(HarmonyId).Patch(target,
+                    postfix: new HarmonyMethod(AccessTools.Method(typeof(CloudTileReader), nameof(CapturePostfix))));
 
-                (object node, int depth) = queue.Dequeue();
-
-                if (IsCloudRenderer(node))
-                {
-                    _logger.Notification("[VintageVisuals] weather: found " + node.GetType().FullName +
-                        " after " + visited + " node(s).");
-                    return node;
-                }
-
-                if (depth >= maxDepth) continue;
-
-                foreach (FieldInfo field in node.GetType().GetFields(flags))
-                {
-                    if (!Traversable(field.FieldType)) continue;
-
-                    object value;
-                    try { value = field.GetValue(node); }
-                    catch (Exception) { continue; }
-
-                    if (value == null || !seen.Add(value)) continue;
-
-                    queue.Enqueue((value, depth + 1));
-                }
-
-                // Collections are how the client actually holds its renderers,
-                // so their CONTENTS have to be walked, not just the collection.
-                if (!(node is IEnumerable items) || node is string) continue;
-
-                try
-                {
-                    int taken = 0;
-                    foreach (object item in items)
-                    {
-                        if (++taken > maxItemsPerCollection) break;
-                        if (item == null || !Traversable(item.GetType())) continue;
-                        if (!seen.Add(item)) continue;
-
-                        queue.Enqueue((item, depth + 1));
-                    }
-                }
-                catch (Exception)
-                {
-                    // Some collections here are live and throw if enumerated off
-                    // their own thread. Not finding the renderer in one of them
-                    // is not a reason to stop looking in the rest.
-                }
+                _logger.Notification("[VintageVisuals] weather: hooked " + type.FullName + "." + target.Name +
+                    " to capture the cloud renderer. Cloud placement will be read from the game's own tiles " +
+                    "as soon as it draws its first frame.");
             }
+            catch (Exception ex)
+            {
+                ReportOnce("could not hook " + type.FullName + "." + target.Name + ": " + ex.Message +
+                           ". Cloud shadows have nothing to follow");
+            }
+        }
 
-            ReportOnce("no cloud renderer was found anywhere in " + visited + " object(s) reachable from the " +
-                       "client. Cloud shadows have nothing to follow");
-            return null;
+        /// <summary>Harmony id for the capture hook, kept apart from the other two.</summary>
+        private const string HarmonyId = "vintagevisuals.cloudcapture";
+
+        /// <summary>
+        /// Stores the renderer the first time it draws, then does nothing.
+        ///
+        /// Deliberately incapable of throwing into the render loop: a postfix
+        /// that fails takes the frame with it, and this one exists only to
+        /// assign a reference.
+        /// </summary>
+        public static void CapturePostfix(object __instance)
+        {
+            if (_captured == null) _captured = __instance;
         }
 
         /// <summary>
-        /// Whether walking into this is worth the reflection.
+        /// The cloud renderer's TYPE, by name, across everything loaded.
         ///
-        /// Keeps the search away from the parts of the graph that cannot hold a
-        /// renderer and are expensive or unsafe to touch - primitives, strings,
-        /// delegates, pointers - so the node budget is spent on objects that
-        /// could plausibly own one.
+        /// Deterministic where a graph walk is not, and it costs one pass over
+        /// the assembly list at startup. Logs every candidate it saw, because
+        /// "the class is called something else now" and "the class is gone" need
+        /// different answers and look identical from here.
         /// </summary>
-        private static bool Traversable(Type type)
+        private Type FindCloudRendererType()
         {
-            if (type.IsPrimitive || type.IsEnum || type.IsPointer) return false;
-            if (type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime)) return false;
-            if (typeof(Delegate).IsAssignableFrom(type)) return false;
+            var candidates = new List<Type>();
 
-            return true;
-        }
-
-        /// <summary>
-        /// Reference identity for the visited set.
-        ///
-        /// Not the default comparer: the graph is full of value-like objects
-        /// that override Equals and GetHashCode, and two distinct renderers
-        /// comparing equal would have one of them skipped. Some of them also
-        /// throw from GetHashCode when read off the render thread.
-        /// </summary>
-        private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-        {
-            public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
-
-            public new bool Equals(object x, object y)
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                return ReferenceEquals(x, y);
+                Type[] types;
+                try { types = assembly.GetTypes(); }
+                catch (ReflectionTypeLoadException ex) { types = ex.Types; }
+                catch (Exception) { continue; }
+
+                foreach (Type type in types)
+                {
+                    if (type == null || type.IsAbstract || type.IsInterface) continue;
+                    if (type.Name.IndexOf("CloudRenderer", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    candidates.Add(type);
+                }
             }
 
-            public int GetHashCode(object obj)
+            if (candidates.Count == 0)
             {
-                return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+                ReportOnce("no type named anything like CloudRenderer exists in any loaded assembly, so " +
+                           "cloud shadows have nothing to follow. The class has been renamed or removed");
+                return null;
             }
+
+            // The one that actually owns tiles, when more than one matches - a
+            // renderer with no tile array is some other kind of cloud renderer.
+            Type best = candidates.FirstOrDefault(HasTileArray) ?? candidates[0];
+
+            _logger.Notification("[VintageVisuals] weather: cloud renderer type " + best.FullName +
+                (candidates.Count > 1
+                    ? " (chosen from " + Describe(candidates.Select(c => c.FullName)) + ")"
+                    : ""));
+
+            return best;
         }
 
-        private static bool IsCloudRenderer(object value)
+        private static bool HasTileArray(Type type)
         {
-            return value.GetType().Name.IndexOf("CloudRenderer", StringComparison.OrdinalIgnoreCase) >= 0;
+            return type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                       .Any(f => f.FieldType.IsArray &&
+                                 f.FieldType.GetElementType() != null &&
+                                 f.FieldType.GetElementType().Name.IndexOf("CloudTile",
+                                     StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private static MemberInfo PickMember(Type type, params string[] names)

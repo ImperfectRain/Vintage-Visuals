@@ -358,16 +358,28 @@ float vvCloudShadow(vec3 cameraRelativePos)
 // vanilla shadow map, all three of which have been the zero at some point.
 float vvCloudDebug(int mode, vec3 cameraRelativePos)
 {
+    // No tiles means no data, and a diagnostic that draws NOTHING when there is
+    // nothing is indistinguishable from a diagnostic that is not running. That
+    // is not a hypothetical: views 1 and 2 both came back blank in exactly the
+    // case they exist for, and the only conclusion available from the screen was
+    // "the debug options do nothing".
+    //
+    // So say it. Broad diagonal bars, unmistakably artificial, drawn by every
+    // view whenever the game's cloud tiles could not be read. Bars mean the
+    // shader is live and the DATA is missing - which sends the reader to the
+    // log rather than to the sliders.
+    if (vv_cloudMapValid < 0.5)
+    {
+        float bar = fract((cameraRelativePos.x + cameraRelativePos.z) / 24.0);
+        return bar < 0.5 ? 0.35 : 1.0;
+    }
+
     if (mode == 1) return 1.0 - vvCloudCoverage(cameraRelativePos);
 
     // Straight down. No throw, so this is honest about placement even when the
     // deck height is a guess - which it is, because the game does not expose
     // the altitude it draws its clouds at.
-    if (mode == 2)
-    {
-        if (vv_cloudMapValid < 0.5) return 1.0;
-        return 1.0 - vvCloudMapRaw(cameraRelativePos.xz);
-    }
+    if (mode == 2) return 1.0 - vvCloudMapRaw(cameraRelativePos.xz);
 
     if (mode == 3)
     {
