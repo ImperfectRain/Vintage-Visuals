@@ -84,6 +84,32 @@ cannot fail is not a criterion.
 - [ ] flicker is visible but not distracting
 - [ ] `EmissiveStrength = 0` is indistinguishable from vanilla
 
+### Environmental layers
+
+- [ ] wet stone films over and goes glossy; a wet leaf **darkens** and does not
+- [ ] snow settling on wet ground reduces the wetness rather than sitting on it
+- [ ] a frosted rail is rough and loses its highlight, and is not a white blob -
+      vanilla already tinted it, so doubling the tint is the failure to watch for
+- [ ] `FrostStrength = 0` is indistinguishable from vanilla's own frost
+- [ ] snow dusting lands on flat up-faces and slides off angled ones
+- [ ] no rain ripples on any leaf
+- [ ] no crevice darkening on any leaf
+
+### Seasons
+
+- [ ] leaf colour through the year is **unchanged from vanilla** - if it differs
+      at all, something here is recolouring and must not be
+- [ ] the material response fades in rather than popping on the day a season turns
+- [ ] a southern-hemisphere world reads autumn at the same time it does in vanilla
+
+### Particles
+
+- [ ] a falling leaf catches the sun the way the canopy it fell from does
+- [ ] sparks and embers read as hot rather than merely bright
+- [ ] dust in a shaft of light is lit by that light
+- [ ] no twinkling on a moving cloud of dust - the failure this restraint exists for
+- [ ] `ParticleLighting = false` is indistinguishable from vanilla
+
 ### Adaptive grading
 
 - [ ] golden hour warms without the whole scene turning orange

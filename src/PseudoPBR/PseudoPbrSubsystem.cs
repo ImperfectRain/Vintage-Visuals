@@ -39,6 +39,8 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public const string EntityGroupName = "pbrentity";
 
+        public const string ParticleGroupName = "pbrparticle";
+
         public const string TopsoilGroupName = "pseudopbrtopsoil";
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
@@ -167,7 +169,8 @@ namespace VintageVisuals.PseudoPBR
                                        intent[IntentChannel.Enclosure],
                                        intent[IntentChannel.ArtificialLight],
                                        intent[IntentChannel.Restraint],
-                                       intent[IntentChannel.Readability]);
+                                       intent[IntentChannel.Readability],
+                                       world.Autumn, world.Winter, 0f, 0f);
             }
 
             return new SceneInputs(
@@ -189,7 +192,16 @@ namespace VintageVisuals.PseudoPBR
                 intent[IntentChannel.Enclosure],
                 intent[IntentChannel.ArtificialLight],
                 intent[IntentChannel.Restraint],
-                intent[IntentChannel.Readability]);
+                intent[IntentChannel.Readability],
+                world.Autumn,
+                world.Winter,
+                weather.FrostStrength,
+
+                // Snow dusting rides the falling snow rather than the season.
+                // A dry cold snap in winter should not frost the world over -
+                // vanilla's frostAlpha covers that case, and it covers it per
+                // block, knowing which of them can frost at all.
+                world.Snow * weather.SnowDusting);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

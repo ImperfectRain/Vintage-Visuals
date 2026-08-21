@@ -69,6 +69,13 @@ namespace VintageVisuals.PseudoPBR
         public const string RestraintUniform = "vv_sceneRestraint";
         public const string ReadabilityUniform = "vv_sceneReadability";
         public const string ClockUniform = "vv_sceneClock";
+        public const string AutumnUniform = "vv_sceneAutumn";
+        public const string WinterUniform = "vv_sceneWinter";
+        public const string FrostUniform = "vv_sceneFrost";
+        public const string SnowUniform = "vv_sceneSnow";
+
+        public const string ParticleUniform = "vv_pbrParticle";
+        public const string ParticleSpecularUniform = "vv_pbrParticleSpecular";
 
         public const string EmissiveUniform = "vv_emissive";
         public const string EmissiveTemperatureUniform = "vv_emissiveTemperature";
@@ -101,6 +108,18 @@ namespace VintageVisuals.PseudoPBR
             EnumShaderProgram.Entityanimated,
         };
 
+        /// <summary>
+        /// The small moving things. Separate again from the entity list: they
+        /// take their own restraint - a highlight that reads as detail on a wall
+        /// reads as twinkling noise on a cloud of dust - and one of the two has
+        /// no normal at all, so it gets emission and nothing else.
+        /// </summary>
+        private static readonly EnumShaderProgram[] ParticlePrograms =
+        {
+            EnumShaderProgram.Particlescube,
+            EnumShaderProgram.Particlesquad,
+        };
+
         private readonly ICoreClientAPI _capi;
         private readonly MaterialAtlasSet _atlas;
         private readonly Func<Dictionary<int, int>> _buildPageMap;
@@ -126,6 +145,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedActive;
         private bool _reportedBusy;
         private bool _reportedEntities;
+        private bool _reportedParticles;
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas,
                                Func<Dictionary<int, int>> buildPageMap,
@@ -191,6 +211,7 @@ namespace VintageVisuals.PseudoPBR
             // that refusal take entity lighting with it would mean a missing
             // atlas silently un-lighting every mob in the world.
             UploadEntities();
+            UploadParticles();
 
             if (!_enabled)
             {
@@ -322,6 +343,43 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
+        /// Pushes the particle response.
+        ///
+        /// Before the terrain preconditions for the same reason entities are:
+        /// particles need no material atlas, and a missing one must not quietly
+        /// un-light every spark in the world.
+        /// </summary>
+        private void UploadParticles()
+        {
+            foreach (EnumShaderProgram id in ParticlePrograms)
+            {
+                IShaderProgram program = _capi.Shader.GetProgram((int)id);
+                if (program == null || !program.HasUniform(ParticleUniform)) continue;
+
+                program.Use();
+
+                program.Uniform(ParticleUniform, _look.ParticleLighting ? 1f : 0f);
+                program.Uniform(ParticleSpecularUniform, _look.ParticleSpecular);
+                program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
+                program.Uniform(AmbientUniform, _look.AmbientSpecular);
+                program.Uniform(SpecularAaUniform, _look.SpecularAntiAliasing);
+                program.Uniform(MetalResponseUniform, _look.MetalResponse);
+                program.Uniform(BlockLightUniform, _look.BlockLightSpecular);
+                program.Uniform(BlockLightDirUniform, _look.BlockLightDirectionality);
+                UploadScene(program);
+
+                program.Stop();
+
+                if (!_reportedParticles)
+                {
+                    _reportedParticles = true;
+                    _capi.Logger.Notification("[VintageVisuals] pseudopbr: particle lighting active on " + id +
+                        " - falling leaves, dust, sparks and smoke now share the world's lighting.");
+                }
+            }
+        }
+
+        /// <summary>
         /// Pushes the shared scene vocabulary.
         ///
         /// The same five values into every shaded program, from one place, so
@@ -336,6 +394,10 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(RestraintUniform, _weather.Restraint);
             program.Uniform(ReadabilityUniform, _weather.Readability);
             program.Uniform(ClockUniform, _weather.RippleTime);
+            program.Uniform(AutumnUniform, _weather.Autumn);
+            program.Uniform(WinterUniform, _weather.Winter);
+            program.Uniform(FrostUniform, _weather.Frost);
+            program.Uniform(SnowUniform, _weather.Snow);
 
             program.Uniform(EmissiveUniform, _look.EmissiveStrength);
             program.Uniform(EmissiveTemperatureUniform, _look.EmissiveTemperature);

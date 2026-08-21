@@ -206,9 +206,32 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 // obvious of the three and the one that sells it.
 // ---------------------------------------------------------------------------
 
-const float VV_WET_ROUGHNESS = 0.08;
-const float VV_WET_SPECULAR = 0.60;
-const float VV_WET_DARKEN = 0.72;
+
+
+// ---------------------------------------------------------------------------
+// Light through leaves
+//
+// The strongest single cue that a renderer is doing something modern, and this
+// game is full of foliage. A leaf is thin and translucent: light that hits its
+// far side does not stop there, it scatters through and leaves the near side
+// travelling roughly the way it came. So a canopy with the sun behind it glows,
+// and that glow is the effect - not a brighter leaf, a LIT-FROM-BEHIND one.
+//
+// A real gap rather than a re-tint: vanilla shades leaves with the same opaque
+// diffuse it uses for stone. Its own wind deformation moves them without
+// touching how they are shaded.
+// ---------------------------------------------------------------------------
+
+// Vanilla sets a wind mode on anything that bends in the wind, which in
+// practice is exactly the set of things thin enough to transmit light: leaves,
+// grass, crops, flowers. chunkopaque.vsh uses this same test for its own
+// `bool isLeaves`, so this borrows the game's answer rather than inventing a
+// second one that could disagree with it.
+bool vvIsFoliage()
+{
+    return (renderFlags & WindModeBitMask) != 0;
+}
+
 
 // How wet this fragment is.
 //
@@ -233,7 +256,43 @@ float vvWetness(vec3 faceNormal)
     float exposure = smoothstep(vv_weatherRainCover - 0.12, vv_weatherRainCover + 0.06,
                                 clamp(vv_sunExposure, 0.0, 1.0));
 
-    return clamp(vv_sceneWetness * facing * facing * exposure, 0.0, 1.0);
+    // Foliage does not pool water the way a flat stone does - a leaf sheds it -
+    // but it does get thoroughly wet, so the up-facing test is relaxed rather
+    // than removed.
+    float pooling = vvIsFoliage() ? mix(0.45, 1.0, facing) : facing * facing;
+
+    return clamp(vv_sceneWetness * pooling * exposure, 0.0, 1.0);
+}
+
+// How much snow is lying here.
+//
+// Vanilla places snow BLOCKS and this does not compete with that: it is the
+// thin dusting on everything else, gated the same way rain is - it has to fall
+// from the sky, so it lands on up-facing surfaces the sky can see.
+float vvSnowLayer(vec3 faceNormal)
+{
+    if (vv_sceneSnow < 0.001) return 0.0;
+
+    float facing = clamp(faceNormal.y, 0.0, 1.0);
+    float exposure = smoothstep(vv_weatherRainCover - 0.12, vv_weatherRainCover + 0.06,
+                                clamp(vv_sunExposure, 0.0, 1.0));
+
+    // Squared, harder than rain's: rain runs down a slope and snow slides off
+    // it, so an angled roof holds much less than a flat one.
+    return clamp(vv_sceneSnow * facing * facing * facing * exposure, 0.0, 1.0);
+}
+
+// How much frost is on this fragment.
+//
+// frostAlpha is VANILLA'S, computed in the vertex shader from the block's own
+// frostable bit, the local temperature, sunlight and value noise. The mod does
+// not decide where frost is - the game already did, per block, and knows which
+// blocks can frost at all.
+float vvFrostLayer()
+{
+    if (vv_sceneFrost < 0.001) return 0.0;
+
+    return clamp(frostAlpha, 0.0, 1.0) * clamp(vv_sceneFrost, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +423,12 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
 {
     if (vv_weatherRipples < 0.001 || wetness < 0.001) return n;
 
+    // Not on foliage. Ripples are rain landing in STANDING water, and a leaf
+    // holds none - it sheds. Without this gate a leaf whose normal happened to
+    // point upward grew expanding rings on it, which is the wrong effect on the
+    // one surface in the game that most obviously cannot puddle.
+    if (vvIsFoliage()) return n;
+
     float pooling = clamp(faceNormal.y, 0.0, 1.0);
     pooling *= pooling;
 
@@ -404,31 +469,6 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
 
     float delta = vvReliefDelta(faceNormal, materialUv) * vvDetailFade(cameraRelativePos);
     return clamp(vanillaBrightness + delta, 0.0, 1.0);
-}
-
-
-// ---------------------------------------------------------------------------
-// Light through leaves
-//
-// The strongest single cue that a renderer is doing something modern, and this
-// game is full of foliage. A leaf is thin and translucent: light that hits its
-// far side does not stop there, it scatters through and leaves the near side
-// travelling roughly the way it came. So a canopy with the sun behind it glows,
-// and that glow is the effect - not a brighter leaf, a LIT-FROM-BEHIND one.
-//
-// A real gap rather than a re-tint: vanilla shades leaves with the same opaque
-// diffuse it uses for stone. Its own wind deformation moves them without
-// touching how they are shaded.
-// ---------------------------------------------------------------------------
-
-// Vanilla sets a wind mode on anything that bends in the wind, which in
-// practice is exactly the set of things thin enough to transmit light: leaves,
-// grass, crops, flowers. chunkopaque.vsh uses this same test for its own
-// `bool isLeaves`, so this borrows the game's answer rather than inventing a
-// second one that could disagree with it.
-bool vvIsFoliage()
-{
-    return (renderFlags & WindModeBitMask) != 0;
 }
 
 // How much light reaches the eye THROUGH the surface.
@@ -501,6 +541,11 @@ float vvCavity(vec2 materialUv, float fade)
 {
     if (vv_pbrCavity < 0.001 || fade < 0.001) return 1.0;
 
+    // Not on foliage. This measures curvature in the material normal, and leaf
+    // textures are high-contrast by nature - every leaf edge reads as a groove
+    // and the canopy comes out looking dirty rather than deep.
+    if (vvIsFoliage()) return 1.0;
+
     vec2 texel = 1.0 / max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
 
     float left  = vvSampleMaterial(materialUv - vec2(texel.x, 0.0)).r;
@@ -534,14 +579,22 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     float roughness = clamp(material.b + vv_pbrRoughnessBias, 0.04, 1.0);
     float specularMask = clamp(material.a, 0.0, 1.0);
 
-    // Rain, before anything else reads these. Wetness is a property of the
-    // surface, not a layer over the finished shading, so it belongs here where
-    // roughness and reflectance are decided rather than at the end where it
-    // would be a tint.
+    // What the world has put on this surface, resolved in one place and in a
+    // fixed order: water, then snow, then frost, each displacing the one before
+    // rather than stacking on it. Before anything else reads roughness or
+    // reflectance, because these are properties OF the surface rather than a
+    // layer over the finished shading - a tint at the end is what wetness looks
+    // like when it is done wrong.
     float wetness = vvWetness(faceNormal);
-    roughness = mix(roughness, VV_WET_ROUGHNESS, wetness);
-    specularMask = max(specularMask, mix(specularMask, VV_WET_SPECULAR, wetness));
-    albedo *= mix(1.0, VV_WET_DARKEN, wetness);
+    float foliage = vvIsFoliage() ? 1.0 : 0.0;
+
+    VvSurface surface = vvApplyEnvironmentLayers(
+        VvSurface(albedo, roughness, specularMask),
+        wetness, vvSnowLayer(faceNormal), vvFrostLayer(), foliage);
+
+    albedo = surface.albedo;
+    roughness = surface.roughness;
+    specularMask = surface.specular;
 
     // The same normal the relief uses, so the highlight sits on the surface the
     // player can see rather than on one the shading invented.
@@ -599,7 +652,11 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                      * vvDetailFade(cameraRelativePos)
                      * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 
-    vec3 result = litColor.rgb * mix(1.0, VV_WET_DARKEN, wetness);
+    // The layer resolve already darkened the albedo; this applies the same
+    // darkening to the light vanilla computed, which is the half that makes a
+    // wet surface read as wet rather than as a differently-coloured dry one.
+    vec3 result = litColor.rgb * mix(1.0, mix(VV_LAYER_WET_DARKEN, VV_LAYER_WET_LEAF_DARKEN, foliage),
+                                     wetness);
 
     // Energy conservation. Light reflected specularly is light that did not
     // scatter diffusely, so the diffuse has to give it up - this is what makes

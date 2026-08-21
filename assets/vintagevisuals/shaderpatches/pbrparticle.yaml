@@ -1,0 +1,94 @@
+# Vintage Visuals - lighting for particles
+#
+# Its own group covering two shaders, because they fail and succeed together:
+# both are "the small moving things", both take the same restraint, and a
+# failure in either should cost particles their response and nothing else.
+#
+# Falling leaves, pollen, dust, sparks, embers and smoke belonged to no lighting
+# model at all before this - the same defect entities had, where something lit
+# by one set of rules drifts past a world lit by another.
+#
+# Verified against 1.22.7 with tools/verifypatches.
+
+# --- particlescube: normal, worldPos, glowLevel. Full treatment. -------------
+
+- type: token
+  filename: particlescube.fsh
+  tokens: in vec3 normal;
+  content: |
+    in vec3 normal; // vintagevisuals: varying asserted by pbrparticle.yaml
+
+- type: token
+  filename: particlescube.fsh
+  tokens: in vec4 worldPos;
+  content: |
+    in vec4 worldPos; // vintagevisuals: varying asserted by pbrparticle.yaml
+
+- type: token
+  filename: particlescube.fsh
+  tokens: in vec4 rgbaFog;
+  snippet: scene.glsl
+
+- type: token
+  filename: particlescube.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
+# The material response, anchored above main() and below both injections above.
+- type: token
+  filename: particlescube.fsh
+  tokens: "vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {"
+  snippet: pbrparticle.glsl
+
+# Both call sites, underwater and not. A leaf that lost its highlight the moment
+# it drifted over a river would look like a bug in the water.
+- type: token
+  filename: particlescube.fsh
+  tokens: "outColor = applyFogAndShadowWithNormal(color, 0, normal, 1, intensity, worldPos.xyz);"
+  content: |
+    outColor = applyFogAndShadowWithNormal(color, 0, normal, 1, intensity, worldPos.xyz);
+    outColor = vvApplyParticlePbr(outColor, color.rgb, normal, worldPos.xyz,
+                                  getBrightnessFromShadowMap(), 0, rgbaFog.rgb, glowLevel);
+
+- type: token
+  filename: particlescube.fsh
+  tokens: "outColor = applyFogAndShadowWithNormal(color, fogAmount, normal, 1, intensity, worldPos.xyz);"
+  content: |
+    outColor = applyFogAndShadowWithNormal(color, fogAmount, normal, 1, intensity, worldPos.xyz);
+    outColor = vvApplyParticlePbr(outColor, color.rgb, normal, worldPos.xyz,
+                                  getBrightnessFromShadowMap(), fogAmount, rgbaFog.rgb, glowLevel);
+
+# --- particlesquad: glowLevel and little else. Emission only. ----------------
+#
+# No normal, so no microfacet lobe is possible. That is fine: quads are what
+# sparks, embers and fire particles are drawn as, and emission is the half that
+# matters for those.
+
+- type: token
+  filename: particlesquad.fsh
+  tokens: in vec4 rgbaFog;
+  snippet: scene.glsl
+
+- type: token
+  filename: particlesquad.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
+- type: token
+  filename: particlesquad.fsh
+  tokens: "vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {"
+  snippet: pbrparticle.glsl
+
+- type: token
+  filename: particlesquad.fsh
+  tokens: "outColor = applyFogAndShadow(color, fogAmount);"
+  content: |
+    outColor = applyFogAndShadow(color, fogAmount);
+    outColor = vvApplyParticleGlow(outColor, fogAmount, glowLevel);
+
+- type: token
+  filename: particlesquad.fsh
+  tokens: "outColor = applyFogAndShadow(color, 0);"
+  content: |
+    outColor = applyFogAndShadow(color, 0);
+    outColor = vvApplyParticleGlow(outColor, 0, glowLevel);

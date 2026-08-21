@@ -304,7 +304,7 @@ void main()
                 File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrentity.yaml")),
                 "pbrentity", "test", resolveSnippet).ToList();
 
-            ok("pbrentity.yaml parses into 8 patches", entity.Count == 8);
+            ok("pbrentity.yaml parses into 9 patches", entity.Count == 9);
 
             ok("the entity group patches only entityanimated.fsh",
                 entity.All(x => x.Filename == "entityanimated.fsh"));
@@ -315,6 +315,49 @@ void main()
             string entitySnippet = File.ReadAllText(Path.Combine(snippetDir, "pbrentity.glsl"));
             ok("the entity path declares no sampler of its own",
                 !entitySnippet.Contains("uniform sampler"));
+
+            // --- particles --------------------------------------------------
+            var particles = ShaderPatchLoader.ParsePatchFile(
+                File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrparticle.yaml")),
+                "pbrparticle", "test", resolveSnippet).ToList();
+
+            ok("pbrparticle.yaml covers both particle shaders",
+                particles.Any(x => x.Filename == "particlescube.fsh") &&
+                particles.Any(x => x.Filename == "particlesquad.fsh") &&
+                particles.All(x => x.Filename.StartsWith("particles")));
+
+            string particleSnippet = File.ReadAllText(Path.Combine(snippetDir, "pbrparticle.glsl"));
+
+            ok("the particle path declares no sampler of its own",
+                !particleSnippet.Contains("uniform sampler"));
+
+            // Every snippet that REPLACES a function signature has to paste it
+            // back, because replacement content is literal rather than a regex
+            // template. Getting this wrong deletes the function - which it did,
+            // on the first attempt, in both particle shaders at once.
+            ok("pbrparticle.glsl pastes its applyFogAndShadow anchor back",
+                particleSnippet.Contains("vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {"));
+
+            ok("pbrentity.glsl pastes its applyFogAndShadow anchor back",
+                entitySnippet.Contains("vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {"));
+
+            // --- environmental layers ---------------------------------------
+            //
+            // The layer resolve is the one place wet, snowy and frosty are
+            // defined. Copies would drift, and the drift would be a creature
+            // that is a different kind of wet than the ground it stands on.
+            int layerDefinitions = Directory.GetFiles(snippetDir, "*.glsl")
+                .Count(f => File.ReadAllText(f).Contains("VvSurface vvApplyEnvironmentLayers("));
+
+            ok("the environmental layer resolve is defined exactly once", layerDefinitions == 1);
+
+            // Vanilla owns seasonal colour completely - per block, with climate,
+            // altitude and per-tree variation. Anything here that tinted by
+            // season would be fighting a better implementation.
+            string sceneSnippet = File.ReadAllText(Path.Combine(snippetDir, "scene.glsl"));
+            ok("the season lanes exist and are documented as material-only",
+                sceneSnippet.Contains("vv_sceneAutumn") && sceneSnippet.Contains("vv_sceneWinter") &&
+                sceneSnippet.Contains("NOTHING HERE RECOLOURS ANYTHING"));
         }
 
 

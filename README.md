@@ -98,6 +98,8 @@ value.
 | `Weather.WetnessStrength` | 0.0 – 2.0 | `1.0` | How wet rain makes surfaces look |
 | `Weather.DryingSeconds` | 1 – 600 | `60` | How long a soaked surface takes to dry once rain stops |
 | `Weather.RainCoverThreshold` | 0.0 – 1.0 | `0.82` | Sky exposure a surface needs before rain reaches it. Raise to keep porches dry |
+| `Weather.FrostStrength` | 0.0 – 1.0 | `0.8` | How much frost changes a surface, on top of the game's own |
+| `Weather.SnowDusting` | 0.0 – 1.0 | `0.6` | Thin snow film on surfaces the sky can see |
 | `Weather.RippleStrength` | 0.0 – 1.0 | `0.8` | Rain landing in standing water |
 | `Weather.OvercastStrength` | 0.0 – 1.0 | `0.7` | How completely cloud cover diffuses the sun |
 | `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air over terrain (never the sky) |
@@ -109,6 +111,8 @@ value.
 | `PseudoPBR.FoliageTranslucency` | 0.0 – 2.0 | `0.7` | Light through leaves, grass and crops |
 | `PseudoPBR.CavityStrength` | 0.0 – 2.0 | `0.6` | Occlusion in the grooves, from the material normal |
 | `PseudoPBR.EntityLighting` | bool | `true` | Light mobs with the same model as the terrain |
+| `PseudoPBR.ParticleLighting` | bool | `true` | Light leaves, dust, sparks and smoke with the world |
+| `PseudoPBR.ParticleSpecular` | 0.0 – 2.0 | `0.45` | Particle specular strength |
 | `PseudoPBR.EntityRoughness` | 0.04 – 1.0 | `0.65` | How matte creatures read |
 | `PseudoPBR.EntitySpecular` | 0.0 – 2.0 | `0.8` | Creature specular strength |
 | `Weather.CloudsFromGame` | bool | `true` | Shadows follow the game's own clouds rather than a noise field |

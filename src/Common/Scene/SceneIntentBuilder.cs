@@ -62,6 +62,14 @@ namespace VintageVisuals.Common.Scene
                        Ramp(world.Humidity, 0.55f, 1f) * 0.4f * sky,
                        "humid climate");
 
+            // Winter argues for cold on its own, before any thermometer.
+            // Deliberately the ONLY thing the season pushes: vanilla owns
+            // seasonal appearance and does it per block with climate and
+            // altitude, so anything here that touched colour would be fighting
+            // a better implementation.
+            intent.Add("season", IntentChannel.Cold, world.Winter * 0.35f,
+                       "winter");
+
             // --- where the player is -----------------------------------------
 
             intent.Add("sky", IntentChannel.Enclosure, enclosed,

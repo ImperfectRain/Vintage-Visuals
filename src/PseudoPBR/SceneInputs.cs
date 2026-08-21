@@ -53,6 +53,18 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>How much this scene needs help being legible.</summary>
         public readonly float Readability;
 
+        /// <summary>How far into autumn, 0..1. Changes how surfaces respond, never how they look.</summary>
+        public readonly float Autumn;
+
+        /// <summary>How far into winter, 0..1.</summary>
+        public readonly float Winter;
+
+        /// <summary>How much frost changes a surface, on top of vanilla's own frost mask.</summary>
+        public readonly float Frost;
+
+        /// <summary>How much snow dusts surfaces the sky can see.</summary>
+        public readonly float Snow;
+
         /// <summary>
         /// Camera world position. The chunk shaders only have camera-relative
         /// coordinates, and a ripple field built on those swims across the
@@ -63,8 +75,14 @@ namespace VintageVisuals.PseudoPBR
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
                            float rippleTime, float overcast, Vec3f origin,
                            float enclosure = 0f, float artificialLight = 0f,
-                           float restraint = 0f, float readability = 0f)
+                           float restraint = 0f, float readability = 0f,
+                           float autumn = 0f, float winter = 0f,
+                           float frost = 0f, float snow = 0f)
         {
+            Autumn = autumn;
+            Winter = winter;
+            Frost = frost;
+            Snow = snow;
             Enclosure = enclosure;
             ArtificialLight = artificialLight;
             Restraint = restraint;

@@ -215,6 +215,32 @@ namespace VintageVisuals.Common
         /// </summary>
         public float OvercastStrength { get; set; } = 0.7f;
 
+        /// <summary>
+        /// How much frost changes a surface, on top of vanilla's own frost.
+        /// 0 leaves vanilla's frost exactly as it was.
+        ///
+        /// Vanilla already decides WHERE frost is: `frostAlpha` is a
+        /// per-fragment mask built from the block's own frostable bit, the
+        /// local temperature, sunlight and value noise, and entities get
+        /// `fragFrostAlpha` the same way. What vanilla does with it is tint the
+        /// surface white. What it does not do is make the surface behave like
+        /// frost - rough, and with the highlight of whatever it covers killed.
+        /// That is the whole of what this adds.
+        /// </summary>
+        public float FrostStrength { get; set; } = 0.8f;
+
+        /// <summary>
+        /// How much snow dusts surfaces the sky can see. 0 is off.
+        ///
+        /// Deliberately thin, and it does not compete with vanilla: the game
+        /// places snow BLOCKS and accumulates real depth. This is the film on
+        /// everything else - a fence rail, a crate, a rock - gated the same way
+        /// rain is, because it falls out of the sky. Cubed against the surface
+        /// normal rather than squared, because snow slides off a slope where
+        /// rain merely runs down it.
+        /// </summary>
+        public float SnowDusting { get; set; } = 0.6f;
+
         /// <summary>How much rain thickens the air. 0 leaves vanilla fog alone.</summary>
         public float FogStrength { get; set; } = 0.35f;
 
@@ -276,6 +302,10 @@ namespace VintageVisuals.Common
                 "Weather.DryingSeconds", corrections);
             RainCoverThreshold = ColorGradeConfig.Clamp(RainCoverThreshold, 0.0f, 1.0f,
                 "Weather.RainCoverThreshold", corrections);
+            FrostStrength = ColorGradeConfig.Clamp(FrostStrength, 0.0f, 1.0f,
+                "Weather.FrostStrength", corrections);
+            SnowDusting = ColorGradeConfig.Clamp(SnowDusting, 0.0f, 1.0f,
+                "Weather.SnowDusting", corrections);
             RippleStrength = ColorGradeConfig.Clamp(RippleStrength, 0.0f, 1.0f,
                 "Weather.RippleStrength", corrections);
             OvercastStrength = ColorGradeConfig.Clamp(OvercastStrength, 0.0f, 1.0f,
@@ -416,6 +446,25 @@ namespace VintageVisuals.Common
 
         /// <summary>How much of the entity specular lobe reaches the image. 0 is vanilla.</summary>
         public float EntitySpecular { get; set; } = 0.8f;
+
+        /// <summary>
+        /// Whether falling leaves, pollen, dust, sparks and smoke share the
+        /// world's lighting.
+        ///
+        /// They belonged to no lighting model at all before - the same defect
+        /// entities had, where a thing lit by one set of rules drifts past a
+        /// world lit by another and never sits in it.
+        /// </summary>
+        public bool ParticleLighting { get; set; } = true;
+
+        /// <summary>
+        /// How much of the particle specular lobe reaches the image.
+        ///
+        /// Low on purpose. A particle is small, numerous and in motion, and a
+        /// highlight that reads as detail on a wall reads as twinkling noise on
+        /// a cloud of dust.
+        /// </summary>
+        public float ParticleSpecular { get; set; } = 0.45f;
 
         /// <summary>
         /// Entity debug views, numbered in the entity path's own terms:
@@ -613,6 +662,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.EntityRoughness", corrections);
             EntitySpecular = ColorGradeConfig.Clamp(EntitySpecular, 0.0f, 2.0f,
                 "PseudoPBR.EntitySpecular", corrections);
+            ParticleSpecular = ColorGradeConfig.Clamp(ParticleSpecular, 0.0f, 2.0f,
+                "PseudoPBR.ParticleSpecular", corrections);
             EntityDebugView = ColorGradeConfig.Clamp(EntityDebugView, 0.0f, 3.0f,
                 "PseudoPBR.EntityDebugView", corrections);
             DetailDistance = ColorGradeConfig.Clamp(DetailDistance, 4.0f, 192.0f,

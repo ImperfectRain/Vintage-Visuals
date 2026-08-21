@@ -128,8 +128,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | tracked but nothing consumes it yet |
-| `[ ]` | **Snow as a material transformation** | — | smoother normal, higher roughness, lighter albedo, accumulated height on sky-exposed up-faces |
-| `[ ]` | Frost as a second environmental layer | — | `base material + wetness + snow + frost` is the target abstraction |
+| `[~]` | **Snow as a material transformation** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
+| `[x]` | **Frost as an environmental layer** | L2 | built on vanilla's own `frostAlpha`/`fragFrostAlpha`. Vanilla tints; this adds the material body |
 | `[ ]` | Rain streaks running down vertical wet faces | — | cut from the ripple commit on purpose, unverifiable blind |
 | `[ ]` | Puddles pooling in depressions | — | needs a height signal the terrain shader does not have |
 | `[ ]` | Weather transitions as first-class state | — | today each effect eases independently |
@@ -173,9 +173,9 @@ a future weather type inherits the rendering instead of adding a special case.
 | `[x]` | ~~**Emissive materials**~~ | **built (L2).** See §4 |
 | `[-]` | ~~**Vegetation wind**~~ | **abandoned.** Vanilla already does it, including a high-frequency term and per-class bend counters |
 | `[x]` | ~~**Foliage translucency**~~ | **built (L2).** See §4 |
-| `[ ]` | Seasonal foliage response | autumn colour, frost, snow load, wet foliage |
-| `[ ]` | **Foliage excluded from the puddle and cavity paths** | *known defect.* Rain ripples gate on an up-facing normal and leaves have them, so a leaf can currently hold a puddle; crevice curvature reads leaf-texture contrast as grooves |
-| `[ ]` | Wet-foliage response distinct from wet stone | a wet leaf should darken and sag, not turn to polished glass at roughness 0.08 |
+| `[~]` | Seasonal state (framework) | `GetSeason`/`GetSeasonRel`, hemisphere-aware, blended. Drives material response only - **vanilla owns seasonal colour** and does it per block with climate and altitude. Autumn is published and has no consumer yet |
+| `[x]` | ~~Foliage excluded from the puddle and cavity paths~~ | **fixed.** Both gate on `vvIsFoliage()` now |
+| `[x]` | ~~Wet-foliage response distinct from wet stone~~ | **fixed.** Foliage, creatures and particles hold water; stone films over |
 | `[ ]` | SSAO | broad-scale, kept distinct from contact shadows and crevice shading |
 | `[ ]` | Bloom | driven by emissive intensity, not brightness. Off / subtle / cinematic |
 | `[ ]` | Depth of field | |
@@ -247,7 +247,7 @@ Building any from scratch is a duplicate, not a feature.
 
 | # | Feature | Why |
 |---|---|---|
-| 1 | **Finish PBR reach** - entities `[x]`, foliage `[x]`, **particles and held items still open** | A surface lit by a different model than the surface beside it is the one defect that devalues every other lighting feature. Particles are the remaining visible gap: smoke, fire, dust and sparks are everywhere and currently belong to no lighting model at all |
+| 1 | **Finish PBR reach** - entities `[x]`, foliage `[x]`, particles `[x]`, **held items still open** | A surface lit by a different model than the surface beside it is the one defect that devalues every other lighting feature. Held items are what remains, and are the weakest of the four: `helditem.fsh` has no `worldPos`, no `blockLight` and no `rgbaFog` |
 | 2 | **Scene intent, budgets, contribution records** `[x]` | Done. Elevated from implementation detail to product rule - see VISUAL-LANGUAGE.md §4 |
 | 3 | ~~**Emissive materials**~~ **(built, L2)** | Moved up four phases. This game is *about* fire: forges, bloomeries, firepits, lamps, lava. A forge should read as a hot object lighting a room, not as an orange texture, and light sources matter disproportionately to a survival game built on darkness and shelter |
 | 4 | ~~**Gameplay readability**~~ **(built, L2)** | Weather now gives up fog while something is near. It will not outline a threat - only decline to hide one |
@@ -260,13 +260,13 @@ Building any from scratch is a duplicate, not a feature.
 | 6 | Atmospheric renderer | Aerial perspective, haze, horizon, sun and moon attenuation. Atmosphere and weather are **one** system, not a weather modifier bolted to vanilla fog |
 | 7 | Environmental material layers | Snow, frost, wetness and season as a layering model with a fixed precedence, not four independent effects. See VISUAL-LANGUAGE.md §7 |
 | 8 | Water as a **material**, not as SSR | Fresnel, depth colouration, normals, rain disturbance, underwater. SSR is one possible implementation component of the last 10%, not the feature |
-| 9 | Vegetation as thin living material | Translucency `[x]`, leaf roughness, environmental layering, seasonal state. Wind fidelity only where vanilla's is visibly short |
+| 9 | Vegetation as thin living material | Translucency `[x]`, leaf wet response `[x]`, layering `[x]`, seasonal framework `[x]`. Remaining: a consumer for autumn, and wind only where vanilla's is visibly short |
 | 10 | Occlusion hierarchy | Crevice `[x]` -> contact (blocked on depth) -> SSAO (vanilla has it) |
 
 ### Tier B - worthwhile
 
 Fire and light interaction (part of emissive, worth naming separately) ·
-particle lighting · sky and cloud interaction · weather transitions as one
+sky and cloud interaction · weather transitions as one
 coordinated event · moonlight · snow and frost environmental interaction ·
 exposure responding to fire and lightning · persistent `MaterialDefinition` ·
 material authoring overrides and a material API for other mods · compatibility

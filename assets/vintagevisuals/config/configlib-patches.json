@@ -30,6 +30,13 @@
         "clientSide": true,
         "weight": 9
       },
+      "pbr_particlelighting": {
+        "ingui": "Light particles like the world",
+        "comment": "Give falling leaves, pollen, dust, sparks and smoke the same lighting as everything else. They belonged to no lighting model at all before.",
+        "default": true,
+        "clientSide": true,
+        "weight": 15
+      },
       "weather_cloudsfromgame": {
         "ingui": "Cloud shadows follow real clouds",
         "comment": "Read cloud positions from the game's own cloud renderer so shadows land under the clouds that cast them. Off falls back to a noise field that moves and covers correctly but cannot line up with the sky.",
@@ -372,6 +379,30 @@
           "step": 0.1
         }
       },
+      "weather_frost": {
+        "ingui": "Frost response",
+        "comment": "How much frost changes a surface, on top of the game's own frost. Vanilla decides where frost is and tints it white; this makes it behave like frost - rough, with the highlight of whatever it covers killed.",
+        "default": 0.8,
+        "clientSide": true,
+        "weight": 62,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "weather_snowdusting": {
+        "ingui": "Snow dusting",
+        "comment": "A thin film of snow on surfaces the sky can see. Does not compete with the game's own snow blocks - this is the dusting on fence rails, crates and rocks.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 63,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
       "weather_ripples": {
         "ingui": "Rain ripples",
         "comment": "How hard rain lands in the water it left. Rides the material shader's normal, so it needs PseudoPBR on and a wet, up-facing, sky-exposed surface.",
@@ -570,6 +601,18 @@
         "default": 0.6,
         "clientSide": true,
         "weight": 53,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_particlespecular": {
+        "ingui": "Particle specular",
+        "comment": "How much of the particle specular lobe reaches the image. Low on purpose: a highlight that reads as detail on a wall reads as twinkling noise on a cloud of dust.",
+        "default": 0.45,
+        "clientSide": true,
+        "weight": 64,
         "range": {
           "min": 0.0,
           "max": 2.0,

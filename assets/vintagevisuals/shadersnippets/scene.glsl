@@ -45,6 +45,31 @@ uniform float vv_sceneArtificialLight; // 0 lit by sky, 1 lit by fire
 // world ended up landing on the same frame.
 uniform float vv_sceneClock;
 
+// --- season -----------------------------------------------------------------
+//
+// Two lanes rather than a single 0..1 year position, and computed on the CPU
+// from the game's own GetSeason and GetSeasonRel rather than from a mapping
+// this file would have to assume. The game also knows which hemisphere the
+// player is in, and getting that backwards would put autumn in spring for half
+// the world.
+//
+// NOTHING HERE RECOLOURS ANYTHING. Vanilla owns seasonal appearance completely
+// and does it better than this mod could: colormapData carries a season map
+// index, a climate map index, per-tree colour offsets, and a seasonWeight that
+// already accounts for temperature, rainfall and altitude. These lanes exist to
+// change how surfaces RESPOND - what takes water, what frosts - not how they
+// look.
+
+uniform float vv_sceneAutumn;  // 0 away from autumn, 1 at its middle
+uniform float vv_sceneWinter;  // 0 away from winter, 1 at its middle
+
+// How much the environmental frost layer is allowed to do, on top of vanilla's
+// own frost mask. 0 leaves vanilla's frost exactly as it was.
+uniform float vv_sceneFrost;
+
+// How much snow may lie on a surface, before per-fragment gating.
+uniform float vv_sceneSnow;
+
 // --- what the scene needs ---------------------------------------------------
 
 // How much the mod should hold back.

@@ -39,6 +39,124 @@ const float VV_OVERCAST_DIRECT = 0.35;
 const float VV_OVERCAST_AMBIENT = 1.5;
 
 // ---------------------------------------------------------------------------
+// Environmental layers
+//
+// A surface in this game is rarely just its material. It is that material plus
+// whatever the world has put on it: water, snow, frost. Those stack in a fixed
+// order and TRANSITION rather than overwrite, which is the whole point - snow
+// settling on wet stone should move wetness down as coverage rises, not swap
+// the material out.
+//
+//   base -> season -> wetness -> snow -> frost
+//
+// Season is not in the shader. Vanilla owns seasonal appearance completely and
+// does it better than this mod could: colormapData carries a season map index,
+// a climate map index, per-tree colour offsets and a seasonWeight that already
+// accounts for temperature, rainfall and altitude. Recolouring foliage here
+// would fight all of that. What the season does reach is the WEIGHTS below -
+// autumn foliage takes water differently, winter frosts - and those are
+// computed on the CPU from the game's own GetSeason.
+//
+// Frost is likewise not invented. Vanilla ships frostAlpha, a per-fragment
+// frost mask driven by the block's own frostable bit, the local temperature,
+// sunlight and value noise. What vanilla does NOT do with it is change the
+// material: its frost is a tint. So this takes the game's mask and gives it a
+// surface response.
+// ---------------------------------------------------------------------------
+
+// A surface, mid-resolve. Passed by value because every stage returns a
+// modified copy: a layer that edited in place would make the order implicit,
+// and the order is the entire contract here.
+struct VvSurface
+{
+    vec3 albedo;
+    float roughness;
+    float specular;
+};
+
+// Water lying on a surface. Wet stone is smoother, more reflective and DARKER,
+// and the darkening is the one that sells it - miss it and wet stone reads as
+// polished stone.
+const float VV_LAYER_WET_ROUGHNESS = 0.08;
+const float VV_LAYER_WET_SPECULAR = 0.60;
+const float VV_LAYER_WET_DARKEN = 0.72;
+
+// The same, for anything thin and organic. A wet leaf darkens and goes limp; it
+// does not turn into polished glass, and giving foliage stone's numbers is what
+// made a rained-on canopy look laminated.
+const float VV_LAYER_WET_LEAF_ROUGHNESS = 0.34;
+const float VV_LAYER_WET_LEAF_SPECULAR = 0.26;
+const float VV_LAYER_WET_LEAF_DARKEN = 0.78;
+
+// Snow: bright, rough, and almost without a highlight. The temptation is to
+// make it sparkle; fresh snow does not, it is a diffuse white powder, and the
+// glitter people remember is a sunlit crust that is a different material.
+const float VV_LAYER_SNOW_ROUGHNESS = 0.86;
+const float VV_LAYER_SNOW_SPECULAR = 0.06;
+
+// Frost: rough like snow but far thinner, so the surface under it still shows.
+// Slightly more specular than snow because a frost crust is crystalline where
+// snow is powder.
+const float VV_LAYER_FROST_ROUGHNESS = 0.72;
+const float VV_LAYER_FROST_SPECULAR = 0.16;
+
+// Resolves the stack.
+//
+// The transitions are the reason this is one function rather than three
+// scattered edits. Snow displaces water, and frost displaces water, because
+// frozen water is not wet - without that, a snowy surface in a shower ends up
+// simultaneously soaked and covered, which reads as neither.
+VvSurface vvApplyEnvironmentLayers(VvSurface base, float wetness, float snow, float frost,
+                                   float foliage)
+{
+    VvSurface s = base;
+
+    float cover = clamp(snow + frost, 0.0, 1.0);
+
+    // Water first, and reduced by whatever is frozen on top of it.
+    float wet = clamp(wetness, 0.0, 1.0) * (1.0 - cover);
+
+    if (wet > 0.001)
+    {
+        float leaf = clamp(foliage, 0.0, 1.0);
+
+        float wetRoughness = mix(VV_LAYER_WET_ROUGHNESS, VV_LAYER_WET_LEAF_ROUGHNESS, leaf);
+        float wetSpecular = mix(VV_LAYER_WET_SPECULAR, VV_LAYER_WET_LEAF_SPECULAR, leaf);
+        float wetDarken = mix(VV_LAYER_WET_DARKEN, VV_LAYER_WET_LEAF_DARKEN, leaf);
+
+        s.roughness = mix(s.roughness, wetRoughness, wet);
+        s.specular = max(s.specular, mix(s.specular, wetSpecular, wet));
+        s.albedo *= mix(1.0, wetDarken, wet);
+    }
+
+    // Snow next. It brightens toward white rather than being replaced by it, so
+    // a light dusting still reads as the thing underneath.
+    float snowCover = clamp(snow, 0.0, 1.0);
+    if (snowCover > 0.001)
+    {
+        s.roughness = mix(s.roughness, VV_LAYER_SNOW_ROUGHNESS, snowCover);
+        s.specular = mix(s.specular, VV_LAYER_SNOW_SPECULAR, snowCover);
+        s.albedo = mix(s.albedo, vec3(0.92), snowCover * 0.85);
+    }
+
+    // Frost last, and thinnest.
+    //
+    // Vanilla has ALREADY tinted this fragment toward white using the same
+    // mask, so the albedo is deliberately barely touched here - doing it twice
+    // is how a frosted surface turns into a white blob. What is added is the
+    // part vanilla has no notion of: frost is rough, and it kills the specular
+    // of whatever it covers.
+    float frostCover = clamp(frost, 0.0, 1.0);
+    if (frostCover > 0.001)
+    {
+        s.roughness = mix(s.roughness, VV_LAYER_FROST_ROUGHNESS, frostCover);
+        s.specular = mix(s.specular, VV_LAYER_FROST_SPECULAR, frostCover);
+    }
+
+    return s;
+}
+
+// ---------------------------------------------------------------------------
 // Emission
 //
 // This game is about fire. Forges, bloomeries, firepits, lamps, lava, candles

@@ -79,6 +79,25 @@ namespace VintageVisuals.Common.Scene
 
         // --- Place ----------------------------------------------------------
 
+        /// <summary>
+        /// SAMPLED. How far into autumn the world is, 0..1.
+        ///
+        /// From the game's own <c>GetSeason</c> and <c>GetSeasonRel</c>, which
+        /// are per-position and hemisphere-aware - getting that backwards would
+        /// put autumn in spring for half the world.
+        ///
+        /// NOTHING driven by this recolours anything. Vanilla owns seasonal
+        /// appearance completely and does it better than this mod could: the
+        /// per-block colormap data carries a season map index, a climate map
+        /// index, per-tree colour offsets and a seasonWeight that already
+        /// accounts for temperature, rainfall and altitude. This exists to
+        /// change how surfaces RESPOND, not how they look.
+        /// </summary>
+        public readonly float Autumn;
+
+        /// <summary>SAMPLED. How far into winter the world is, 0..1. See <see cref="Autumn"/>.</summary>
+        public readonly float Winter;
+
         /// <summary>SAMPLED. Air temperature at the player, in degrees C.</summary>
         public readonly float Temperature;
 
@@ -154,7 +173,8 @@ namespace VintageVisuals.Common.Scene
                                 float precipitation, float rain, float snow, float wetness,
                                 float temperature, float humidity,
                                 float skyExposure, float depth, float underwater,
-                                Vec3f cameraPosition, float proximity = 0f)
+                                Vec3f cameraPosition, float proximity = 0f,
+                                float autumn = 0f, float winter = 0f)
         {
             DayLight = dayLight;
             MoonLight = moonLight;
@@ -172,6 +192,8 @@ namespace VintageVisuals.Common.Scene
             Underwater = underwater;
             CameraPosition = cameraPosition;
             Proximity = proximity;
+            Autumn = autumn;
+            Winter = winter;
         }
 
         /// <summary>

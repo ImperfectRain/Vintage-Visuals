@@ -95,6 +95,8 @@ namespace VintageVisuals.Common.Scene
         private float _depth;
         private float _underwater;
         private float _proximity;
+        private float _autumn;
+        private float _winter;
         private readonly Vec3f _camera = new Vec3f();
 
         private bool _reportedFirstSample;
@@ -191,6 +193,9 @@ namespace VintageVisuals.Common.Scene
                 _sinceClimate = 0f;
                 SampleClimate();
                 SampleProximity();
+
+                IClientPlayer seasonPlayer = _capi.World?.Player;
+                if (seasonPlayer?.Entity != null) SampleSeason(seasonPlayer.Entity.Pos.AsBlockPos);
             }
 
             SampleObserver();
@@ -221,7 +226,7 @@ namespace VintageVisuals.Common.Scene
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
-                _camera, _proximity);
+                _camera, _proximity, _autumn, _winter);
 
             Current = next;
 
@@ -346,6 +351,48 @@ namespace VintageVisuals.Common.Scene
                 // Held at the last reading. An entity query that starts throwing
                 // is a reason to stop tracking, not a reason to claim the player
                 // is alone.
+            }
+        }
+
+        /// <summary>
+        /// How far into autumn and winter the world is, from the game's answer.
+        ///
+        /// GetSeason is per-position and hemisphere-aware, so it is asked at the
+        /// player rather than assumed from the day of the year - southern
+        /// hemisphere autumn is northern hemisphere spring, and a mod that got
+        /// that backwards would be wrong for half of every world.
+        ///
+        /// Blended with GetSeasonRel rather than used as a hard flag, because a
+        /// material response that switched on the instant a season ticked over
+        /// would be a visible pop on a day nothing else changed. The discrete
+        /// season decides WHICH lane; the relative position decides how far in.
+        /// </summary>
+        private void SampleSeason(BlockPos pos)
+        {
+            try
+            {
+                var calendar = _capi.World?.Calendar;
+                if (calendar == null) return;
+
+                EnumSeason season = calendar.GetSeason(pos);
+                float rel = GameMath.Clamp(calendar.GetSeasonRel(pos), 0f, 1f);
+
+                // Rel runs across the whole year, so the position WITHIN the
+                // current season is what a fade wants. Quarters, because there
+                // are four seasons and the game divides the year evenly.
+                float within = GameMath.Clamp((rel * 4f) % 1f, 0f, 1f);
+
+                // Rises through the first half of its season and falls through
+                // the second, so neighbouring seasons hand over rather than
+                // switching.
+                float depth = 1f - Math.Abs(within - 0.5f) * 2f;
+
+                _autumn = season == EnumSeason.Fall ? depth : 0f;
+                _winter = season == EnumSeason.Winter ? depth : 0f;
+            }
+            catch (Exception)
+            {
+                // Held at the last reading, as everywhere else here.
             }
         }
 

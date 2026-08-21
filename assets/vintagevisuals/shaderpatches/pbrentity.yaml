@@ -44,6 +44,14 @@
   content: |
     in vec4 worldPos; // vintagevisuals: varying asserted by pbrentity.yaml
 
+# fragFrostAlpha is vanilla's own frost mask for creatures. The mod does not
+# decide which of them frost over - the game already did.
+- type: token
+  filename: entityanimated.fsh
+  tokens: in float fragFrostAlpha;
+  content: |
+    in float fragFrostAlpha; // vintagevisuals: varying asserted by pbrentity.yaml
+
 # 2. The shared microfacet core, anchored on lightPosition.
 #
 # The same file the two terrain groups inject, at the same anchor. One

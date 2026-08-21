@@ -46,11 +46,15 @@ uniform float vv_pbrRoughnessBias;   // the same global matte <-> gloss slider t
 // a question nothing here asks.
 const float VV_ENTITY_F0 = 0.04;
 
-// What rain does to a creature. Weaker than the terrain's numbers on purpose:
-// fur and cloth hold water rather than filming it, so they darken more than
-// they gloss, which is the opposite of what happens to stone.
-const float VV_ENTITY_WET_ROUGHNESS = 0.35;
-const float VV_ENTITY_WET_DARKEN = 0.80;
+// Creatures take the FOLIAGE side of the wet response rather than the stone
+// side, and for the same physical reason: fur, cloth and hide hold water rather
+// than filming it, so they darken more than they gloss. Stone's numbers would
+// laminate a wolf.
+const float VV_ENTITY_FOLIAGE = 1.0;
+
+// No snow layer. Snow settles on surfaces that stay still, and a creature does
+// not - vanilla frosts them instead, which is why fragFrostAlpha exists and a
+// snow equivalent does not.
 
 
 // Applied to the colour vanilla has already lit, exactly as on terrain: this
@@ -62,10 +66,19 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
 {
     if (vv_pbrEntity < 0.5 || vv_pbrEntitySpecular < 0.001) return litColor;
 
-    float wetness = clamp(vv_sceneWetness, 0.0, 1.0);
+    // The same layer resolve the terrain uses, so a creature standing in the
+    // snow is made of the same rules as the snow. fragFrostAlpha is VANILLA'S
+    // own frost mask for entities - the game already decides which creatures
+    // frost over and how much.
+    VvSurface surface = vvApplyEnvironmentLayers(
+        VvSurface(albedo, vv_pbrEntityRoughness, VV_ENTITY_F0),
+        clamp(vv_sceneWetness, 0.0, 1.0),
+        0.0,
+        clamp(fragFrostAlpha, 0.0, 1.0) * clamp(vv_sceneFrost, 0.0, 1.0),
+        VV_ENTITY_FOLIAGE);
 
-    float roughness = clamp(mix(vv_pbrEntityRoughness, VV_ENTITY_WET_ROUGHNESS, wetness)
-                            + vv_pbrRoughnessBias, 0.04, 1.0);
+    float wetness = clamp(vv_sceneWetness, 0.0, 1.0);
+    float roughness = clamp(surface.roughness + vv_pbrRoughnessBias, 0.04, 1.0);
 
     vec3 n = normalize(faceNormal);
     vec3 l = normalize(lightPosition);
@@ -83,7 +96,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
     // creature moves.
     roughness = vvFilteredRoughness(roughness, n);
 
-    vec3 f0 = vec3(VV_ENTITY_F0);
+    vec3 f0 = vec3(surface.specular);
     vec3 fresnel = vvFresnelSchlick(vdoth, f0);
 
     float distribution = vvDistributionGGX(ndoth, roughness);
@@ -100,7 +113,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
 
     // Wet fur and wet cloth go dark. This is the half of wetness that sells it
     // on a creature, more than the highlight does.
-    vec3 result = litColor.rgb * mix(1.0, VV_ENTITY_WET_DARKEN, wetness);
+    vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wetness);
 
     // Energy conservation, as on terrain: light reflected specularly is light
     // that did not scatter diffusely.

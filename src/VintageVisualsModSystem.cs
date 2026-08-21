@@ -203,6 +203,11 @@ namespace VintageVisuals
                 return ConfigManager.Config.PseudoPBR.EntityLighting;
             }
 
+            if (group == PseudoPbrSubsystem.ParticleGroupName)
+            {
+                return ConfigManager.Config.PseudoPBR.ParticleLighting;
+            }
+
             if (group == ColorGradeSubsystem.GroupName)
             {
                 return ConfigManager.Config.ColorGrade.Enabled;
@@ -221,6 +226,7 @@ namespace VintageVisuals
         {
             return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
                    (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
+                   (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
                    (ConfigManager.Config.Weather.Enabled ? "W" : "-");
         }

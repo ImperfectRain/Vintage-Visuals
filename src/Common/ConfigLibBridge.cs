@@ -183,6 +183,12 @@ namespace VintageVisuals.Common
                 case "pbr_cavity":
                     pbr.CavityStrength = tree.GetFloat("value", pbr.CavityStrength);
                     break;
+                case "pbr_particlelighting":
+                    pbr.ParticleLighting = tree.GetBool("value", pbr.ParticleLighting);
+                    break;
+                case "pbr_particlespecular":
+                    pbr.ParticleSpecular = tree.GetFloat("value", pbr.ParticleSpecular);
+                    break;
                 case "pbr_entityroughness":
                     pbr.EntityRoughness = tree.GetFloat("value", pbr.EntityRoughness);
                     break;
@@ -251,6 +257,12 @@ namespace VintageVisuals.Common
                     break;
                 case "grade_response":
                     adaptiveGrade.ResponseSeconds = tree.GetFloat("value", adaptiveGrade.ResponseSeconds);
+                    break;
+                case "weather_frost":
+                    weather.FrostStrength = tree.GetFloat("value", weather.FrostStrength);
+                    break;
+                case "weather_snowdusting":
+                    weather.SnowDusting = tree.GetFloat("value", weather.SnowDusting);
                     break;
                 case "weather_ripples":
                     weather.RippleStrength = tree.GetFloat("value", weather.RippleStrength);
