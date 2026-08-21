@@ -128,7 +128,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | tracked but nothing consumes it yet |
-| `[~]` | **Snow as a material transformation** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
+| `[~]` | **Snow film as a material response** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
 | `[x]` | **Frost as an environmental layer** | L2 | built on vanilla's own `frostAlpha`/`fragFrostAlpha`. Vanilla tints; this adds the material body |
 | `[ ]` | Rain streaks running down vertical wet faces | — | cut from the ripple commit on purpose, unverifiable blind |
 | `[ ]` | Puddles pooling in depressions | — | needs a height signal the terrain shader does not have |
@@ -184,6 +184,99 @@ a future weather type inherits the rendering instead of adding a special case.
 | `[ ]` | Event camera effects | damage flash, explosion distortion |
 | `[ ]` | Temporal accumulation / TAA | last, and only if the renderer allows it |
 | `[ ]` | Dynamic resolution | |
+
+## 8a. External audit, checked
+
+An outside review of head `63ab331`. Every claim below was checked against the
+source rather than taken on trust; two did not survive that. Ranked by what it
+costs to be wrong about them.
+
+### Confirmed, and blocking
+
+1. **Colour grading runs in the wrong signal domain.** VERIFIED from the dumped
+   `final.fsh`: vanilla applies `gammaLevel` and then
+   `color.rgb = pow(color.rgb, vec3(1.0 / extraGamma))` at lines 1351-1356,
+   *inside* its own `main()`. Our group renames that `main()` and appends a new
+   one, so the entire grade - exposure, white balance, ACES - runs on a
+   **display-referred** signal. ACES expects scene-referred linear input. The
+   contrast pivot at 0.5 was already reasoned for display space, so the stack is
+   internally inconsistent as well as misplaced. `TonemapStrength` ships at 0, so
+   nothing is visibly broken today; the design intent is what is wrong. **Do not
+   build more grading until the insertion point moves or the stack is rewritten
+   for display space.**
+2. **`vv_sunExposure`'s range is still assumed.** Everything in the dapple gate
+   hangs off it and it has never been read. Debug view 16 exists precisely to
+   settle it; treat it as a prerequisite, not a nicety.
+3. **`CloudTileReader` registration is still unproven.** Transposition and grid
+   offset both remain possible. The optics downstream are now defensible, which
+   makes it *more* important not to keep tuning them against an unverified
+   mapping.
+
+### Confirmed, worth doing
+
+4. **Ground sunflecks are a receiver, not a source.** Feeding them into the
+   god-ray mask is a rendering approximation, not light transport - a lit patch
+   of ground does not scatter a shaft toward the camera. The canopy silhouette
+   is the physically defensible source. Keep the flecks as low-weight artistic
+   reinforcement and say so rather than implying it is physical.
+5. **Conservation invariants should be tested.** Effects sort cleanly into
+   light-adding (emission), light-redistributing (transmission, reflection) and
+   light-removing (cloud shadow, crevice, dapple, attenuation), and each class
+   has an invariant a static test can check. This fits `VisualBudget` exactly and
+   would have caught the additive-dapple blowout before it shipped.
+6. **Monotonicity invariants likewise** - more optical depth must never transmit
+   more light, a distance fade must decrease, roughness must stay non-negative,
+   foliage transmission must peak with the light behind the leaf.
+7. **"Snow film as a material response" overstates what exists.** What is
+   implemented is a thin film. Accumulation, thickness, edge buildup and melting
+   are not. Rename to snow *film* and reserve the other name.
+8. **Vanilla's signals are semantic, not radiometric.** `cloudOpaqueness`,
+   `glowLevel`, `sunExposure`, `frostAlpha` and `windMode` are game abstractions;
+   the cloud-opacity mistake was exactly this error and it will recur. Rule:
+   take vanilla's data as authoritative *meaning*, then apply a physically
+   motivated transform - never assume the number is itself physical.
+9. **The tracker's checkboxes read as maturity.** A large L2 surface looks done
+   at a glance. Levels need to be visible per row, not only defined at the top.
+
+### Acted on in this pass
+
+- The god-ray comment that mislabelled its own gate is corrected (10 below).
+- `VV_SHAFT_GROUND` dropped from 0.22 to 0.10 and reframed: a lit patch of
+  ground is a receiver, not a source, so it reinforces the shape rather than
+  standing as a second physical origin (4 above).
+- Conservation invariants are now enforced by `tools/smoketest`
+  (`ConservationChecks`): every effect is declared ADDING, REMOVING or
+  REDISTRIBUTING, and the source is checked against its declaration - including
+  at the CALL SITE, since the sunfleck blowout lived in `result *= 1.0 + dapple`
+  rather than inside the function. Verified to bite by restoring that exact
+  line (5 above).
+- Snow renamed from "material transformation" to "film" where it overstated
+  what exists (7 above).
+
+### Checked and disputed
+
+10. **"The god-ray facing test should use camera forward, not fragment
+    direction."** Partially wrong. `dot(normalize(cameraRelativePos), toSun)` is
+    not a camera-orientation test - it is an *angular proximity to the sun*
+    test - and for a blur that is radial from the sun's screen position that is
+    the more appropriate quantity, not a mismatch. It also subsumes the camera
+    test: if the sun is behind the player, no fragment in the frustum has a
+    direction near `toSun`, so the mask is zero everywhere anyway. The audit's
+    "one side of the screen passes and the other fails" is true and is exactly
+    what radial falloff around the sun should do.
+    What IS wrong is the comment above it, which describes the line as a
+    camera-facing test. Fixed there rather than in the code.
+11. **"Ripple density should follow precipitation rate rather than amplitude."**
+    Right in principle, mostly already true, and worth splitting in two.
+    `vv_weatherRipples` is driven by `world.Rain * RippleStrength`, and
+    `vvRippleSlope` uses it as `if (rnd.x > density) return` - so it gates which
+    CELLS carry a drop at all. **Spatial** impact density therefore already
+    follows the rain rate rather than merely fading opacity, which is the half
+    the audit was worried about.
+    What does not follow it is **temporal** rate: `rate = 1 + floor(rnd.w * 3)`
+    is a per-cell constant from the hash, so a cell that is active is hit just as
+    often in drizzle as in a downpour. That is a real and small gap - fold the
+    rain into `rate` - but not the rewrite the finding implies.
 
 ## 9. Open problems
 

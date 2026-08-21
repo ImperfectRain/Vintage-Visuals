@@ -478,8 +478,23 @@ const float VV_DAPPLE_SHADE = 0.28;
 // How brightly a backlit leaf and a lit sunfleck feed vanilla's god-ray
 // channel. Small: the radial blur accumulates well over a hundred samples, so a
 // source that looks reasonable on its own comes out as a searchlight.
+//
+// The two are NOT equal partners, and the gap between them is a physical claim
+// rather than a taste one.
+//
+// A shaft exists because air scatters sunlight toward the eye while an occluder
+// removes that sunlight from part of the view. The canopy silhouette IS that
+// occluder boundary, so backlit foliage is a defensible stand-in for where a
+// beam begins. A lit patch of ground is not: it is a RECEIVER. It has already
+// absorbed the light; it does not scatter a beam back up to the gap that made
+// it. Streaking it toward the sun is a rendering approximation that happens to
+// reinforce the shape, and nothing more.
+//
+// So the ground term is kept deliberately weak - reinforcement, not a second
+// source of equal standing - and this note is here so the next person tuning it
+// upward knows what they are trading away.
 const float VV_SHAFT_LEAF = 0.34;
-const float VV_SHAFT_GROUND = 0.22;
+const float VV_SHAFT_GROUND = 0.10;
 
 const float VV_DAPPLE_FADE_START = 22.0;
 const float VV_DAPPLE_FADE_RANGE = 22.0;
@@ -810,9 +825,10 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
 //
 //   - BACKLIT LEAVES. Looking toward the sun through a crown, the leaf edges
 //     around each gap are what the shafts appear to emanate from.
-//   - SUNFLECKS. A lit patch of ground is a small bright source in its own
-//     right, and streaking it toward the sun is what draws the beam back up
-//     to the gap that made it.
+//   - SUNFLECKS, weakly. A lit patch of ground is a receiver rather than a
+//     source - it has absorbed the light, not scattered it - so streaking it
+//     toward the sun is an approximation that reinforces the shape and is
+//     weighted accordingly. See VV_SHAFT_GROUND.
 float vvCanopyShaft(vec3 cameraRelativePos)
 {
     if (vv_pbrShafts < 0.001) return 0.0;
@@ -822,14 +838,22 @@ float vvCanopyShaft(vec3 cameraRelativePos)
 
     vec3 toSun = normalize(lightPosition);
 
-    // Shafts converge on the sun's position ON SCREEN, so a fragment can only
-    // contribute to one while the camera is looking somewhere near the sun.
-    // Without this the radial blur smears every lit fleck in the world away
-    // from a sun that is behind the player.
+    // Angular proximity to the sun - NOT, as this comment used to claim, a test
+    // of whether the camera is facing it. The distinction was raised in review
+    // as a bug and it is not one, but the description was wrong and worth
+    // correcting.
     //
-    // This is also where the effect gets its dependence on the real sun: the
-    // beams point wherever lightPosition points, so they swing through the day
-    // and lie flat at dawn without being told to.
+    // What this measures is how close a fragment lies to the sun's direction,
+    // which for a blur that is radial from the sun's SCREEN position is the
+    // quantity that matters: the mask should be strong near the sun and fade
+    // away from it. It also subsumes the camera test it was mislabelled as - if
+    // the sun is behind the player then no fragment in the frustum has a
+    // direction anywhere near toSun, so the mask is zero everywhere without
+    // needing to ask about the camera at all.
+    //
+    // It is also where the effect gets its dependence on the real sun: the
+    // beams follow lightPosition, so they swing through the day and lie flat at
+    // dawn without being told to.
     float look = dot(normalize(cameraRelativePos), toSun);
     float facing = smoothstep(0.35, 0.95, look);
     if (facing < 0.004) return 0.0;

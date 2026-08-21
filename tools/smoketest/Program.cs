@@ -198,6 +198,9 @@ void main(void) {
         Console.WriteLine("World-anchored fields are sampled every frame");
         WorldAnchorChecks.Run(Repo, Check);
 
+        Console.WriteLine("Effects respect the light they are allowed to change");
+        ConservationChecks.Run(Repo, Check);
+
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 
