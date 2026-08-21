@@ -90,14 +90,129 @@ namespace VintageVisuals.VerifyPatches
 
             string patchDir = Path.Combine(Repo, "assets", "vintagevisuals", "shaderpatches");
 
-            foreach (string yamlPath in Directory.GetFiles(patchDir, "*.yaml").OrderBy(p => p))
+            string[] yamlPaths = Directory.GetFiles(patchDir, "*.yaml").OrderBy(p => p).ToArray();
+
+            foreach (string yamlPath in yamlPaths)
             {
                 VerifyGroup(yamlPath, referenceDir, haveGlslang);
             }
 
+            VerifyCombined(yamlPaths, referenceDir, haveGlslang);
+
             Console.WriteLine();
             Console.WriteLine(failures == 0 ? "ALL PATCHES VERIFIED" : failures + " FAILURE(S)");
             return failures == 0 ? 0 : 1;
+        }
+
+        /// <summary>
+        /// Applies EVERY group to each shader at once, the way the game does.
+        ///
+        /// The per-group passes above are not this check. They apply one group
+        /// to vanilla and prove it survives on its own; in a running game all
+        /// of them land on the same file together, and a whole class of failure
+        /// only exists there - two groups anchoring on the same token, a
+        /// declaration made twice, a patch whose anchor was consumed by the
+        /// group that ran before it.
+        ///
+        /// chunkopaque.fsh currently takes three groups. Nothing had ever
+        /// compiled them together outside the game.
+        /// </summary>
+        static void VerifyCombined(string[] yamlPaths, string referenceDir, bool haveGlslang)
+        {
+            Console.WriteLine("== ALL GROUPS TOGETHER (as the game applies them)");
+
+            var all = new List<ShaderPatch>();
+            var groups = new List<string>();
+
+            foreach (string yamlPath in yamlPaths)
+            {
+                string group = Path.GetFileNameWithoutExtension(yamlPath);
+                try
+                {
+                    all.AddRange(ShaderPatchLoader.ParsePatchFile(
+                        File.ReadAllText(yamlPath), group, yamlPath,
+                        n => File.ReadAllText(Path.Combine(Repo, "assets/vintagevisuals/shadersnippets", n))));
+                    groups.Add(group);
+                }
+                catch (Exception)
+                {
+                    // Already reported by the per-group pass.
+                }
+            }
+
+            foreach (string filename in all.Select(p => p.Filename).Distinct().OrderBy(f => f))
+            {
+                string path = Path.Combine(referenceDir, filename);
+                if (!File.Exists(path)) continue;
+
+                string vanilla = File.ReadAllText(path);
+                if (vanilla.Contains("vintagevisuals") || vanilla.Contains("vv_materialTex") ||
+                    vanilla.Contains("vvApplyColorGrade"))
+                {
+                    continue;
+                }
+
+                string[] hitting = all.Where(p => p.Filename == filename)
+                    .Select(p => p.Group).Distinct().OrderBy(g => g).ToArray();
+
+                if (hitting.Length < 2) continue;
+
+                var logger = new CollectingLogger();
+                var patcher = new ShaderPatcher(logger);
+                patcher.SetPatches(all);
+
+                string patched = patcher.Patch(filename, vanilla);
+
+                string unhealthy = hitting.FirstOrDefault(g => !patcher.IsGroupHealthy(g));
+                if (unhealthy != null)
+                {
+                    string reason = logger.Lines.FirstOrDefault(l => l.Contains("anchor not found"))
+                                    ?? logger.Lines.FirstOrDefault(l => l.Contains("CRITICAL"))
+                                    ?? "(no reason logged)";
+                    Fail(filename + " with " + string.Join(" + ", hitting) + ": group '" + unhealthy +
+                         "' broke when combined - " + reason.Trim());
+                    continue;
+                }
+
+                // A uniform declared twice in one translation unit does not
+                // compile, and two groups injecting the same shared snippet is
+                // exactly how that happens.
+                string duplicate = FindDuplicateUniform(patched);
+                if (duplicate != null)
+                {
+                    Fail(filename + " with " + string.Join(" + ", hitting) +
+                         ": uniform '" + duplicate + "' is declared more than once");
+                    continue;
+                }
+
+                string dumpDir = Environment.GetEnvironmentVariable("VINTAGE_VISUALS_DUMP");
+                if (!string.IsNullOrEmpty(dumpDir))
+                {
+                    Directory.CreateDirectory(dumpDir);
+                    File.WriteAllText(Path.Combine(dumpDir, "combined." + filename), patched);
+                }
+
+                Console.WriteLine("  ok    " + filename + ": " + string.Join(" + ", hitting) +
+                                  " all applied together");
+
+                if (haveGlslang) Compile(filename, vanilla, patched);
+            }
+        }
+
+        /// <summary>Finds a vv_ uniform declared more than once, which never compiles.</summary>
+        static string FindDuplicateUniform(string source)
+        {
+            var seen = new HashSet<string>();
+
+            foreach (System.Text.RegularExpressions.Match m in
+                     System.Text.RegularExpressions.Regex.Matches(source,
+                         @"^uniform\s+\w+\s+(vv_\w+)\s*(?:\[[^\]]*\])?\s*;",
+                         System.Text.RegularExpressions.RegexOptions.Multiline))
+            {
+                if (!seen.Add(m.Groups[1].Value)) return m.Groups[1].Value;
+            }
+
+            return null;
         }
 
         static void VerifyGroup(string yamlPath, string referenceDir, bool haveGlslang)
