@@ -323,6 +323,22 @@ const float VV_RIPPLE_JITTER = 0.5;
 // the wrap lands on a cell boundary and never cuts a ring in half.
 const float VV_ORIGIN_PERIOD = 4096.0;
 
+// Texels per block in the game's block textures.
+//
+// Ripples are snapped to this grid so they read as pixels rather than as smooth
+// analytic rings. Vintage Story is a pixel-art game and a perfectly round
+// anti-aliased ripple sitting on a 32-pixel texture looks like something from a
+// different renderer - which it is. Snapping costs nothing and puts the effect
+// back in the game's own vocabulary.
+//
+// Ripples only appear on up-facing surfaces, and a block is one unit across, so
+// world XZ quantised to 1/32 IS the top face's texel grid - the ripple lands on
+// the texture's own pixels rather than merely near them. 32 divides
+// VV_ORIGIN_PERIOD exactly, so the coordinate wrap still lands on a texel
+// boundary. A resource pack at another resolution only changes how coarse the
+// ripple looks; nothing breaks.
+const float VV_RIPPLE_TEXELS = 32.0;
+
 // A bit-mixing integer hash, not the usual fract(sin(dot(p, k)) * 43758.5453).
 //
 // Integer mixing is exact at any coordinate, and it is worth the few extra
@@ -407,10 +423,26 @@ vec2 vvRippleSlope(vec2 p, float t, float density)
 //
 // Both scales divide VV_ORIGIN_PERIOD exactly - cells of half a block and of
 // one block - so the coordinate wrap lands on a cell boundary in both.
+//
+// The second octave's offset is deliberately NOT a whole number. It used to be
+// vec2(31.0, 17.0), and an integer offset on a one-block grid puts its cell
+// boundaries exactly on top of the half-block grid's - so the two octaves broke
+// at the same lines and reinforced the very lattice the second octave was added
+// to hide. A fractional offset slides its boundaries into the middle of the
+// other's cells. It is still a constant, so the coordinate wrap is unaffected.
 vec2 vvRainRipples(vec2 worldXZ, float t, float density)
 {
-    return vvRippleSlope(worldXZ * 2.0, t, density)
-         + vvRippleSlope(worldXZ * 1.0 + vec2(31.0, 17.0), t * 0.5 + 0.37, density) * 0.7;
+    // Snapped to the texture's pixel grid before anything samples it, so both
+    // octaves land on the same pixels and the result is one coherent pixelated
+    // field rather than two smooth ones added together.
+    //
+    // Space only, never time: the ring still expands smoothly, it is only its
+    // EDGE that is made of pixels. Quantising the clock as well would make the
+    // drops stutter, which is the opposite of what this is for.
+    vec2 p = floor(worldXZ * VV_RIPPLE_TEXELS) / VV_RIPPLE_TEXELS;
+
+    return vvRippleSlope(p * 2.0, t, density)
+         + vvRippleSlope(p * 1.0 + vec2(31.43, 17.61), t * 0.5 + 0.37, density) * 0.7;
 }
 
 // Perturbs the surface normal with rain landing in standing water.

@@ -266,6 +266,27 @@ feature rather than a wiring mistake; it does not say anything looks right.
   stops is optical depth, not draw opacity, so the field is now Beer-Lambert:
   a wisp takes a little light, a thick cloud takes most, and the gradient
   between is what makes a shadow legible crossing a field.
+- **Rain ripples swam across the ground with the player** - the same bug as the
+  cloud window, in a different sampler. A shader only sees camera-relative
+  coordinates, so the ripple field rebuilds a world position as
+  `cameraRelativePos + vv_pbrOrigin`. The first term changes every frame; the
+  second was sampled on `EnvironmentTracker`'s 0.1s tick, so the sum drifted
+  with the player and snapped back ten times a second. The camera is now
+  sampled every frame ahead of the tick gate - two doubles and a modulo, and
+  `EnvironmentState` is a readonly struct so rebuilding it allocates nothing -
+  while the light-level lookup beside it, a chunk query, stays on the tick.
+  This is the THIRD time an anchor has been throttled along with the sampler
+  around it, so `tools/smoketest` now pins both places by call order rather than
+  by presence: the anchor must come before the gate.
+- **Ripples are now snapped to the block texture's texel grid.** A perfectly
+  round anti-aliased ripple on a 32-pixel texture reads as belonging to a
+  different renderer. Ripples only land on up-facing surfaces and a block is one
+  unit across, so world XZ quantised to 1/32 is exactly the top face's texel
+  grid. Space only - the ring still expands smoothly, only its edge is made of
+  pixels. The second octave's offset was also a whole number, which put its
+  one-block cell boundaries exactly on the half-block grid's, so both octaves
+  broke along the same lines and reinforced the lattice the second one existed
+  to hide.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that

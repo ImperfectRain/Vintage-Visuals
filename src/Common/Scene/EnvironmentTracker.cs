@@ -173,6 +173,24 @@ namespace VintageVisuals.Common.Scene
         {
             if (stage != EnumRenderStage.Before) return;
 
+            // EVERY FRAME, ahead of the tick gate, and this is not an
+            // optimisation detail - it is what keeps every world-anchored field
+            // anchored.
+            //
+            // A shader only ever sees camera-relative coordinates, so anything
+            // that must stay put on the ground reconstructs a world position as
+            // cameraRelativePos + CameraPosition. Sampling the camera on the
+            // 0.1s tick left that second term stale while the first changed
+            // every frame, so the sum drifted with the player and snapped back
+            // ten times a second. Rain ripples showed it first and worst -
+            // they are the finest field this mod draws, and they visibly swam
+            // across the ground as you walked.
+            //
+            // Two doubles and a modulo. EnvironmentState is a readonly struct,
+            // so rebuilding it costs a stack copy and no allocation.
+            SampleCamera();
+            Current = BuildState();
+
             _sinceTick += deltaTime;
             if (_sinceTick < TickSeconds) return;
 
@@ -219,14 +237,7 @@ namespace VintageVisuals.Common.Scene
             _snow.Step(snowTarget, deltaSeconds, WetnessTracker.WettingSeconds);
             _wetness.Step(wetTarget, deltaSeconds, DryingSeconds);
 
-            EnvironmentState next = new EnvironmentState(
-                _dayLight, _moonLight, _cloudCover,
-                _wind, _windSpeed,
-                _precipitation, _rain.Current, _snow.Current, _wetness.Current,
-                _temperature, _humidity,
-                _skyExposure, _depth, _underwater,
-                _camera, _proximity, _autumn, _winter);
-
+            EnvironmentState next = BuildState();
             Current = next;
 
             // Intent and arbitration run here, once, at one cadence. Letting
@@ -442,6 +453,50 @@ namespace VintageVisuals.Common.Scene
             }
         }
 
+        /// <summary>
+        /// The current state as one value, from whatever the samplers last put
+        /// in the fields behind it.
+        ///
+        /// Called every frame as well as every tick, because the camera moves
+        /// every frame and everything else is happy to be a tenth of a second
+        /// stale.
+        /// </summary>
+        private EnvironmentState BuildState()
+        {
+            return new EnvironmentState(
+                _dayLight, _moonLight, _cloudCover,
+                _wind, _windSpeed,
+                _precipitation, _rain.Current, _snow.Current, _wetness.Current,
+                _temperature, _humidity,
+                _skyExposure, _depth, _underwater,
+                _camera, _proximity, _autumn, _winter);
+        }
+
+        /// <summary>
+        /// Where the camera is, wrapped, this frame.
+        ///
+        /// Split out of SampleObserver so it can run every frame while the
+        /// light-level lookup beside it - a chunk query, and the expensive half
+        /// - stays on the tick. See OnRenderFrame for why the split matters.
+        /// </summary>
+        private void SampleCamera()
+        {
+            try
+            {
+                EntityPos position = _capi.World?.Player?.Entity?.Pos;
+                if (position == null) return;
+
+                // Wrapped in double, before the value ever becomes a float.
+                // See EnvironmentState.CameraPosition for why this is not
+                // tidiness.
+                _camera.Set((float)Wrap(position.X), (float)position.Y, (float)Wrap(position.Z));
+            }
+            catch (Exception)
+            {
+                // Held at the last reading, as everywhere else here.
+            }
+        }
+
         private void SampleObserver()
         {
             try
@@ -450,12 +505,6 @@ namespace VintageVisuals.Common.Scene
                 if (player?.Entity == null) return;
 
                 EntityPos position = player.Entity.Pos;
-
-                // Wrapped in double, before the value ever becomes a float.
-                // See EnvironmentState.CameraPosition for why this is not
-                // tidiness.
-                _camera.Set((float)Wrap(position.X), (float)position.Y, (float)Wrap(position.Z));
-
                 BlockPos pos = position.AsBlockPos;
 
                 // OnlySunLight, not MaxTimeOfDayLight. The two ask different
