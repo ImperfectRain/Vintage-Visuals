@@ -277,8 +277,11 @@ itself brighter.
 
 ### Getting 256 numbers to the shader
 
-The window is 16 tiles square - 800 blocks, a little more than the default view
-distance - and travels as a **uniform array of 64 vec4s**, not a texture.
+The window is 24 tiles square - 1200 blocks - and travels as a **uniform array
+of 144 vec4s**, not a texture. The size is set by the throw, not by the view
+distance: a shadow lands `climb / tan(elevation)` blocks along the sun's
+azimuth, which at a 20-degree morning sun is around 400, so a 16-tile window put
+every early and late shadow into its own edge fade.
 
 That is a deliberate choice against the obvious one. Adding a second sampler to
 `chunkopaque.fsh` is the change that has twice cost this project the entire
@@ -416,7 +419,7 @@ the cloud casting it, so a wrong value mis-places every shadow except at noon -
 which is exactly why diagnostic view 2 removes the throw entirely.
 
 The throw is also capped at 320 blocks. The true projection runs to infinity at
-the horizon and the window is only 800 blocks across, so an uncapped throw walks
+the horizon and the window is 1200 blocks across, so an uncapped throw walks
 out of the data and every shadow disappears at the hour they would be longest.
 Shadows shorten instead, and since strength is already scaled by daylight, the
 hours where the cap bites are the hours the effect is fading out anyway.

@@ -36,14 +36,19 @@ namespace VintageVisuals.Weather
         /// <summary>
         /// Tiles across the window handed to the shader.
         ///
-        /// 16 tiles of 50 blocks is 800 blocks, a little more than the default
+        /// 24 tiles of 50 blocks is 1200 blocks. It was 16, and 800 blocks was
+        /// not enough: a shadow is thrown climb/tan(elevation) blocks along the
+        /// sun's azimuth, which at a 20-degree morning sun is 400 - the whole
+        /// half-width, straight into the edge fade. The window has to hold the
+        /// throw or shadows sit too close under their clouds all morning. The
+        /// default
         /// view distance. It is deliberately small: the window ships as a
-        /// uniform ARRAY rather than a texture, which costs 64 vec4s and needs
+        /// uniform ARRAY rather than a texture, which costs 144 vec4s and needs
         /// no sampler at all. Adding a second sampler to chunkopaque.fsh is the
         /// change that has twice cost this project the whole world render, and
         /// it is not worth it for 256 numbers.
         /// </summary>
-        public const int Window = 16;
+        public const int Window = 24;
 
         /// <summary>Blocks per cloud tile. Hard-coded in the game's own shaders as cloudTileSize.</summary>
         public const float TileSize = 50f;
@@ -52,6 +57,14 @@ namespace VintageVisuals.Weather
         private readonly ILogger _logger;
 
         private readonly float[] _density = new float[Window * Window];
+
+        /// <summary>
+        /// What the last read of the game's tiles actually said. _density eases
+        /// toward this rather than being assigned it - see Ease.
+        /// </summary>
+        private readonly float[] _target = new float[Window * Window];
+
+        private bool _seeded;
 
         // Raw members are kept separately because they have to be normalised
         // separately before vanilla's formula can be applied to them. See
@@ -68,6 +81,9 @@ namespace VintageVisuals.Weather
         /// at 18%, which is the spread cloud shadows are actually made of.
         /// </summary>
         private const float FullOpticalDepth = 2.0f;
+
+        /// <summary>Time constant for easing the field toward the last reading.</summary>
+        private const float EaseSeconds = 0.33f;
 
         private object _renderer;
         private MemberInfo _deckMember;
@@ -132,11 +148,22 @@ namespace VintageVisuals.Weather
         public Vec2f Origin { get { return _origin; } }
 
         /// <summary>
-        /// Re-reads the window. Cheap enough for a few times a second: 256
-        /// reflected member reads, no allocation beyond the boxing the reflection
-        /// itself forces.
+        /// Advances the window. Call EVERY frame; pass readTiles only as often
+        /// as the tile data is worth re-reading.
+        ///
+        /// The split is the whole point and its absence was a visible bug. The
+        /// tile read is reflective and was throttled to 4 Hz, which is ample for
+        /// data that changes as slowly as a cloud - but the window's CORNER was
+        /// being recomputed inside that same throttle, and the corner is how the
+        /// shadows stay attached to the world rather than to the camera. Between
+        /// reads it was stale, so the whole field slid along with the player and
+        /// then snapped back four times a second. Walking, that is a metre-long
+        /// jerk four times a second; flying, it is the field visibly stepping
+        /// from tile to tile.
+        ///
+        /// The corner costs two divisions. It belongs on every frame.
         /// </summary>
-        public void Update()
+        public void Update(float deltaSeconds, bool readTiles)
         {
             if (!_searched)
             {
@@ -158,6 +185,11 @@ namespace VintageVisuals.Weather
                 Available = false;
                 return;
             }
+
+            UpdateOrigin();
+            Ease(deltaSeconds);
+
+            if (!readTiles) return;
 
             try
             {
@@ -254,11 +286,11 @@ namespace VintageVisuals.Weather
             // that a thickness of 1e-5 would read as a tenth of a cloud.
             bool clear = thickestSeen < 1e-4f;
 
-            for (int i = 0; i < _density.Length; i++)
+            for (int i = 0; i < _target.Length; i++)
             {
                 if (clear)
                 {
-                    _density[i] = 0f;
+                    _target[i] = 0f;
                     continue;
                 }
 
@@ -288,11 +320,21 @@ namespace VintageVisuals.Weather
                 // makes a cloud shadow legible as it crosses a field.
                 float depth = FullOpticalDepth * thickness * opaque;
 
-                _density[i] = GameMath.Clamp(1f - (float)Math.Exp(-depth), 0f, 1f);
+                _target[i] = GameMath.Clamp(1f - (float)Math.Exp(-depth), 0f, 1f);
             }
 
             SampleDeckHeight();
 
+        }
+
+        /// <summary>
+        /// Where the window's corner sits relative to the camera, this frame.
+        ///
+        /// Cheap on purpose - two divisions and no reflection - because it has
+        /// to run every frame. See Update for what happened when it did not.
+        /// </summary>
+        private void UpdateOrigin()
+        {
             IClientPlayer player = _capi.World?.Player;
             if (player?.Entity == null) return;
 
@@ -304,12 +346,8 @@ namespace VintageVisuals.Weather
             // difference is taken in double before it ever becomes a float. The
             // snap offset is the fractional part of the player's position
             // within its tile, which lives in [-50, 0]; adding the half-window
-            // puts the corner around -400. Both are numbers a float32 has
+            // puts the corner around -600. Both are numbers a float32 has
             // precision to spare on, at any distance from the world origin.
-            //
-            // The previous version subtracted nothing and handed over
-            // floor(px/50)*50 - 400 as an absolute world coordinate, which the
-            // shader then compared against a wrapped position. See Origin.
             double px = player.Entity.Pos.X;
             double pz = player.Entity.Pos.Z;
 
@@ -318,6 +356,39 @@ namespace VintageVisuals.Weather
 
             _origin.X = (float)(snapX - Window / 2 * TileSize);
             _origin.Y = (float)(snapZ - Window / 2 * TileSize);
+        }
+
+        /// <summary>
+        /// Eases the field toward the last reading.
+        ///
+        /// Two discontinuities to absorb, both of them steps rather than noise.
+        /// The tiles are re-read a few times a second, so without easing the
+        /// field changes in visible increments. And when the player crosses a
+        /// tile boundary the window's crop shifts by one index while its corner
+        /// jumps back by a tile; the two are meant to cancel exactly, and any
+        /// residue between the game's schedule and ours lands as a step.
+        ///
+        /// A third of a second of easing turns both into a crossfade. Cloud
+        /// shadows move slowly enough that nothing is lost to it - the game
+        /// blends its own cloud tiles far slower than this.
+        /// </summary>
+        private void Ease(float deltaSeconds)
+        {
+            if (!_seeded)
+            {
+                Array.Copy(_target, _density, _density.Length);
+                _seeded = true;
+                return;
+            }
+
+            // Exponential, on a time constant, so the speed does not change with
+            // frame rate - the same rule the wetness trackers follow.
+            float k = 1f - (float)Math.Exp(-deltaSeconds / EaseSeconds);
+
+            for (int i = 0; i < _density.Length; i++)
+            {
+                _density[i] += (_target[i] - _density[i]) * k;
+            }
         }
 
         /// <summary>

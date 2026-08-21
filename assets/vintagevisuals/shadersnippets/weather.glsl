@@ -36,14 +36,16 @@ uniform float vv_cloudDebug;
 // The game's OWN cloud placement, read off the cloud renderer's tile array on
 // the CPU and handed over as a window centred on the player.
 //
-// A uniform array rather than a texture. It is 64 vec4s, and adding a second
+// A uniform array rather than a texture. It is 144 vec4s - 576 floats, inside
+// the 1024 fragment uniform components OpenGL 3.3 guarantees, with vanilla's own
+// use of chunkopaque.fsh leaving room - and adding a second
 // sampler to chunkopaque.fsh is the change that has twice cost this project the
 // entire world render - not a trade worth making for 256 numbers.
 //
 // vv_cloudMapValid is 0 when the tile array could not be read, which is also
 // what an unpatched or unbound program reads, so the fallback below is what
 // happens by default rather than by accident.
-#define VV_CLOUD_TILES 16
+#define VV_CLOUD_TILES 24
 #define VV_CLOUD_TILE_SIZE 50.0
 
 uniform vec4  vv_cloudTiles[VV_CLOUD_TILES * VV_CLOUD_TILES / 4];
@@ -87,13 +89,17 @@ uniform vec2  vv_cloudMapCorner;
 
 // How far a shadow may be thrown sideways from the cloud casting it, in blocks.
 //
-// The true projection runs to infinity as the sun reaches the horizon, and the
-// window is 800 blocks across, so an uncapped throw walks straight out of the
-// data and every shadow vanishes at exactly the hour they would be longest.
-// Capped and then faded at the window edge instead: shadows shorten rather than
-// disappear, and vv_cloudShadowStrength is already scaled by daylight, so the
-// hours where the cap bites are the hours the effect is fading out anyway.
-#define VV_CLOUD_MAX_THROW 320.0
+// The true projection runs to infinity as the sun reaches the horizon, so some
+// cap is needed or every shadow walks out of the window at exactly the hour
+// they would be longest. 500 sits just inside the usable radius: the window is
+// 24 tiles across, so 600 blocks from the camera to the edge, less the two-tile
+// fade band.
+//
+// It used to be 320 against a 16-tile window, and it was applied to the wrong
+// quantity - see vvCloudCoverage. Between the two, a morning sun at 20 degrees
+// threw its shadows 300 blocks when the geometry called for 400, which reads as
+// shadows sitting too close under their clouds all morning and all evening.
+#define VV_CLOUD_MAX_THROW 500.0
 
 // Tiles of fade at the window edge. Without it the window boundary is a hard
 // line across the world that moves with the player.
@@ -251,7 +257,7 @@ float vvCloudMapRaw(vec2 cameraRelativeXZ)
 
 // The same lookup, faded toward the window edge.
 //
-// The window is only 800 blocks across and follows the player, so a hard
+// The window is only 1200 blocks across and follows the player, so a hard
 // boundary is a line of shadow that ends in mid-field and slides along with
 // them - which reads as a rendering fault, not as weather. Split from the raw
 // lookup so the calibration view can show placement without the fade confusing
@@ -296,7 +302,36 @@ float vvCloudCoverage(vec3 cameraRelativePos)
     float deck = max(32.0, vv_cloudHeight);
     float climb = max(0.0, deck - worldY);
 
-    vec2 thrown = toSun.xz * min(climb / max(0.15, abs(toSun.y)), VV_CLOUD_MAX_THROW);
+    // The horizontal run of the ray from this fragment up to the cloud deck.
+    //
+    // Draw a line from the sun through a cloud: where it meets the ground is
+    // the shadow. Read backwards from the ground, that is climb / tan(elevation)
+    // blocks along the sun's azimuth, and the whole of a cloud shadow's
+    // behaviour through the day is in that tangent - short and almost under the
+    // cloud at noon, lengthening quickly as the sun drops.
+    //
+    // Written as an explicit run and direction, which matters for the cap. The
+    // previous form multiplied the unnormalised toSun.xz by min(climb/sin, cap),
+    // so the magnitude came out right but the CAP was being applied to
+    // climb/sin(e) - a different and always larger quantity than the
+    // climb/tan(e) actually being capped. The effective limit therefore varied
+    // with the sun's height, biting hardest exactly when the shadows should
+    // have been longest.
+    vec2 azimuth = toSun.xz;
+    float azimuthLength = length(azimuth);
+
+    vec2 thrown = vec2(0.0);
+
+    if (azimuthLength > 0.0001)
+    {
+        // Floored so a sun exactly overhead - or exactly at the horizon - does
+        // not divide by zero. At 0.05 the run is at most twenty times the
+        // climb, and the cap takes over long before that.
+        float up = max(0.05, abs(toSun.y));
+        float run = climb * azimuthLength / up;
+
+        thrown = (azimuth / azimuthLength) * min(run, VV_CLOUD_MAX_THROW);
+    }
 
     // The game's own clouds when they can be read, and the mod's noise field
     // when they cannot. Only the first of these can actually line up with the

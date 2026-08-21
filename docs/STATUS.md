@@ -231,6 +231,25 @@ feature rather than a wiring mistake; it does not say anything looks right.
   centre crop), `offset.y 256.5` - the cloud altitude, now read rather than
   guessed - and `windOffsetX/Z`, which accumulate and are almost certainly the
   sub-tile drift the window still does not account for.
+- **The field stepped four times a second**, and it was the throttle. The
+  reflective tile read is throttled to 4 Hz, which is ample for data that
+  changes as slowly as a cloud - but the window's CORNER was being recomputed
+  inside that same throttle, and the corner is what keeps the shadows attached
+  to the world rather than to the camera. Between reads it was stale, so the
+  whole field slid along with the player and snapped back on the next read.
+  The corner costs two divisions and now runs every frame; only the read is
+  throttled. The field also eases toward each reading over a third of a second,
+  which absorbs both the 4 Hz steps and any residue at a tile boundary.
+- **Shadows sat too close under their clouds all morning and evening.** Two
+  compounding faults. The throw was capped at 320 blocks, and the cap was
+  applied to `climb/sin(elevation)` while the quantity being capped was
+  `climb/tan(elevation)` - a different and always larger number, so the
+  effective limit moved with the sun and bit hardest exactly when shadows should
+  have been longest. And the 16-tile window was only 800 blocks across, so a
+  20-degree sun threw its shadows 400 blocks, straight into the edge fade. The
+  ray is now written as an explicit run and direction with the cap on the run
+  itself, and the window is 24 tiles - 1200 blocks, 144 vec4s, still inside the
+  1024 fragment uniform components OpenGL 3.3 guarantees.
 - **The window corner is still assumed**, not read: the player snapped down to
   the 50-block grid. `windOffsetX/Z` are the missing term, and their sign is not
   derivable from outside a running game. Expect shadows to step by up to a tile

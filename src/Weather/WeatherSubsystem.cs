@@ -189,11 +189,20 @@ namespace VintageVisuals.Weather
             // from here on rather than teleporting the pattern.
             // A few times a second is plenty: the cloud tiles are rebuilt as
             // the player crosses one, which is 50 blocks.
-            _sinceCloudRead += deltaTime;
-            if (_sinceCloudRead >= CloudReadSeconds && config.CloudShadowStrength > 0.001f)
+            // Every frame, always. The reflective read of the tile array is
+            // what is throttled, and the reader decides that from readTiles -
+            // the window's corner and the easing both have to advance on every
+            // frame or the field detaches from the world between reads. It used
+            // to be the whole call that was throttled, and the shadows stepped
+            // four times a second because of it.
+            if (config.CloudsFromGame && config.CloudShadowStrength > 0.001f)
             {
-                _sinceCloudRead = 0f;
-                if (config.CloudsFromGame) _clouds.Update();
+                _sinceCloudRead += deltaTime;
+
+                bool readTiles = _sinceCloudRead >= CloudReadSeconds;
+                if (readTiles) _sinceCloudRead = 0f;
+
+                _clouds.Update(deltaTime, readTiles);
             }
 
             Vec2f wind = World.WindDirection;
