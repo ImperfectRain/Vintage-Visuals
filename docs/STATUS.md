@@ -242,6 +242,22 @@ feature rather than a wiring mistake; it does not say anything looks right.
   it works, which is presumably how it survived. The corner is now
   camera-relative.
 
+  **The other half, found by audit after the fix above still showed nothing:**
+  the reader almost certainly never found the cloud renderer at all.
+  `FindCloudRenderer` looked at `ClientMain`'s own fields and one level into any
+  collection among them - but the client groups its renderers BY RENDER STAGE,
+  so the field holds an array of lists and the walk was asking whether a
+  `List<IRenderer>` is a `CloudRenderer`. It never was. The search is now
+  breadth-first with a visited set, a depth limit and a node budget, and it logs
+  how many objects it looked at.
+
+  **And the failure was disguised.** A failed read fell through to the mod's own
+  noise field, which moves plausibly and covers plausibly and has no relation to
+  the sky - so "the reader is broken" looked exactly like "the shadows need
+  tuning", which is where four rounds went. The noise field is now drawn only
+  when the player asks for it by turning clouds-from-game off. A failed read
+  draws NO cloud shadows and says so.
+
   **Still open:** the corner is assumed to be the player snapped down to the
   50-block grid, not read from the renderer. `clouds.vsh` places each tile at a
   camera-relative offset the CPU hands it directly, and the game's clouds drift

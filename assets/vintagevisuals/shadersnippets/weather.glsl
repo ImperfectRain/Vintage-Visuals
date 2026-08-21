@@ -47,7 +47,24 @@ uniform float vv_cloudDebug;
 #define VV_CLOUD_TILE_SIZE 50.0
 
 uniform vec4  vv_cloudTiles[VV_CLOUD_TILES * VV_CLOUD_TILES / 4];
-uniform float vv_cloudMapValid;      // 0 falls back to the noise field
+uniform float vv_cloudMapValid;      // 1 when the game's own cloud tiles were read
+
+// Whether to draw the mod's own noise field when the game's tiles could not be
+// read. 0 draws NOTHING instead, and 0 is both the default and what an unset
+// uniform reads as.
+//
+// This used to be implicit and it was the most expensive decision in the
+// subsystem. A failed read fell through to an invented field that moves
+// plausibly and covers plausibly and has no relation whatever to the sky - so
+// the failure looked exactly like a working effect that needed tuning, and four
+// rounds of debugging went into tuning it. An effect that cannot do its job
+// should be absent and say so, not approximate its way into looking like a bug
+// in something else.
+//
+// It is still reachable, as a deliberate choice: turning "clouds from game" off
+// asks for the noise field on purpose, for a version where the renderer has
+// moved out of reach and stylised shadows beat none.
+uniform float vv_cloudFallback;
 
 // CAMERA-RELATIVE XZ of the corner of tile [0,0], not world XZ.
 //
@@ -293,6 +310,9 @@ float vvCloudCoverage(vec3 cameraRelativePos)
     // wrapped world position - and being periodic already, a wrap it repeats on
     // costs it nothing.
     if (vv_cloudMapValid > 0.5) return vvCloudMap(cameraRelativePos.xz + thrown);
+
+    // Nothing rather than something plausible. See vv_cloudFallback.
+    if (vv_cloudFallback < 0.5) return 0.0;
 
     return vvCloudDensity(cameraRelativePos.xz + vv_cloudOrigin.xz + thrown, toSun);
 }

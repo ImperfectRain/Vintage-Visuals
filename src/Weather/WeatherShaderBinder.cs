@@ -45,6 +45,7 @@ namespace VintageVisuals.Weather
         public const string CloudTilesUniform = "vv_cloudTiles";
         public const string CloudMapCornerUniform = "vv_cloudMapCorner";
         public const string CloudMapValidUniform = "vv_cloudMapValid";
+        public const string CloudFallbackUniform = "vv_cloudFallback";
 
         /// <summary>vec4s in the cloud tile window: four tiles packed per vec4.</summary>
         private const int CloudVectors = CloudTileReader.Window * CloudTileReader.Window / 4;
@@ -233,6 +234,14 @@ namespace VintageVisuals.Weather
             bool valid = config.CloudsFromGame && clouds != null && clouds.Available;
 
             program.Uniform(CloudMapValidUniform, valid ? 1f : 0f);
+
+            // The noise field is drawn only when the player ASKED for it, never
+            // as the silent consequence of a failed read. A failure now shows as
+            // no cloud shadows at all, which is honest and which the log
+            // explains; it used to show as shadows that did not match the sky,
+            // which is indistinguishable from a bug in the shadow itself.
+            program.Uniform(CloudFallbackUniform, config.CloudsFromGame ? 0f : 1f);
+
             if (!valid) return;
 
             float[] density = clouds.Density;
@@ -277,12 +286,37 @@ namespace VintageVisuals.Weather
                 ", deck " + _weather.Config.CloudHeight.ToString("0") +
                 ", drift " + _weather.CloudDrift.X.ToString("0.##") + "/" + _weather.CloudDrift.Y.ToString("0.##") +
                 ", origin " + origin.X.ToString("0") + "/" + origin.Y.ToString("0") + "/" + origin.Z.ToString("0") +
-                ", source " + (_weather.Clouds != null && _weather.Clouds.Available && _weather.Config.CloudsFromGame
-                    ? "the game's own cloud tiles"
-                    : "the mod's noise field (will NOT line up with the sky)") +
+                ", source " + DescribeSource() +
                 (_weather.Config.CloudDebugView > 0.5f
                     ? " [DEBUG VIEW " + (int)(_weather.Config.CloudDebugView + 0.5f) + "]"
                     : ""));
+        }
+
+        /// <summary>
+        /// Which of the three states the cloud field is actually in.
+        ///
+        /// Three, not two, and conflating the last two is what made this
+        /// subsystem so expensive. "The read failed so we drew something else"
+        /// and "the player asked for something else" produce the same pixels
+        /// and mean completely different things, and only one of them is a bug
+        /// to chase.
+        /// </summary>
+        private string DescribeSource()
+        {
+            if (!_weather.Config.CloudsFromGame)
+            {
+                return "the mod's noise field, BY REQUEST (clouds-from-game is off). It moves and covers " +
+                       "correctly and does not line up with the sky - that is expected here, not a fault";
+            }
+
+            if (_weather.Clouds != null && _weather.Clouds.Available)
+            {
+                return "the game's own cloud tiles";
+            }
+
+            return "NOTHING - the game's cloud renderer could not be read, so cloud shadows are OFF rather " +
+                   "than substituted with invented ones. See the weather log line above for what the search " +
+                   "found. Turn clouds-from-game off if stylised shadows are wanted meanwhile";
         }
 
         /// <summary>

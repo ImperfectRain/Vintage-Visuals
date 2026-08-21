@@ -259,10 +259,16 @@ namespace VintageVisuals.Common
         /// Read cloud positions from the game's own cloud renderer, so shadows
         /// land under the clouds that cast them.
         ///
-        /// Off falls back to a noise field of the mod's own, which moves and
-        /// covers correctly but cannot line up with the sky. The fallback also
-        /// happens by itself if a game update moves the cloud renderer out of
-        /// reach - see CloudTileReader, and the log line it writes.
+        /// Off asks instead for a noise field of the mod's own, which moves and
+        /// covers correctly but cannot line up with the sky.
+        ///
+        /// Leaving this ON and having the read FAIL now draws no cloud shadows
+        /// at all, rather than quietly substituting that noise field. The
+        /// substitution was the single most expensive decision in this
+        /// subsystem: an invented field that covers plausibly looks exactly like
+        /// a working effect in need of tuning, so four rounds of debugging went
+        /// into tuning shadows that had never once read the game's clouds. The
+        /// log says which path is live, and says it loudly.
         /// </summary>
         public bool CloudsFromGame { get; set; } = true;
 

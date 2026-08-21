@@ -316,14 +316,6 @@ namespace VintageVisuals.Weather
         }
 
         /// <summary>
-        /// Walks the client for a cloud renderer.
-        ///
-        /// By type name rather than by field name, and through collections as
-        /// well as fields, because the one thing that can be relied on across
-        /// versions is roughly what the class is called - not where it is
-        /// stored or whether it is held directly at all.
-        /// </summary>
-        /// <summary>
         /// Logs everything on the cloud renderer that could say WHERE its tile
         /// array is.
         ///
@@ -343,8 +335,7 @@ namespace VintageVisuals.Weather
         ///
         /// So rather than guess again, this prints the candidates with their
         /// live values: anything vector-shaped, and any number whose name reads
-        /// like a position, an offset or a counter. One run of the game with
-        /// this in the log is worth more than another round of tuning.
+        /// like a position, an offset or a counter.
         /// </summary>
         private void ReportRegistrationCandidates(Type type)
         {
@@ -390,41 +381,140 @@ namespace VintageVisuals.Weather
                 "diagnostic view 2 to see whether that assumption holds.");
         }
 
+        /// <summary>
+        /// Walks the client for a cloud renderer.
+        ///
+        /// By type name rather than by field name, because the one thing that
+        /// can be relied on across versions is roughly what the class is
+        /// called - not where it is stored or whether it is held directly.
+        ///
+        /// BREADTH-FIRST, and that is the fix rather than a refinement. The
+        /// previous version looked at ClientMain's own fields and one level
+        /// into any collection among them, which sounds thorough and is not:
+        /// the client keeps its renderers grouped BY RENDER STAGE, so the field
+        /// holds an array of lists and the one-level walk was asking whether a
+        /// List&lt;IRenderer&gt; is a CloudRenderer. It never was. The reader
+        /// reported itself unavailable, the shadow silently fell back to the
+        /// mod's own noise field, and four rounds of debugging were spent on
+        /// shadows that were never reading the game's clouds at all.
+        ///
+        /// Bounded rather than exhaustive: a client object graph has cycles and
+        /// is large, so this keeps a visited set, a depth limit and a node
+        /// budget, and reports how far it got. Running once at startup, a few
+        /// thousand reflective reads cost nothing anyone can measure.
+        /// </summary>
         private object FindCloudRenderer()
         {
-            object client = _capi.World;
-            if (client == null) return null;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            const int maxDepth = 5;
+            const int maxNodes = 40000;
+            const int maxItemsPerCollection = 1024;
 
-            foreach (FieldInfo field in client.GetType()
-                         .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            var queue = new Queue<(object Node, int Depth)>();
+
+            foreach (object root in new object[] { _capi.World, _capi })
             {
-                object value;
-                try { value = field.GetValue(client); }
-                catch (Exception) { continue; }
+                if (root != null && seen.Add(root)) queue.Enqueue((root, 0));
+            }
 
-                if (value == null) continue;
+            int visited = 0;
 
-                if (IsCloudRenderer(value)) return value;
+            while (queue.Count > 0)
+            {
+                if (++visited > maxNodes) break;
 
-                if (value is IEnumerable items && !(value is string))
+                (object node, int depth) = queue.Dequeue();
+
+                if (IsCloudRenderer(node))
                 {
-                    try
+                    _logger.Notification("[VintageVisuals] weather: found " + node.GetType().FullName +
+                        " after " + visited + " node(s).");
+                    return node;
+                }
+
+                if (depth >= maxDepth) continue;
+
+                foreach (FieldInfo field in node.GetType().GetFields(flags))
+                {
+                    if (!Traversable(field.FieldType)) continue;
+
+                    object value;
+                    try { value = field.GetValue(node); }
+                    catch (Exception) { continue; }
+
+                    if (value == null || !seen.Add(value)) continue;
+
+                    queue.Enqueue((value, depth + 1));
+                }
+
+                // Collections are how the client actually holds its renderers,
+                // so their CONTENTS have to be walked, not just the collection.
+                if (!(node is IEnumerable items) || node is string) continue;
+
+                try
+                {
+                    int taken = 0;
+                    foreach (object item in items)
                     {
-                        foreach (object item in items)
-                        {
-                            if (item != null && IsCloudRenderer(item)) return item;
-                        }
+                        if (++taken > maxItemsPerCollection) break;
+                        if (item == null || !Traversable(item.GetType())) continue;
+                        if (!seen.Add(item)) continue;
+
+                        queue.Enqueue((item, depth + 1));
                     }
-                    catch (Exception)
-                    {
-                        // Some collections here are live and throw if enumerated
-                        // off their own thread. Not finding the renderer in one
-                        // of them is not a reason to stop looking in the rest.
-                    }
+                }
+                catch (Exception)
+                {
+                    // Some collections here are live and throw if enumerated off
+                    // their own thread. Not finding the renderer in one of them
+                    // is not a reason to stop looking in the rest.
                 }
             }
 
+            ReportOnce("no cloud renderer was found anywhere in " + visited + " object(s) reachable from the " +
+                       "client. Cloud shadows have nothing to follow");
             return null;
+        }
+
+        /// <summary>
+        /// Whether walking into this is worth the reflection.
+        ///
+        /// Keeps the search away from the parts of the graph that cannot hold a
+        /// renderer and are expensive or unsafe to touch - primitives, strings,
+        /// delegates, pointers - so the node budget is spent on objects that
+        /// could plausibly own one.
+        /// </summary>
+        private static bool Traversable(Type type)
+        {
+            if (type.IsPrimitive || type.IsEnum || type.IsPointer) return false;
+            if (type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime)) return false;
+            if (typeof(Delegate).IsAssignableFrom(type)) return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Reference identity for the visited set.
+        ///
+        /// Not the default comparer: the graph is full of value-like objects
+        /// that override Equals and GetHashCode, and two distinct renderers
+        /// comparing equal would have one of them skipped. Some of them also
+        /// throw from GetHashCode when read off the render thread.
+        /// </summary>
+        private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+        {
+            public static readonly ReferenceEqualityComparer Instance = new ReferenceEqualityComparer();
+
+            public new bool Equals(object x, object y)
+            {
+                return ReferenceEquals(x, y);
+            }
+
+            public int GetHashCode(object obj)
+            {
+                return System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+            }
         }
 
         private static bool IsCloudRenderer(object value)
