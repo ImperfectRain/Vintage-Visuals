@@ -376,9 +376,25 @@ namespace VintageVisuals
             return true;
         }
 
+        /// <summary>
+        /// Writes the scene report once when asked, then clears the flag.
+        ///
+        /// Once, not per frame. A diagnostic that writes a file every frame is
+        /// not a diagnostic, and the material report already established the
+        /// pattern.
+        /// </summary>
+        private void WriteSceneReportOnce()
+        {
+            if (!ConfigManager.Config.WriteSceneReport) return;
+
+            ConfigManager.Config.WriteSceneReport = false;
+            SceneReport.Write(Capi, Environment, Mod.Logger);
+        }
+
         private void ApplyToAllSubsystems()
         {
             ReloadShadersIfPatchGatingChanged();
+            WriteSceneReportOnce();
 
             foreach (IVisualSubsystem subsystem in _subsystems)
             {

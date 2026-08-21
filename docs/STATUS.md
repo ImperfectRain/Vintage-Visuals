@@ -53,7 +53,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; a HUD does not |
 | `[x]` | **Visual language rules** (information ladder, hierarchy, budgets, blacklist) | — | [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md) |
 | `[x]` | **Visual test matrix and acceptance criteria** | — | [VISUAL-TESTS.md](VISUAL-TESTS.md). Makes L4 repeatable |
-| `[~]` | **Effect provenance report** | L2 | contributions and claims are recorded; a written report exists |
+| `[x]` | **Effect provenance report** (`WriteSceneReport`) | L2 | who removed what light, and why, in one file |
 | `[ ]` | Compatibility diagnostics when another mod patches the same shader | — | per-group rollback already survives it; the player is not told why |
 | `[ ]` | Material authoring overrides (`materials/*.json`) and a material API | — | inference is the right default and will never read every modded texture correctly |
 
@@ -70,7 +70,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Multi-page atlas via Harmony bind hook | L4 | degrades to vanilla with a log line if the hook fails |
 | `[~]` | `CloudTileReader` — the game's own cloud placement | L2 | reflection into `VintagestoryLib`; **unverified**, see §9 |
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
-| `[ ]` | Emissive metadata (colour, strength, flicker, temperature) | — | prerequisite for §7 |
+| `[x]` | **Emissive materials** from vanilla's own `glowLevel` | L2 | hot rather than bright, dimmer in daylight, position-seeded flicker, feeds vanilla's bloom |
 | `[ ]` | Camera state (velocity, FOV, underwater depth) as shared state | — | needed by motion effects and underwater |
 | `[x]` | **Scene intent channels** between state and subsystems | L2 | named 0..1 vocabulary (wetness, cold, heat, haze, readability...) so ten subsystems share one reading. See [INSPIRATION.md](INSPIRATION.md) §1 |
 | `[x]` | **Per-contribution caps and contribution records** | L2 | `GradeStack` clamps only the final result, so a saturated grade cannot say which of nine influences did it. §2 |
@@ -245,11 +245,11 @@ Building any from scratch is a duplicate, not a feature.
 
 | # | Feature | Why |
 |---|---|---|
-| 1 | **Finish PBR reach** - entities `[x]`, foliage `[x]`, particles, held items | A surface lit by a different model than the surface beside it is the one defect that devalues every other lighting feature. Particles are the remaining visible gap: smoke, fire, dust and sparks are everywhere and currently belong to no lighting model at all |
+| 1 | **Finish PBR reach** - entities `[x]`, foliage `[x]`, **particles and held items still open** | A surface lit by a different model than the surface beside it is the one defect that devalues every other lighting feature. Particles are the remaining visible gap: smoke, fire, dust and sparks are everywhere and currently belong to no lighting model at all |
 | 2 | **Scene intent, budgets, contribution records** `[x]` | Done. Elevated from implementation detail to product rule - see VISUAL-LANGUAGE.md §4 |
-| 3 | **Emissive materials** | Moved up four phases. This game is *about* fire: forges, bloomeries, firepits, lamps, lava. A forge should read as a hot object lighting a room, not as an orange texture, and light sources matter disproportionately to a survival game built on darkness and shelter |
-| 4 | **Gameplay readability** `[~]` | Channels and budgets exist; the context-aware half does not. Weather must not hide something about to hit the player |
-| 5 | **Visual test scenes** | A process feature ranked as high as a rendering one, because L4 is the only level that closes anything and it is currently "a developer looked at the game" |
+| 3 | ~~**Emissive materials**~~ **(built, L2)** | Moved up four phases. This game is *about* fire: forges, bloomeries, firepits, lamps, lava. A forge should read as a hot object lighting a room, not as an orange texture, and light sources matter disproportionately to a survival game built on darkness and shelter |
+| 4 | ~~**Gameplay readability**~~ **(built, L2)** | Weather now gives up fog while something is near. It will not outline a threat - only decline to hide one |
+| 5 | ~~**Visual test scenes**~~ **(written)** - [VISUAL-TESTS.md](VISUAL-TESTS.md) | A process feature ranked as high as a rendering one, because L4 is the only level that closes anything and it is currently "a developer looked at the game" |
 
 ### Tier A - major visual work
 

@@ -651,6 +651,16 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0);
 
+    // Emission, after everything and dampened by nothing.
+    //
+    // It is the one term here that is not a response to light arriving - it IS
+    // light leaving - so shadow, daylight and the scene's restraint have no
+    // business scaling it. Restraint exists to stop the mod removing light the
+    // player needs; a light source is the opposite problem. Fog still applies,
+    // because a distant forge is genuinely behind more air.
+    result += vvEmission(albedo, glowLevel, cameraRelativePos)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0);
+
     return vec4(result, litColor.a);
 }
 
@@ -719,6 +729,11 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // 10: wetness. White is soaked, black is dry - shows both gates at once,
     // so an overhang should read black while the ground beside it is white.
     if (mode == 10) return vec4(vec3(vvWetness(faceNormal)), color.a);
+
+    // 14: emission alone, on black. A forge, a lamp and lava should read; a
+    // white marble block should not, which is the check that this is driven by
+    // vanilla's glowLevel rather than by pixel brightness.
+    if (mode == 14) return vec4(vvEmission(color.rgb, glowLevel, cameraRelativePos), color.a);
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
     // Mortar lines, plank gaps and bark furrows should read; a flat painted

@@ -832,3 +832,51 @@ than contrast.
 **Screen-space contact shadows are not here and are blocked**, not merely
 unstarted: they need the depth buffer, which is being written during the opaque
 pass rather than read.
+
+
+## Emissive materials
+
+This game is about fire. Forges, bloomeries, firepits, lamps, lava and torches
+are what a player builds a life around, and the loop is leaving a warm lit
+shelter for a cold dark wilderness - so light sources matter more here than in a
+game that is not built on darkness.
+
+Vanilla already draws them **bright**. What it does not do is make them read as
+**hot**, or let them behave like the source of the light they obviously are.
+
+**Everything here is driven by `glowLevel`** - vanilla's own per-fragment answer
+to "does this emit", packed into the low byte of `renderFlags` by the vertex
+shader and available in all three shaded programs. Nothing is inferred from
+pixel brightness: a white marble block is not a lamp, and a brightness heuristic
+cannot tell the difference. This is the information ladder working as intended -
+the game knows, so we ask it.
+
+Four things it does that vanilla does not:
+
+| | |
+|---|---|
+| **Hot, not merely bright** | a bright emitter shifts toward white at its core, the way a forge's centre is paler than its edge and iron at welding heat is nearly white |
+| **Falls off fast** | `glowLevel` is close to linear in block light and light is not, so emission is squared - otherwise every faintly glowing thing reads as a lamp |
+| **Dimmer in daylight** | a torch at noon is barely visible and a torch at midnight lights a room. Not physical - the torch has not changed - but perceptually right, and the reason a lamp indoors reads as a light source rather than a bright spot |
+| **Flickers** | position-seeded so two torches on one wall are not in step, which is the difference between "the room is flickering" and "several fires are burning in it". Only downward: a flame dips and recovers, it does not periodically burn brighter than it burns |
+
+**Emission is dampened by nothing.** It is the one term in the shader that is
+not a response to light arriving - it *is* light leaving - so shadow, daylight
+and the scene's restraint have no business scaling it. Restraint exists to stop
+the mod removing light the player needs; a light source is the opposite problem.
+Fog still applies, because a distant forge is genuinely behind more air.
+
+### Bloom, without building a bloom
+
+Vanilla already has one: `findbright`, `blur`, and `bloomParts` in `final.fsh`.
+So emitters add to **that**, through the `glow` output the terrain shaders
+already write, rather than getting a second pass of their own.
+
+Two things follow. It is driven by the emission the material system computed
+rather than by how bright the pixel came out - the difference between a bloom
+that finds light sources and one that finds snow. And it is restrained by
+construction: it can only ever add to something the game already balanced.
+
+Debug view **14** shows emission alone. A forge, a lamp and lava should read; a
+white marble block should not, which is also the check that this is coming from
+`glowLevel` rather than from brightness.

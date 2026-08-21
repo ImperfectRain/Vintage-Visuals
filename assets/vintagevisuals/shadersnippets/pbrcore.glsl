@@ -39,6 +39,103 @@ const float VV_OVERCAST_DIRECT = 0.35;
 const float VV_OVERCAST_AMBIENT = 1.5;
 
 // ---------------------------------------------------------------------------
+// Emission
+//
+// This game is about fire. Forges, bloomeries, firepits, lamps, lava, candles
+// and torches are what a player builds a life around, and the loop is leaving a
+// warm lit shelter for a cold dark wilderness. Light sources matter more here
+// than in a game that is not built on darkness.
+//
+// Vanilla already draws them BRIGHT. What it does not do is make them read as
+// HOT, or let them behave like the source of the light they obviously are.
+//
+// Everything here is driven by glowLevel, which is vanilla's own per-fragment
+// answer to "does this emit", packed into the low byte of renderFlags by the
+// vertex shader. Nothing is inferred from pixel brightness - a white marble
+// block is not a lamp, and a brightness heuristic cannot tell the difference.
+// ---------------------------------------------------------------------------
+
+uniform float vv_emissive;            // master, 0 is vanilla
+uniform float vv_emissiveTemperature; // how much hotter a bright core reads
+uniform float vv_emissiveFlicker;     // how much a flame is allowed to breathe
+uniform float vv_emissiveBloom;       // extra contribution to vanilla's own bloom pass
+
+// How much this fragment flickers, and how fast.
+//
+// Two frequencies at an irrational-ish ratio so the pattern never obviously
+// repeats, and a floor at zero flicker for anything that is not strongly
+// emissive - a dimly glowing crystal should not pulse like a candle.
+//
+// Position-seeded, so two torches on the same wall do not flicker in step. That
+// is the detail that separates "the room is flickering" from "several fires are
+// burning in it".
+float vvEmissiveFlicker(vec3 cameraRelativePos, float emission)
+{
+    if (vv_emissiveFlicker < 0.001) return 1.0;
+
+    float seed = dot(floor(cameraRelativePos), vec3(0.7, 1.3, 1.9));
+    float t = vv_sceneClock * 6.2831853;
+
+    float wobble = sin(t * 3.0 + seed) * 0.6 + sin(t * 7.3 + seed * 2.1) * 0.4;
+
+    // Only downward. A flame dips and recovers; it does not periodically get
+    // brighter than it burns, and letting it would make every fire pump.
+    return 1.0 - clamp(vv_emissiveFlicker, 0.0, 1.0) * emission * 0.12 * (0.5 - wobble * 0.5);
+}
+
+// What an emitting surface should look like, added to the lit colour.
+//
+// Two things vanilla does not do:
+//
+//  - HOT, not merely bright. Real emitters shift toward white at their core as
+//    temperature rises - a forge's centre is paler than its edge, and iron at
+//    welding heat is nearly white. Pushing the brightest part of an emitter
+//    toward its own hue at low emission and toward white at high emission is
+//    most of what makes something read as hot rather than as painted.
+//  - COOLER IN DAYLIGHT. A torch at noon is barely visible and a torch at
+//    midnight lights a room. Scaling emission by how dark it is where the
+//    fragment stands is not physical - the torch has not changed - but it is
+//    perceptually right, and it is the reason a lamp indoors reads as a light
+//    source rather than as a bright spot.
+vec3 vvEmission(vec3 albedo, float glow, vec3 cameraRelativePos)
+{
+    if (vv_emissive < 0.001) return vec3(0.0);
+
+    float emission = clamp(glow, 0.0, 1.0);
+    if (emission < 0.004) return vec3(0.0);
+
+    // Squared: vanilla's glowLevel is close to linear in the block's light
+    // level, and light falls off far faster than that. Without this every
+    // faintly glowing thing in the world reads as a lamp.
+    float strength = emission * emission * vv_emissive;
+
+    vec3 hot = mix(albedo, vec3(1.0), clamp(vv_emissiveTemperature, 0.0, 1.0) * emission);
+
+    // Brighter where the scene is dark, which is where a light source is doing
+    // its job. vv_sceneArtificialLight already says the local light dominates
+    // here, so this needs no second opinion about being indoors.
+    float darkness = mix(0.45, 1.0, clamp(vv_sceneArtificialLight, 0.0, 1.0));
+
+    return hot * strength * darkness * vvEmissiveFlicker(cameraRelativePos, emission);
+}
+
+// What this fragment adds to vanilla's own bloom pass.
+//
+// Driven by the emission the material system computed rather than by how bright
+// the pixel came out, which is the whole difference between a bloom that picks
+// out light sources and one that picks out snow. Vanilla already HAS a bloom
+// pass - findbright, blur and bloomParts in final.fsh - so this feeds that
+// rather than building another one, which also keeps it restrained by
+// construction: it can only ever add to something the game already balanced.
+float vvEmissiveGlow(float glow)
+{
+    if (vv_emissive < 0.001 || vv_emissiveBloom < 0.001) return 0.0;
+
+    float emission = clamp(glow, 0.0, 1.0);
+    return emission * emission * vv_emissiveBloom * vv_emissive;
+}
+
+// ---------------------------------------------------------------------------
 // Cook-Torrance microfacet shading
 //
 // Applied on top of vanilla's lit colour rather than replacing it. Vanilla

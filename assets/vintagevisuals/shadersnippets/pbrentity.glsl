@@ -124,6 +124,11 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
             * vv_pbrEntitySpecular
             * mix(1.0, VV_OVERCAST_AMBIENT, overcast);
 
+    // Emission. Glowing creatures are rarer than glowing blocks but they exist,
+    // and one lit by a different rule than the torch beside it is exactly the
+    // inconsistency this whole file was written to remove.
+    result += vvEmission(albedo, glowLevel, cameraRelativePos) * clamp(1.0 - fog, 0.0, 1.0);
+
     return vec4(result, litColor.a);
 }
 

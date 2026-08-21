@@ -453,3 +453,27 @@ unshadowed. That one inverted it, and the failure was total rather than partial.
 
 If clouds are ever to be restyled, the place to do it is the tile data, not the
 shader that draws it.
+
+
+## Readability, and the creature in the fog
+
+Rain fog is arbitrated against a shared budget rather than applied at its config
+strength, and one of the things that shrinks that budget is **something being
+nearby**.
+
+The point is narrow and worth stating precisely, because the obvious version of
+this idea is a different game. Vintage Visuals will not outline a threat,
+highlight it, or draw anything the player would not otherwise see. All it does
+is **decline to obscure information the player already had**: heavy weather
+gives up some of its fog while a creature is within about twenty-four blocks.
+
+The signal is deliberately imprecise. It counts living non-player creatures
+rather than trying to decide which are hostile, because Vintage Story has no
+authoritative "is this dangerous" flag and a hand-maintained list of creature
+codes would be wrong for every mod that adds one - exactly the kind of invented
+answer this project avoids. A deer at twenty blocks costing a little fog is a
+cheap false positive. A drifter hidden by fog is not.
+
+Four smoke checks pin it: company raises readability, company raises restraint,
+company changes **nothing else** about the scene, and the storm actually gives
+up fog as a result.

@@ -101,6 +101,17 @@ namespace VintageVisuals.Common.Scene
                        world.Rain * 0.3f + world.Snow * 0.35f,
                        "precipitation obscures");
 
+            // Something nearby is a reason for the weather to stop hiding it.
+            //
+            // Not to outline it - that would be a different game. This only
+            // raises the floor under everything that obscures, so heavy rain
+            // declines to take away information the player already had. It is
+            // the one readability push that comes from the moment rather than
+            // from the place.
+            intent.Add("proximity", IntentChannel.Readability,
+                       Clamp01(world.Proximity) * 0.4f,
+                       "living creatures within sight");
+
             // --- restraint ---------------------------------------------------
             //
             // The channel that outranks the others. It rises wherever the scene
@@ -123,6 +134,14 @@ namespace VintageVisuals.Common.Scene
 
             intent.Add("cloud", IntentChannel.Restraint, world.CloudCover * night * 0.3f,
                        "overcast night");
+
+            // Company raises restraint as well as readability. The two are
+            // different questions - one is "can the player see", the other is
+            // "should the mod be doing anything clever right now" - and a
+            // creature closing in is a yes to the first and a no to the second.
+            intent.Add("proximity", IntentChannel.Restraint,
+                       Clamp01(world.Proximity) * 0.3f,
+                       "this is gameplay, not scenery");
 
             return intent;
         }

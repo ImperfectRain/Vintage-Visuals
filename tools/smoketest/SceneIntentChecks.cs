@@ -55,7 +55,7 @@ namespace VintageVisuals.SmokeTest
                 float.NaN, float.NaN, float.NaN, new Vintagestory.API.MathTools.Vec2f(),
                 float.NaN, float.NaN, float.NaN, float.NaN, float.NaN,
                 float.NaN, float.NaN, float.NaN, float.NaN, float.NaN,
-                new Vintagestory.API.MathTools.Vec3f()));
+                new Vintagestory.API.MathTools.Vec3f(), float.NaN));
 
             ok("a NaN world produces finite intent",
                 Enum.GetValues(typeof(IntentChannel)).Cast<IntentChannel>()
@@ -128,6 +128,37 @@ namespace VintageVisuals.SmokeTest
             ok("wanting nothing grants everything",
                 idle.RainFog == 1f && idle.CloudShadow == 1f && idle.Overcast == 1f);
 
+            // --- proximity: readability's context-aware half -----------------
+            //
+            // The point is narrow and worth pinning: something nearby may raise
+            // the floor under what obscures, and may do nothing else. It must
+            // not brighten the world, tint it, or otherwise announce itself.
+            SceneIntent alone = SceneIntentBuilder.Build(With(rain: 1f));
+            SceneIntent crowded = SceneIntentBuilder.Build(With(rain: 1f, proximity: 1f));
+
+            ok("company raises readability",
+                crowded[IntentChannel.Readability] > alone[IntentChannel.Readability] + 0.05f);
+
+            ok("company raises restraint",
+                crowded[IntentChannel.Restraint] > alone[IntentChannel.Restraint] + 0.05f);
+
+            ok("company changes nothing else about the scene",
+                crowded[IntentChannel.Wetness] == alone[IntentChannel.Wetness] &&
+                crowded[IntentChannel.Gloom] == alone[IntentChannel.Gloom] &&
+                crowded[IntentChannel.Night] == alone[IntentChannel.Night]);
+
+            // And it has to actually reach the thing that obscures.
+            EnvironmentState storming = With(rain: 1f, cloudCover: 1f);
+            EnvironmentState storming2 = With(rain: 1f, cloudCover: 1f, proximity: 1f);
+
+            SceneGrants quiet2 = SceneArbiter.Arbitrate(
+                SceneIntentBuilder.Build(storming), storming, new SceneDemand(1f, 1f, 1f), out _);
+            SceneGrants threatened = SceneArbiter.Arbitrate(
+                SceneIntentBuilder.Build(storming2), storming2, new SceneDemand(1f, 1f, 1f), out _);
+
+            ok("a creature nearby costs the storm some of its fog",
+                threatened.RainFog < quiet2.RainFog - 0.01f);
+
             // --- style ------------------------------------------------------
             ok("an unknown style name falls back to None",
                 StyleOffsets.Parse("nonsense") == StyleKind.None &&
@@ -162,7 +193,7 @@ namespace VintageVisuals.SmokeTest
         private static EnvironmentState With(float dayLight = 1f, float rain = 0f, float cloudCover = 0f,
                                              float skyExposure = 1f, float depth = 0f,
                                              float temperature = EnvironmentState.TemperateCelsius,
-                                             float humidity = 0.5f)
+                                             float humidity = 0.5f, float proximity = 0f)
         {
             return new EnvironmentState(
                 dayLight: dayLight, moonLight: 0f, cloudCover: cloudCover,
@@ -170,7 +201,7 @@ namespace VintageVisuals.SmokeTest
                 precipitation: rain, rain: rain, snow: 0f, wetness: rain,
                 temperature: temperature, humidity: humidity,
                 skyExposure: skyExposure, depth: depth, underwater: 0f,
-                cameraPosition: new Vintagestory.API.MathTools.Vec3f());
+                cameraPosition: new Vintagestory.API.MathTools.Vec3f(), proximity: proximity);
         }
     }
 }

@@ -68,6 +68,12 @@ namespace VintageVisuals.PseudoPBR
         public const string ArtificialLightUniform = "vv_sceneArtificialLight";
         public const string RestraintUniform = "vv_sceneRestraint";
         public const string ReadabilityUniform = "vv_sceneReadability";
+        public const string ClockUniform = "vv_sceneClock";
+
+        public const string EmissiveUniform = "vv_emissive";
+        public const string EmissiveTemperatureUniform = "vv_emissiveTemperature";
+        public const string EmissiveFlickerUniform = "vv_emissiveFlicker";
+        public const string EmissiveBloomUniform = "vv_emissiveBloom";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -329,6 +335,12 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(ArtificialLightUniform, _weather.ArtificialLight);
             program.Uniform(RestraintUniform, _weather.Restraint);
             program.Uniform(ReadabilityUniform, _weather.Readability);
+            program.Uniform(ClockUniform, _weather.RippleTime);
+
+            program.Uniform(EmissiveUniform, _look.EmissiveStrength);
+            program.Uniform(EmissiveTemperatureUniform, _look.EmissiveTemperature);
+            program.Uniform(EmissiveFlickerUniform, _look.EmissiveFlicker);
+            program.Uniform(EmissiveBloomUniform, _look.EmissiveBloom);
         }
 
         /// <summary>

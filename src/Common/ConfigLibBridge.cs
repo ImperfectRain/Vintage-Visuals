@@ -165,6 +165,18 @@ namespace VintageVisuals.Common
                 case "pbr_entitylighting":
                     pbr.EntityLighting = tree.GetBool("value", pbr.EntityLighting);
                     break;
+                case "pbr_emissive":
+                    pbr.EmissiveStrength = tree.GetFloat("value", pbr.EmissiveStrength);
+                    break;
+                case "pbr_emissivetemperature":
+                    pbr.EmissiveTemperature = tree.GetFloat("value", pbr.EmissiveTemperature);
+                    break;
+                case "pbr_emissiveflicker":
+                    pbr.EmissiveFlicker = tree.GetFloat("value", pbr.EmissiveFlicker);
+                    break;
+                case "pbr_emissivebloom":
+                    pbr.EmissiveBloom = tree.GetFloat("value", pbr.EmissiveBloom);
+                    break;
                 case "pbr_foliage":
                     pbr.FoliageTranslucency = tree.GetFloat("value", pbr.FoliageTranslucency);
                     break;

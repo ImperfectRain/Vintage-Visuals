@@ -121,6 +121,7 @@
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
     outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    glow += vvEmissiveGlow(glowLevel);
     outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
 
 # --- vertex shader: sky exposure for the weather system ---------------------

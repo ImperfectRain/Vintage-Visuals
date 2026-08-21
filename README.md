@@ -102,6 +102,10 @@ value.
 | `Weather.OvercastStrength` | 0.0 – 1.0 | `0.7` | How completely cloud cover diffuses the sun |
 | `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air over terrain (never the sky) |
 | `Weather.FogTint` | 0.0 – 1.0 | `0.6` | How much rain drains colour from the fog |
+| `PseudoPBR.EmissiveStrength` | 0.0 – 2.0 | `0.8` | How hot emitting surfaces read |
+| `PseudoPBR.EmissiveTemperature` | 0.0 – 1.0 | `0.55` | How far a bright core shifts toward white |
+| `PseudoPBR.EmissiveFlicker` | 0.0 – 1.0 | `0.5` | How much a flame breathes |
+| `PseudoPBR.EmissiveBloom` | 0.0 – 1.0 | `0.35` | Contribution to the game's own bloom pass |
 | `PseudoPBR.FoliageTranslucency` | 0.0 – 2.0 | `0.7` | Light through leaves, grass and crops |
 | `PseudoPBR.CavityStrength` | 0.0 – 2.0 | `0.6` | Occlusion in the grooves, from the material normal |
 | `PseudoPBR.EntityLighting` | bool | `true` | Light mobs with the same model as the terrain |
@@ -112,6 +116,7 @@ value.
 | `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |
 | `Weather.CloudDriftSpeed` | 0 – 8 | `0.9` | Cloud shadow speed, cells per minute |
 | `Weather.CloudHeight` | 40 – 400 | `160` | Height the shadow-casting cloud deck sits at |
+| `WriteSceneReport` | bool | `false` | Writes `VintageVisuals/scenereport.txt`: who removed what light, and why |
 | `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
 
 Order of operations is fixed: exposure → white balance → tonemap → contrast →

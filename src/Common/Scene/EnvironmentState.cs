@@ -110,6 +110,24 @@ namespace VintageVisuals.Common.Scene
         public readonly float Underwater;
 
         /// <summary>
+        /// SAMPLED. 0 when nothing is near, rising as creatures approach.
+        ///
+        /// The signal behind readability's context-aware half. It exists so the
+        /// weather can decline to hide something that is about to matter - NOT
+        /// so anything can be outlined or highlighted, which would be a
+        /// different game. All this may do is stop the mod obscuring
+        /// information the player already had.
+        ///
+        /// Deliberately imprecise: it counts living non-player creatures rather
+        /// than trying to decide which are hostile. Vintage Story has no
+        /// authoritative "is this dangerous" flag, and a hand-maintained list of
+        /// creature codes would be wrong for every mod that adds one. A deer at
+        /// twenty blocks costing a little fog is a cheap false positive; a
+        /// drifter hidden by fog is not.
+        /// </summary>
+        public readonly float Proximity;
+
+        /// <summary>
         /// SAMPLED. Camera world position, WRAPPED to <see cref="CameraPeriod"/>.
         ///
         /// Every chunk shader works in camera-relative coordinates, so any
@@ -136,7 +154,7 @@ namespace VintageVisuals.Common.Scene
                                 float precipitation, float rain, float snow, float wetness,
                                 float temperature, float humidity,
                                 float skyExposure, float depth, float underwater,
-                                Vec3f cameraPosition)
+                                Vec3f cameraPosition, float proximity = 0f)
         {
             DayLight = dayLight;
             MoonLight = moonLight;
@@ -153,6 +171,7 @@ namespace VintageVisuals.Common.Scene
             Depth = depth;
             Underwater = underwater;
             CameraPosition = cameraPosition;
+            Proximity = proximity;
         }
 
         /// <summary>

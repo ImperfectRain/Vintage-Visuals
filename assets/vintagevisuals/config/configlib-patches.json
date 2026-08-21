@@ -504,6 +504,54 @@
           "step": 0.1
         }
       },
+      "pbr_emissive": {
+        "ingui": "Emissive materials",
+        "comment": "How much emitting surfaces read as hot rather than merely bright. Driven by the game's own glow data, so a forge lights a room and a white marble block does not.",
+        "default": 0.8,
+        "clientSide": true,
+        "weight": 57,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        }
+      },
+      "pbr_emissivetemperature": {
+        "ingui": "Emissive: heat",
+        "comment": "How much a bright emitter shifts toward white at its core, the way real hot things do. Most of what makes something read as hot rather than as painted orange.",
+        "default": 0.55,
+        "clientSide": true,
+        "weight": 58,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "pbr_emissiveflicker": {
+        "ingui": "Emissive: flicker",
+        "comment": "How much a flame is allowed to breathe. Seeded by position, so two torches on one wall do not flicker in step.",
+        "default": 0.5,
+        "clientSide": true,
+        "weight": 59,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "pbr_emissivebloom": {
+        "ingui": "Emissive: bloom",
+        "comment": "How much emitters add to the game's own bloom pass. Driven by actual emission rather than pixel brightness, which is the difference between a bloom that finds light sources and one that finds snow.",
+        "default": 0.35,
+        "clientSide": true,
+        "weight": 61,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
       "pbr_foliage": {
         "ingui": "Light through leaves",
         "comment": "Sunlight scattering through foliage, so a canopy with the sun behind it glows. Applies to whatever vanilla treats as wind-affected: leaves, grass, crops, flowers.",
@@ -566,13 +614,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 13.0,
+          "max": 14.0,
           "step": 1.0
         }
       }

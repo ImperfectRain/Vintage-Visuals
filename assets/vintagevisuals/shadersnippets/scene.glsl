@@ -37,6 +37,14 @@ uniform float vv_sceneOvercast;        // 0 clear sky, 1 sun fully diffused
 uniform float vv_sceneEnclosure;       // 0 open sky, 1 fully boxed in
 uniform float vv_sceneArtificialLight; // 0 lit by sky, 1 lit by fire
 
+// A clock, pre-wrapped to 0..1 on the CPU in double precision.
+//
+// Wrapped there rather than here because a shader can only wrap what it can
+// still resolve: an unbounded float32 clock loses the ability to separate two
+// phases at all past about ten million, which is how every rain drop in the
+// world ended up landing on the same frame.
+uniform float vv_sceneClock;
+
 // --- what the scene needs ---------------------------------------------------
 
 // How much the mod should hold back.

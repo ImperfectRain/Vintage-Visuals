@@ -2,6 +2,7 @@ using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Weather;
 
@@ -55,6 +56,15 @@ namespace VintageVisuals.Common.Scene
         private const float FullDepthBlocks = 45f;
 
         /// <summary>
+        /// How far out creatures count toward proximity.
+        ///
+        /// Roughly the distance at which something becomes the player's problem
+        /// and comfortably inside the range at which heavy weather starts
+        /// hiding things.
+        /// </summary>
+        private const float ProximityRangeBlocks = 24f;
+
+        /// <summary>
         /// BlendedCloudDensity is the game's density parameter, not a fraction
         /// of sky covered, and it sits low - so read raw as coverage it reports
         /// nearly clear under a sky full of cloud. Gained once, here, so there
@@ -84,6 +94,7 @@ namespace VintageVisuals.Common.Scene
         private float _skyExposure = 1f;
         private float _depth;
         private float _underwater;
+        private float _proximity;
         private readonly Vec3f _camera = new Vec3f();
 
         private bool _reportedFirstSample;
@@ -179,6 +190,7 @@ namespace VintageVisuals.Common.Scene
             {
                 _sinceClimate = 0f;
                 SampleClimate();
+                SampleProximity();
             }
 
             SampleObserver();
@@ -209,7 +221,7 @@ namespace VintageVisuals.Common.Scene
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
-                _camera);
+                _camera, _proximity);
 
             Current = next;
 
@@ -294,6 +306,46 @@ namespace VintageVisuals.Common.Scene
             {
                 _logger.Warning("[VintageVisuals] environment: climate lookup failed, holding the last " +
                                 "reading: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// How much company the player has, 0..1.
+        ///
+        /// Sampled on the slow tick with the climate: an entity query is the
+        /// second most expensive thing this file does and creatures do not
+        /// cross twenty blocks in under a second.
+        ///
+        /// Counts living non-player creatures rather than deciding which are
+        /// hostile. Vintage Story has no authoritative "is this dangerous"
+        /// flag, and a hand-maintained list of creature codes would be wrong for
+        /// every mod that adds one - which is exactly the kind of invented
+        /// answer this project avoids. The cost of being imprecise is a little
+        /// less fog around a deer.
+        /// </summary>
+        private void SampleProximity()
+        {
+            try
+            {
+                IClientPlayer player = _capi.World?.Player;
+                if (player?.Entity == null) return;
+
+                Entity[] nearby = _capi.World.GetEntitiesAround(
+                    player.Entity.Pos.XYZ, ProximityRangeBlocks, ProximityRangeBlocks,
+                    e => e != null && e.Alive && !(e is EntityPlayer) && e is EntityAgent);
+
+                int count = nearby == null ? 0 : nearby.Length;
+
+                // Saturates fast. One creature nearby is most of the signal;
+                // the difference between three and eight does not change what
+                // the player needs to be able to see.
+                _proximity = GameMath.Clamp(count / 2f, 0f, 1f);
+            }
+            catch (Exception)
+            {
+                // Held at the last reading. An entity query that starts throwing
+                // is a reason to stop tracking, not a reason to claim the player
+                // is alone.
             }
         }
 

@@ -19,6 +19,21 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool EnableShaderDebugDump { get; set; } = false;
 
+        /// <summary>
+        /// Writes <c>VintageVisuals/scenereport.txt</c>: what the world is
+        /// doing, what the scene asked for, who asked, and what each subsystem
+        /// was allowed to take.
+        ///
+        /// Effect provenance. When an image comes out too dark or too grey the
+        /// question is never "is something broken", it is which of nine
+        /// influences and four claimants did it - and the alternative is
+        /// switching subsystems off one at a time.
+        ///
+        /// Written once when the flag is set, then cleared, like the material
+        /// report: a per-frame file write is not a diagnostic, it is a fault.
+        /// </summary>
+        public bool WriteSceneReport { get; set; } = false;
+
         public ColorGradeConfig ColorGrade { get; set; } = new ColorGradeConfig();
 
         public AdaptiveExposureConfig AdaptiveExposure { get; set; } = new AdaptiveExposureConfig();
@@ -304,6 +319,52 @@ namespace VintageVisuals.Common
         public bool Enabled { get; set; } = false;
 
         /// <summary>
+        /// How much emitting surfaces read as HOT rather than merely bright.
+        /// 0 is vanilla.
+        ///
+        /// This game is about fire. Forges, bloomeries, firepits, lamps and
+        /// lava are what a player builds a life around, and the loop is leaving
+        /// a warm lit shelter for a cold dark wilderness - so light sources
+        /// matter more here than in a game that is not built on darkness.
+        ///
+        /// Driven entirely by vanilla's own glowLevel, which is the game's
+        /// per-fragment answer to "does this emit". Nothing is inferred from
+        /// pixel brightness: a white marble block is not a lamp, and a
+        /// brightness heuristic cannot tell the difference.
+        /// </summary>
+        public float EmissiveStrength { get; set; } = 0.8f;
+
+        /// <summary>
+        /// How much a bright emitter shifts toward white at its core.
+        ///
+        /// Real emitters do: a forge's centre is paler than its edge and iron
+        /// at welding heat is nearly white. This is most of what makes
+        /// something read as hot rather than as painted orange.
+        /// </summary>
+        public float EmissiveTemperature { get; set; } = 0.55f;
+
+        /// <summary>
+        /// How much a flame is allowed to breathe.
+        ///
+        /// Position-seeded, so two torches on the same wall do not flicker in
+        /// step - that is the detail separating "the room is flickering" from
+        /// "several fires are burning in it". Only downward: a flame dips and
+        /// recovers, it does not periodically burn brighter than it burns.
+        /// </summary>
+        public float EmissiveFlicker { get; set; } = 0.5f;
+
+        /// <summary>
+        /// How much emitters add to vanilla's own bloom pass. 0 is vanilla.
+        ///
+        /// Driven by the emission the material system computed rather than by
+        /// how bright the pixel came out, which is the difference between a
+        /// bloom that finds light sources and one that finds snow. It feeds
+        /// vanilla's existing findbright/blur pass rather than adding a second
+        /// one, which also keeps it restrained by construction.
+        /// </summary>
+        public float EmissiveBloom { get; set; } = 0.35f;
+
+        /// <summary>
         /// Light passing through leaves, grass and crops. 0 is vanilla.
         ///
         /// A leaf is thin: light hitting its far side scatters through rather
@@ -536,6 +597,14 @@ namespace VintageVisuals.Common
                 "PseudoPBR.AmbientSpecular", corrections);
             SpecularAntiAliasing = ColorGradeConfig.Clamp(SpecularAntiAliasing, 0.0f, 2.0f,
                 "PseudoPBR.SpecularAntiAliasing", corrections);
+            EmissiveStrength = ColorGradeConfig.Clamp(EmissiveStrength, 0.0f, 2.0f,
+                "PseudoPBR.EmissiveStrength", corrections);
+            EmissiveTemperature = ColorGradeConfig.Clamp(EmissiveTemperature, 0.0f, 1.0f,
+                "PseudoPBR.EmissiveTemperature", corrections);
+            EmissiveFlicker = ColorGradeConfig.Clamp(EmissiveFlicker, 0.0f, 1.0f,
+                "PseudoPBR.EmissiveFlicker", corrections);
+            EmissiveBloom = ColorGradeConfig.Clamp(EmissiveBloom, 0.0f, 1.0f,
+                "PseudoPBR.EmissiveBloom", corrections);
             FoliageTranslucency = ColorGradeConfig.Clamp(FoliageTranslucency, 0.0f, 2.0f,
                 "PseudoPBR.FoliageTranslucency", corrections);
             CavityStrength = ColorGradeConfig.Clamp(CavityStrength, 0.0f, 2.0f,
