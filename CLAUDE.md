@@ -74,6 +74,15 @@ config-scaled value must never enter the shared environment state.
 The one-line goal: reconstruct as much of a modern physically-inspired pipeline
 as Vintage Story's renderer allows, *while preserving the game's art direction*.
 
+**When Vintage Story already knows something, use Vintage Story's answer.**
+Prefer in order: what the game exposes directly (`EnumBlockMaterial`,
+`glowLevel`, `renderFlags` wind modes, the calendar, the climate) → what is
+derived from authoritative game data (the cloud tile array) → geometry and
+textures → screen space → invented simulation. Every serious bug here came from
+working too low on that ladder. `docs/VISUAL-LANGUAGE.md` has the rest of the
+rules that decide whether a feature belongs at all, including the visual
+hierarchy, the budgets, and what this project deliberately does not build.
+
 ## Where things live
 
 - `src/Common/` — shader patch engine, config, Harmony hooks. Subsystem-agnostic.
@@ -99,6 +108,11 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   runtime code; never reference it from the C# build. `src/PseudoPBR/` is a
   **port** of it: `tools/smoketest` asserts the two agree on a fixture, so a
   retune means editing both and regenerating `tools/pbrgen/parity_fixture.json`.
+- `docs/VISUAL-LANGUAGE.md` — the rules deciding whether a feature belongs:
+  information ladder, visual hierarchy, budgets, readability, the blacklist.
+  Read it before proposing an effect.
+- `docs/VISUAL-TESTS.md` — the scenes and acceptance criteria a feature must be
+  seen to satisfy before it may be called level 4.
 - `docs/STATUS.md` — the checklist of every feature and idea: done, partial,
   planned, abandoned. **Update it in the same commit as the work**, including
   when something is finally seen working in game. It is the only place a

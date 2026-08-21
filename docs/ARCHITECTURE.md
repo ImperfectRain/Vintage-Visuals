@@ -187,6 +187,25 @@ particles are lit by vanilla, so a mob standing on a PBR-lit floor is shaded by
 a different model than the floor. Closing that is the next milestone, and it is
 a patching-and-plumbing problem rather than a lighting-theory one.
 
+## The information ladder
+
+**When Vintage Story already knows something, use Vintage Story's answer.**
+
+Prefer, strictly in order: information the game exposes directly; information
+derived from authoritative game data; information derived from geometry or
+textures; information approximated from screen space; and only then an invented
+simulation.
+
+Every serious bug in this project came from working too low on that ladder.
+Three cloud-shadow noise fields failed because the game already had cloud
+placement. Metalness from pixels was wrong until it came from
+`EnumBlockMaterial`. A feature that sits on the bottom rung has to say why the
+rungs above it are unavailable.
+
+The full set of rules that decide whether a feature belongs at all - the visual
+hierarchy, the budgets, readability as a hard constraint, and what this project
+deliberately does not build - is in [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md).
+
 ## Related reading
 
 [INSPIRATION.md](INSPIRATION.md) records what was taken from

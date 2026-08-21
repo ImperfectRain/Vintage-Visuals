@@ -31,7 +31,8 @@ much of a modern physically-inspired pipeline as the existing renderer allows
 | **Atmosphere, shadows, water, vegetation, post FX** | not started | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
 
 Feature-by-feature state, including everything planned but unbuilt, is tracked
-in **[docs/STATUS.md](docs/STATUS.md)**.
+in **[docs/STATUS.md](docs/STATUS.md)**. The rules that decide whether a feature
+belongs at all are in **[docs/VISUAL-LANGUAGE.md](docs/VISUAL-LANGUAGE.md)**.
 
 ## Install
 
