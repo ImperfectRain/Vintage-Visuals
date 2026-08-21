@@ -152,3 +152,19 @@
   content: |
     rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, camPos);
     vv_sunExposure = rgbaLightIn.a;
+
+# 9. Feed vanilla's own god-ray channel from the canopy.
+#
+# outGlow.g is the source mask godrays.fsh radially blurs outward from the sun's
+# screen position. Terrain barely uses it - this shader only sets it on
+# sky-fading fragments - so writing backlit leaves and lit sunflecks into it
+# gives beams through a canopy for the cost of one number per fragment, using
+# the game's own pass rather than a second system beside it.
+#
+# max() rather than assignment: vanilla's own value has to survive, or the sky
+# fade above stops producing the rays it already produces.
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));"
+  content: |
+    outGlow = vec4(glowLevel + glow, max(godrayLevel, vvCanopyShaft(worldPos.xyz)), 0, min(1, fogAmount + outColor.a));

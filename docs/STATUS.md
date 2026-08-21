@@ -306,6 +306,16 @@ feature rather than a wiring mistake; it does not say anything looks right.
   being on. Now 0.97 to 0.62, where 0.95 passes one part in a hundred.
   Default strength also cut from 0.55 to 0.35 and the shade depth from 0.34 to
   0.28.
+- **Sunbeams through the canopy, L2.** Built on vanilla's own god-ray pass
+  rather than beside it: `outGlow.g` is the mask `godrays.fsh` radially blurs
+  from the sun's screen position, terrain barely writes to it, and backlit
+  leaves plus lit sunflecks are written into it for the cost of one number per
+  fragment. Gated on the camera facing near the sun, which is also where the
+  beams get their dependence on the real sun position. Inherits the player's
+  god-ray graphics setting and is simply absent when that is off. Debug view 17
+  shows the mask.
+- **Fleck blink is now driven by the world's wind speed** rather than a fixed
+  clock, so still air is nearly still and a gust makes the canopy flicker.
 - **`vv_sunExposure`'s actual range has still never been measured.** The dapple gate
   assumes 1 under open sky and clearly less under canopy. If leaves absorb only
   a little, "clearly less" might be 0.9 and the gate barely fires; if open

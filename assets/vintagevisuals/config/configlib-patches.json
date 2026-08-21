@@ -612,6 +612,18 @@
         "clientSide": true,
         "weight": 65
       },
+      "pbr_shafts": {
+        "ingui": "Sunbeams through the canopy",
+        "comment": "Visible beams of light through gaps in foliage. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings and follows the real position of the sun. 0 is vanilla.",
+        "default": 0.45,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 66
+      },
       "pbr_particlespecular": {
         "ingui": "Particle specular",
         "comment": "How much of the particle specular lobe reaches the image. Low on purpose: a highlight that reads as detail on a wall reads as twinkling noise on a cloud of dust.",
@@ -668,7 +680,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 16.0,
+          "max": 17.0,
           "step": 1.0
         }
       },

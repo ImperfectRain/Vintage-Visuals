@@ -134,7 +134,7 @@ void main()
                 return;
             }
 
-            ok("10 patches produced", patches.Count == 10);
+            ok("11 patches produced", patches.Count == 11);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("targets both stages of the chunkopaque program",
                 patches.All(p => p.AppliesTo("chunkopaque.fsh") || p.AppliesTo("chunkopaque.vsh")) &&
@@ -432,7 +432,7 @@ void main()
             List<ShaderPatch> patches = ShaderPatchLoader
                 .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
 
-            ok("pseudopbrtopsoil.yaml parsed into 10 patches", patches.Count == 10);
+            ok("pseudopbrtopsoil.yaml parsed into 11 patches", patches.Count == 11);
             ok("targets both stages of the chunktopsoil program",
                 patches.All(p => p.AppliesTo("chunktopsoil.fsh") || p.AppliesTo("chunktopsoil.vsh")) &&
                 patches.Any(p => p.AppliesTo("chunktopsoil.vsh")));

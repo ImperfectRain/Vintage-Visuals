@@ -982,3 +982,47 @@ little then "clearly less" might be 0.9 and the gate barely fires; if open groun
 does not quite reach 1, the gate leaks onto every field in the world. **Debug
 view 16** draws that number raw - white is full sun. Stand in the open, then
 under a tree, read off the two values, and the gate stops being a guess.
+
+### Visible beams
+
+`PseudoPBR.SunShafts`; debug view 17 shows the source mask.
+
+The beams are **vanilla's own god-ray pass**, not a second system beside it.
+`outGlow.g` is the source mask `godrays.fsh` radially blurs outward from the
+sun's screen position, accumulating wherever that mask is bright - which is
+exactly what a shaft is, light streaking away from the sun past whatever
+occludes it. Terrain barely uses the channel: `chunkopaque` only sets it on
+sky-fading fragments and `chunktopsoil` hard-codes zero, so writing to it is
+nearly free and needs no marching, no second buffer and no depth reads.
+
+Two sources, because a canopy makes beams two ways:
+
+- **Backlit leaves.** Looking toward the sun through a crown, the leaf edges
+  around each gap are where the shafts appear to start.
+- **Sunflecks.** A lit patch of ground is a small bright source in its own
+  right, and streaking it back toward the sun draws the beam up to the gap that
+  made it.
+
+The mask is gated on the camera looking somewhere near the sun, since the blur
+is radial from the sun's screen position - without that it smears every lit
+fleck in the world away from a sun that is behind the player. That gate is also
+where the effect gets its dependence on the real sun: the beams point wherever
+`lightPosition` points, so they swing through the day and lie flat at dawn
+without being told to.
+
+The ground-fleck half of the mask is deliberately **coarse** - one cell, no
+neighbours, no blink. The radial blur smears it over a hundred-odd samples
+before anyone sees it, so the full field would buy detail the next pass
+destroys.
+
+It inherits the player's own god-ray graphics setting. With god-rays off this
+writes a mask nothing reads and the effect is simply absent, which is the right
+way for it to degrade.
+
+### Reacting to the sway
+
+The breeze clock the flecks blink on is advanced by the **world's wind speed**,
+not by the wall clock: `0.35 + 1.65 x windSpeed`. Leaves are still in still air
+and thrash in a gust, and the flecks they let through do the same. The floor
+exists because dead calm that never moves at all reads as a frozen texture
+rather than as a quiet day.

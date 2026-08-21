@@ -547,6 +547,16 @@ namespace VintageVisuals.Common
         /// </summary>
         public float SunDapple { get; set; } = 0.35f;
 
+        /// <summary>
+        /// Visible beams of light through the canopy.
+        ///
+        /// Writes into vanilla's OWN god-ray channel rather than drawing
+        /// anything, so the beams are the game's pass and inherit the player's
+        /// god-ray graphics setting. With god-rays off in the game's settings
+        /// this writes a mask nothing reads and the effect is simply absent.
+        /// </summary>
+        public float SunShafts { get; set; } = 0.45f;
+
 
         /// <summary>
         /// Strength of the sky reflection, using vanilla's fog colour as the
@@ -669,7 +679,9 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SpecularStrength", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 16.0f,
+            SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
+                "PseudoPBR.SunShafts", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 17.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

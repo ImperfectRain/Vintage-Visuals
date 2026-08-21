@@ -180,6 +180,9 @@ namespace VintageVisuals.Common
                 case "pbr_foliage":
                     pbr.FoliageTranslucency = tree.GetFloat("value", pbr.FoliageTranslucency);
                     break;
+                case "pbr_shafts":
+                    pbr.SunShafts = tree.GetFloat("value", pbr.SunShafts);
+                    break;
                 case "pbr_dapple":
                     pbr.SunDapple = tree.GetFloat("value", pbr.SunDapple);
                     break;

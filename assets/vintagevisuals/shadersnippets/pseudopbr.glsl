@@ -65,6 +65,7 @@ uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to noth
 uniform float vv_pbrFoliage;         // light passing through leaves, 0 is vanilla
 uniform float vv_pbrCavity;          // small-scale occlusion from the material normal, 0 is vanilla
 uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 0 is vanilla
+uniform float vv_pbrShafts;          // visible beams through the canopy, 0 is vanilla
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -474,6 +475,12 @@ const float VV_DAPPLE_SHADE = 0.28;
 // Much nearer than the relief fade: flecks are finer than surface detail and
 // stop being resolvable sooner. Real dapple is not readable from fifty metres
 // either.
+// How brightly a backlit leaf and a lit sunfleck feed vanilla's god-ray
+// channel. Small: the radial blur accumulates well over a hundred samples, so a
+// source that looks reasonable on its own comes out as a searchlight.
+const float VV_SHAFT_LEAF = 0.34;
+const float VV_SHAFT_GROUND = 0.22;
+
 const float VV_DAPPLE_FADE_START = 22.0;
 const float VV_DAPPLE_FADE_RANGE = 22.0;
 
@@ -783,6 +790,75 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // darken - see the note on VV_DAPPLE_COVER for why that is the whole point.
     return (1.0 - fleck) * VV_DAPPLE_SHADE
          * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
+}
+
+// Feeds vanilla's OWN god-ray channel, so the beams are the game's rather than
+// a second invented system sitting next to it.
+//
+// outGlow.g is the source mask for godrays.fsh, which radially blurs the frame
+// outward from the sun's screen position and accumulates wherever that mask is
+// bright. That is exactly what a shaft is - light streaking away from the sun
+// past whatever is occluding it - and terrain barely writes to it: chunkopaque
+// only sets it on sky-fading fragments, and chunktopsoil hard-codes zero.
+//
+// So the beams cost one number per fragment. No marching, no second buffer, no
+// depth reads. It also means they inherit the player's own god-ray graphics
+// setting: with godrays off, this writes a mask nothing reads and the effect
+// simply is not there, which is the correct way for it to degrade.
+//
+// Two sources, because a canopy produces beams two ways:
+//
+//   - BACKLIT LEAVES. Looking toward the sun through a crown, the leaf edges
+//     around each gap are what the shafts appear to emanate from.
+//   - SUNFLECKS. A lit patch of ground is a small bright source in its own
+//     right, and streaking it toward the sun is what draws the beam back up
+//     to the gap that made it.
+float vvCanopyShaft(vec3 cameraRelativePos)
+{
+    if (vv_pbrShafts < 0.001) return 0.0;
+
+    float sun = clamp(vv_sceneDayLight, 0.0, 1.0);
+    if (sun < 0.01) return 0.0;
+
+    vec3 toSun = normalize(lightPosition);
+
+    // Shafts converge on the sun's position ON SCREEN, so a fragment can only
+    // contribute to one while the camera is looking somewhere near the sun.
+    // Without this the radial blur smears every lit fleck in the world away
+    // from a sun that is behind the player.
+    //
+    // This is also where the effect gets its dependence on the real sun: the
+    // beams point wherever lightPosition points, so they swing through the day
+    // and lie flat at dawn without being told to.
+    float look = dot(normalize(cameraRelativePos), toSun);
+    float facing = smoothstep(0.35, 0.95, look);
+    if (facing < 0.004) return 0.0;
+
+    float strength = clamp(vv_pbrShafts, 0.0, 2.0) * sun * facing;
+
+    // Leaves lit from behind. Vanilla already draws the transmission; this says
+    // that the same fragments are where beams start.
+    if (vvIsFoliage()) return strength * VV_SHAFT_LEAF;
+
+    float exposure = clamp(vv_sunExposure, 0.0, 1.0);
+    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.97, 0.62, exposure);
+    if (under < 0.004) return 0.0;
+
+    // A COARSE fleck - one cell, no neighbours, no blink. The radial blur
+    // smears this across a hundred-odd samples before anyone sees it, so paying
+    // for the full field here would buy detail that is destroyed by the next
+    // pass.
+    vec2 p = (cameraRelativePos.xz + vv_pbrOrigin.xz) / VV_DAPPLE_SCALE;
+    vec2 cell = floor(p);
+    vec4 rnd = vvCellRandom(cell);
+
+    if (rnd.x > VV_DAPPLE_DENSITY) return 0.0;
+
+    vec2 centre = cell + 0.5 + (rnd.yz - 0.5) * VV_DAPPLE_JITTER;
+    float d = length(p - centre) / VV_DAPPLE_RADIUS;
+    float fleck = 1.0 - smoothstep(0.5, 1.0, d);
+
+    return strength * under * fleck * VV_SHAFT_GROUND;
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -1196,6 +1272,13 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // White is full sun, black is none. Stand in the open, then under a tree,
     // and read off the two values.
     if (mode == 16) return vec4(vec3(clamp(vv_sunExposure, 0.0, 1.0)), color.a);
+
+    // 17: the god-ray source mask this writes into outGlow.g. Bright where a
+    // beam starts - backlit leaves and lit flecks, and only while the camera is
+    // looking toward the sun. Black everywhere if the player has god-rays
+    // switched off in the game's own graphics settings, which is where the
+    // effect actually lives.
+    if (mode == 17) return vec4(vec3(vvCanopyShaft(cameraRelativePos)), color.a);
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
     // Mortar lines, plank gaps and bark furrows should read; a flat painted

@@ -240,7 +240,13 @@ namespace VintageVisuals.Common.Scene
             _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
             RippleClock = (float)_rippleClock;
 
-            _breezeClock = (_breezeClock + deltaSeconds / BreezeSeconds) % 1.0;
+            // Advanced by the WIND, not by the wall clock. Leaves are still in
+            // still air and thrash in a gust, and the flecks they let through do
+            // the same - so the rate is the world's own wind speed rather than a
+            // constant nobody can tie to anything on screen. A floor, because
+            // dead calm that never moves at all reads as a frozen texture.
+            double gust = 0.35 + 1.65 * GameMath.Clamp(_windSpeed, 0f, 1f);
+            _breezeClock = (_breezeClock + deltaSeconds * gust / BreezeSeconds) % 1.0;
             BreezeClock = (float)_breezeClock;
 
             // Rain and snow are the same precipitation seen through the
