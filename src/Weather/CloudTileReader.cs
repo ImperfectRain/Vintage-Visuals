@@ -61,7 +61,16 @@ namespace VintageVisuals.Weather
 
         private readonly Vec2f _origin = new Vec2f();
 
+        /// <summary>
+        /// Optical depth of a fully thick, fully opaque cloud tile.
+        ///
+        /// 2.0 puts a solid cloud at 86% occlusion and a tenth-thickness wisp
+        /// at 18%, which is the spread cloud shadows are actually made of.
+        /// </summary>
+        private const float FullOpticalDepth = 2.0f;
+
         private object _renderer;
+        private MemberInfo _deckMember;
         private FieldInfo _tilesField;
         private MemberInfo _thicknessMember;
         private MemberInfo _opaqueMember;
@@ -97,6 +106,17 @@ namespace VintageVisuals.Weather
         /// fastest. Packed four to a vec4 by the binder.
         /// </summary>
         public float[] Density { get { return _density; } }
+
+        /// <summary>
+        /// The height the game actually draws its clouds at, or 0 if unknown.
+        ///
+        /// Worth having rather than guessing: this decides how far a shadow is
+        /// thrown sideways from the cloud casting it, so a wrong value
+        /// mis-places every shadow except at noon. The config slider defaulted
+        /// to 160 and the renderer reports 256.5, which at a 30-degree sun is
+        /// about a hundred blocks of error.
+        /// </summary>
+        public float DeckHeight { get; private set; }
 
         /// <summary>
         /// CAMERA-RELATIVE XZ of the corner of tile [0,0].
@@ -242,11 +262,36 @@ namespace VintageVisuals.Weather
                     continue;
                 }
 
-                float covered = Math.Min(1f, 10f * (_thickness[i] / _thicknessPeak));
+                float thickness = GameMath.Clamp(_thickness[i] / _thicknessPeak, 0f, 1f);
                 float opaque = GameMath.Clamp(_opaqueness[i] / _opaquenessPeak, 0f, 1f);
 
-                _density[i] = GameMath.Clamp(opaque * covered, 0f, 1f);
+                // Beer-Lambert, NOT vanilla's draw alpha, and this is the fix
+                // for a sky that came out obsessively overcast.
+                //
+                // clouds.vsh writes min(1, cloudOpaqueness * min(1, 10 *
+                // selfThickness)) into the cloud's alpha, and copying that here
+                // was the obvious thing to do - it is the game's own answer, and
+                // this project's whole rule is to use the game's own answer.
+                // But it answers a different question. That expression saturates
+                // deliberately: it exists to make a cloud look SOLID from
+                // underneath, and at a tenth of full thickness it is already
+                // fully opaque. Measured against a real sky it put 64% of tiles
+                // past half coverage with a mean of 0.65, so nearly the whole
+                // world sat in shadow all day and the shadows had no edges left
+                // to read as shadows.
+                //
+                // How much sunlight a cloud stops is optical depth, not draw
+                // opacity: transmission falls off exponentially with how much
+                // water the light passes through. A wisp takes a little light, a
+                // thick cloud takes most but never all of it, and everything
+                // between is a gradient - which is exactly the variation that
+                // makes a cloud shadow legible as it crosses a field.
+                float depth = FullOpticalDepth * thickness * opaque;
+
+                _density[i] = GameMath.Clamp(1f - (float)Math.Exp(-depth), 0f, 1f);
             }
+
+            SampleDeckHeight();
 
             IClientPlayer player = _capi.World?.Player;
             if (player?.Entity == null) return;
@@ -273,6 +318,39 @@ namespace VintageVisuals.Weather
 
             _origin.X = (float)(snapX - Window / 2 * TileSize);
             _origin.Y = (float)(snapZ - Window / 2 * TileSize);
+        }
+
+        /// <summary>
+        /// Reads the altitude the game draws its clouds at, from the renderer.
+        ///
+        /// Cheap enough to redo per read, and it moves: the deck is not a
+        /// constant. Left at 0 when it cannot be found, which the binder reads
+        /// as "fall back to the config slider" - the zero case is the harmless
+        /// one, as it has to be.
+        /// </summary>
+        private void SampleDeckHeight()
+        {
+            if (_deckMember == null) return;
+
+            try
+            {
+                object value = ((FieldInfo)_deckMember).GetValue(_renderer);
+                if (value == null) return;
+
+                FieldInfo y = value.GetType().GetField("Y") ?? value.GetType().GetField("y");
+                if (y == null) return;
+
+                float height = Convert.ToSingle(y.GetValue(value));
+
+                // A deck below the ground or above the sky is a misread field,
+                // not a cloud height. Refuse it rather than throwing every
+                // shadow to the horizon.
+                if (height > 32f && height < 2048f) DeckHeight = height;
+            }
+            catch (Exception)
+            {
+                // Held at the last reading, as everywhere else here.
+            }
         }
 
         private static float Numeric(MemberInfo member, object target)
@@ -309,6 +387,14 @@ namespace VintageVisuals.Weather
             }
 
             Type tile = _tilesField.FieldType.GetElementType();
+
+            // The renderer's own offset carries the cloud altitude in Y. Found
+            // by shape - a vec3 named like an offset - because the name is the
+            // only part of it that is even roughly stable.
+            _deckMember = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .FirstOrDefault(f => f.FieldType.Name.StartsWith("Vec3", StringComparison.Ordinal) &&
+                                     (f.Name.IndexOf("offset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                      f.Name.IndexOf("pos", StringComparison.OrdinalIgnoreCase) >= 0));
 
             _thicknessMember = PickMember(tile, "SelfThickness", "Thickness", "MaxThickness");
             _opaqueMember = PickMember(tile, "CloudOpaqueness", "Opaqueness", "Opacity");
@@ -587,6 +673,7 @@ namespace VintageVisuals.Weather
         }
 
         private bool _reportedField;
+        private float _lastReportedMean = -1f;
 
         /// <summary>
         /// Says what the cloud field actually looks like, once.
@@ -604,22 +691,30 @@ namespace VintageVisuals.Weather
         /// </summary>
         private void ReportFieldOnce()
         {
-            if (_reportedField) return;
-            _reportedField = true;
+            float mean = 0f;
+            for (int k = 0; k < _density.Length; k++) mean += _density[k];
+            mean /= _density.Length;
 
-            float sum = 0f;
+            // Re-reported when the sky meaningfully changes, not once. The field
+            // is now something to be TUNED - the occlusion curve is a judgement
+            // about how much light a cloud stops - and a number logged once at
+            // world load says nothing about whether a change helped.
+            if (_reportedField && Math.Abs(mean - _lastReportedMean) < 0.08f) return;
+
+            _reportedField = true;
+            _lastReportedMean = mean;
+
             float high = 0f;
             int covered = 0;
 
             for (int i = 0; i < _density.Length; i++)
             {
-                sum += _density[i];
                 if (_density[i] > high) high = _density[i];
                 if (_density[i] > 0.5f) covered++;
             }
 
             _logger.Notification("[VintageVisuals] weather: cloud field read - mean " +
-                (sum / _density.Length).ToString("0.###") + ", peak " + high.ToString("0.###") +
+                mean.ToString("0.###") + ", peak " + high.ToString("0.###") +
                 ", " + (covered * 100 / _density.Length) + "% of tiles more than half covered" +
                 " (raw peaks: thickness " + _thicknessPeak.ToString("0.####") +
                 ", opaqueness " + _opaquenessPeak.ToString("0.####") + "). A plausible broken sky is " +

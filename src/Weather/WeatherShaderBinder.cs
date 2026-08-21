@@ -200,7 +200,11 @@ namespace VintageVisuals.Weather
                 program.Uniform(CloudShadowUniform, strength);
                 program.Uniform(CloudCoverUniform, _weather.CloudCover);
                 program.Uniform(CloudScaleUniform, config.CloudScale);
-                program.Uniform(CloudHeightUniform, config.CloudHeight);
+                // The game's own cloud altitude when the renderer reports one,
+                // and the slider only when it does not. The slider defaulted to
+                // 160 while the renderer reports 256.5, and that difference is
+                // about a hundred blocks of shadow displacement at a low sun.
+                program.Uniform(CloudHeightUniform, DeckHeight(config));
                 program.Uniform(CloudDriftUniform, _weather.CloudDrift);
 
                 // Camera world position, so cloud shadows stay put on the
@@ -289,13 +293,29 @@ namespace VintageVisuals.Weather
                 " x daylight " + _weather.DayLight.ToString("0.##") + ")" +
                 ", cover " + _weather.CloudCover.ToString("0.##") +
                 ", scale " + _weather.Config.CloudScale.ToString("0") +
-                ", deck " + _weather.Config.CloudHeight.ToString("0") +
+                ", deck " + DeckHeight(_weather.Config).ToString("0") +
+                (_weather.Clouds != null && _weather.Clouds.DeckHeight > 0f ? " (from the game)" : " (slider)") +
                 ", drift " + _weather.CloudDrift.X.ToString("0.##") + "/" + _weather.CloudDrift.Y.ToString("0.##") +
                 ", origin " + origin.X.ToString("0") + "/" + origin.Y.ToString("0") + "/" + origin.Z.ToString("0") +
                 ", source " + DescribeSource() +
                 (_weather.Config.CloudDebugView > 0.5f
                     ? " [DEBUG VIEW " + (int)(_weather.Config.CloudDebugView + 0.5f) + "]"
                     : ""));
+        }
+
+        /// <summary>
+        /// The height to throw shadows from.
+        ///
+        /// Read from the cloud renderer where possible - it is one of the few
+        /// facts about clouds the game will actually hand over - and from the
+        /// player's slider only when it will not. Zero from the reader means
+        /// "not known", which is the harmless value, so an unhooked renderer
+        /// degrades to the old behaviour rather than to a deck at ground level.
+        /// </summary>
+        private float DeckHeight(WeatherConfig config)
+        {
+            float reported = _weather.Clouds == null ? 0f : _weather.Clouds.DeckHeight;
+            return reported > 0f ? reported : config.CloudHeight;
         }
 
         /// <summary>

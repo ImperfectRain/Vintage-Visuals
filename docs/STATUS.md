@@ -215,92 +215,38 @@ by reintroducing the bug.
 **None of this is L4.** It raises the odds that a visual test is testing the
 feature rather than a wiring mistake; it does not say anything looks right.
 
-- **Cloud shadows are still broken, and the cause is now identified rather than
-  guessed at.** Reported invisible three times, then as three over-large patches
-  unrelated to the sky, then as still horrendously broken. A top-to-bottom audit
-  against the game's own `clouds.vsh` and `cloudmap.fsh` found the field has
-  three separable jobs and only two were ever right:
-  - *Density* now mirrors the game exactly -
-    `min(1, cloudOpaqueness * min(1, 10 * selfThickness))`, the same expression
-    `clouds.vsh` writes into `rgbaCloud.a`. The inner `min` saturates, which is
-    what gives vanilla's sky solid tiles with sharp edges.
-  - *Direction* uses vanilla's own `lightPosition`, the vector the terrain
-    shader lights every face with, so it tracks the sun and moon without this
-    code knowing where either is.
-  - *Registration* - where the tile window sits - was wrong, **twice**, and it
-    is the only one of the three that decides whether a shadow lands under the
-    cloud that cast it.
-
-  **The fatal one, now fixed:** the window corner was handed over as a true
-  world coordinate and compared in the shader against a position built from
-  `vv_cloudOrigin`, which is the camera position *wrapped to 4096 blocks*
-  because a float32 cannot resolve a Vintage Story world coordinate. The residue
-  is whatever multiple of 4096 the player is past, so the lookup landed
-  thousands of tiles outside a sixteen-tile window and **every fragment read
-  clear sky** - the tile path contributed exactly nothing, and what was on
-  screen was the fBm fallback the whole time. At spawn the residue is zero and
-  it works, which is presumably how it survived. The corner is now
-  camera-relative.
-
-  **What the player's log finally settled.** Two things, and the first was not
-  a cloud bug at all:
-  - The install was loading **eight** patch files while the repo has six.
-    `weathersky.yaml` and `cloudshape.yaml` - both DELETED from the repo, the
-    first for fogging the sky dome and flattening clouds into a haze, the second
-    for being inert - were still in the player's Mods folder and still being
-    applied. `CopyToOutputDirectory` copies and never deletes, so every build
-    since carried them along. That is what "the clouds themselves seem broken"
-    was: a removed patch doing exactly what it was removed for. The build now
-    wipes the output asset folder first, and the loader logs patch file NAMES
-    rather than a count, because "8 file(s)" looked perfectly healthy.
-  - The breadth-first search ran out of its 40,000 node budget without arriving.
-    A client's object graph is mostly chunks, meshes and entities, and BFS
-    spends itself on those long before reaching anything that owns a renderer.
-    Raising the budget is guessing at how much of the wrong thing to enumerate,
-    so the search is gone: the type is found by name across loaded assemblies
-    and a Harmony postfix on its own per-frame method hands over the instance
-    the first time it draws.
-
-  **And the diagnostics were useless in the case they exist for.** Views 1 and 2
-  both returned "no change" when the tiles could not be read, which on screen is
-  indistinguishable from a debug option that does nothing - which is exactly how
-  it was reported. Every view now draws unmistakable diagonal bars when there is
-  no cloud data, so "the shader is live and the data is missing" can be told
-  apart from "the shader is not running". View 3's window corner is also
-  uploaded whether or not the read succeeded, since where the window WOULD be is
-  the question it answers.
-
-  **The other half, found by audit after the fix above still showed nothing:**
-  the reader almost certainly never found the cloud renderer at all.
-  `FindCloudRenderer` looked at `ClientMain`'s own fields and one level into any
-  collection among them - but the client groups its renderers BY RENDER STAGE,
-  so the field holds an array of lists and the walk was asking whether a
-  `List<IRenderer>` is a `CloudRenderer`. It never was. The search is now
-  breadth-first with a visited set, a depth limit and a node budget, and it logs
-  how many objects it looked at.
-
-  **And the failure was disguised.** A failed read fell through to the mod's own
-  noise field, which moves plausibly and covers plausibly and has no relation to
-  the sky - so "the reader is broken" looked exactly like "the shadows need
-  tuning", which is where four rounds went. The noise field is now drawn only
-  when the player asks for it by turning clouds-from-game off. A failed read
-  draws NO cloud shadows and says so.
-
-  **Still open:** the corner is assumed to be the player snapped down to the
-  50-block grid, not read from the renderer. `clouds.vsh` places each tile at a
-  camera-relative offset the CPU hands it directly, and the game's clouds drift
-  on the wind, so a corner derived from the player's position alone cannot be
-  complete. Cloud diagnostic **view 2** draws the tile field straight down with
-  no throw - stand still, look up, look down - which answers registration
-  directly for the first time, and the reader now logs every member of the cloud
-  renderer that could hold the real offset, with live values.
-- **The cloud deck height is a slider, not a reading.** The game does not expose
-  it: `IAmbientManager` has `BlendedCloudDensity` and `BlendedCloudBrightness`
-  and no Y position, and the renderer that knows lives in `VintagestoryLib`. The
-  height sets how far a shadow is thrown from its cloud, so a wrong value
-  mis-places every shadow except at noon. The throw is capped at 320 blocks
-  because the window is only 800 across and an uncapped throw walks out of the
-  data at exactly the hour shadows would be longest.
+- **Cloud shadows now read the game's own clouds.** Confirmed in game:
+  `weather: cloud shadows on Chunkopaque ... source the game's own cloud tiles`.
+  Four rounds to get there, and the causes were, in order: the tile path was
+  compared against a wrapped camera position and contributed nothing anywhere;
+  the renderer was never found, first by a one-level field walk and then by a
+  breadth-first search that ran out of budget; the failure was disguised by an
+  invented noise field; and the install was carrying two patch groups that had
+  been deleted from the repo. All four are fixed. The renderer is now found by
+  type name across loaded assemblies and captured by a Harmony postfix on its
+  own per-frame method.
+- **What the renderer actually reports** (v1.22.7 with the FluffyClouds mod
+  installed, `FluffyClouds.CloudRendererMap`):
+  `CloudTileLength 81` (a 6561-tile square array, so the 16-tile window is a
+  centre crop), `offset.y 256.5` - the cloud altitude, now read rather than
+  guessed - and `windOffsetX/Z`, which accumulate and are almost certainly the
+  sub-tile drift the window still does not account for.
+- **The window corner is still assumed**, not read: the player snapped down to
+  the 50-block grid. `windOffsetX/Z` are the missing term, and their sign is not
+  derivable from outside a running game. Expect shadows to step by up to a tile
+  as the clouds drift rather than sliding smoothly. Cloud diagnostic view 2
+  settles it.
+- **Occlusion is no longer vanilla's draw alpha.** Copying
+  `min(1, cloudOpaqueness * min(1, 10 * selfThickness))` from `clouds.vsh` was
+  using the game's own answer to the wrong question: that expression saturates
+  on purpose, because it exists to make a cloud look solid from underneath, and
+  it is fully opaque at a tenth of full thickness. Measured against a real sky
+  it gave **mean 0.646 with 64% of tiles past half coverage** - the whole world
+  in shadow all day, with no edges left to read as shadows, which is what
+  "weirdly obsessive amount of cloud coverage" was. How much sunlight a cloud
+  stops is optical depth, not draw opacity, so the field is now Beer-Lambert:
+  a wisp takes a little light, a thick cloud takes most, and the gradient
+  between is what makes a shadow legible crossing a field.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that
