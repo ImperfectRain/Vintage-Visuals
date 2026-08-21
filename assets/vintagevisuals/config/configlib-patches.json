@@ -600,6 +600,18 @@
           "step": 0.05
         }
       },
+      "pbr_dapple": {
+        "ingui": "Sunlight dapple under trees",
+        "comment": "Sunlight broken into moving patches by the leaves overhead. Only appears where the game's own sun light level says there is a canopy above - open ground and interiors are untouched. Gaps brighten by as much as the shade between them darkens, so it never dims the scene overall. 0 is vanilla.",
+        "default": 0.55,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 65
+      },
       "pbr_particlespecular": {
         "ingui": "Particle specular",
         "comment": "How much of the particle specular lobe reaches the image. Low on purpose: a highlight that reads as detail on a wall reads as twinkling noise on a cloud of dust.",
@@ -656,7 +668,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 14.0,
+          "max": 15.0,
           "step": 1.0
         }
       },

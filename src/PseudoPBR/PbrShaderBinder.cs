@@ -53,6 +53,7 @@ namespace VintageVisuals.PseudoPBR
         public const string OriginUniform = "vv_pbrOrigin";
         public const string FoliageUniform = "vv_pbrFoliage";
         public const string CavityUniform = "vv_pbrCavity";
+        public const string DappleUniform = "vv_pbrDapple";
 
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
@@ -325,6 +326,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, DetailDistanceUniform, _look.DetailDistance);
             SetIfPresent(program, FoliageUniform, _look.FoliageTranslucency);
             SetIfPresent(program, CavityUniform, _look.CavityStrength);
+            SetIfPresent(program, DappleUniform, _look.SunDapple);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
             SetIfPresent(program, RainCoverUniform, _weather.RainCover);

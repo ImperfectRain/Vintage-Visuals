@@ -533,6 +533,20 @@ namespace VintageVisuals.Common
         /// coloured specular is one of the strongest "modern renderer" cues.
         /// </summary>
         public float MetalResponse { get; set; } = 1.0f;
+        /// <summary>
+        /// Sunlight broken into moving patches by the leaves overhead.
+        ///
+        /// Gated on vanilla's own per-vertex sun light level, which is partial
+        /// under a canopy and full or zero everywhere else - so the effect can
+        /// only appear where there is genuinely something leafy above. The
+        /// pattern is invented; where it is allowed to exist is not.
+        ///
+        /// Redistributes rather than removes: gaps brighten by as much as the
+        /// shade between them darkens, so it never asks VisualBudget for
+        /// anything.
+        /// </summary>
+        public float SunDapple { get; set; } = 0.55f;
+
 
         /// <summary>
         /// Strength of the sky reflection, using vanilla's fog colour as the
@@ -653,7 +667,9 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 14.0f,
+            SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
+                "PseudoPBR.SunDapple", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 15.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

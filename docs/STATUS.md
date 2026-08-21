@@ -287,6 +287,13 @@ feature rather than a wiring mistake; it does not say anything looks right.
   one-block cell boundaries exactly on the half-block grid's, so both octaves
   broke along the same lines and reinforced the lattice the second one existed
   to hide.
+- **Sunlight dapple is L2, not seen on screen.** Gated on `vv_sunExposure`, so
+  it can only appear where the game itself says there is a canopy overhead;
+  thrown along the sun's azimuth by `height / tan(elevation)` and stretched by
+  `1 / sin(elevation)` so midday spots become late shafts; mean-preserving by
+  construction, with the threshold's pass rate measured rather than guessed.
+  Debug view 15 shows the field alone - it must be flat grey on open ground and
+  flat grey indoors, and appear only under trees.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that

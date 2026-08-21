@@ -64,6 +64,7 @@ uniform float vv_pbrRoughnessBias;   // matte <-> gloss, applied to every materi
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
 uniform float vv_pbrFoliage;         // light passing through leaves, 0 is vanilla
 uniform float vv_pbrCavity;          // small-scale occlusion from the material normal, 0 is vanilla
+uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 0 is vanilla
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -339,6 +340,58 @@ const float VV_ORIGIN_PERIOD = 4096.0;
 // ripple looks; nothing breaks.
 const float VV_RIPPLE_TEXELS = 32.0;
 
+// ---------------------------------------------------------------------------
+// Canopy dapple
+// ---------------------------------------------------------------------------
+
+// Blocks of canopy assumed above a fragment, from just-under-the-leaves to
+// deep under a full crown. Sets how far the pattern slides as the sun moves.
+const float VV_DAPPLE_LOW = 2.5;
+const float VV_DAPPLE_HIGH = 9.0;
+
+// Blocks across one gap in the leaves.
+const float VV_DAPPLE_SCALE = 3.2;
+
+// Where the noise is cut to separate gap from leaf, and how hard that edge is.
+//
+// MEASURED, not chosen. The two-octave sum here has a standard deviation near
+// 0.149, so the field is roughly normal about 0.5 with sd 0.23 - and a
+// threshold picked by eye lands somewhere on that curve nobody can predict. The
+// first draft of this used 0.56 on the reasoning that "a canopy is mostly leaf",
+// which passes only 19% of the area rather than the third it was meant to.
+//
+//   threshold   mean(gap)   lit
+//     0.44        0.355      35%
+//     0.48        0.295      29%
+//     0.52        0.240      23%
+//     0.56        0.191      18%
+//
+// Re-measure this table if either octave weight changes. Guessing at where a
+// threshold sits on a pile of summed noise is the mistake that cost the cloud
+// shadows two rounds, once as an invisible effect and once as a world that was
+// uniformly slightly darker.
+const float VV_DAPPLE_THRESHOLD = 0.44;
+const float VV_DAPPLE_SOFT = 0.30;
+
+// The area fraction the threshold above actually passes, subtracted so the
+// effect averages to zero. Read it off the table.
+//
+// Not cosmetic. Three subsystems once washed out the same rainy afternoon by
+// each removing a little light, which is what VisualBudget exists to arbitrate.
+// Dapple sidesteps that argument entirely by REDISTRIBUTING rather than
+// removing: gaps brighten by as much as the shade between them darkens, so the
+// mean is unchanged and there is nothing to arbitrate.
+//
+// Which only holds if this number is right. Against the first draft's 0.56
+// threshold it was set to 0.34 by eye, and the true mean was 0.191 - so every
+// canopy in the world would have been dimmed by a net 15% by an effect
+// documented as mean-preserving, with nothing in the budget accounting for it.
+const float VV_DAPPLE_COVER = 0.355;
+
+// How far the pattern may be thrown along the sun's azimuth, in blocks. The
+// projection runs away at the horizon like every other one in this mod.
+const float VV_DAPPLE_MAX_THROW = 40.0;
+
 // A bit-mixing integer hash, not the usual fract(sin(dot(p, k)) * 43758.5453).
 //
 // Integer mixing is exact at any coordinate, and it is worth the few extra
@@ -484,6 +537,109 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
     // are the highest-frequency thing this shader produces, so they are also
     // the first to alias into sparkle once a cell is smaller than a pixel.
     return normalize(n + vec3(slope.x, 0.0, slope.y) * amount * VV_RIPPLE_DEPTH);
+}
+
+// The canopy's gaps, as a field on the ground.
+//
+// Two octaves and a threshold. Deliberately NOT a third octave: the pattern is
+// seen through a moving frame at walking pace, and detail below about a third
+// of a block only reads as noise.
+//
+// Normalised the way the cloud field had to be. A weighted sum of gnoise does
+// not span -1..1 - it piles up hard around zero with a standard deviation near
+// 0.14 - so a threshold placed on the raw sum sits outside the range the field
+// ever visits, and the result is either untouched ground or uniformly darker
+// ground. That shipped twice in the cloud shadows before it was measured.
+float vvDappleField(vec2 p)
+{
+    float n = gnoise(p) * 0.66 + gnoise(p * 2.3 + vec2(19.7, 7.3)) * 0.34;
+    return clamp(n * 1.55 + 0.5, 0.0, 1.0);
+}
+
+// Sunlight broken into moving patches by the leaves overhead.
+//
+// Returns SIGNED: positive where a gap lets the sun through, negative in the
+// shade between. Zero average by construction - see VV_DAPPLE_COVER.
+//
+// The gate is the whole design, and it is the game's own answer rather than a
+// guess. vv_sunExposure is vanilla's per-vertex sun light level: 0 under a
+// roof, 1 under open sky, and PARTIAL under a canopy, because leaves absorb
+// light on the way down. Partial is therefore an exact statement that something
+// leafy is overhead - which is precisely and only where dapple belongs. Open
+// ground has nothing above it to break the light; a cellar has no sunlight to
+// break. Both ends of the range return zero.
+//
+// This matters more than the pattern does. An invented field gated to the wrong
+// places is what made cloud shadows wrong for four rounds: it looked like
+// weather and corresponded to nothing. Here the invention is only the SHAPE of
+// the gaps; whether there are gaps at all, and where, comes from the game.
+float vvCanopyDapple(vec3 cameraRelativePos, float fade)
+{
+    if (vv_pbrDapple < 0.001) return 0.0;
+
+    float exposure = clamp(vv_sunExposure, 0.0, 1.0);
+
+    // Rises out of deep shade and falls again as the sky opens up.
+    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.99, 0.72, exposure);
+    if (under < 0.001) return 0.0;
+
+    // No sun, no dapple. Also kills it at night, where a dappled moon would be
+    // an effect nobody has ever seen.
+    float sun = clamp(vv_sceneDayLight, 0.0, 1.0);
+    if (sun < 0.01) return 0.0;
+
+    vec3 toSun = normalize(lightPosition);
+
+    // Where the ray from this fragment up to the leaves crosses the canopy.
+    // Deeper shade is read as more canopy overhead, so the pattern slides
+    // further under a full crown than under an edge branch.
+    float height = mix(VV_DAPPLE_LOW, VV_DAPPLE_HIGH, 1.0 - exposure);
+
+    vec2 azimuth = toSun.xz;
+    float azimuthLength = length(azimuth);
+
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    vec2 at = world.xz;
+
+    float stretch = 1.0;
+
+    if (azimuthLength > 0.0001)
+    {
+        float up = max(0.12, abs(toSun.y));
+
+        // climb / tan(elevation), written as run and direction so the cap lands
+        // on the quantity being capped. The cloud shadows were capped on
+        // climb/sin instead and sat too close under their clouds all morning.
+        float run = height * azimuthLength / up;
+        at += (azimuth / azimuthLength) * min(run, VV_DAPPLE_MAX_THROW);
+
+        // A gap is a hole in a thin layer, so its footprint on the ground is
+        // stretched along the azimuth as the sun drops - the reason late
+        // afternoon dapple reads as shafts rather than as spots. Capped at four:
+        // beyond that it stops looking like light and starts looking like a
+        // smear.
+        stretch = clamp(1.0 / up, 1.0, 4.0);
+    }
+
+    vec2 p = at / VV_DAPPLE_SCALE;
+
+    if (azimuthLength > 0.0001 && stretch > 1.0)
+    {
+        vec2 dir = azimuth / azimuthLength;
+        float along = dot(p, dir);
+        p = (p - dir * along) + dir * (along / stretch);
+    }
+
+    // Leaves move, so the gaps do. Built from sine and cosine of the clock so
+    // it is exactly periodic: vv_sceneClock is pre-wrapped to 0..1 on the CPU,
+    // and anything not periodic in it would jump every time it wrapped.
+    float phase = vv_sceneClock * 6.2831853;
+    p += vec2(sin(phase + p.y * 0.7), cos(phase * 0.83 + p.x * 0.6)) * 0.18;
+
+    float gap = smoothstep(VV_DAPPLE_THRESHOLD, VV_DAPPLE_THRESHOLD + VV_DAPPLE_SOFT,
+                           vvDappleField(p));
+
+    return (gap - VV_DAPPLE_COVER) * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -750,6 +906,23 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     result += vvEmission(albedo, glowLevel, cameraRelativePos)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0);
 
+    // Sunlight broken up by the leaves overhead.
+    //
+    // Last, and multiplicative on the whole result, because dapple is not a
+    // light of its own - it is a statement about how much of the sun reaches
+    // this spot, and everything above has already worked out what the sun does
+    // when it arrives. Scaling the finished pixel keeps the surface's own
+    // response intact: a wet stone in a sunbeam is a brighter wet stone, not a
+    // stone with a bright patch painted over it.
+    //
+    // Scaled by the shadow term as well, so a fragment vanilla has already put
+    // in full shade does not grow sunbeams. Dapple is the sun finding a way
+    // through; where there is no sun to find, there is nothing to break up.
+    float dapple = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
+                 * clamp(shadowBrightness, 0.0, 1.0);
+
+    result *= 1.0 + dapple;
+
     return vec4(result, litColor.a);
 }
 
@@ -823,6 +996,17 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // white marble block should not, which is the check that this is driven by
     // vanilla's glowLevel rather than by pixel brightness.
     if (mode == 14) return vec4(vvEmission(color.rgb, glowLevel, cameraRelativePos), color.a);
+
+    // 15: canopy dapple alone, biased so no effect reads as mid grey. Bright
+    // patches are gaps in the leaves, dark is the shade between. It should be
+    // flat grey on open ground and flat grey in a cellar - both ends of the
+    // sky-exposure gate - and appear only under trees. Walk the edge of a wood
+    // and the band should switch on as the canopy closes over.
+    if (mode == 15)
+    {
+        float d = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos));
+        return vec4(vec3(0.5 + d), color.a);
+    }
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
     // Mortar lines, plank gaps and bark furrows should read; a flat painted

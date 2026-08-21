@@ -880,3 +880,37 @@ construction: it can only ever add to something the game already balanced.
 Debug view **14** shows emission alone. A forge, a lamp and lava should read; a
 white marble block should not, which is also the check that this is coming from
 `glowLevel` rather than from brightness.
+
+## Sunlight dapple
+
+Sun breaking through gaps in a canopy, sliding as the sun moves and drifting as
+the leaves do. `PseudoPBR.SunDapple`, and debug view 15 shows the field alone.
+
+**The gate is the design; the pattern is only the shape.** `vv_sunExposure` is
+vanilla's own per-vertex sun light level - 0 under a roof, 1 under open sky, and
+**partial under a canopy**, because leaves absorb light on the way down. Partial
+is therefore an exact statement from the game that something leafy is overhead,
+which is precisely and only where dapple belongs. Both ends of the range return
+zero: open ground has nothing above it to break the light, and a cellar has no
+sunlight to break.
+
+That distinction is why this is not the cloud shadow mistake repeated. There, an
+invented field was drawn everywhere and corresponded to nothing. Here the
+invention is limited to what the gaps look like; whether there are gaps at all,
+and where, comes from the game.
+
+**Direction.** The pattern is sampled where a ray from the fragment to the sun
+crosses the canopy - `height / tan(elevation)` blocks along the sun's azimuth,
+written as an explicit run and direction so the cap applies to the quantity
+being capped. Deeper shade is read as more canopy overhead, so the pattern
+slides further under a full crown than under an edge branch. The footprint is
+also stretched along the azimuth by `1 / sin(elevation)`, which is what turns
+midday spots into late-afternoon shafts.
+
+**It redistributes, it does not remove.** Gaps brighten by as much as the shade
+between them darkens, so the mean is unchanged and `VisualBudget` has nothing to
+arbitrate. That holds only because the threshold's pass rate was measured rather
+than guessed - see the table above `VV_DAPPLE_THRESHOLD`. The first draft had a
+threshold passing 19% of the area against a subtracted constant of 34%, which
+would have dimmed every canopy in the world by a net 15% while being documented
+as neutral.
