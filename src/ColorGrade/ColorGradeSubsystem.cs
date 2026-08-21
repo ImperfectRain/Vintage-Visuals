@@ -207,13 +207,23 @@ namespace VintageVisuals.ColorGrade
             }
             else
             {
-                EnvironmentState world = _mod.Environment == null
-                    ? EnvironmentState.Clear
-                    : _mod.Environment.Current;
+                // Captured once. The previous version null-checked the tracker
+                // for one line and then dereferenced it twice more, which is a
+                // crash the moment it is null - and it becomes null during
+                // Dispose, where the tracker is unregistered before the
+                // subsystems are. A frame landing between the two would have
+                // taken the client down on world exit.
+                EnvironmentTracker environment = _mod.Environment;
 
-                target = GradeStack.Evaluate(basis, world, adaptive,
-                                             _mod.Environment.Intent,
-                                             _mod.Environment.Grants);
+                if (environment == null)
+                {
+                    target = GradeStack.Evaluate(basis, EnvironmentState.Clear, adaptive);
+                }
+                else
+                {
+                    target = GradeStack.Evaluate(basis, environment.Current, adaptive,
+                                                 environment.Intent, environment.Grants);
+                }
             }
 
             if (_gradeSeeded)
