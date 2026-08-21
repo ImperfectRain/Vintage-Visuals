@@ -91,8 +91,9 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   Kept out of the YAML so the GLSL stays readable and diffable. `pbrcore.glsl`
   is the ONE evaluation of Cook-Torrance and is injected into all three shading
   programs (`chunkopaque`, `chunktopsoil`, `entityanimated`); a smoke check
-  asserts it is defined exactly once. Anything that shades a surface uses it
-  rather than copying it.
+  asserts it is defined exactly once. `scene.glsl` is the ONE description of
+  the conditions it runs in, injected at the same three anchors. Anything that
+  shades a surface uses both rather than copying either.
 - `assets/vintagevisuals/shaders/` — our own standalone shader programs.
 - `tools/pbrgen/` — offline PBR prototype (Python). Content-authoring aid, **not**
   runtime code; never reference it from the C# build. `src/PseudoPBR/` is a
@@ -161,6 +162,21 @@ as Vintage Story's renderer allows, *while preserving the game's art direction*.
   yields zero settings. Neither shows up in a build or a log.
   `tools/smoketest` now checks weights, codes, ranges, and that every setting
   has a `case` in `ConfigLibBridge` and vice versa.
+- **A new subsystem reads `SceneIntent`, it does not re-derive the world.**
+  `EnvironmentState` says what the world is; `SceneIntent` says what the scene
+  needs, in one bounded vocabulary. Two subsystems each deriving "wet" from the
+  facts is how they stop agreeing without anything saying so. The same rule
+  holds in GLSL: map into `scene.glsl`'s uniforms and lanes rather than
+  inventing a local meaning for wet, cold, enclosed, night or restrained.
+- **Anything that removes light, colour or contrast goes through
+  `VisualBudget`.** Three subsystems were washing out the same rainy afternoon
+  independently, each tuned alone and each reasonable alone. Arbitration runs
+  ONCE per tick in `EnvironmentTracker` — never per subsystem, because they tick
+  at different rates and whoever ran first would exhaust the budget. Use the
+  granted value, not the config value.
+- **Debug views are numbered per shader, in that shader's own terms.** One
+  global list stops making sense as soon as two subsystems want the same number,
+  and the crowding was already visible at 13.
 - **Config-scaled values must never enter `EnvironmentState`.** A strength
   slider states what the player wants; the state describes what the world is
   doing. Mixing them is how "off" stops meaning off. The product of the two

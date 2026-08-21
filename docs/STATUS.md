@@ -67,15 +67,16 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
 | `[ ]` | Emissive metadata (colour, strength, flicker, temperature) | — | prerequisite for §7 |
 | `[ ]` | Camera state (velocity, FOV, underwater depth) as shared state | — | needed by motion effects and underwater |
-| `[ ]` | **Scene intent channels** between state and subsystems | — | named 0..1 vocabulary (wetness, cold, heat, haze, readability...) so ten subsystems share one reading. See [INSPIRATION.md](INSPIRATION.md) §1 |
-| `[ ]` | **Per-contribution caps and contribution records** | — | `GradeStack` clamps only the final result, so a saturated grade cannot say which of nine influences did it. §2 |
-| `[ ]` | **Stack budgets** so one idea cannot apply twice | — | *a real defect today*: in rain, grading, overcast and fog all press the same direction with no budget. §3 |
-| `[ ]` | **Gameplay readability constraint** | — | effects must yield to playability: caves navigable, rain fog not hiding a drifter, storms not also doing something clever. §4 |
-| `[ ]` | Shared scene vocabulary snippet (the `pbrcore.glsl` idea for semantics) | — | §5 |
-| `[ ]` | Receiver masks (may this pixel receive this effect) | — | needed before water and emissive. §6 |
-| `[ ]` | Effect authorities and dampening | — | ColorGrade contrast, crevice occlusion, rain fog and overcast all own contrast today with no arbitration. Also covers other shader mods. §6 |
-| `[ ]` | Per-shader debug enums instead of one global 0..13 list | — | §7 |
-| `[ ]` | Reference-image style matching ("make it look like this") | — | §9 |
+| `[x]` | **Scene intent channels** between state and subsystems | L2 | named 0..1 vocabulary (wetness, cold, heat, haze, readability...) so ten subsystems share one reading. See [INSPIRATION.md](INSPIRATION.md) §1 |
+| `[x]` | **Per-contribution caps and contribution records** | L2 | `GradeStack` clamps only the final result, so a saturated grade cannot say which of nine influences did it. §2 |
+| `[x]` | **Stack budgets** so one idea cannot apply twice | L2 | *a real defect today*: in rain, grading, overcast and fog all press the same direction with no budget. §3 |
+| `[x]` | **Gameplay readability constraint** | L2 | effects must yield to playability: caves navigable, rain fog not hiding a drifter, storms not also doing something clever. §4 |
+| `[x]` | Shared scene vocabulary snippet (`scene.glsl`) | L2 | §5 |
+| `[ ]` | Receiver masks (may this pixel receive this effect) | — | **deliberately not built.** Nothing would consume it until reflections or emissive land, and a contract with no consumer gets designed for the wrong shape. §6 |
+| `[x]` | Effect authorities and dampening | L2 | ColorGrade contrast, crevice occlusion, rain fog and overcast all own contrast today with no arbitration. Also covers other shader mods. §6 |
+| `[x]` | Per-shader debug enums | L2 | §7 |
+| `[~]` | Style targets (None/Filmic/Muted/Vivid/Cold/Warm) | L2 | the reachable half of §9. Image-derived styles still open: decoding needs SkiaSharp, and without a framebuffer readback to compare against, aiming at a measured target is open loop |
+| `[ ]` | Detected-versus-effective state with suppression | — | **deliberately not built.** There is no override layer for it to protect. §8 |
 
 ## 3. Colour management
 

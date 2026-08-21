@@ -41,6 +41,18 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>0 clear sky, 1 sun fully diffused by cloud.</summary>
         public readonly float Overcast;
 
+        /// <summary>0 open sky, 1 fully boxed in.</summary>
+        public readonly float Enclosure;
+
+        /// <summary>0 lit by sky, 1 lit by fire.</summary>
+        public readonly float ArtificialLight;
+
+        /// <summary>How much the mod should hold back. See IntentChannel.Restraint.</summary>
+        public readonly float Restraint;
+
+        /// <summary>How much this scene needs help being legible.</summary>
+        public readonly float Readability;
+
         /// <summary>
         /// Camera world position. The chunk shaders only have camera-relative
         /// coordinates, and a ripple field built on those swims across the
@@ -49,8 +61,14 @@ namespace VintageVisuals.PseudoPBR
         public readonly Vec3f Origin;
 
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
-                           float rippleTime, float overcast, Vec3f origin)
+                           float rippleTime, float overcast, Vec3f origin,
+                           float enclosure = 0f, float artificialLight = 0f,
+                           float restraint = 0f, float readability = 0f)
         {
+            Enclosure = enclosure;
+            ArtificialLight = artificialLight;
+            Restraint = restraint;
+            Readability = readability;
             RippleTime = rippleTime;
             DayLight = dayLight;
             Wetness = wetness;

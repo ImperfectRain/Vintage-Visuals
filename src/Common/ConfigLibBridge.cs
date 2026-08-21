@@ -177,6 +177,9 @@ namespace VintageVisuals.Common
                 case "pbr_entityspecular":
                     pbr.EntitySpecular = tree.GetFloat("value", pbr.EntitySpecular);
                     break;
+                case "pbr_entitydebug":
+                    pbr.EntityDebugView = tree.GetFloat("value", pbr.EntityDebugView);
+                    break;
                 case "pbr_debugview":
                     pbr.DebugView = tree.GetFloat("value", pbr.DebugView);
                     break;
@@ -212,6 +215,9 @@ namespace VintageVisuals.Common
                     break;
                 case "grade_adaptive":
                     adaptiveGrade.Enabled = tree.GetBool("value", adaptiveGrade.Enabled);
+                    break;
+                case "grade_stylestrength":
+                    adaptiveGrade.StyleStrength = tree.GetFloat("value", adaptiveGrade.StyleStrength);
                     break;
                 case "grade_timeofday":
                     adaptiveGrade.TimeOfDayStrength = tree.GetFloat("value", adaptiveGrade.TimeOfDayStrength);

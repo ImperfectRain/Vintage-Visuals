@@ -177,7 +177,10 @@ namespace VintageVisuals.Weather
                 // thickens while it is raining, not while the ground is still
                 // drying an hour later.
                 program.Uniform(RainUniform, enabled ? _weather.Rain : 0f);
-                program.Uniform(FogStrengthUniform, config.FogStrength);
+                // Scaled by what arbitration allowed, not by the config value.
+                // Three subsystems used to wash out the same rainy afternoon
+                // independently; now they share one allowance.
+                program.Uniform(FogStrengthUniform, config.FogStrength * _weather.Grants.RainFog);
                 program.Uniform(FogTintUniform, config.FogTint);
             }
 
@@ -189,7 +192,9 @@ namespace VintageVisuals.Weather
                 // Folding it into the strength keeps that as one uniform whose
                 // zero already means "vanilla", instead of a second one that
                 // has to be uploaded for the first to behave.
-                float strength = enabled ? config.CloudShadowStrength * DayLight() : 0f;
+                float strength = enabled
+                    ? config.CloudShadowStrength * DayLight() * _weather.Grants.CloudShadow
+                    : 0f;
 
                 program.Uniform(CloudShadowUniform, strength);
                 program.Uniform(CloudCoverUniform, _weather.CloudCover);

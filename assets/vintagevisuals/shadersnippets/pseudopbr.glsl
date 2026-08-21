@@ -52,21 +52,21 @@ uniform float vv_pbrDebugView;
 // not, and this snippet is injected into both - depending on a uniform that
 // exists in one shader and not the other would make the shared code compile in
 // one place and fail in the other. Ours exists wherever we put it.
-uniform float vv_pbrDayLight;
 
 // Look controls. Each is a uniform rather than a rebuild because the whole
 // point is that taste is argued with at runtime, not compiled in.
 uniform float vv_pbrRoughnessBias;   // matte <-> gloss, applied to every material
+// Daylight, wetness and overcast are NOT declared here. They describe the
+// scene rather than this effect, so they live in scene.glsl with one meaning
+// shared by every program - see the rule at the top of that file.
 // The rest of the look controls are declared in pbrcore.glsl, which this file
 // is injected below: they belong to the lobe rather than to the atlas.
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
 uniform float vv_pbrFoliage;         // light passing through leaves, 0 is vanilla
 uniform float vv_pbrCavity;          // small-scale occlusion from the material normal, 0 is vanilla
-uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
-uniform float vv_weatherOvercast;    // 0 clear sky, 1 sun fully diffused by cloud
 
 // Camera world position, WRAPPED to VV_ORIGIN_PERIOD on the CPU, so the ripple
 // field stays nailed to the ground rather than swimming with the player.
@@ -218,7 +218,7 @@ const float VV_WET_DARKEN = 0.72;
 // cannot see, which is what sun exposure measures.
 float vvWetness(vec3 faceNormal)
 {
-    if (vv_weatherWetness < 0.001) return 0.0;
+    if (vv_sceneWetness < 0.001) return 0.0;
 
     float facing = clamp(faceNormal.y * 0.5 + 0.5, 0.0, 1.0);
 
@@ -233,7 +233,7 @@ float vvWetness(vec3 faceNormal)
     float exposure = smoothstep(vv_weatherRainCover - 0.12, vv_weatherRainCover + 0.06,
                                 clamp(vv_sunExposure, 0.0, 1.0));
 
-    return clamp(vv_weatherWetness * facing * facing * exposure, 0.0, 1.0);
+    return clamp(vv_sceneWetness * facing * facing * exposure, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -468,7 +468,7 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
          * vvTranslucency(n, l, v)
          * vv_pbrFoliage
          * clamp(shadowBrightness, 0.0, 1.0)
-         * clamp(vv_pbrDayLight, 0.0, 1.0);
+         * clamp(vv_sceneDayLight, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -589,12 +589,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // So the direct lobe loses most of its strength and the sky term gains -
     // that redistribution is what an overcast day looks like, and modelling it
     // as "everything gets darker" is the usual way of getting it wrong.
-    float overcast = clamp(vv_weatherOvercast, 0.0, 1.0);
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
 
     // Everything that should suppress a highlight: shadow, night, fog, water,
     // cloud.
     float visibility = clamp(shadowBrightness, 0.0, 1.0)
-                     * clamp(vv_pbrDayLight, 0.0, 1.0)
+                     * clamp(vv_sceneDayLight, 0.0, 1.0)
                      * clamp(1.0 - fog - murkiness, 0.0, 1.0)
                      * vvDetailFade(cameraRelativePos)
                      * mix(1.0, VV_OVERCAST_DIRECT, overcast);
@@ -620,7 +620,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // either reaches it or does not, and the normal already decides which.
     // Multiplying the highlight by cavity as well is the usual mistake and
     // leaves polished stone looking dusty.
-    float cavity = vvCavity(materialUv, vvDetailFade(cameraRelativePos));
+    // Dampened where the scene is already hard to read. Crevice occlusion
+    // removes light, and a cave at night is exactly where a player can least
+    // afford more of that - the CPU arbitration cannot see this one because its
+    // cost is only knowable per fragment.
+    float cavity = mix(1.0, vvCavity(materialUv, vvDetailFade(cameraRelativePos)),
+                       vvSceneVisibilityDampen());
     result *= cavity;
 
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
@@ -634,7 +639,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
             * cavity;
 
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
-            * clamp(vv_pbrDayLight, 0.0, 1.0)
+            * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * vv_pbrSpecularStrength
             * mix(1.0, VV_OVERCAST_AMBIENT, overcast)
@@ -650,6 +655,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 }
 
 // Replaces the output with one layer of the material system.
+//
+// NUMBERED IN THIS FILE'S OWN TERMS, not in a list shared across the mod. The
+// numbers here mean material-system layers and nothing else; the entity path
+// and any future water or atmosphere pass number their own views from 1 in
+// their own terms. One global list stops making sense the moment two
+// subsystems both want view 3, and the crowding was already visible at 13.
 //
 // This exists because the material system is four derived quantities stacked on
 // top of each other, and when the composite looks wrong there is otherwise no

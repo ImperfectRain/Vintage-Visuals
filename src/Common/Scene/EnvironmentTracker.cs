@@ -131,6 +131,28 @@ namespace VintageVisuals.Common.Scene
         /// </summary>
         public float DryingSeconds { get; set; } = 60f;
 
+        /// <summary>
+        /// What each subsystem wants this tick, pushed in from config before
+        /// arbitration runs. Config-scaled values, so they stay out of
+        /// EnvironmentState by the same rule everything else does.
+        /// </summary>
+        public SceneDemand Demand { get; set; } = new SceneDemand(0f, 0f, 0f);
+
+        /// <summary>What the scene needs, rebuilt every tick from the state above.</summary>
+        public SceneIntent Intent { get; private set; } = new SceneIntent();
+
+        /// <summary>
+        /// What each subsystem is allowed to take, after arbitration.
+        ///
+        /// Read this rather than the config value: the whole point is that three
+        /// subsystems all removing light on the same rainy afternoon get shares
+        /// of one allowance rather than a free hand each.
+        /// </summary>
+        public SceneGrants Grants { get; private set; } = SceneGrants.Full;
+
+        /// <summary>The claim record behind Grants, for the log and for reports.</summary>
+        public VisualBudget Budget { get; private set; }
+
         public double RenderOrder { get { return BeforeEverything; } }
 
         public int RenderRange { get { return 0; } }
@@ -181,13 +203,47 @@ namespace VintageVisuals.Common.Scene
             _snow.Step(snowTarget, deltaSeconds, WetnessTracker.WettingSeconds);
             _wetness.Step(wetTarget, deltaSeconds, DryingSeconds);
 
-            Current = new EnvironmentState(
+            EnvironmentState next = new EnvironmentState(
                 _dayLight, _moonLight, _cloudCover,
                 _wind, _windSpeed,
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
                 _camera);
+
+            Current = next;
+
+            // Intent and arbitration run here, once, at one cadence. Letting
+            // each subsystem claim from its own renderer looks tidier and does
+            // not work - they tick at different rates and stages, so whoever ran
+            // first would exhaust the budget and the rest would collapse to
+            // nothing on most frames.
+            Intent = SceneIntentBuilder.Build(next);
+
+            Grants = SceneArbiter.Arbitrate(Intent, next, Demand, out VisualBudget budget);
+            Budget = budget;
+
+            ReportArbitration();
+        }
+
+        private string _reportedIntent;
+
+        /// <summary>
+        /// Says what the scene asked for and what it was allowed, when that
+        /// meaningfully changes.
+        ///
+        /// Cheap insurance against the failure this whole layer exists to stop:
+        /// three subsystems quietly agreeing to remove all the colour from a
+        /// rainy afternoon, each of them individually reasonable, with nothing
+        /// anywhere saying so.
+        /// </summary>
+        private void ReportArbitration()
+        {
+            string summary = Intent.Describe();
+            if (summary == _reportedIntent) return;
+
+            _reportedIntent = summary;
+            _logger.Debug("[VintageVisuals] scene: " + summary + " | " + Budget.Describe());
         }
 
         private void SampleClimate()

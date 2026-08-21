@@ -169,6 +169,9 @@ void main(void) {
         Console.WriteLine("Material atlas: packing, assembly, cache");
         MaterialAtlasChecks.Run(Check);
 
+        Console.WriteLine("Scene intent, budget and arbitration");
+        SceneIntentChecks.Run(Check);
+
         Console.WriteLine("Adaptive grading responds to the world");
         GradeStackChecks.Repo = Repo;
         GradeStackChecks.Run(Check);

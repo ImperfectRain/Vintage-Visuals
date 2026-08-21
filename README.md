@@ -65,6 +65,8 @@ value.
 | `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
 | `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
 | `AdaptiveGrade.Enabled` | bool | `true` | Let the world grade itself |
+| `AdaptiveGrade.Style` | name | `None` | A look the whole stack leans toward: Filmic, Muted, Vivid, Cold, Warm |
+| `AdaptiveGrade.StyleStrength` | 0.0 – 1.0 | `0.6` | How far toward that style to lean |
 | `AdaptiveGrade.TimeOfDayStrength` | 0.0 – 2.0 | `1.0` | Golden hour, and the blue drain of night |
 | `AdaptiveGrade.WeatherStrength` | 0.0 – 2.0 | `1.0` | Rain and cloud draining colour and contrast |
 | `AdaptiveGrade.BiomeStrength` | 0.0 – 2.0 | `0.7` | Heat, cold, aridity and lushness |

@@ -157,12 +157,17 @@ namespace VintageVisuals.PseudoPBR
             if (_mod.Environment == null) return SceneInputs.None;
 
             EnvironmentState world = _mod.Environment.Current;
+            SceneIntent intent = _mod.Environment.Intent;
             WeatherConfig weather = _mod.ConfigManager.Config.Weather;
 
             if (!weather.Enabled)
             {
                 return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f, 0f,
-                                       world.CameraPosition);
+                                       world.CameraPosition,
+                                       intent[IntentChannel.Enclosure],
+                                       intent[IntentChannel.ArtificialLight],
+                                       intent[IntentChannel.Restraint],
+                                       intent[IntentChannel.Readability]);
             }
 
             return new SceneInputs(
@@ -176,8 +181,15 @@ namespace VintageVisuals.PseudoPBR
                 world.Rain * weather.RippleStrength,
                 _mod.Environment.RippleClock,
 
-                world.CloudCover * weather.OvercastStrength,
-                world.CameraPosition);
+                // Arbitrated: the overcast term is a SECONDARY claim on scene
+                // light, and it was removing light on the same overcast day the
+                // cloud shadows and the grade were.
+                world.CloudCover * weather.OvercastStrength * _mod.Environment.Grants.Overcast,
+                world.CameraPosition,
+                intent[IntentChannel.Enclosure],
+                intent[IntentChannel.ArtificialLight],
+                intent[IntentChannel.Restraint],
+                intent[IntentChannel.Readability]);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

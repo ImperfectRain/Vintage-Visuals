@@ -26,10 +26,10 @@
 uniform float vv_pbrEntity;          // master, 0 is vanilla
 uniform float vv_pbrEntityRoughness; // how matte a creature reads
 uniform float vv_pbrEntitySpecular;  // how much of the lobe reaches the image
-uniform float vv_pbrDayLight;
-uniform float vv_weatherOvercast;
-uniform float vv_weatherWetness;     // 0 dry, 1 as wet as rain makes it
 uniform float vv_pbrRoughnessBias;   // the same global matte <-> gloss slider terrain uses
+// Daylight, wetness and overcast come from scene.glsl, shared with the terrain
+// programs so a creature and the ground it stands on cannot disagree about the
+// weather.
 
 // No sky-exposure test, unlike terrain.
 //
@@ -52,6 +52,7 @@ const float VV_ENTITY_F0 = 0.04;
 const float VV_ENTITY_WET_ROUGHNESS = 0.35;
 const float VV_ENTITY_WET_DARKEN = 0.80;
 
+
 // Applied to the colour vanilla has already lit, exactly as on terrain: this
 // adds a specular lobe and the energy that lobe takes back out of the diffuse,
 // and leaves vanilla's diffuse - which the whole game is balanced around - to
@@ -61,7 +62,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
 {
     if (vv_pbrEntity < 0.5 || vv_pbrEntitySpecular < 0.001) return litColor;
 
-    float wetness = clamp(vv_weatherWetness, 0.0, 1.0);
+    float wetness = clamp(vv_sceneWetness, 0.0, 1.0);
 
     float roughness = clamp(mix(vv_pbrEntityRoughness, VV_ENTITY_WET_ROUGHNESS, wetness)
                             + vv_pbrRoughnessBias, 0.04, 1.0);
@@ -90,10 +91,10 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
 
     vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
 
-    float overcast = clamp(vv_weatherOvercast, 0.0, 1.0);
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
 
     float visibility = clamp(shadowBrightness, 0.0, 1.0)
-                     * clamp(vv_pbrDayLight, 0.0, 1.0)
+                     * clamp(vv_sceneDayLight, 0.0, 1.0)
                      * clamp(1.0 - fog, 0.0, 1.0)
                      * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 
@@ -118,7 +119,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
     // what the sun does not, and killing it in shadow is what makes a creature
     // in a doorway look like a cutout.
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
-            * clamp(vv_pbrDayLight, 0.0, 1.0)
+            * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog, 0.0, 1.0)
             * vv_pbrEntitySpecular
             * mix(1.0, VV_OVERCAST_AMBIENT, overcast);
@@ -126,6 +127,41 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
     return vec4(result, litColor.a);
 }
 
+uniform float vv_pbrEntityDebug;     // 0 normal, 1 lobe only, 2 wetness, 3 scene restraint
+
+// Debug views for the entity path, numbered from 1 in ITS OWN terms.
+//
+// Deliberately not sharing the material system's list. Those numbers mean
+// material layers - normal map, roughness, relief - and an entity has none of
+// them; a shared list would have to skip most of itself to stay meaningful, and
+// two subsystems would eventually both want the same number.
+vec4 vvEntityDebugView(vec4 color, vec3 faceNormal, vec3 cameraRelativePos,
+                       float shadowBrightness, vec3 environment, vec3 blockLightColor)
+{
+    int mode = int(vv_pbrEntityDebug + 0.5);
+    if (mode <= 0) return color;
+
+    // 1: the specular lobe alone, on black. A creature should catch a highlight
+    // that moves with the sun; a flat result means the lobe is not running.
+    if (mode == 1)
+    {
+        vec4 lobe = vvApplyEntityPbr(vec4(0.0, 0.0, 0.0, color.a), vec3(1.0), faceNormal,
+                                     cameraRelativePos, shadowBrightness, 0.0,
+                                     environment, blockLightColor);
+        return vec4(lobe.rgb, color.a);
+    }
+
+    // 2: how wet this creature is. White in a downpour, black indoors - except
+    // that entities have no sky-exposure test, so indoors is only darker rather
+    // than black. That is the known compromise, made visible.
+    if (mode == 2) return vec4(vec3(clamp(vv_sceneWetness, 0.0, 1.0)), color.a);
+
+    // 3: how much the scene is holding the mod back. Bright underground and at
+    // night, black in open daylight.
+    if (mode == 3) return vec4(vec3(clamp(vv_sceneRestraint, 0.0, 1.0)), color.a);
+
+    return color;
+}
 // The anchor line, pasted back. Replacement content is literal, never a regex
 // template, so dropping this would delete the function every fog path calls.
 vec4 applyFogAndShadow(vec4 rgbaPixel, float fogWeight) {

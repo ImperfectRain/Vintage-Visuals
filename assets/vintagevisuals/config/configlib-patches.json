@@ -408,6 +408,18 @@
           "step": 10.0
         }
       },
+      "grade_stylestrength": {
+        "ingui": "Style strength",
+        "comment": "How far toward the chosen style to lean. The style is one more capped contributor on top of the world, not a preset that replaces your settings. Set Style in the config file: None, Filmic, Muted, Vivid, Cold or Warm.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 38,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
       "grade_timeofday": {
         "ingui": "Adaptive: time of day",
         "comment": "Golden hour warmth near sunrise and sunset, and the desaturated blue shift of night vision.",
@@ -538,6 +550,18 @@
           "min": 0.0,
           "max": 2.0,
           "step": 0.05
+        }
+      },
+      "pbr_entitydebug": {
+        "ingui": "Debug: creature layers",
+        "comment": "Numbered in the entity path's own terms, not the material system's: 0 off, 1 the specular lobe alone, 2 wetness, 3 how much the scene is holding the mod back.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 56,
+        "range": {
+          "min": 0.0,
+          "max": 3.0,
+          "step": 1.0
         }
       },
       "pbr_debugview": {

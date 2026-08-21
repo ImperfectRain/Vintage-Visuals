@@ -115,7 +115,22 @@ namespace VintageVisuals.ColorGrade
         /// <param name="basis">The player's own settings, untouched by anything here.</param>
         public static GradeSample Evaluate(GradeSample basis, EnvironmentState world, AdaptiveGradeConfig weights)
         {
-            if (weights == null || !weights.Enabled) return basis;
+            return Evaluate(basis, world, weights, SceneIntentBuilder.Build(world), null);
+        }
+
+        /// <summary>
+        /// Evaluates the stack against a budget the rest of the mod shares.
+        ///
+        /// The budget is what stops grading, the overcast term and rain fog all
+        /// removing colour from the same rainy afternoon. Passing null keeps the
+        /// old unbudgeted behaviour, which is what the tests that check the
+        /// influences in isolation want.
+        /// </summary>
+        public static GradeSample Evaluate(GradeSample basis, EnvironmentState world,
+                                           AdaptiveGradeConfig weights, SceneIntent intent,
+                                           SceneGrants? grants)
+        {
+            if (weights == null || !weights.Enabled) return ApplyStyle(basis, weights);
 
             var stack = new Accumulator(basis);
 
@@ -201,7 +216,42 @@ namespace VintageVisuals.ColorGrade
             stack.Add(Math.Max(-humidity, 0f) * biome,
                       1.00f, 0.00f, -0.10f, +0.06f, 1.02f, 1.00f, 0.97f);
 
-            return stack.Resolve();
+            GradeSample result = stack.Resolve(basis, grants);
+
+            return ApplyStyle(result, weights);
+        }
+
+        /// <summary>
+        /// Leans the finished grade toward the chosen style.
+        ///
+        /// After the world, not before it, and on purpose. A style is a
+        /// preference about the image; the influences above are facts about the
+        /// scene. Applying the style first would let a rainy afternoon partly
+        /// undo the look the player asked for, which is the wrong way round -
+        /// the weather should read THROUGH the style rather than fight it.
+        ///
+        /// Applied even when adaptive grading is switched off, because the style
+        /// is not part of the adaptive stack: a player who wants a muted look
+        /// and no weather response is asking for something coherent.
+        /// </summary>
+        private static GradeSample ApplyStyle(GradeSample grade, AdaptiveGradeConfig weights)
+        {
+            if (weights == null) return grade;
+
+            StyleKind kind = StyleOffsets.Parse(weights.Style);
+            if (kind == StyleKind.None) return grade;
+
+            float strength = Clamp(weights.StyleStrength, 0f, 1f);
+            if (strength <= 0.001f) return grade;
+
+            StyleOffsets style = StyleOffsets.For(kind);
+
+            return new GradeSample(
+                Clamp(grade.Exposure * (1f + strength * (style.Exposure - 1f)), 0.1f, 4.0f),
+                Clamp(grade.Contrast + style.Contrast * strength, 0.0f, 2.0f),
+                Clamp(grade.Saturation + style.Saturation * strength, 0.0f, 2.0f),
+                Clamp(grade.Temperature + style.Temperature * strength, -1.0f, 1.0f),
+                grade.TintR, grade.TintG, grade.TintB);
         }
 
         /// <summary>
@@ -292,8 +342,25 @@ namespace VintageVisuals.ColorGrade
             /// influences agreeing would drive saturation negative, which
             /// inverts every colour on screen.
             /// </summary>
-            public GradeSample Resolve()
+            public GradeSample Resolve(GradeSample basis, SceneGrants? grants)
             {
+                if (grants.HasValue)
+                {
+                    SceneGrants g = grants.Value;
+
+                    // Only REMOVAL is scaled back. Adding colour or contrast
+                    // cannot make a scene unreadable, and two subsystems both
+                    // adding is not the failure this exists to prevent.
+                    _saturation = basis.Saturation
+                                - Math.Max(0f, basis.Saturation - _saturation) * g.GradeSaturation;
+
+                    _contrast = basis.Contrast
+                              - Math.Max(0f, basis.Contrast - _contrast) * g.GradeContrast;
+
+                    float dimming = Math.Max(0f, 1f - _exposure / Math.Max(1e-4f, basis.Exposure));
+                    _exposure = basis.Exposure * (1f - dimming * g.GradeLight);
+                }
+
                 return new GradeSample(
                     Clamp(_exposure, 0.1f, 4.0f),
                     Clamp(_contrast, 0.0f, 2.0f),

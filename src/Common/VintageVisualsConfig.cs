@@ -68,6 +68,22 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool Enabled { get; set; } = true;
 
+        /// <summary>
+        /// A named look the whole stack leans toward: None, Filmic, Muted,
+        /// Vivid, Cold or Warm.
+        ///
+        /// Applied AFTER the world, not before, so weather and biome read
+        /// through the style rather than fighting it. It is one more capped
+        /// contributor rather than a preset that replaces the player's
+        /// settings - a style with the force of a preset would flatten every
+        /// weather response underneath it, which is the failure mode of most
+        /// shader packs and the thing this project's stated goal rules out.
+        /// </summary>
+        public string Style { get; set; } = "None";
+
+        /// <summary>How far toward the style to lean. 0 is off.</summary>
+        public float StyleStrength { get; set; } = 0.6f;
+
         /// <summary>Golden hour and the Purkinje shift at night.</summary>
         public float TimeOfDayStrength { get; set; } = 1.0f;
 
@@ -112,6 +128,8 @@ namespace VintageVisuals.Common
                 "AdaptiveGrade.DepthStrength", corrections);
             UnderwaterStrength = ColorGradeConfig.Clamp(UnderwaterStrength, 0.0f, 2.0f,
                 "AdaptiveGrade.UnderwaterStrength", corrections);
+            StyleStrength = ColorGradeConfig.Clamp(StyleStrength, 0.0f, 1.0f,
+                "AdaptiveGrade.StyleStrength", corrections);
             ResponseSeconds = ColorGradeConfig.Clamp(ResponseSeconds, 0.1f, 30.0f,
                 "AdaptiveGrade.ResponseSeconds", corrections);
         }
@@ -339,6 +357,15 @@ namespace VintageVisuals.Common
         public float EntitySpecular { get; set; } = 0.8f;
 
         /// <summary>
+        /// Entity debug views, numbered in the entity path's own terms:
+        /// 0 off, 1 the specular lobe alone, 2 wetness, 3 scene restraint.
+        ///
+        /// A separate list from the material debug views on purpose. Those
+        /// numbers mean material layers and an entity has none of them.
+        /// </summary>
+        public float EntityDebugView { get; set; } = 0f;
+
+        /// <summary>
         /// Global multiplier on the surface relief, on top of the per-material
         /// strength already baked into the atlas.
         ///
@@ -517,6 +544,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.EntityRoughness", corrections);
             EntitySpecular = ColorGradeConfig.Clamp(EntitySpecular, 0.0f, 2.0f,
                 "PseudoPBR.EntitySpecular", corrections);
+            EntityDebugView = ColorGradeConfig.Clamp(EntityDebugView, 0.0f, 3.0f,
+                "PseudoPBR.EntityDebugView", corrections);
             DetailDistance = ColorGradeConfig.Clamp(DetailDistance, 4.0f, 192.0f,
                 "PseudoPBR.DetailDistance", corrections);
             BlockLightSpecular = ColorGradeConfig.Clamp(BlockLightSpecular, 0.0f, 2.0f,

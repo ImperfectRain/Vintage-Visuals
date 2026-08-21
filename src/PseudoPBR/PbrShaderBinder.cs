@@ -36,7 +36,7 @@ namespace VintageVisuals.PseudoPBR
         public const string NormalStrengthUniform = "vv_pbrNormalStrength";
         public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
         public const string DebugViewUniform = "vv_pbrDebugView";
-        public const string DayLightUniform = "vv_pbrDayLight";
+        public const string DayLightUniform = "vv_sceneDayLight";
         public const string RoughnessBiasUniform = "vv_pbrRoughnessBias";
         public const string MetalResponseUniform = "vv_pbrMetalResponse";
         public const string AmbientUniform = "vv_pbrAmbient";
@@ -44,11 +44,11 @@ namespace VintageVisuals.PseudoPBR
         public const string DetailDistanceUniform = "vv_pbrDetailDistance";
         public const string BlockLightUniform = "vv_pbrBlockLight";
         public const string BlockLightDirUniform = "vv_pbrBlockLightDir";
-        public const string WetnessUniform = "vv_weatherWetness";
+        public const string WetnessUniform = "vv_sceneWetness";
         public const string RainCoverUniform = "vv_weatherRainCover";
         public const string RipplesUniform = "vv_weatherRipples";
         public const string RippleTimeUniform = "vv_weatherRippleTime";
-        public const string OvercastUniform = "vv_weatherOvercast";
+        public const string OvercastUniform = "vv_sceneOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
         public const string FoliageUniform = "vv_pbrFoliage";
         public const string CavityUniform = "vv_pbrCavity";
@@ -59,6 +59,15 @@ namespace VintageVisuals.PseudoPBR
         public const string EntityEnabledUniform = "vv_pbrEntity";
         public const string EntityRoughnessUniform = "vv_pbrEntityRoughness";
         public const string EntitySpecularUniform = "vv_pbrEntitySpecular";
+        public const string EntityDebugUniform = "vv_pbrEntityDebug";
+
+        // The shared scene vocabulary. Same names in every shaded program, so a
+        // creature and the ground it stands on cannot disagree about the
+        // weather - see assets/.../shadersnippets/scene.glsl.
+        public const string EnclosureUniform = "vv_sceneEnclosure";
+        public const string ArtificialLightUniform = "vv_sceneArtificialLight";
+        public const string RestraintUniform = "vv_sceneRestraint";
+        public const string ReadabilityUniform = "vv_sceneReadability";
 
         /// <summary>
         /// Every vanilla program this subsystem patches. Grass and soil tops go
@@ -300,9 +309,26 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(RippleTimeUniform, _weather.RippleTime);
             program.Uniform(OvercastUniform, _weather.Overcast);
             program.Uniform(OriginUniform, _weather.Origin);
+            UploadScene(program);
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// Pushes the shared scene vocabulary.
+        ///
+        /// The same five values into every shaded program, from one place, so
+        /// there is no way for two of them to be told different things.
+        /// </summary>
+        private void UploadScene(IShaderProgram program)
+        {
+            if (!program.HasUniform(RestraintUniform)) return;
+
+            program.Uniform(EnclosureUniform, _weather.Enclosure);
+            program.Uniform(ArtificialLightUniform, _weather.ArtificialLight);
+            program.Uniform(RestraintUniform, _weather.Restraint);
+            program.Uniform(ReadabilityUniform, _weather.Readability);
         }
 
         /// <summary>
@@ -325,6 +351,7 @@ namespace VintageVisuals.PseudoPBR
                 program.Uniform(EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
                 program.Uniform(EntityRoughnessUniform, _look.EntityRoughness);
                 program.Uniform(EntitySpecularUniform, _look.EntitySpecular);
+                program.Uniform(EntityDebugUniform, _look.EntityDebugView);
                 program.Uniform(RoughnessBiasUniform, _look.RoughnessBias);
                 program.Uniform(MetalResponseUniform, _look.MetalResponse);
                 program.Uniform(AmbientUniform, _look.AmbientSpecular);
@@ -334,6 +361,7 @@ namespace VintageVisuals.PseudoPBR
                 program.Uniform(DayLightUniform, _weather.DayLight);
                 program.Uniform(WetnessUniform, _weather.Wetness);
                 program.Uniform(OvercastUniform, _weather.Overcast);
+                UploadScene(program);
 
                 program.Stop();
 

@@ -95,11 +95,76 @@ slider states what the player wants, not what the world is doing, and mixing the
 two is how "off" stops meaning off. Those live in per-subsystem input structs -
 `SceneInputs` is the pattern.
 
+### The intent layer, and why nothing bypasses it
+
+`EnvironmentState` says what the world **is**. `SceneIntent` says what the scene
+**needs**, in a bounded 0..1 vocabulary every subsystem shares: `Wetness`,
+`Cold`, `Heat`, `Gloom`, `Atmosphere`, `Night`, `Enclosure`, `ArtificialLight`,
+`Readability`, `Restraint`.
+
+The layer exists because the alternative had already started. Five subsystems
+each re-derived their own reading of the same facts, and at ten they would have
+drifted: two would decide "wet" meant different things and nothing would say so.
+
+Three rules hold it together.
+
+**Every push is recorded.** An `IntentContribution` carries its source, amount,
+reason, and whether a cap trimmed it. When a scene comes out wrong the only
+question worth asking is which influence did it, and a bare float cannot answer
+- the same blindness that made the cloud shadows take three rounds.
+
+**Indirect pushes are capped; direct restatements are not.** Rain pushing
+`Wetness` *is* that channel restated. Rain also thickening the air is a side
+effect, and without a bound one badly tuned side effect owns a channel outright
+while every other input becomes decoration.
+
+**`Restraint` outranks the rest.** It rises where the scene is already hard to
+read - deep underground, at night, in a storm - and scales down everything that
+removes light, colour or contrast. A visual overhaul that makes a cave
+unnavigable has not improved the game, and it is an easy mistake to make: every
+effect here was tuned in daylight on the surface.
+
+### Arbitration: one allowance, several claimants
+
+`VisualBudget` fixes a defect rather than adding a feature. In heavy rain this
+mod was removing colour and light three times over - colour grading, the
+overcast term, and rain fog - each tuned alone, each reasonable alone, with
+nothing between them.
+
+Each visual role (`SceneLight`, `Saturation`, `Contrast`, `Haze`) has a total
+allowance and an **owner**. The owner gets what it asks for; everyone else is
+**dampened rather than refused**, because a secondary that goes to zero is a
+feature that silently stops working and nobody finds out why. Claims are
+recorded like intent contributions.
+
+Arbitration runs **once per tick in `EnvironmentTracker`**, not in each
+subsystem. That is not tidiness: the subsystems tick at different rates and
+stages, so a budget rebuilt once would be exhausted by whoever ran first and the
+rest would collapse to nothing on most frames.
+
 ### World Rendering, Environment, Image Processing
 
 The systems themselves. Their status is tracked in
 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md); their design lives in a
 README beside the code.
+
+## Two shared snippets, and the rule attached to each
+
+`pbrcore.glsl` is the one evaluation of Cook-Torrance, injected into all three
+shaded programs. `scene.glsl` is the one description of the conditions it runs
+in, injected at the same three anchors.
+
+The rule matters more than either file: **a new shader maps its inputs into
+these names and reads these lanes.** It does not invent a local meaning for wet,
+cold, enclosed, night, restrained or readable. Without that, five subsystems
+each grow their own idea of "wet" and nothing says they have stopped agreeing -
+which was already beginning, with `pseudopbr.glsl` and `weather.glsl` each
+declaring their own wetness and overcast uniforms matched only by convention.
+
+Debug views are numbered **per shader, in that shader's own terms**, not from
+one global list. The material system's numbers mean material layers; an entity
+has none of them, and a shared list would have to skip most of itself to stay
+meaningful.
 
 ## Why the lighting model is not a separate system
 

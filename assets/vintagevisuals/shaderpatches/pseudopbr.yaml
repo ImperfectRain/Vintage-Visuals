@@ -52,11 +52,13 @@
 # 2b. Assert `rgbaFog`, which stands in for the sky in the ambient specular
 # term. Vanilla blends the horizon toward it, which makes it a better
 # environment estimate than any constant this mod could pick.
+# Also the injection point for the shared scene vocabulary. It has to land
+# above every other injection this mod makes into this file, and rgbaFog is the
+# highest anchor all three shaded programs have in common.
 - type: token
   filename: chunkopaque.fsh
   tokens: in vec4 rgbaFog;
-  content: |
-    in vec4 rgbaFog; // vintagevisuals: varying name asserted by pseudopbr.yaml
+  snippet: scene.glsl
 
 # 2c. Assert `blockLight`, the per-vertex colour vanilla bakes every torch,
 # lantern, lava pool and glowing block into. It is the only handle this shader

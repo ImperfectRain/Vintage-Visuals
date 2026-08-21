@@ -110,6 +110,12 @@ namespace VintageVisuals.Weather
             get { return _clouds; }
         }
 
+        /// <summary>What arbitration allowed this subsystem to take. See SceneGrants.</summary>
+        public SceneGrants Grants
+        {
+            get { return _mod == null || _mod.Environment == null ? SceneGrants.Full : _mod.Environment.Grants; }
+        }
+
         /// <summary>0 at midnight, 1 at noon. From the shared state, so nothing here reads the clock twice.</summary>
         public float DayLight
         {
@@ -161,7 +167,19 @@ namespace VintageVisuals.Weather
             // Drying is a matter of taste rather than of physics, so the number
             // lives in this subsystem's config - but the wetness it governs is
             // shared state, so the tracker is told rather than asked.
-            if (_mod.Environment != null) _mod.Environment.DryingSeconds = config.DryingSeconds;
+            if (_mod.Environment != null)
+            {
+                _mod.Environment.DryingSeconds = config.DryingSeconds;
+
+                // What this subsystem wants, before arbitration. The tracker
+                // decides how much of it is actually available once colour
+                // grading and the overcast term have had their say.
+                PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
+                _mod.Environment.Demand = new SceneDemand(
+                    config.Enabled ? config.FogStrength : 0f,
+                    config.Enabled ? config.CloudShadowStrength : 0f,
+                    config.Enabled && pbr.Enabled ? config.OvercastStrength : 0f);
+            }
 
             if (!config.Enabled) return;
 

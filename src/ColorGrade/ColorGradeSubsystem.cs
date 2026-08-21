@@ -211,7 +211,9 @@ namespace VintageVisuals.ColorGrade
                     ? EnvironmentState.Clear
                     : _mod.Environment.Current;
 
-                target = GradeStack.Evaluate(basis, world, adaptive);
+                target = GradeStack.Evaluate(basis, world, adaptive,
+                                             _mod.Environment.Intent,
+                                             _mod.Environment.Grants);
             }
 
             if (_gradeSeeded)

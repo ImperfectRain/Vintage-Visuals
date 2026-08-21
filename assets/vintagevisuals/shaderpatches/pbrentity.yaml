@@ -30,11 +30,13 @@
   content: |
     in vec3 blockLight; // vintagevisuals: varying asserted by pbrentity.yaml
 
+# Also the injection point for the shared scene vocabulary. It has to land
+# above every other injection this mod makes into this file, and rgbaFog is the
+# highest anchor all three shaded programs have in common.
 - type: token
   filename: entityanimated.fsh
   tokens: in vec4 rgbaFog;
-  content: |
-    in vec4 rgbaFog; // vintagevisuals: varying asserted by pbrentity.yaml
+  snippet: scene.glsl
 
 - type: token
   filename: entityanimated.fsh
@@ -80,6 +82,8 @@
     outColor = applyFogAndShadowWithNormal(texColor, 0, normal, 1, intensity, worldPos.xyz);
     outColor = vvApplyEntityPbr(outColor, texColor.rgb, normal, worldPos.xyz,
                                 getBrightnessFromShadowMap(), 0, rgbaFog.rgb, blockLight);
+    outColor = vvEntityDebugView(outColor, normal, worldPos.xyz,
+                                 getBrightnessFromShadowMap(), rgbaFog.rgb, blockLight);
 
 - type: token
   filename: entityanimated.fsh
@@ -88,3 +92,5 @@
     outColor = applyFogAndShadowWithNormal(texColor, fogAmount, normal, 1, intensity, worldPos.xyz);
     outColor = vvApplyEntityPbr(outColor, texColor.rgb, normal, worldPos.xyz,
                                 getBrightnessFromShadowMap(), fogAmount, rgbaFog.rgb, blockLight);
+    outColor = vvEntityDebugView(outColor, normal, worldPos.xyz,
+                                 getBrightnessFromShadowMap(), rgbaFog.rgb, blockLight);
