@@ -64,6 +64,14 @@
 # sparks, embers and fire particles are drawn as, and emission is the half that
 # matters for those.
 
+# vexPos seeds the emissive flicker. Without a per-particle seed every spark in
+# the world flickers in step, which reads as the whole fire pulsing.
+- type: token
+  filename: particlesquad.fsh
+  tokens: in vec3 vexPos;
+  content: |
+    in vec3 vexPos; // vintagevisuals: varying asserted by pbrparticle.yaml
+
 - type: token
   filename: particlesquad.fsh
   tokens: in vec4 rgbaFog;
@@ -84,11 +92,11 @@
   tokens: "outColor = applyFogAndShadow(color, fogAmount);"
   content: |
     outColor = applyFogAndShadow(color, fogAmount);
-    outColor = vvApplyParticleGlow(outColor, fogAmount, glowLevel);
+    outColor = vvApplyParticleGlow(outColor, vexPos, fogAmount, glowLevel);
 
 - type: token
   filename: particlesquad.fsh
   tokens: "outColor = applyFogAndShadow(color, 0);"
   content: |
     outColor = applyFogAndShadow(color, 0);
-    outColor = vvApplyParticleGlow(outColor, 0, glowLevel);
+    outColor = vvApplyParticleGlow(outColor, vexPos, 0, glowLevel);

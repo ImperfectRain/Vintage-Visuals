@@ -98,11 +98,16 @@ vec4 vvApplyParticlePbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 camera
 }
 
 // The quad path. No normal, so no lobe - emission and nothing else.
-vec4 vvApplyParticleGlow(vec4 litColor, float fog, float glow)
+vec4 vvApplyParticleGlow(vec4 litColor, vec3 seedPos, float fog, float glow)
 {
     if (vv_pbrParticle < 0.5) return litColor;
 
-    return vec4(litColor.rgb + vvEmission(litColor.rgb, glow, vec3(0.0)) * clamp(1.0 - fog, 0.0, 1.0),
+    // seedPos only seeds the flicker, and passing a constant here is a bug that
+    // is easy to write and hard to see: every spark and ember in the world
+    // would flicker in step, which reads as the whole fire pulsing rather than
+    // as separate embers. The same mistake, in the same shape, as the rain drops
+    // that all landed on one frame.
+    return vec4(litColor.rgb + vvEmission(litColor.rgb, glow, seedPos) * clamp(1.0 - fog, 0.0, 1.0),
                 litColor.a);
 }
 
