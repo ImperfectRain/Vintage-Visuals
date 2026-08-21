@@ -51,6 +51,13 @@ namespace VintageVisuals.Weather
         private readonly ILogger _logger;
 
         private readonly float[] _density = new float[Window * Window];
+
+        // Raw members are kept separately because they have to be normalised
+        // separately before vanilla's formula can be applied to them. See
+        // ReadWindow.
+        private readonly float[] _thickness = new float[Window * Window];
+        private readonly float[] _opaqueness = new float[Window * Window];
+
         private readonly Vec2f _origin = new Vec2f();
 
         private object _renderer;
@@ -61,7 +68,8 @@ namespace VintageVisuals.Weather
 
         private bool _searched;
         private bool _reported;
-        private float _peak = 1f;
+        private float _thicknessPeak = 1f;
+        private float _opaquenessPeak = 1f;
 
         public CloudTileReader(ICoreClientAPI capi, ILogger logger)
         {
@@ -121,6 +129,7 @@ namespace VintageVisuals.Weather
                 _side = side;
                 ReadWindow(tiles);
                 Available = true;
+                ReportFieldOnce();
             }
             catch (Exception ex)
             {
@@ -141,30 +150,71 @@ namespace VintageVisuals.Weather
         {
             int first = (_side - Window) / 2;
 
-            float peak = 0f;
+            float thickestSeen = 0f;
+            float mostOpaqueSeen = 0f;
+
             for (int z = 0; z < Window; z++)
             {
                 for (int x = 0; x < Window; x++)
                 {
                     object tile = tiles.GetValue((first + z) * _side + first + x);
+                    int i = z * Window + x;
 
-                    float value = tile == null ? 0f : DensityOf(tile);
-                    _density[z * Window + x] = value;
-                    if (value > peak) peak = value;
+                    float thickness = tile == null ? 0f : Math.Max(0f, Numeric(_thicknessMember, tile));
+                    float opaqueness = tile == null || _opaqueMember == null
+                        ? 1f
+                        : Math.Max(0f, Numeric(_opaqueMember, tile));
+
+                    _thickness[i] = thickness;
+                    _opaqueness[i] = opaqueness;
+
+                    if (thickness > thickestSeen) thickestSeen = thickness;
+                    if (opaqueness > mostOpaqueSeen) mostOpaqueSeen = opaqueness;
                 }
             }
 
-            // The tile fields are whatever integer scale the game happens to
-            // use, and guessing a divisor would be one more thing to be wrong
-            // about. A decaying peak normalises without needing to know: it
-            // settles on the busiest sky seen recently and lets an emptying sky
-            // fade rather than rescaling itself brighter.
-            _peak = Math.Max(peak, _peak * 0.995f);
-            if (_peak < 1e-4f) _peak = 1e-4f;
+            // The tile fields are whatever scale the game happens to use, and
+            // guessing a divisor would be one more thing to be wrong about. A
+            // decaying peak normalises without needing to know: it settles on
+            // the busiest sky seen recently and lets an emptying sky fade
+            // rather than rescaling itself brighter.
+            //
+            // Per member, not on the product, and that is the whole reason this
+            // was restructured. Vanilla's opacity is
+            //
+            //     min(1, cloudOpaqueness * min(1, 10 * selfThickness))
+            //
+            // and the inner min SATURATES: a tile of thickness 0.1 or more is a
+            // full cloud, which is why the game's sky is mostly solid tiles with
+            // sharp edges. That threshold is only meaningful against a 0..1
+            // thickness, so it cannot be applied before normalising, and the
+            // normaliser cannot run on a product that has already been through
+            // it. Applied in the wrong order it is either a no-op or it turns
+            // the whole field binary.
+            _thicknessPeak = Math.Max(thickestSeen, _thicknessPeak * 0.995f);
+            _opaquenessPeak = Math.Max(mostOpaqueSeen, _opaquenessPeak * 0.995f);
+
+            if (_thicknessPeak < 1e-4f) _thicknessPeak = 1e-4f;
+            if (_opaquenessPeak < 1e-4f) _opaquenessPeak = 1e-4f;
+
+            // A sky with nothing in it is zero everywhere, said explicitly. The
+            // decaying peak would otherwise divide the dregs of an empty sky up
+            // into shadows that are not there - the floor above is small enough
+            // that a thickness of 1e-5 would read as a tenth of a cloud.
+            bool clear = thickestSeen < 1e-4f;
 
             for (int i = 0; i < _density.Length; i++)
             {
-                _density[i] = GameMath.Clamp(_density[i] / _peak, 0f, 1f);
+                if (clear)
+                {
+                    _density[i] = 0f;
+                    continue;
+                }
+
+                float covered = Math.Min(1f, 10f * (_thickness[i] / _thicknessPeak));
+                float opaque = GameMath.Clamp(_opaqueness[i] / _opaquenessPeak, 0f, 1f);
+
+                _density[i] = GameMath.Clamp(opaque * covered, 0f, 1f);
             }
 
             IClientPlayer player = _capi.World?.Player;
@@ -178,22 +228,6 @@ namespace VintageVisuals.Weather
 
             _origin.X = (float)(Math.Floor(px / TileSize) * TileSize - Window / 2 * TileSize);
             _origin.Y = (float)(Math.Floor(pz / TileSize) * TileSize - Window / 2 * TileSize);
-        }
-
-        /// <summary>
-        /// How much of the sun this tile blocks.
-        ///
-        /// Mirrors cloudmap.fsh's own opacity term, which is
-        /// <c>cloudOpaqueness * min(1, 10 * selfThickness)</c>, when both
-        /// members can be found. Thickness alone is the fallback: it is the one
-        /// that decides whether there is a cloud here at all.
-        /// </summary>
-        private float DensityOf(object tile)
-        {
-            float thickness = Numeric(_thicknessMember, tile);
-            if (_opaqueMember == null) return Math.Max(0f, thickness);
-
-            return Math.Max(0f, thickness) * Math.Max(0f, Numeric(_opaqueMember, tile));
         }
 
         private static float Numeric(MemberInfo member, object target)
@@ -362,6 +396,47 @@ namespace VintageVisuals.Weather
             }
 
             return count == 0 ? "(none)" : text.ToString();
+        }
+
+        private bool _reportedField;
+
+        /// <summary>
+        /// Says what the cloud field actually looks like, once.
+        ///
+        /// Cloud shadows have now failed three times, and every round was spent
+        /// guessing from a screenshot whether the field was empty, saturated or
+        /// simply somewhere else. Four numbers in the log answer that without a
+        /// screenshot: a mean near zero means the sky is being read as clear, a
+        /// mean near one means everything saturated, and a plausible sky is
+        /// broken cloud - roughly a third to two thirds covered, with a spread
+        /// between them.
+        ///
+        /// Once, and only after the first successful read, because this is
+        /// per-frame code.
+        /// </summary>
+        private void ReportFieldOnce()
+        {
+            if (_reportedField) return;
+            _reportedField = true;
+
+            float sum = 0f;
+            float high = 0f;
+            int covered = 0;
+
+            for (int i = 0; i < _density.Length; i++)
+            {
+                sum += _density[i];
+                if (_density[i] > high) high = _density[i];
+                if (_density[i] > 0.5f) covered++;
+            }
+
+            _logger.Notification("[VintageVisuals] weather: cloud field read - mean " +
+                (sum / _density.Length).ToString("0.###") + ", peak " + high.ToString("0.###") +
+                ", " + (covered * 100 / _density.Length) + "% of tiles more than half covered" +
+                " (raw peaks: thickness " + _thicknessPeak.ToString("0.####") +
+                ", opaqueness " + _opaquenessPeak.ToString("0.####") + "). A plausible broken sky is " +
+                "a mean around a third with tiles at both ends; a mean at either extreme means the " +
+                "field is not being read the way this assumes.");
         }
 
         private void ReportOnce(string message)

@@ -366,6 +366,8 @@ namespace VintageVisuals.Common.Scene
         /// would be a visible pop on a day nothing else changed. The discrete
         /// season decides WHICH lane; the relative position decides how far in.
         /// </summary>
+        private EnumSeason? _reportedSeason;
+
         private void SampleSeason(BlockPos pos)
         {
             try
@@ -388,6 +390,26 @@ namespace VintageVisuals.Common.Scene
 
                 _autumn = season == EnumSeason.Fall ? depth : 0f;
                 _winter = season == EnumSeason.Winter ? depth : 0f;
+
+                // The one assumption here that cannot be checked without the
+                // game running: that the season the calendar names and the
+                // quarter GetSeasonRel falls in are the same quarter. If the
+                // year does not start where this expects, `within` is measured
+                // from the wrong boundary and `depth` peaks at a season change
+                // rather than mid-season - inverted, not merely offset.
+                //
+                // Logged on every season change rather than asserted, because
+                // being wrong about it is not a crash and the log is where a
+                // player can see it. Expect depth near 0 at a handover.
+                if (season != _reportedSeason)
+                {
+                    _reportedSeason = season;
+                    _capi.Logger.Notification("[VintageVisuals] scene: season " + season +
+                        ", year " + rel.ToString("0.###") + ", " + within.ToString("0.###") +
+                        " through it, depth " + depth.ToString("0.###") +
+                        ". Depth should be near zero right now and rise to one at midseason; if it " +
+                        "is near one at a handover, the year does not start where this assumes.");
+                }
             }
             catch (Exception)
             {

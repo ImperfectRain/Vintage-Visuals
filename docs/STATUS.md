@@ -215,13 +215,32 @@ by reintroducing the bug.
 **None of this is L4.** It raises the odds that a visual test is testing the
 feature rather than a wiring mistake; it does not say anything looks right.
 
-- **Cloud shadows have never been seen working.** Reported invisible three
-  times, then reported as three over-large patches unrelated to the sky. Now
-  reading the game's own tile array via reflection. **Two things cannot be ruled
-  out blind:** the array may be indexed `[x*N+z]` rather than `[z*N+x]` (shadows
-  mirrored across the diagonal), and it may scroll with an offset rather than
-  staying camera-centred (a constant shift). The reader logs what it found;
-  `Weather.CloudShadowDebug` shows the field alone at full strength.
+- **Cloud shadows have never been seen working**, but one cause is now
+  identified rather than guessed at. `cloudmap.fsh` computes tile opacity as
+  `min(1, cloudOpaqueness * min(1, 10 * selfThickness))`, and the inner `min`
+  SATURATES - a tile of thickness 0.1 or more is a full cloud, which is why
+  the game's sky is mostly solid tiles with sharp edges. `CloudTileReader` was
+  multiplying the two members raw, so density stayed linear all the way down
+  and a solid cloud scored a fraction of what the game gives it; normalising
+  that against a decaying peak then compressed the whole sky toward the few
+  thickest tiles. **A handful of large soft blobs unrelated to the clouds
+  overhead is precisely what that produces, and precisely what was reported.**
+  Now normalised per member first (the fields' scale is unknown, so the
+  threshold cannot be applied before normalising) and then run through
+  vanilla's formula.
+  **Two things still cannot be ruled out blind:** the array may be indexed
+  `[x*N+z]` rather than `[z*N+x]` (shadows mirrored across the diagonal), and
+  it may scroll with an offset rather than staying camera-centred (a constant
+  shift). The reader now logs the field's mean, peak and covered fraction on
+  the first successful read, so the next round can start from four numbers
+  instead of a screenshot; `Weather.CloudShadowDebug` shows the field alone at
+  full strength.
+- **The season phase is assumed, not verified.** `depth` is derived by
+  splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
+  is the season `GetSeason` names. If the year does not start where that
+  assumes, depth peaks at a season handover rather than mid-season - inverted,
+  not merely offset. Logged on every season change with the numbers needed to
+  tell, since it is not a crash and only a running game can answer it.
 - **`colorgrade`'s reference dump is still dirty**, though the group itself is
   now verified. The dump in `reference/game-shaders/final.fsh` was taken with
   the mod running, so `verifypatches` refuses it by name. Its four injections
