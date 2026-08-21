@@ -287,13 +287,21 @@ feature rather than a wiring mistake; it does not say anything looks right.
   one-block cell boundaries exactly on the half-block grid's, so both octaves
   broke along the same lines and reinforced the lattice the second one existed
   to hide.
-- **Sunlight dapple is L2, not seen on screen.** Gated on `vv_sunExposure`, so
-  it can only appear where the game itself says there is a canopy overhead;
-  thrown along the sun's azimuth by `height / tan(elevation)` and stretched by
-  `1 / sin(elevation)` so midday spots become late shafts; mean-preserving by
-  construction, with the threshold's pass rate measured rather than guessed.
-  Debug view 15 shows the field alone - it must be flat grey on open ground and
-  flat grey indoors, and appear only under trees.
+- **Sunlight dapple, second pass, L2.** The first pass was reported as "a fast
+  paced rotating shine around all of the leaf blocks", and all three parts of
+  that were separate faults: it drew on foliage itself rather than on what the
+  canopy shades; it displaced the sample point by the sine and cosine of ONE
+  phase, which is a literal orbit, once every 1.5 seconds because it borrowed
+  the ripple clock; and it thresholded summed noise, which gives sliding blobs
+  rather than flecks.
+  Rebuilt on the actual optics: a canopy gap is a pinhole and the sun is half a
+  degree wide, so a fleck is an image of the sun - discrete, soft-edged, with a
+  penumbra that grows with the height above, and elliptical along the sun's
+  azimuth by `1/sin(elevation)`. Flecks wink on independent phases against a new
+  26-second breeze clock. Coverage measured at 14.5%, inside the 10-25% real
+  sunflecks occupy. The shade between them is tinted green, because light that
+  has passed through a leaf is green-dominant and that is the strongest cue for
+  being under trees.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that

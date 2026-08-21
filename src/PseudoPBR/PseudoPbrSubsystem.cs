@@ -164,7 +164,7 @@ namespace VintageVisuals.PseudoPBR
 
             if (!weather.Enabled)
             {
-                return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f, 0f,
+                return new SceneInputs(world.DayLight, 0f, SceneInputs.None.RainCover, 0f, 0f, 0f, 0f,
                                        world.CameraPosition,
                                        intent[IntentChannel.Enclosure],
                                        intent[IntentChannel.ArtificialLight],
@@ -183,6 +183,7 @@ namespace VintageVisuals.PseudoPBR
                 // for another minute, which is the half that should linger.
                 world.Rain * weather.RippleStrength,
                 _mod.Environment.RippleClock,
+                _mod.Environment.BreezeClock,
 
                 // Arbitrated: the overcast term is a SECONDARY claim on scene
                 // light, and it was removing light on the same overcast day the

@@ -105,6 +105,7 @@ namespace VintageVisuals.Common.Scene
         /// camera position is.
         /// </summary>
         private double _rippleClock;
+        private double _breezeClock;
 
         public EnvironmentTracker(ICoreClientAPI capi, ILogger logger)
         {
@@ -124,8 +125,26 @@ namespace VintageVisuals.Common.Scene
         /// </summary>
         public float RippleClock { get; private set; }
 
+        /// <summary>
+        /// A much slower clock, wrapped to 0..1, for things that move at the
+        /// speed leaves do rather than the speed raindrops do.
+        ///
+        /// Separate because the ripple clock turns over every 1.5 seconds, and
+        /// reusing it for canopy dapple made every sunfleck complete a full
+        /// cycle in that time - which read, accurately, as "a fast paced
+        /// rotating shine". Leaves shift on the order of tens of seconds.
+        ///
+        /// Wrapped for the same reason everything here is wrapped: an unbounded
+        /// float32 clock stops resolving phases at all past about 1e7, and
+        /// anything reading it must be periodic in it so the wrap is invisible.
+        /// </summary>
+        public float BreezeClock { get; private set; }
+
         /// <summary>Seconds for one full ripple lifetime at the slowest per-cell rate.</summary>
         private const double RippleSeconds = 1.5;
+
+        /// <summary>Seconds for one turn of the breeze clock.</summary>
+        private const double BreezeSeconds = 26.0;
 
         /// <summary>
         /// The world as of the last tick. Never null, never uninitialised: it
@@ -220,6 +239,9 @@ namespace VintageVisuals.Common.Scene
 
             _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
             RippleClock = (float)_rippleClock;
+
+            _breezeClock = (_breezeClock + deltaSeconds / BreezeSeconds) % 1.0;
+            BreezeClock = (float)_breezeClock;
 
             // Rain and snow are the same precipitation seen through the
             // thermometer. Below freezing it falls as snow, and a snowstorm
@@ -539,6 +561,7 @@ namespace VintageVisuals.Common.Scene
             _snow.Reset();
             _rippleClock = 0;
             RippleClock = 0f;
+            BreezeClock = 0f;
             Current = EnvironmentState.Clear;
         }
     }

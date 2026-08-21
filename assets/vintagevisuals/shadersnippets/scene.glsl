@@ -44,6 +44,17 @@ uniform float vv_sceneArtificialLight; // 0 lit by sky, 1 lit by fire
 // world ended up landing on the same frame.
 uniform float vv_sceneClock;
 
+// A much slower clock, also wrapped to 0..1, for anything that moves at the
+// speed leaves do rather than the speed raindrops do. One turn is about 26
+// seconds.
+//
+// Separate from vv_sceneClock because that one turns over every 1.5 seconds,
+// and driving canopy dapple from it made every sunfleck complete a full cycle
+// in that time - which read, accurately, as a fast rotating shine rather than
+// as light through leaves. Anything reading either clock must be periodic in
+// it, so the wrap is invisible.
+uniform float vv_sceneBreeze;
+
 // --- season -----------------------------------------------------------------
 //
 // Two lanes rather than a single 0..1 year position, and computed on the CPU

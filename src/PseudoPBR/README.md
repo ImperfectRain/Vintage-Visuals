@@ -883,34 +883,81 @@ white marble block should not, which is also the check that this is coming from
 
 ## Sunlight dapple
 
-Sun breaking through gaps in a canopy, sliding as the sun moves and drifting as
-the leaves do. `PseudoPBR.SunDapple`, and debug view 15 shows the field alone.
+Sun breaking through gaps in a canopy and landing on what is underneath.
+`PseudoPBR.SunDapple`; debug view 15 shows the field alone.
 
-**The gate is the design; the pattern is only the shape.** `vv_sunExposure` is
-vanilla's own per-vertex sun light level - 0 under a roof, 1 under open sky, and
-**partial under a canopy**, because leaves absorb light on the way down. Partial
-is therefore an exact statement from the game that something leafy is overhead,
-which is precisely and only where dapple belongs. Both ends of the range return
-zero: open ground has nothing above it to break the light, and a cellar has no
-sunlight to break.
+### What a sunfleck is
 
-That distinction is why this is not the cloud shadow mistake repeated. There, an
+A gap in a canopy is a **pinhole**. The sun is not a point - it subtends about
+0.53 degrees, 0.0093 radians - so a small gap does not project its own shape
+onto the ground, it projects an **image of the sun**. That is why sunflecks
+under a tall tree are all roughly the same rounded shape whatever the gaps above
+them look like, and why they turn into crescents during a partial eclipse. A gap
+smaller than about `0.0093 x height` stops mattering as a shape and matters only
+as a hole.
+
+Three consequences, and all three are what makes the effect read as light rather
+than as a texture:
+
+1. **Flecks are discrete.** Individual soft-edged spots with dark between them,
+   not a continuous field that happens to be brighter in places. The first
+   version thresholded summed noise, which gives amorphous blobs that slide.
+2. **Every fleck has a penumbra** about `0.0093 x height` across. Under a high
+   canopy that is the same order as the fleck itself, so everything is soft;
+   close under a bush the edges are crisp. Size and softness scale together with
+   the height above, so both are driven from the same term here.
+3. **They are ellipses**, stretched along the sun's azimuth by
+   `1 / sin(elevation)`, because a round beam meets a horizontal floor at an
+   angle. This is the whole reason afternoon dapple reads as shafts and midday
+   dapple reads as spots.
+
+**Coverage** is a minority of the floor - a closed canopy passes something like
+5-20% of the light. The model here measures out at **14.5%**, inside the 10-25%
+real sunflecks occupy.
+
+**Movement is two things on two timescales.** The sun slides the whole pattern
+over minutes, which the azimuth throw does. Wind makes individual flecks *wink*
+open and shut semi-independently as leaves cross the gaps, over seconds. What it
+is not is a coherent rotation or scroll - which is exactly what the first version
+did, displacing the sample point by the sine and cosine of one phase so the
+field orbited once every 1.5 seconds. Flecks now blink on their own phases
+against a separate 26-second breeze clock.
+
+### Where it is allowed to exist
+
+`vv_sunExposure` is vanilla's own per-vertex sun light level - 0 under a roof, 1
+under open sky, and **partial under a canopy**, because leaves absorb light on
+the way down. Partial is an exact statement from the game that something leafy is
+overhead. Both ends of the range return zero.
+
+Foliage itself is excluded. A sunfleck is light that got **past** the leaves onto
+something below; drawing it on leaf blocks lit every tree in the world from the
+outside, which is the opposite of the effect - the tree should be casting this,
+not wearing it.
+
+That gating is why this is not the cloud shadow mistake repeated. There, an
 invented field was drawn everywhere and corresponded to nothing. Here the
-invention is limited to what the gaps look like; whether there are gaps at all,
-and where, comes from the game.
+invention is limited to what the gaps look like.
 
-**Direction.** The pattern is sampled where a ray from the fragment to the sun
-crosses the canopy - `height / tan(elevation)` blocks along the sun's azimuth,
-written as an explicit run and direction so the cap applies to the quantity
-being capped. Deeper shade is read as more canopy overhead, so the pattern
-slides further under a full crown than under an edge branch. The footprint is
-also stretched along the azimuth by `1 / sin(elevation)`, which is what turns
-midday spots into late-afternoon shafts.
+### Green shade
 
-**It redistributes, it does not remove.** Gaps brighten by as much as the shade
-between them darkens, so the mean is unchanged and `VisualBudget` has nothing to
-arbitrate. That holds only because the threshold's pass rate was measured rather
-than guessed - see the table above `VV_DAPPLE_THRESHOLD`. The first draft had a
-threshold passing 19% of the area against a subtracted constant of 34%, which
-would have dimmed every canopy in the world by a net 15% while being documented
-as neutral.
+A leaf transmits roughly 5-10% of the visible light that reaches it and reflects
+about another 10, and both are far higher in green than in red or blue - which is
+what makes a leaf green in the first place. Light that has been through a canopy
+is therefore green-dominant: the floor of a wood is not merely darker than the
+field beside it, it is a different colour, and that is the strongest single cue
+that you are under trees.
+
+Applied only to the **shaded** side of the dapple. A fleck is sunlight that
+missed every leaf and has no business being tinted. It moves colour between
+channels rather than adding or removing any.
+
+### It redistributes, it does not remove
+
+Flecks brighten by as much as the shade between them darkens, so the mean is
+unchanged and `VisualBudget` has nothing to arbitrate. That holds only because
+the coverage was **measured** - see the constants block. The previous version set
+its subtracted constant to 0.34 by eye against a threshold that actually passed
+0.191 of the area, which would have dimmed every canopy in the world by a net 15%
+under a comment promising it did not. Re-measure if any of the density, radius,
+penumbra, jitter or blink constants change.

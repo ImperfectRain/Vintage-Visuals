@@ -70,6 +70,7 @@ namespace VintageVisuals.PseudoPBR
         public const string RestraintUniform = "vv_sceneRestraint";
         public const string ReadabilityUniform = "vv_sceneReadability";
         public const string ClockUniform = "vv_sceneClock";
+        public const string BreezeUniform = "vv_sceneBreeze";
         public const string FrostUniform = "vv_sceneFrost";
         public const string SnowUniform = "vv_sceneSnow";
 
@@ -408,6 +409,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, RestraintUniform, _weather.Restraint);
             SetIfPresent(program, ReadabilityUniform, _weather.Readability);
             SetIfPresent(program, ClockUniform, _weather.RippleTime);
+            SetIfPresent(program, BreezeUniform, _weather.Breeze);
             SetIfPresent(program, FrostUniform, _weather.Frost);
             SetIfPresent(program, SnowUniform, _weather.Snow);
 
