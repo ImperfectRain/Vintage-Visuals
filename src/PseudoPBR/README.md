@@ -952,12 +952,33 @@ Applied only to the **shaded** side of the dapple. A fleck is sunlight that
 missed every leaf and has no business being tinted. It moves colour between
 channels rather than adding or removing any.
 
-### It redistributes, it does not remove
+### It only ever darkens
 
-Flecks brighten by as much as the shade between them darkens, so the mean is
-unchanged and `VisualBudget` has nothing to arbitrate. That holds only because
-the coverage was **measured** - see the constants block. The previous version set
-its subtracted constant to 0.34 by eye against a threshold that actually passed
-0.191 of the area, which would have dimmed every canopy in the world by a net 15%
-under a comment promising it did not. Re-measure if any of the density, radius,
-penumbra, jitter or blink constants change.
+A fleck is where the leaves failed to block the sun, **not a light of its own**.
+The brightest this can leave a pixel is exactly what vanilla lit it to.
+
+That is not a stylistic preference. The previous version subtracted the measured
+coverage so the effect was mean-preserving, on the reasoning that an effect which
+never dims on average never has to argue with `VisualBudget`. The instinct is
+right and it does not survive contact with the coverage: at 11% lit, holding the
+mean fixed forces the bright ninth to be enormously brighter than the dark
+eight-ninths. That is physically true - a real sunfleck is close to full sun
+against shade a tenth of it - but a game has nowhere to put that range. Pixels
+went past 1.0, `findbright` multiplies the whole frame rather than thresholding
+it, and a forest floor came back as **white spotlights with bloom halos**.
+
+Subtractive makes blowing out arithmetically impossible rather than merely
+unlikely, and it is the more honest model anyway: a canopy removes light, it does
+not make any. The cost is that dapple does dim on average, so it is a
+light-removing term and belongs in `VisualBudget`'s accounting like the rest.
+
+### What is still measured versus assumed
+
+Measured: the fleck coverage (11%), by simulating the exact cell algorithm.
+
+**Assumed:** what `vv_sunExposure` actually reads. The gate takes 1 as open sky
+and treats clearly-less as canopy, but if leaves in this version absorb only a
+little then "clearly less" might be 0.9 and the gate barely fires; if open ground
+does not quite reach 1, the gate leaks onto every field in the world. **Debug
+view 16** draws that number raw - white is full sun. Stand in the open, then
+under a tree, read off the two values, and the gate stops being a guess.

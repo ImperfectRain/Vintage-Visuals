@@ -669,7 +669,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SpecularStrength", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 15.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 16.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

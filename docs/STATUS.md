@@ -287,21 +287,27 @@ feature rather than a wiring mistake; it does not say anything looks right.
   one-block cell boundaries exactly on the half-block grid's, so both octaves
   broke along the same lines and reinforced the lattice the second one existed
   to hide.
-- **Sunlight dapple, second pass, L2.** The first pass was reported as "a fast
-  paced rotating shine around all of the leaf blocks", and all three parts of
-  that were separate faults: it drew on foliage itself rather than on what the
-  canopy shades; it displaced the sample point by the sine and cosine of ONE
-  phase, which is a literal orbit, once every 1.5 seconds because it borrowed
-  the ripple clock; and it thresholded summed noise, which gives sliding blobs
-  rather than flecks.
-  Rebuilt on the actual optics: a canopy gap is a pinhole and the sun is half a
-  degree wide, so a fleck is an image of the sun - discrete, soft-edged, with a
-  penumbra that grows with the height above, and elliptical along the sun's
-  azimuth by `1/sin(elevation)`. Flecks wink on independent phases against a new
-  26-second breeze clock. Coverage measured at 14.5%, inside the 10-25% real
-  sunflecks occupy. The shade between them is tinted green, because light that
-  has passed through a leaf is green-dominant and that is the strongest cue for
-  being under trees.
+- **Sunlight dapple, third pass, L2.** Second pass came back as "a bunch of
+  large spotlight style lights": the whole frame blown to white with bloom
+  halos. Two causes.
+  Flecks were too big - 1.35 blocks between them and nearly a block across,
+  stretched up to 4x at low sun. Now 0.70 apart, ~0.6 across, stretch capped at
+  3.
+  And the effect was ADDITIVE, because it subtracted the measured coverage to
+  stay mean-preserving. That instinct is right and does not survive the
+  coverage: at 11% lit, holding the mean fixed forces the bright ninth to be
+  enormously brighter than the dark eight-ninths. Physically true - a sunfleck
+  is near full sun against shade a tenth of it - but the game has nowhere to put
+  that range, `findbright` multiplies the whole frame rather than thresholding
+  it, and the floor came back as white spotlights. Dapple is now DARKEN-ONLY: a
+  fleck is where light was not taken away, so nothing can exceed vanilla's own
+  brightness and blowing out is arithmetically impossible. It is therefore a
+  light-removing term and belongs in VisualBudget's accounting.
+- **`vv_sunExposure`'s actual range has never been measured.** The dapple gate
+  assumes 1 under open sky and clearly less under canopy. If leaves absorb only
+  a little, "clearly less" might be 0.9 and the gate barely fires; if open
+  ground does not reach 1, it leaks onto every field in the world. Debug view 16
+  draws it raw - one screenshot in the open and one under a tree settles it.
 - **The season phase is assumed, not verified.** `depth` is derived by
   splitting `GetSeasonRel` into quarters and assuming the quarter it lands in
   is the season `GetSeason` names. If the year does not start where that

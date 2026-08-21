@@ -393,7 +393,7 @@ const float VV_DAPPLE_HIGH = 11.0;
 // Not a whole number on purpose. At 1.0 the fleck grid would land in step with
 // the block grid and the texture grid under it, and a pattern that agrees with
 // the blocks reads as the blocks glowing rather than as light falling on them.
-const float VV_DAPPLE_SCALE = 1.35;
+const float VV_DAPPLE_SCALE = 0.70;
 
 // Fraction of cells with a gap in them, the fleck's radius in cell units, and
 // how much of that radius is penumbra rather than core.
@@ -403,7 +403,7 @@ const float VV_DAPPLE_SCALE = 1.35;
 // constants were picked by eye and were out by a factor of two in the direction
 // that dims the world.
 const float VV_DAPPLE_DENSITY = 0.70;
-const float VV_DAPPLE_RADIUS = 0.48;
+const float VV_DAPPLE_RADIUS = 0.42;
 const float VV_DAPPLE_PENUMBRA = 0.50;
 
 // How far a gap's centre may sit from its cell's centre.
@@ -415,15 +415,27 @@ const float VV_DAPPLE_JITTER = 0.60;
 const float VV_DAPPLE_BLINK_LOW = 0.15;
 const float VV_DAPPLE_BLINK_HIGH = 0.85;
 
-// The measured mean of the field above, subtracted so the effect averages to
-// zero and never becomes a net dimming the VisualBudget has not accounted for.
+// The measured mean of the field above. 11% of the area is fleck.
 //
-// Re-measure with tools if any of DENSITY, RADIUS, PENUMBRA, JITTER or the
-// blink band changes. The last version's constant was set by eye against a
-// threshold that passed 19% of the area while the constant said 34%, which
-// would have dimmed every canopy in the world by a net 15% under a comment
-// promising it did not.
-const float VV_DAPPLE_COVER = 0.1452;
+// No longer subtracted, and the reason is worth writing down because it is the
+// second thing that went wrong here.
+//
+// The previous version subtracted this to make the effect mean-preserving, so
+// that it never became a net dimming VisualBudget had not accounted for. That is
+// the right instinct and it does not survive contact with the coverage. At 11%
+// lit, holding the mean fixed forces the bright ninth to be enormously brighter
+// than the dark eight-ninths - which is physically true, a real sunfleck is
+// close to full sun against shade a tenth of it, but a game has nowhere to put
+// that range. Pixels went past 1.0, the bloom pass multiplies the whole frame
+// rather than thresholding it, and a forest floor came out as white spotlights.
+//
+// So this is now DARKEN-ONLY: a fleck is where light was not taken away, not
+// where light was added. Nothing can exceed vanilla's own brightness, which
+// makes blowing out arithmetically impossible rather than merely unlikely, and
+// it is also the more honest model - a canopy removes light, it does not make
+// any. The cost is that dapple does dim on average, so it is a light-removing
+// term and belongs to VisualBudget's accounting like the rest of them.
+const float VV_DAPPLE_COVER = 0.1105;
 
 // How green the shade between flecks is.
 //
@@ -438,6 +450,10 @@ const float VV_DAPPLE_COVER = 0.1452;
 // Small. This is a tint on the shaded fraction only, and the game's own
 // colormap already owns what foliage looks like.
 const float VV_DAPPLE_GREEN = 0.055;
+
+// How much light the canopy takes out of the shade between flecks, at full
+// slider. Flecks themselves are left exactly at vanilla.
+const float VV_DAPPLE_SHADE = 0.34;
 
 // How far the pattern may be thrown along the sun's azimuth, in blocks. The
 // projection runs away at the horizon like every other one in this mod.
@@ -639,8 +655,9 @@ float vvSunflecks(vec2 p, float softness)
 
 // Sunlight broken into moving flecks by the leaves overhead.
 //
-// Returns SIGNED: positive in a fleck where the sun got through, negative in
-// the shade between. Zero average by construction - see VV_DAPPLE_COVER.
+// Returns how much light the canopy TAKES AWAY, 0..1: nothing inside a fleck,
+// most of VV_DAPPLE_SHADE in the shade between. Never adds - see the note on
+// VV_DAPPLE_COVER.
 //
 // The gate is the whole design, and it is the game's own answer rather than a
 // guess. vv_sunExposure is vanilla's per-vertex sun light level: 0 under a
@@ -702,9 +719,9 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
         at += (azimuth / azimuthLength) * min(run, VV_DAPPLE_MAX_THROW);
 
         // 1 / sin(elevation): a round beam meeting the floor at an angle. Capped
-        // at four, past which it stops reading as a shaft and starts reading as
+        // at three, past which it stops reading as a shaft and starts reading as
         // a smear.
-        stretch = clamp(1.0 / up, 1.0, 4.0);
+        stretch = clamp(1.0 / up, 1.0, 3.0);
     }
 
     vec2 p = at / VV_DAPPLE_SCALE;
@@ -725,7 +742,11 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
 
     float fleck = vvSunflecks(p, penumbra);
 
-    return (fleck - VV_DAPPLE_COVER) * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
+    // How much light the canopy takes away here: none inside a fleck, most of
+    // VV_DAPPLE_SHADE between them. Never negative, so the caller can only ever
+    // darken - see the note on VV_DAPPLE_COVER for why that is the whole point.
+    return (1.0 - fleck) * VV_DAPPLE_SHADE
+         * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
@@ -1004,28 +1025,39 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Scaled by the shadow term as well, so a fragment vanilla has already put
     // in full shade does not grow sunbeams. Dapple is the sun finding a way
     // through; where there is no sun to find, there is nothing to break up.
-    float dapple = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
+    // Light the canopy takes away, 0 inside a sunfleck and up to
+    // VV_DAPPLE_SHADE between them.
+    //
+    // SUBTRACTIVE, never additive. A fleck is where the leaves failed to block
+    // the sun, not a light of its own, so the brightest this can leave a pixel
+    // is exactly what vanilla lit it to. That is not a stylistic preference: the
+    // additive version pushed pixels past 1.0, findbright multiplies the whole
+    // frame rather than thresholding it, and a forest floor came back as white
+    // spotlights with bloom halos.
+    //
+    // Scaled by the shadow term as well, so a fragment vanilla has already put
+    // in full shade does not get dappled a second time. Dapple is the sun
+    // finding a way through; where there is no sun to find, there is nothing to
+    // break up.
+    float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
                  * clamp(shadowBrightness, 0.0, 1.0);
-
-    result *= 1.0 + dapple;
-
-    // Green shade, on the shaded side of the dapple only.
-    //
-    // A leaf transmits roughly 5-10% of the visible light that reaches it and
-    // reflects about another 10, and both are far higher in green than in red
-    // or blue - which is what makes a leaf green to begin with. So light that
-    // has been through a canopy is green-dominant: the floor of a wood is not
-    // just darker than the field beside it, it is a different colour, and that
-    // colour is the strongest single cue that you are under trees.
-    //
-    // Applied only where dapple is NEGATIVE, because a fleck is sunlight that
-    // missed every leaf on the way down and has no business being tinted. Small,
-    // and it leaves the total brightness alone - it moves colour between
-    // channels rather than adding or removing any.
-    float shaded = max(0.0, -dapple);
 
     if (shaded > 0.0)
     {
+        result *= 1.0 - clamp(shaded, 0.0, 0.85);
+
+        // Green shade.
+        //
+        // A leaf transmits roughly 5-10% of the visible light that reaches it
+        // and reflects about another 10, and both are far higher in green than
+        // in red or blue - which is what makes a leaf green to begin with. So
+        // light that has been through a canopy is green-dominant: the floor of a
+        // wood is not merely darker than the field beside it, it is a different
+        // colour, and that is the strongest single cue that you are under trees.
+        //
+        // On the shaded fraction only, because a fleck is sunlight that missed
+        // every leaf on the way down and has no business being tinted. It moves
+        // colour between channels rather than adding or removing any.
         float tint = shaded * VV_DAPPLE_GREEN;
         result *= vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
     }
@@ -1104,16 +1136,30 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // vanilla's glowLevel rather than by pixel brightness.
     if (mode == 14) return vec4(vvEmission(color.rgb, glowLevel, cameraRelativePos), color.a);
 
-    // 15: canopy dapple alone, biased so no effect reads as mid grey. Bright
-    // patches are gaps in the leaves, dark is the shade between. It should be
-    // flat grey on open ground and flat grey in a cellar - both ends of the
-    // sky-exposure gate - and appear only under trees. Walk the edge of a wood
-    // and the band should switch on as the canopy closes over.
+    // 15: the sunfleck field alone, normalised. White is a fleck - light the
+    // canopy did not take - and dark is the shade between. It should be flat
+    // WHITE on open ground, flat white in a cellar and flat white on the leaves
+    // themselves: all three are outside the gate. Walk the edge of a wood and
+    // the flecks should switch on as the canopy closes over.
     if (mode == 15)
     {
         float d = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos));
-        return vec4(vec3(0.5 + d), color.a);
+        return vec4(vec3(1.0 - d / max(0.001, VV_DAPPLE_SHADE)), color.a);
     }
+
+    // 16: vv_sunExposure raw, which is the one number the dapple gate is built
+    // on and the one number that has never been measured in game.
+    //
+    // It is vanilla's per-vertex sun light level, and the gate assumes it reads
+    // 1 under open sky and clearly less under a canopy. If leaves in this
+    // version absorb only a little, "clearly less" might be 0.9, and a gate
+    // tuned for 0.75 would barely fire; if open ground does not quite reach 1,
+    // the gate leaks onto every field in the world. Both are one screenshot
+    // away from being settled and neither is worth another round of guessing.
+    //
+    // White is full sun, black is none. Stand in the open, then under a tree,
+    // and read off the two values.
+    if (mode == 16) return vec4(vec3(clamp(vv_sunExposure, 0.0, 1.0)), color.a);
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
     // Mortar lines, plank gaps and bark furrows should read; a flat painted
