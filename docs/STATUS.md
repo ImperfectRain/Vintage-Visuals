@@ -170,10 +170,12 @@ a future weather type inherits the rendering instead of adding a special case.
 
 | | Feature | Notes |
 |---|---|---|
-| `[ ]` | **Emissive materials** | `EmissionColor/Strength/Flicker/Temperature` so a forge produces illumination, metal highlights, warm reflections and glow rather than an orange texture |
-| `[ ]` | **Vegetation wind** | per-class amplitude: grass, crops, leaves, bushes |
-| `[ ]` | **Foliage translucency** | backface lighting, leaf-specific roughness, softer shadows |
+| `[x]` | ~~**Emissive materials**~~ | **built (L2).** See §4 |
+| `[-]` | ~~**Vegetation wind**~~ | **abandoned.** Vanilla already does it, including a high-frequency term and per-class bend counters |
+| `[x]` | ~~**Foliage translucency**~~ | **built (L2).** See §4 |
 | `[ ]` | Seasonal foliage response | autumn colour, frost, snow load, wet foliage |
+| `[ ]` | **Foliage excluded from the puddle and cavity paths** | *known defect.* Rain ripples gate on an up-facing normal and leaves have them, so a leaf can currently hold a puddle; crevice curvature reads leaf-texture contrast as grooves |
+| `[ ]` | Wet-foliage response distinct from wet stone | a wet leaf should darken and sag, not turn to polished glass at roughness 0.08 |
 | `[ ]` | SSAO | broad-scale, kept distinct from contact shadows and crevice shading |
 | `[ ]` | Bloom | driven by emissive intensity, not brightness. Off / subtle / cinematic |
 | `[ ]` | Depth of field | |
