@@ -603,7 +603,7 @@
       "pbr_dapple": {
         "ingui": "Sunlight dapple under trees",
         "comment": "Sunlight broken into moving patches by the leaves overhead. Only appears where the game's own sun light level says there is a canopy above - open ground and interiors are untouched. Gaps brighten by as much as the shade between them darkens, so it never dims the scene overall. 0 is vanilla.",
-        "default": 0.55,
+        "default": 0.35,
         "range": {
           "min": 0.0,
           "max": 2.0,

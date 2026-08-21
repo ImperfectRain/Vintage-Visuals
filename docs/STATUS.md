@@ -287,23 +287,26 @@ feature rather than a wiring mistake; it does not say anything looks right.
   one-block cell boundaries exactly on the half-block grid's, so both octaves
   broke along the same lines and reinforced the lattice the second one existed
   to hide.
-- **Sunlight dapple, third pass, L2.** Second pass came back as "a bunch of
-  large spotlight style lights": the whole frame blown to white with bloom
-  halos. Two causes.
-  Flecks were too big - 1.35 blocks between them and nearly a block across,
-  stretched up to 4x at low sun. Now 0.70 apart, ~0.6 across, stretch capped at
-  3.
-  And the effect was ADDITIVE, because it subtracted the measured coverage to
-  stay mean-preserving. That instinct is right and does not survive the
-  coverage: at 11% lit, holding the mean fixed forces the bright ninth to be
-  enormously brighter than the dark eight-ninths. Physically true - a sunfleck
-  is near full sun against shade a tenth of it - but the game has nowhere to put
-  that range, `findbright` multiplies the whole frame rather than thresholding
-  it, and the floor came back as white spotlights. Dapple is now DARKEN-ONLY: a
-  fleck is where light was not taken away, so nothing can exceed vanilla's own
-  brightness and blowing out is arithmetically impossible. It is therefore a
-  light-removing term and belongs in VisualBudget's accounting.
-- **`vv_sunExposure`'s actual range has never been measured.** The dapple gate
+- **Sunlight dapple, fourth pass, L2.** Third pass came back as "a strobing
+  disco ball effect basically everywhere". Two separate faults, neither of them
+  the animation.
+  The strobe was **aliasing**. A fleck is about half a block across, so past
+  some distance several fall inside one pixel and which one is sampled depends
+  on exactly where that pixel lands; move the camera slightly and the answer
+  changes, every pixel independently. Slowing the blink could never have helped,
+  because the blink was not what was moving. Flecks now dissolve toward "no
+  light removed" between 22 and 44 blocks. Faded on distance rather than
+  `fwidth` deliberately: the field sits inside a gate that early-outs on open
+  ground, which is divergent control flow, and a quad's helper lanes may have
+  taken the other branch - so the derivative is least reliable exactly at the
+  edges of the effect.
+  "Everywhere" was the gate's upper rolloff. It ran `smoothstep(0.99, 0.72,
+  exposure)`, so ground reading even 0.95 still passed a sixth of the effect -
+  across every open field in the world that is not a leak, it is the effect
+  being on. Now 0.97 to 0.62, where 0.95 passes one part in a hundred.
+  Default strength also cut from 0.55 to 0.35 and the shade depth from 0.34 to
+  0.28.
+- **`vv_sunExposure`'s actual range has still never been measured.** The dapple gate
   assumes 1 under open sky and clearly less under canopy. If leaves absorb only
   a little, "clearly less" might be 0.9 and the gate barely fires; if open
   ground does not reach 1, it leaks onto every field in the world. Debug view 16

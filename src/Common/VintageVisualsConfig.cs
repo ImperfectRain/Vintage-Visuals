@@ -545,7 +545,7 @@ namespace VintageVisuals.Common
         /// shade between them darkens, so it never asks VisualBudget for
         /// anything.
         /// </summary>
-        public float SunDapple { get; set; } = 0.55f;
+        public float SunDapple { get; set; } = 0.35f;
 
 
         /// <summary>

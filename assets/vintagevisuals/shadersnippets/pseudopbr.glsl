@@ -453,7 +453,29 @@ const float VV_DAPPLE_GREEN = 0.055;
 
 // How much light the canopy takes out of the shade between flecks, at full
 // slider. Flecks themselves are left exactly at vanilla.
-const float VV_DAPPLE_SHADE = 0.34;
+const float VV_DAPPLE_SHADE = 0.28;
+
+// Blocks at which flecks begin to dissolve, and over how many blocks.
+//
+// This is the strobing, and it was aliasing rather than animation. A fleck is
+// about half a block across, so past a certain distance several of them land
+// inside one pixel and which one gets sampled depends on exactly where that
+// pixel falls. Move the camera slightly and the answer changes, every pixel
+// independently, and a forest full of that reads as a disco ball. Slowing the
+// blink could never have helped, because the blink was not what was moving.
+//
+// Faded by distance rather than by fwidth on purpose. The derivative is the
+// more precise measure, but this field is computed inside a gate that early-outs
+// on open ground and indoors - divergent control flow, where a quad's helper
+// lanes may have taken the other branch and the derivative is unreliable
+// exactly at the edges of the effect. Distance needs no derivative, and it is
+// what the relief and the ripples already fade on.
+//
+// Much nearer than the relief fade: flecks are finer than surface detail and
+// stop being resolvable sooner. Real dapple is not readable from fifty metres
+// either.
+const float VV_DAPPLE_FADE_START = 22.0;
+const float VV_DAPPLE_FADE_RANGE = 22.0;
 
 // How far the pattern may be thrown along the sun's azimuth, in blocks. The
 // projection runs away at the horizon like every other one in this mod.
@@ -685,7 +707,14 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     float exposure = clamp(vv_sunExposure, 0.0, 1.0);
 
     // Rises out of deep shade and falls again as the sky opens up.
-    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.99, 0.72, exposure);
+    //
+    // The upper rolloff has to be strict. vv_sunExposure reads essentially 1
+    // under open sky - vanilla multiplies the ambient colour by it directly, so
+    // it has to - and the previous 0.99 edge meant anything reading even 0.95
+    // still passed a sixth of the effect. Spread over every open field in the
+    // world that is not a subtle leak, it is the effect being on everywhere.
+    // At 0.97 falling to 0.62, an exposure of 0.95 passes one part in a hundred.
+    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.97, 0.62, exposure);
     if (under < 0.001) return 0.0;
 
     // No sun, no flecks. Also kills it at night, where a dappled moon would be
@@ -740,7 +769,14 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // and never becomes pure gradient.
     float penumbra = clamp(VV_DAPPLE_PENUMBRA * height / VV_DAPPLE_HIGH, 0.25, 0.85);
 
-    float fleck = vvSunflecks(p, penumbra);
+    // Dissolved with distance before the flecks alias into scintillation. Toward
+    // 1 rather than 0, since 1 is "no light removed" - so the effect fades back
+    // into vanilla rather than into flat shade.
+    float resolvable = clamp(1.0 - (length(cameraRelativePos) - VV_DAPPLE_FADE_START)
+                                   / VV_DAPPLE_FADE_RANGE, 0.0, 1.0);
+    if (resolvable < 0.004) return 0.0;
+
+    float fleck = mix(1.0, vvSunflecks(p, penumbra), resolvable);
 
     // How much light the canopy takes away here: none inside a fleck, most of
     // VV_DAPPLE_SHADE between them. Never negative, so the caller can only ever
