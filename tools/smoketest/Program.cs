@@ -192,6 +192,9 @@ void main(void) {
         Console.WriteLine("ConfigLib settings file agrees with the bridge");
         ConfigLibChecks.Run(Repo, Check);
 
+        Console.WriteLine("Every patch group can be switched off");
+        PatchGatingChecks.Run(Repo, Check);
+
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 
