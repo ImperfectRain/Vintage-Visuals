@@ -190,6 +190,31 @@ a future weather type inherits the rendering instead of adding a special case.
 Things known to be wrong or unverified right now. Each should be closed or
 re-explained rather than quietly dropped.
 
+### Closed by the pre-test proofing pass
+
+Seven defects found by inspection, not by symptom - none of them would have
+announced itself in a log, and five would have looked like "the feature does
+nothing" on screen.
+
+| What was wrong | What it cost |
+|---|---|
+| `UploadScene` returned early unless the program had `vv_sceneRestraint` | Only `pseudopbr.glsl` calls `vvSceneVisibilityDampen()`, so only terrain reads that uniform. Entities and particles got **none** of the scene block |
+| `vv_sceneDayLight`, `vv_sceneWetness`, `vv_sceneOvercast` uploaded ad hoc by the terrain and entity paths | Particles never received them. Unset reads as 0, 0 multiplies the visibility term, particle specular was dead |
+| Every other upload in `PbrShaderBinder` was unguarded | `particlesquad` never calls the lobe, so the compiler removes six uniforms the binder wrote to every frame |
+| `ColorGradeSubsystem` null-checked the tracker then dereferenced it twice more | Crash on world exit, where the tracker is unregistered before the subsystems |
+| `PseudoPBR.DebugView` clamped to `0..10`, slider went to `0..14` | Debug views 11-14 (ripples, crevice, foliage, emission) unreachable; the slider moved and the next load silently reset it |
+| `vvApplyParticleGlow` seeded its flicker with `vec3(0.0)` | Every spark in the world flickered in step, reading as one pulsing fire |
+| `vv_sceneAutumn`, `vv_sceneWinter`, `vv_sceneEnclosure` declared, uploaded, never read | GLSL removes an unread uniform, `HasUniform` then says absent, and the binder writes to a name the program lacks - once a frame, forever |
+
+Each has a check behind it now: a combined-group pass in `verifypatches` that
+applies every group to a shader together as the game does, an `UploadScene`
+contract check in both directions, a slider-range vs config-clamp check, and a
+dead-code scan over the shipped GLSL. Three of the five were verified to bite
+by reintroducing the bug.
+
+**None of this is L4.** It raises the odds that a visual test is testing the
+feature rather than a wiring mistake; it does not say anything looks right.
+
 - **Cloud shadows have never been seen working.** Reported invisible three
   times, then reported as three over-large patches unrelated to the sky. Now
   reading the game's own tile array via reflection. **Two things cannot be ruled
@@ -197,10 +222,17 @@ re-explained rather than quietly dropped.
   mirrored across the diagonal), and it may scroll with an offset rather than
   staying camera-centred (a constant shift). The reader logs what it found;
   `Weather.CloudShadowDebug` shows the field alone at full strength.
-- **`colorgrade` cannot be verified against the real `final.fsh`.** The
-  reference dump in `reference/game-shaders/` was taken with the mod running, so
-  `verifypatches` refuses it. Needs a re-dump with `ColorGrade.Enabled`,
-  `PseudoPBR.Enabled` and `Weather.Enabled` all false.
+- **`colorgrade`'s reference dump is still dirty**, though the group itself is
+  now verified. The dump in `reference/game-shaders/final.fsh` was taken with
+  the mod running, so `verifypatches` refuses it by name. Its four injections
+  are individually reversible, so vanilla was reconstructed by hand - strip the
+  prepended snippet, un-annotate `out vec4 outColor;`, rename `vvSceneMain`
+  back to `main`, drop the appended wrapper - and against that reconstruction
+  all four anchors match and the result compiles in every combination. That is
+  a real L2 for the group. It is not a substitute for a clean dump, because the
+  reconstruction is only as good as our memory of what we injected; re-dump
+  with `ColorGrade.Enabled`, `PseudoPBR.Enabled` and `Weather.Enabled` all
+  false when convenient.
 - **`TonemapStrength` ships at 0.0** and is the one part of colour grading never
   confirmed on screen.
 - **Nothing in Weather past wetness has reached L4.** Five effects sit at L2.
