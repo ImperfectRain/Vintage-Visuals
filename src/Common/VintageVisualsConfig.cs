@@ -636,7 +636,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 10.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 14.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

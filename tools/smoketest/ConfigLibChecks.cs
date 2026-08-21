@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 
 namespace VintageVisuals.SmokeTest
@@ -126,11 +128,77 @@ namespace VintageVisuals.SmokeTest
                 check("every ConfigLibBridge case has a setting", orphanCase.Count == 0,
                     string.Join(", ", orphanCase));
 
+
+                if (settings.TryGetProperty("float", out JsonElement floatSettings))
+                {
+                    CheckRangesMatchClamps(repo, floatSettings, bridge, check);
+                }
                 ok("all four subsystems' settings are present",
                     codes.Any(c => c.StartsWith("colorgrade_")) &&
                     codes.Any(c => c.StartsWith("adaptive_")) &&
                     codes.Any(c => c.StartsWith("pbr_")));
             }
+        }
+
+        /// <summary>
+        /// The slider's range and the config's clamp must agree.
+        ///
+        /// They silently disagreed: pbr_debugview's slider went to 14 while
+        /// ClampToValidRanges reset anything above 10, so four debug views -
+        /// rain ripples, crevice occlusion, foliage transmission and emission -
+        /// were unreachable. Nothing failed. The slider moved, the number was
+        /// written, and the next load quietly clamped it back.
+        ///
+        /// Matched on the property name rather than the section, since a range
+        /// is only ever put on a float and the float names happen to be unique.
+        /// Ambiguous names are skipped rather than guessed at.
+        /// </summary>
+        private static void CheckRangesMatchClamps(string repo, JsonElement floats,
+                                                   string bridge, Action<string, bool, string> check)
+        {
+            string config = File.ReadAllText(Path.Combine(repo, "src/Common/VintageVisualsConfig.cs"));
+
+            var clamps = new Dictionary<string, List<(float Min, float Max)>>();
+
+            foreach (Match m in Regex.Matches(config,
+                         @"(\w+)\s*=\s*ColorGradeConfig\.Clamp\(\s*\w+\s*,\s*(-?[\d.]+)f?\s*,\s*(-?[\d.]+)f?\s*,"))
+            {
+                string name = m.Groups[1].Value;
+                if (!clamps.TryGetValue(name, out var list)) clamps[name] = list = new List<(float, float)>();
+                list.Add((float.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture),
+                          float.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture)));
+            }
+
+            var mismatched = new List<string>();
+            int compared = 0;
+
+            foreach (JsonProperty setting in floats.EnumerateObject())
+            {
+                if (!setting.Value.TryGetProperty("range", out JsonElement range)) continue;
+
+                Match bind = Regex.Match(bridge,
+                    "case \"" + Regex.Escape(setting.Name) + "\":\\s*\\w+\\.(\\w+)\\s*=");
+                if (!bind.Success) continue;
+
+                string property = bind.Groups[1].Value;
+                if (!clamps.TryGetValue(property, out var found) || found.Count != 1) continue;
+
+                compared++;
+
+                float min = range.GetProperty("min").GetSingle();
+                float max = range.GetProperty("max").GetSingle();
+
+                if (Math.Abs(min - found[0].Min) > 1e-4f || Math.Abs(max - found[0].Max) > 1e-4f)
+                {
+                    mismatched.Add(setting.Name + " slider " + min + ".." + max +
+                                   " vs clamp " + found[0].Min + ".." + found[0].Max);
+                }
+            }
+
+            check("every slider range matches its config clamp", mismatched.Count == 0,
+                string.Join("; ", mismatched));
+
+            check("range/clamp pairs were actually compared", compared >= 20, compared.ToString());
         }
     }
 }
