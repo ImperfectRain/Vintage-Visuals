@@ -316,6 +316,67 @@ geometry. The investigation changed the answer.
 Things known to be wrong or unverified right now. Each should be closed or
 re-explained rather than quietly dropped.
 
+### Closed: the specular lobe had no energy limit
+
+Reported as "an ugly disco ball pattern moving rapidly across ALL surfaces,
+even the inside of caves", and separately as "water drops and wetness effects
+are no longer working". One cause, one commit, three symptoms.
+
+`vvDistributionGGX` had its denominator clamp moved from `1e-5` to `1e-12` in
+5800f56, on the reasoning that a divide-by-zero guard should not be truncating
+real values. The reasoning was checked at roughness 0.2, where the two agree to
+within a factor of one. They do not agree anywhere else:
+
+| roughness | peak with `1e-5` | peak with `1e-12` | ratio |
+|---|---|---|---|
+| 0.04 (the material floor) | 0.26 | 124339.8 | 485702x |
+| 0.08 (wet stone) | 4.10 | 7771.2 | 1896x |
+| 0.15 | 50.62 | 628.8 | 12x |
+| 0.20 | 160.00 | 198.9 | 1x |
+
+GGX integrates to one over the hemisphere, so its peak rises as
+`1/(pi*alpha^2)` without limit. The `1e-5` clamp was not a divide-by-zero
+guard at all - it was the renderer's **only** specular energy limit, and
+removing it let a plain dielectric reach 1119x sunlight.
+
+The same commit did worse. It added `vvDistributionGGXAnisotropic` with no
+equivalent clamp, and `PseudoPBR.GrainAnisotropy` defaults to **0.6**, so the
+branch condition `vv_pbrGrain > 0.001` sends **every terrain fragment in the
+world** down the uncapped path regardless of whether the surface has any grain.
+The isotropic edit and the anisotropic omission each independently uncapped the
+whole world.
+
+Why the three symptoms:
+
+| Symptom | Mechanism |
+|---|---|
+| Sparkle everywhere | A lobe at alpha 0.0016 is about 0.09 degrees wide - narrower than a pixel. It cannot fade in and out as the view moves, so it pops one fragment at a time |
+| Inside caves | `vvBlockLightSpecular` deliberately ignores the shadow map and daylight, because a torch burns at midnight. It calls the same lobe |
+| Wetness stopped reading | Wet stone is roughness 0.08. It went from a peak of 4.1 to 7771 - past darkening, past sheen, into flat white |
+
+Fixed by flooring **alpha**, not the denominator: `VV_GGX_MIN_ALPHA = 0.04`,
+applied in both forms before the anisotropic split so parity still holds
+exactly, and applied before the split so `ax * ay` stays `a * a` and the bound
+holds at every anisotropy. 0.04 is the largest floor that leaves roughness 0.21
+and above bit-identical to the build before 5800f56; below it the peak holds at
+199, about 1.8x sunlight for a dielectric, instead of running away.
+
+Two things this deliberately does not restore. The old clamp capped the peak at
+`1e5*roughness^4`, so a **smoother** surface got a **dimmer** highlight, falling
+to nothing as it approached a mirror - which is backwards, and is why wet stone
+at `VV_LAYER_WET_SPECULAR = 0.60` had never once produced a sheen. Wet surfaces
+will now be visibly shinier than in any build tested so far. That is what the
+wet constants were written for, but it has never been seen, and it is the first
+thing to look at.
+
+The lesson is in the test, not the constant. `CheckAnisotropy` already asserted
+the lobe was **finite**, and 124339.8 is finite. `CheckLobeIsBounded` now
+asserts it is bounded and that a smoother surface is never dimmer, with the
+bound as a literal so that lowering the floor cannot lower the bound along with
+it. All three mutations - dropping the floor, lowering it, and restoring the
+old denominator clamp - were confirmed to fail the suite before this was
+committed.
+
 ### Closed by the pre-test proofing pass
 
 Seven defects found by inspection, not by symptom - none of them would have

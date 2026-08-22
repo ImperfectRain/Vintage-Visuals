@@ -36,12 +36,117 @@ namespace VintageVisuals.SmokeTest
             CheckEmissionMask(repo, check);
             CheckEnergyCompensation(repo, check);
             CheckAnisotropy(repo, check);
+            CheckLobeIsBounded(repo, check);
         }
+
+        /// <summary>
+        /// The specular lobe must be BOUNDED, not merely finite.
+        ///
+        /// This exists because "finite" is what the anisotropy check already
+        /// asserted, and finite is what a lobe of 124340 is. GGX integrates to
+        /// one over the hemisphere, so its peak grows as 1/(pi*alpha^2) with no
+        /// limit; the mod has no exposure control between the lobe and the
+        /// frame, so an unbounded peak is a white blowout that pops in and out
+        /// one fragment at a time as the view moves. It shipped once, from a
+        /// denominator clamp being "corrected" without measuring the peak it
+        /// was holding down, and it reached every surface in the world
+        /// including block-lit ones underground.
+        ///
+        /// Two properties, and the second is the one that matters:
+        ///
+        ///   Bounded  - no roughness produces a peak above the floor's peak.
+        ///   Monotone - a smoother surface is never DIMMER at the peak than a
+        ///              rougher one. The clamp this replaced failed exactly
+        ///              here: it capped at 1e5*roughness^4, so it fell toward
+        ///              zero as the surface approached a mirror, and wet stone
+        ///              lost its sheen entirely.
+        /// </summary>
+        private static void CheckLobeIsBounded(string repo, Action<string, bool, string> check)
+        {
+            bool bounded = true, monotone = true;
+            string worstBound = "", worstMono = "";
+            // Starts at zero: the sweep runs from rough to smooth, so the first
+            // sample has nothing rougher to be compared against.
+            double previous = 0.0;
+
+            // Down from a mirror-smooth surface, finer than the material floor
+            // of 0.04 so the sweep covers values a roughness bias can reach.
+            for (int r = 100; r >= 1; r--)
+            {
+                double roughness = r / 100.0;
+                double peak = Ggx(1.0, roughness);
+
+                if (peak > PeakBound * 1.001)
+                {
+                    bounded = false;
+                    worstBound = "roughness " + roughness + " peak " + peak.ToString("0.#");
+                }
+
+                // Sweeping toward zero roughness, so the peak must not fall.
+                if (peak < previous * 0.999)
+                {
+                    monotone = false;
+                    worstMono = "roughness " + roughness + " peak " + peak.ToString("0.#") +
+                                " below rougher " + previous.ToString("0.#");
+                }
+                previous = peak;
+
+                for (int an = 0; an <= 10; an++)
+                {
+                    double a = GgxAniso(1.0, 0.0, 0.0, roughness, an / 10.0);
+                    if (a > PeakBound * 1.001)
+                    {
+                        bounded = false;
+                        worstBound = "anisotropic, roughness " + roughness +
+                                     " anisotropy " + (an / 10.0) + " peak " + a.ToString("0.#");
+                    }
+                }
+            }
+
+            check("the specular lobe peak is bounded at every roughness", bounded, worstBound);
+
+            // The floor and the bound have to agree, or one of them is dead:
+            // a floor above what the bound needs throws away gloss the frame
+            // could have carried, and one below it lets the peak through.
+            double floorPeak = 1.0 / (Math.PI * MinAlpha * MinAlpha);
+            check("the alpha floor is the one that produces exactly that bound",
+                Math.Abs(floorPeak - PeakBound) / PeakBound < 0.01,
+                "floor peak " + floorPeak.ToString("0.#") + " vs bound " + PeakBound.ToString("0.#"));
+            check("a smoother surface is never dimmer at the lobe peak", monotone, worstMono);
+
+            // The floor has to be in the shader, not only in this port. Both
+            // forms take it, and both take it on alpha rather than on the
+            // denominator - a denominator clamp is what produced the inverted
+            // cap this replaced.
+            string pbr = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrcore.glsl"));
+
+            check("the shader declares VV_GGX_MIN_ALPHA at the tested value",
+                Regex.IsMatch(pbr, @"const\s+float\s+VV_GGX_MIN_ALPHA\s*=\s*0\.04\s*;"),
+                "pbrcore.glsl");
+
+            check("both lobe forms floor alpha at VV_GGX_MIN_ALPHA",
+                Regex.Matches(pbr, @"float\s+a\s*=\s*max\(VV_GGX_MIN_ALPHA,\s*roughness\s*\*\s*roughness\)").Count == 2,
+                "expected the floor in both vvDistributionGGX and vvDistributionGGXAnisotropic");
+        }
+
+        /// <summary>VV_GGX_MIN_ALPHA in pbrcore.glsl.</summary>
+        private const double MinAlpha = 0.04;
+
+        /// <summary>
+        /// The largest value either lobe may take. A LITERAL, deliberately not
+        /// derived from MinAlpha: derived from it, lowering the floor would
+        /// lower the bound with it and the test would keep passing while the
+        /// frame blew out. 200 is roughly 1.8x sunlight off a dielectric, which
+        /// is the most a buffer with no exposure control can carry. Moving it
+        /// is a decision, and it should look like one in the diff.
+        /// </summary>
+        private const double PeakBound = 200.0;
 
         /// <summary>Isotropic GGX, ported from vvDistributionGGX.</summary>
         private static double Ggx(double ndoth, double roughness)
         {
-            double a = roughness * roughness;
+            double a = Math.Max(MinAlpha, roughness * roughness);
             double a2 = a * a;
             double d = ndoth * ndoth * (a2 - 1.0) + 1.0;
             return a2 / Math.Max(1e-12, Math.PI * d * d);
@@ -51,7 +156,7 @@ namespace VintageVisuals.SmokeTest
         private static double GgxAniso(double ndoth, double tdoth, double bdoth,
                                        double roughness, double anisotropy)
         {
-            double a = roughness * roughness;
+            double a = Math.Max(MinAlpha, roughness * roughness);
             double aspect = Math.Sqrt(1.0 - 0.9 * Math.Min(Math.Max(anisotropy, 0.0), 1.0));
 
             double ax = Math.Max(1e-4, a / aspect);

@@ -275,36 +275,56 @@ float vvEmissiveGlow(float glow)
 
 const float VV_PI = 3.14159265359;
 
+// The narrowest specular lobe this renderer is allowed to evaluate, as a GGX
+// alpha (alpha = roughness^2, so this is roughness 0.2).
+//
+// This is a DISPLAY limit, not a physical one, and it is load-bearing. Two
+// separate things break without it:
+//
+//   Energy. The lobe integrates to one over the hemisphere, so narrowing it
+//   raises its peak as 1/(pi*alpha^2) without bound. The mod composites
+//   specular into vanilla's colour before bloom, with no exposure control
+//   anywhere in the chain, so a peak the frame cannot carry does not read as
+//   gloss - it reads as a white blowout that swallows the surface under it.
+//   At the material roughness floor of 0.04 the unbounded peak is 124340,
+//   which is 1119x sunlight off a plain dielectric.
+//
+//   Sampling. Lobe half-width is about alpha. At alpha 0.0016 the highlight is
+//   narrower than a pixel, so it does not fade in and out as the view moves -
+//   it pops, one fragment at a time, and a wall of them is a disco ball.
+//   0.04 is about 2.3 degrees, which is some tens of pixels at a normal FOV
+//   and resolves cleanly. It also comfortably exceeds the sun's own 0.53
+//   degree disc, so no real highlight is being narrowed past its source.
+//
+// 0.04 specifically: it is the largest floor that changes NOTHING at roughness
+// 0.21 and above, where the exact lobe peak is already below the bound. Only
+// the smooth end moves, and there it holds 199 (about 1.8x sunlight for a
+// dielectric) instead of running away.
+//
+// This replaces a denominator clamp that used to sit at 1e-5 and did the same
+// job by accident, but with the wrong shape: it capped the peak at
+// 1e5*roughness^4, so the SMOOTHER a surface got the DIMMER its highlight
+// became, and wet stone at roughness 0.08 was held to a peak of 4.1 - which is
+// why wet surfaces read as darkening alone and never as sheen.
+const float VV_GGX_MIN_ALPHA = 0.04;
+
 // GGX / Trowbridge-Reitz normal distribution. This is the term that makes
 // roughness read as material: it concentrates the highlight into a tight core
 // with a wide tail, which is what separates polished metal from worn stone far
 // more convincingly than a Blinn-Phong exponent does.
+//
+// THE LOBE IS FLOORED AT VV_GGX_MIN_ALPHA, NOT AT THE DENOMINATOR. See the
+// constant above for why; the short version is that a delta light times a
+// sub-pixel lobe is not something this renderer can display, and clamping the
+// denominator instead makes a SMOOTHER surface DIMMER, which is backwards.
 float vvDistributionGGX(float NdotH, float roughness)
 {
-    float a = roughness * roughness;
+    float a = max(VV_GGX_MIN_ALPHA, roughness * roughness);
     float a2 = a * a;
     float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
 
-    // Floored at 1e-12, not 1e-5. The guard exists to stop a division by zero
-    // and nothing else; at 1e-5 it was TRUNCATING real values across the whole
-    // smooth end of the range.
-    //
-    // This form is badly conditioned near the mirror direction. At NdotH = 1 the
-    // denominator collapses to pi * a^4, which at the roughness floor of 0.04 is
-    // about 2e-11 - four orders of magnitude below the old clamp. So every
-    // smooth highlight was being flattened at its peak: at roughness 0.05 the
-    // distribution is 50930 and the clamp returned 6250.
-    //
-    // Found by the parity test against the anisotropic form. The two are the
-    // same function algebraically but floor different expressions, and the
-    // anisotropic one is far better conditioned - its denominator at NdotH = 1
-    // is pi * a^2, not pi * a^4 - so they disagreed precisely where this clamp
-    // was biting and nowhere else.
-    //
-    // The peak is large but bounded and correct: a near-mirror surface really
-    // does concentrate its energy into a very narrow lobe, and the geometry
-    // term, Fresnel and the specular-AA roughness widening all scale it back
-    // down afterwards.
+    // Pure divide-by-zero guard now, and unreachable in practice: with a
+    // floored at 0.04, the denominator at NdotH = 1 is pi * a^4 = 8e-6.
     return a2 / max(1e-12, VV_PI * d * d);
 }
 
@@ -329,7 +349,11 @@ float vvDistributionGGX(float NdotH, float roughness)
 float vvDistributionGGXAnisotropic(float NdotH, float TdotH, float BdotH,
                                    float roughness, float anisotropy)
 {
-    float a = roughness * roughness;
+    // The same floor as the isotropic form, applied BEFORE the split so the two
+    // stay bit-comparable at anisotropy 0. Stretching the lobe redistributes
+    // its width between the two axes and leaves ax * ay = a * a, so the peak
+    // bound below holds at every anisotropy, not just at zero.
+    float a = max(VV_GGX_MIN_ALPHA, roughness * roughness);
 
     // 0.9 rather than 1.0 so the tight axis never reaches zero width. A lobe of
     // zero width is a mirror line - infinitely bright along one direction - and
