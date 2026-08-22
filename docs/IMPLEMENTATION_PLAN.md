@@ -43,6 +43,8 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 | Atmosphere state read from the game | L2 | `src/Common/Scene/AtmosphereState.cs` |
 | Height haze through vanilla's ambient stack | L2 | `src/Atmosphere/` |
 | Aerial perspective, one owner for fog | L2 | `atmosphere.glsl`, four programs |
+| Atmospheric transport, 8 of 11 features | L2 | `AtmosphereInputs`, `atmosphere.glsl` |
+| Cloud-edge, godrays, dapple interaction | foundation | interface and debug view only - D26 |
 
 ---
 
@@ -102,6 +104,13 @@ and unaccounted for below it.
 for entities. Whether the per-texture resolution used for blocks transfers is
 unknown.
 
+**Whether the `outGlow` anchor can be shared.** Vanilla's godray pass is fed by
+the green channel of the glow buffer, and writing it is the right way to
+integrate. `pseudopbr.yaml` already owns that line for the canopy shafts, and two
+groups on one anchor couples their rollbacks. Either the atmosphere's godray
+level folds into pseudopbr's patch - accepting a shared fate - or godrays stay
+foundation only. That is a real trade and should be made deliberately. See D26.
+
 **Whether the ambient modifier survives.** `IAmbientManager.CurrentModifiers` is
 public and writable, and the blend is documented on the interface, but nothing
 documents the dictionary's LIFETIME. `AmbientBridge` re-adds its entry every tick
@@ -125,6 +134,8 @@ the outside. Full reasoning in DECISIONS.md.
 | Approach | Why it was rejected |
 |---|---|
 | **Reimplementing height fog in GLSL** | Vanilla computes it in all seven shading programs from two ambient uniforms, including the sky and the water, which this mod does not patch. A snippet version would stop at the edge of what was patched, and the seam falls where a hillside meets its own grass — D18, D19 |
+| **Eleven atmospheric effects as eleven multipliers** | Loses energy uncontrollably, and every one of the eleven looks reasonable while it happens. Replaced by one transport with summed extinction and summed, capped inscatter — D24 |
+| **Normalising vanilla's fog density to 0..1** | It is an extinction coefficient and the shader uses it as one. Squashing it destroys the only unit in the struct with a physical meaning — D25 |
 | **Rain fog inside the weather patch group** | It reached the two terrain shaders and nothing else, so an animal standing in a fogged valley kept crisp edges. Not a tuning problem: no value of FogStrength could reach a program the group did not patch — D23 |
 | **A second sun-attenuation model** | `IClientGameCalendar.SunColor` already reddens the sun near the horizon per player position, with a per-day offset. A mod model would light the terrain with a sun of one colour while the player looks at a sun of another — D21 |
 | **Procedural sunfleck field** | Vanilla's shadow map already resolves individual leaf gaps and animates them with the game's own wind. A second field is a second description of the same leaves, and the invented one has no access to where the branches are. `vvSunflecks` and nine constants were deleted, not disabled — D7 |

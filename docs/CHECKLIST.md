@@ -111,11 +111,22 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
 | Atmosphere state from the game | x | x | x | x | – | – | – | n/a | x |
+| Derivation / normalisation (`AtmosphereInputs`) | x | x | x | x | – | – | – | n/a | x |
+| Transport model | x | x | x | x | – | – | – | – | x |
 | Ambient stack bridge | x | x | x | x | – | – | – | n/a | x |
 | Height haze | x | x | x | x | – | – | – | – | x |
-| Aerial perspective | x | x | x | x | – | – | – | – | x |
-| Weather visibility (moved from Weather) | x | x | x | x | – | – | – | – | x |
-| Horizon colouration | – | – | – | – | – | – | – | – | x |
+| 1 Aerial perspective | x | x | x | x | – | – | – | – | x |
+| 2 Horizon scattering | x | x | x | x | – | – | – | – | x |
+| 3 Sun-aware scattering | x | x | x | x | – | – | – | – | x |
+| 4 Height attenuation | x | x | x | x | – | – | – | – | x |
+| 5 Weather extinction | x | x | x | x | – | – | – | – | x |
+| 6 Cloud-atmosphere coupling | x | x | x | x | – | – | – | – | x |
+| 7 Cloud-edge scattering | x | – | x | x | – | – | – | – | x |
+| 8 Godrays | x | – | x | x | – | – | – | – | x |
+| 9 Precipitation scattering | x | x | x | x | – | – | – | – | x |
+| 10 Moon scattering | x | x | x | x | – | – | – | – | x |
+| 11 Dapple interaction | x | – | x | x | – | – | – | – | x |
+| Thirteen debug views | x | x | x | x | – | – | – | – | x |
 
 Not yet validated, and each is a separate question:
 
@@ -124,15 +135,23 @@ Not yet validated, and each is a separate question:
 - [ ] the haze reaches the sky and the water, which is the whole reason it is not in a shader
 - [ ] switching it off leaves the ambient stack exactly as vanilla left it
 - [ ] the blend reproduction agrees with the game — the log says so or it does not
-- [ ] it does not double up with rain fog on a wet still night
 - [ ] a low sun brightens the haze toward it and not away from it
 - [ ] the in-scattering does not push the horizon past white at sunset
 - [ ] an entity standing in fogged terrain now fogs with it — this is the regression the move was for
 - [ ] terrain, ground cover, entities and particles agree at the same distance
-- [ ] setting aerial perspective to 0 restores vanilla's own `applyFog`, confirmed in a shader dump
+- [ ] setting every shader feature to 0 restores vanilla's own `applyFog`, confirmed in a shader dump
+- [ ] a blizzard reads differently from a downpour, not merely greyer
+- [ ] a mountain top sees further than the valley below it
+- [ ] a moonlit night is not brighter than vanilla's, only differently shaped
+- [ ] each of the thirteen debug views shows what it claims
 
-**Nothing here has been seen in a world.** `Atmosphere.HeightHaze` defaults to 0
-for that reason, so an unmodified install is unaffected either way.
+**The test matrix that has NOT been run.** Time: noon, morning, sunset, night,
+moonlit night. Weather: clear, overcast, rain, heavy rain, snow, and every
+transition. Location: field, forest, mountain, valley, shore, underground, high
+altitude. Distance: near, medium, far. Systems: all on, all off, each off in
+turn. None of it. The independence and normalisation checks in
+`tools/smoketest/AtmosphereChecks.cs` cover the same axes as *source-level*
+tests, which is a different claim and a much weaker one.
 
 **Sun attenuation has no row** because it is not this mod's to implement — see
 DECISIONS D21. `AtmosphereState.SunColor` samples vanilla's own answer and no

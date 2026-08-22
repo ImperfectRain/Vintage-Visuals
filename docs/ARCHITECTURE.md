@@ -255,29 +255,60 @@ final.fsh                      src/ColorGrade/    GPU, post pass
 frame
 ```
 
-### The atmosphere, which is not in the shader at all
+### The atmosphere, which leaves through two doors
 
-The one part of the pipeline that leaves through an API rather than a patch.
+Half of it is not in a shader at all.
 
 ```
-IAmbientManager.CurrentModifiers        <- a stack the game and every mod share
-        ^                    |
-        |                    v
-AmbientBridge          the game's own blend
-src/Atmosphere/                |
-        ^                      v
-        |         flatFogDensity, flatFogStart, fogDensityIn, fogMinIn, rgbaFog
-        |                      |
-   AtmosphereState             +--> chunkopaque   chunktopsoil   entityanimated
-   Common/Scene/               |    particlescube particlesquad  chunkliquid
-   (reads the blend back)      +--> sky, clouds, everything else the game draws
+                    VINTAGE STORY
+     calendar    ambient manager    climate    cloud renderer
+        |              |              |             |
+        +--------------+------+-------+-------------+
+                              |
+                     EnvironmentTracker            src/Common/Scene/
+                     the ONE place the mod asks
+                              |
+              +---------------+---------------+
+              |                               |
+       EnvironmentState                 AtmosphereState
+       what the world is doing          what the AIR is doing
+              |                               |
+              +---------------+---------------+
+                              |
+                      AtmosphereInputs         src/Atmosphere/
+                      config x state x budget
+                      normalisation lives here
+                              |
+              +---------------+---------------+
+              |                               |
+       AmbientBridge                   AtmosphereShaderBinder
+       writes the game's own           22 uniforms, derived ONCE
+       ambient stack                   per frame
+              |                               |
+       the game's blend                atmosphere.glsl
+              |                        one transport
+              |                               |
+   flatFogDensity, fogDensityIn,       +--> chunkopaque
+   fogMinIn, rgbaFog                   +--> chunktopsoil
+              |                        +--> entityanimated
+              +--> EVERY program       +--> particlescube
+                   the game has,
+                   sky and water
+                   included
 ```
 
-The arrow into the sky and the water is the point. Those programs are in no
-patch group and never will be, so anything expressed here reaches parts of the
-frame that GLSL in this mod cannot. `AtmosphereState` reads the blend back so
-that a later feature which *does* need a shader is working from the same numbers
-vanilla is.
+The left branch is the point. The sky, the water, `chunktransparent` and the
+sprite particles are in no patch group and never will be, so anything expressed
+as an ambient modifier reaches parts of the frame that GLSL in this mod cannot.
+Height haze, fog colour, density and floor all go that way.
+
+The right branch carries what the game does not compute at all: air that knows
+where the sun is. It anchors on `applyFog`, which is byte-identical in all seven
+shading programs, so terrain, ground cover, entities and particles receive the
+same uniforms and run the same function.
+
+`AtmosphereState` reads the ambient blend back, so both branches work from one
+set of numbers and cannot drift.
 
 ### The reflection loop, which spans two frames
 
@@ -331,7 +362,9 @@ information ladder applies throughout: prefer what the game already computed.
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |
-| Sun colour and direction | `IClientGameCalendar.SunColor`, `SunPositionNormalized` | none | not yet uploaded | `AtmosphereState` |
+| Sun colour and direction | `IClientGameCalendar.SunColor`, `SunPositionNormalized` | none | `vv_atmosSunColor`, `vv_atmosSunDir` | `atmosphere.glsl` |
+| Moon direction and light | `MoonPosition`, `MoonPhaseBrightness` | normalised in double; light scaled by darkness | `vv_atmosMoonDir`, `vv_atmosMoonLight` | moon scattering |
+| Broken cloud | the same blended cloud density the shadows read | `4c(1-c)` | `vv_atmosBrokenCloud` | cloud-edge scattering |
 | Camera height above sea level, far plane | `DefaultShaderUniforms` | none | vanilla `playerToSealevelOffset`, `zFar` | `AtmosphereState` |
 
 **Not plumbed, and authoritative if it were:** the rain map
@@ -358,6 +391,9 @@ quietly invalidate one of these.
 | Entity / particle PBR | own patch group | independently gated | terrain problems must not disable them | vanilla flat diffuse |
 | Height haze | modifier in the game's ambient stack | modifier **removed**, not zeroed | a zeroed entry is residue in a dictionary shared with every mod | vanilla's own atmosphere |
 | Ambient stack unavailable | modifier installed | logged once, feature off | nothing else in the frame depends on it | vanilla's own atmosphere |
+| Atmosphere uniforms | uploaded every frame | all zero | unset GLSL uniforms read as 0, which IS the vanilla value | vanilla's own `applyFog`, algebraically |
+| Cloud edge | a real cloud edge | partial-cover proxy | the game's tiles carry no edge information | a broad response instead of a rim |
+| Godrays, dapple interaction | writes into vanilla's glow channel | **nothing** | the anchor belongs to another patch group | vanilla's own godrays |
 
 ## Performance contracts
 

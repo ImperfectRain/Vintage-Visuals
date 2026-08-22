@@ -175,14 +175,25 @@ five features below turned out to be that kind of value.
 
 | | Feature | Level | Notes |
 |---|---|---|---|
-| `[x]` | Atmosphere state read from the game | **L2** | `AtmosphereState`, sampled every frame in `EnvironmentTracker`. Fog, height fog, sun colour and direction, ambient colour, camera height, far plane - all read, none modelled |
-| `[x]` | Height haze | **L2** | Written into vanilla's own `flatFogDensity`/`flatFogStart`, which every shading program already computes. **Defaults to 0**: the band's height is the one number no test can settle |
-| `[x]` | Aerial perspective / directional in-scattering | **L2** | The one genuine gap, and so the only part of this subsystem with GLSL. Henyey-Greenstein in-scattering at vanilla's `applyFog`, in four programs. **Defaults to 0**, which skips the patch group |
-| `[ ]` | Sky scattering and horizon colouration | — | Vanilla owns the sky's own horizon (`horizonFog`, `getFogAmountForSky`) and patching the sky was already tried and rejected - D6. What is left is terrain taking the horizon's colour at distance, which is part of aerial perspective |
-| `[ ]` | Sun and moon attenuation | — | **Vanilla already does this.** `IClientGameCalendar.SunColor` reddens the sun near the horizon, per player position, with a per-day `SunsetMod` so no two sunsets match. Sampled into `AtmosphereState`; a second model would contradict the sun disc the player can see |
-| `[x]` | Weather visibility | **L3** | Moved out of the weather group, which patched the two terrain shaders only. Now reaches entities and particles as well, so an animal in a fogged valley no longer keeps crisp edges. The arithmetic is unchanged; only its reach is |
-| `[ ]` | Cloud attenuation of direct sunlight | — | partly done as the overcast term; belongs here |
-| `[ ]` | Godray interaction | — | vanilla has `GODRAYS`; untouched |
+| `[x]` | Atmosphere state read from the game | **L2** | `AtmosphereState`. Fog, height fog, sun, moon, weather, cloud, climate, altitude - all read, none modelled |
+| `[x]` | Derivation and normalisation layer | **L2** | `AtmosphereInputs`. Config x state x budget, once per frame. Pure, so the whole table runs in tests |
+| `[x]` | One transport model | **L2** | `out = surface*T + inscatter*(1-T)`. Every strength at zero IS vanilla's mix, algebraically, and that is tested |
+| `[x]` | 1 Aerial perspective | **L2** | Distance convergence. The directional half is feature 3 |
+| `[x]` | 2 Horizon scattering | **L2** | From vanilla's fog and sun colours. No sky palette in the mod |
+| `[x]` | 3 Sun-aware scattering | **L2** | Henyey-Greenstein. Colour from `SunColor`, so nothing says "sunset is orange" |
+| `[x]` | 4 Height attenuation | **L2** | Thin air at altitude. Approximation - the game models no density profile |
+| `[x]` | Height haze | **L2** | Vanilla's own height fog, driven through the ambient stack. Reaches the sky and water |
+| `[x]` | 5 Weather extinction | **L3** | Moved out of the weather group; now reaches entities and particles |
+| `[x]` | 6 Cloud-atmosphere coupling | **L2** | Damps the directional gains. Kept separate from cloud shadows deliberately |
+| `[~]` | 7 Cloud-edge scattering | **L2, foundation** | **DATA GAP.** The game's tiles say how much cloud, never where an edge is. Keys on partial cover |
+| `[~]` | 8 Godrays | **L2, foundation** | **ARCHITECTURE GAP.** Vanilla's pass is the right target, but `pseudopbr` owns the `outGlow` anchor. Function and debug view exist, nothing writes |
+| `[x]` | 9 Precipitation scattering | **L2** | Rain and snow as different media: g 0.65 vs 0.15 |
+| `[x]` | 10 Moon scattering | **L2** | From the game's own moon. Zero by day by construction |
+| `[~]` | 11 Dapple interaction | **L2, foundation** | **ARCHITECTURE GAP.** Dapple is pseudopbr's, cloud shadows are weather's, and a function shared across patch groups couples their rollbacks |
+| `[x]` | Thirteen debug views | **L2** | Built to separate wrong data from wrong normalisation from wrong shader from wrong tuning |
+
+**Nothing in section 6 has been seen in a world.** Every feature defaults to 0,
+so an unmodified install is untouched.
 
 ## 7. Water and reflections
 

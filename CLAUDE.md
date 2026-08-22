@@ -281,6 +281,70 @@ hierarchy, the budgets, and what this project deliberately does not build.
   transpiler approach on purpose, see `src/Common/ShaderSourceInterceptor.cs`.
 - The mod is **client-side only**. `ShouldLoad` returns false for the server.
 
+## The atmosphere contract
+
+`src/Atmosphere/` is the newest subsystem and the one most likely to be extended
+by someone who has not read this file. Fifteen rules, each of which exists
+because breaking it has a specific, non-obvious cost.
+
+**Ownership.** Vintage Story owns environmental truth; this mod owns visual
+interpretation.
+
+1. **Never recreate an environmental simulation the game already runs.** Weather,
+   climate, astronomical time, sun and moon state, cloud placement and the base
+   fog are all the game's. `EnvironmentTracker` is the one file that asks; a
+   subsystem sampling the world itself is a bug, and three of them used to.
+2. **Never invent a value when an API exists.** `IClientGameCalendar.SunColor`
+   already reddens the sun near the horizon per player position. A Rayleigh model
+   layered on top would light the terrain with a sun of one colour while the
+   player looks at a sun of another.
+3. **Never introduce a second sun or moon direction.** One uploaded vector, used
+   everywhere. Vanilla's `lightPosition` is not it: that uniform exists in the
+   terrain shaders and not in the particle ones, so reading it makes one file
+   mean different things in different programs.
+4. **Atmosphere never owns weather.** It reads it. `AtmosphereState` carrying the
+   same rain figure as `EnvironmentState` is one snapshot travelling together,
+   not a second opinion - read on the same tick from the same source.
+5. **Never couple two feature toggles.** Eleven strengths, eleven independent
+   effects. A check drives the real derivation with everything on, zeroes each in
+   turn, and fails if a feature leaks when off, does nothing when on, or moves
+   another. `CloudAtmosphere` damping the directional terms is the one documented
+   exception.
+
+**Rendering.**
+
+6. **Never fake atmosphere by editing material identity.** Not albedo, not
+   roughness, not metalness, not specular, not normal strength. Atmosphere
+   changes how light TRAVELS; PBR decides how a surface RESPONDS. A nearby metal
+   block stays a metal block.
+7. **Never double-apply attenuation.** Extinction sources sum into one
+   coefficient; inscatter gains sum into one capped gain. The scene capture is
+   taken after post-processing, so reflected content arrives with atmosphere
+   already in it - see `src/Atmosphere/README.md`.
+8. **Never add a render target without documenting its lifetime and cost.**
+9. **Never add a fullscreen pass when an existing pass can do the work.** The
+   whole atmosphere runs inside vanilla's own `applyFog`. It adds no pass, no
+   render target, no texture unit and no texture read.
+10. **Never add procedural environmental state without recording the data gap.**
+    A fake simulation a future reader mistakes for real game state is worse than
+    an honest gap. Mark it FOUNDATION ONLY or DATA GAP and say which.
+
+**Extending it.**
+
+11. **Every new atmospheric effect consumes `AtmosphereState`.** It does not
+    query the world.
+12. **Every new effect has an independent disable path**, and zero means vanilla
+    for every uniform it adds. An unset GLSL uniform reads as exactly 0, and a
+    uniform can be unset for many reasons.
+13. **Every new effect documents its performance**, and says "not measured" when
+    it was not.
+14. **Every new effect adds or updates a regression test.** Source-level tests
+    are fine; brittle tests that check formatting are not.
+15. **Every architectural change is documented in the same commit.**
+
+**Quality is not enablement.** A quality tier may scale what a feature costs or
+contributes. It may never switch on a feature the player disabled.
+
 ## What NOT to do
 
 - Do not hand-edit anything under `generated/` or `tools/pbrgen/out/` — both are

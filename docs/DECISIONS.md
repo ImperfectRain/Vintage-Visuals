@@ -660,3 +660,153 @@ they previously did not. That is the fix, and it will read as a change.
 
 **Status.** Active. `atmosphere.yaml` owns `applyFog`; a smoke check fails the
 build if a second group takes it.
+
+---
+
+## D24. The atmosphere is one transport, not eleven effects
+
+**Context.** Eleven atmospheric features landed in one shader. The obvious
+arrangement - each one a multiplier applied in turn -
+
+```glsl
+color *= fog; color *= haze; color *= rain; color *= cloud; ...
+```
+
+loses energy uncontrollably, and the reason it keeps getting built is that every
+one of the eleven looks reasonable while it happens. This project has already
+shipped that failure once at a smaller scale: three subsystems each washing out
+the same rainy afternoon, each tuned alone and each defensible alone, which is
+why `VisualBudget` exists.
+
+**Chosen.** The features contribute to two quantities rather than to the colour:
+
+| | |
+|---|---|
+| Extinction | how much of the surface's own light survives the trip |
+| Inscatter | what colour the air adds in its place |
+
+composed once as participating media:
+
+```
+out = surface * T + inscatter * (1 - T)
+```
+
+Extinction sources **sum**, which is what extinction coefficients do, and the sum
+is capped. Inscatter gains **sum** and are capped once, rather than each scaling
+the result of the last.
+
+**Vanilla's fog enters as a transmittance.** `fogWeight` is `1 - T_vanilla`, and
+the mod's media multiplies it. Multiplying *transmittances* is not the mistake
+above - it is what stacked media do, and it is what makes the zero case exact:
+
+> With every strength at zero the added density is zero and the height factor is
+> one, so `T = 1 - fogWeight`; the gain is zero and both colour shifts return
+> their input, so `inscatter = fogColor`. The result is
+> `mix(surface, fogColor, fogWeight)` - vanilla's `applyFog`, character for
+> character.
+
+That is an **algebraic identity**, not a tuning coincidence, and it is the whole
+safety argument for a mod owning `applyFog` in four shading programs. It is
+therefore tested as one, across a sweep of fog weights and distances, rather than
+asserted in a comment.
+
+**The ceilings are written twice.** A shader cannot read a C# field, so
+`VV_ATMOS_MAX_DENSITY` and `AtmosphereInputs.MaxAddedDensity` are two copies of
+one number. A smoke check compares them. The alternative - trusting two files to
+be edited together - is how `vv_cloudDensity` shipped meaning "no clouds at all".
+
+**Status.** Active. `atmosphere.glsl`, `AtmosphereInputs`.
+
+---
+
+## D25. Three layers, and the middle one exists to keep the other two honest
+
+**Context.** `EnvironmentState` already had a rule: nothing config-scaled may
+enter it, because a strength slider states what the player wants and the state
+describes what the world is doing. The atmosphere needed somewhere for the two to
+meet, and somewhere for normalisation to live.
+
+**Chosen.**
+
+```
+game state -> AtmosphereState -> AtmosphereInputs -> uniforms
+(the game)   (what the air is)  (what to draw)       (GPU)
+```
+
+`AtmosphereState` holds facts, guarded and last-good, never scaled. A check fails
+the build if it references a client API, a render type, a config, or a uniform
+name.
+
+`AtmosphereInputs` is the only place config, world state and the `VisualBudget`
+grant multiply together. It is also where **normalisation** happens: the shader
+never sees a temperature in degrees, an altitude in blocks, or a cloud density in
+whatever unit the ambient manager uses.
+
+Both are pure and free of every game type except plain vector maths, which is
+what lets the independence, coupling and normalisation checks run without a
+client. That property is not incidental - it is the reason those checks can exist
+at all.
+
+**Why not normalise in the shader.** Because then every shading program would
+need to understand Vintage Story's units, and four programs understanding them
+separately is four places to disagree. It also moves work from once per frame to
+once per fragment for no gain.
+
+**Why the base fog density is NOT normalised.** It is an extinction coefficient
+and the shader uses it as one, in the same `exp(-sigma * d)` the game uses.
+Squashing it to 0..1 would destroy the only unit in the struct with a physical
+meaning. Normalisation that erases a real difference is worse than none, because
+the difference is gone and nothing reports it.
+
+**Status.** Active.
+
+---
+
+## D26. Three atmospheric features are foundation only, and two of them for a
+## structural reason rather than a missing API
+
+**Context.** Section 35 of the brief: if a feature cannot be completed because a
+data source is unavailable, build the interface and mark it, rather than faking
+it. A fake simulation that a future reader mistakes for real game state is worse
+than an honest gap. Three features landed there, for two different reasons.
+
+**Cloud-edge scattering - a DATA GAP.** The game's cloud tiles say how much cloud
+sits above a place. Nothing in them locates an individual cloud's *edge*, and
+`CloudTileReader` already reads everything there is. What is knowable is that a
+sky which is neither clear nor solid has edges in it somewhere, so the feature
+keys on `BrokenCloud` = `4c(1-c)` - peaking at half cover, zero at both ends.
+That is the most the data honestly supports, and it is labelled as such rather
+than dressed up.
+
+**Godrays and dapple interaction - an ARCHITECTURE GAP.** Both are blocked by the
+same rule, and the rule is right.
+
+Vanilla already has crepuscular rays: `godrays.fsh` radially blurs the frame from
+the sun's screen position, weighted per pixel by the green channel of the glow
+buffer the shading programs write. The correct integration is a number written
+into that channel - no pass, no render target, no texture unit. But
+`pseudopbr.yaml` already owns the `outGlow` write in `chunkopaque.fsh`, where it
+folds in the canopy shafts.
+
+Dapple is the same shape: it lives in the pseudopbr group and cloud shadows in
+the weather group, while the atmosphere is its own.
+
+A second group patching a line another group already rewrote is exactly what this
+project forbids - whichever applies second finds its anchor gone - and a function
+or varying shared across groups couples their rollbacks, so one group failing
+would leave another calling something that no longer exists. That is not a
+technicality: it is the rule that keeps a patch failure from taking the world
+render.
+
+**Chosen.** `vvAtmosGodrayLevel` is written, correct, and reachable through debug
+view 9. Nothing calls it in the composed frame. Debug view 12 draws the dapple
+strength flat, which is the honest picture: the value arrives and nothing reads
+it.
+
+**The resolution is not "merge the groups".** It is that whoever next revises
+pseudopbr's `outGlow` patch decides whether to fold the atmosphere's godray level
+in, accepting that the two would then share a fate. That is a real trade and it
+should be made deliberately rather than by an agent who did not know the rule
+existed.
+
+**Status.** Active. Foundation only, recorded in STATUS section 6.
