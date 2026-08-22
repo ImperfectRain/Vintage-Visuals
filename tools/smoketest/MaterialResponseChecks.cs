@@ -35,6 +35,138 @@ namespace VintageVisuals.SmokeTest
             CheckMetalness(check);
             CheckEmissionMask(repo, check);
             CheckEnergyCompensation(repo, check);
+            CheckAnisotropy(repo, check);
+        }
+
+        /// <summary>Isotropic GGX, ported from vvDistributionGGX.</summary>
+        private static double Ggx(double ndoth, double roughness)
+        {
+            double a = roughness * roughness;
+            double a2 = a * a;
+            double d = ndoth * ndoth * (a2 - 1.0) + 1.0;
+            return a2 / Math.Max(1e-12, Math.PI * d * d);
+        }
+
+        /// <summary>Anisotropic GGX, ported from vvDistributionGGXAnisotropic.</summary>
+        private static double GgxAniso(double ndoth, double tdoth, double bdoth,
+                                       double roughness, double anisotropy)
+        {
+            double a = roughness * roughness;
+            double aspect = Math.Sqrt(1.0 - 0.9 * Math.Min(Math.Max(anisotropy, 0.0), 1.0));
+
+            double ax = Math.Max(1e-4, a / aspect);
+            double ay = Math.Max(1e-4, a * aspect);
+
+            double tx = tdoth / ax;
+            double ty = bdoth / ay;
+            double d = tx * tx + ty * ty + ndoth * ndoth;
+
+            return 1.0 / Math.Max(1e-12, Math.PI * ax * ay * d * d);
+        }
+
+        /// <summary>
+        /// The anisotropic lobe must reduce to the isotropic one when there is
+        /// no anisotropy, stay finite, and conserve the energy the isotropic
+        /// lobe had.
+        ///
+        /// The first of those is the parity property that lets the feature be
+        /// switched off, and it is ALGEBRAIC rather than approximate: at
+        /// anisotropy 0 the aspect ratio is 1, both alphas equal the isotropic
+        /// alpha, and the two expressions are the same function. Testing it
+        /// numerically is how a later "simplification" of either one gets
+        /// caught.
+        /// </summary>
+        private static void CheckAnisotropy(string repo, Action<string, bool, string> check)
+        {
+            bool collapses = true, finite = true, positive = true;
+            string worst = "";
+
+            for (int r = 1; r <= 20; r++)
+            {
+                double roughness = r / 20.0;
+
+                for (int h = 0; h <= 20; h++)
+                {
+                    double ndoth = h / 20.0;
+
+                    // A half-vector consistent with ndoth, split arbitrarily
+                    // between the two tangent axes.
+                    double rest = Math.Sqrt(Math.Max(0.0, 1.0 - ndoth * ndoth));
+                    double tdoth = rest * 0.6;
+                    double bdoth = rest * 0.8;
+
+                    double iso = Ggx(ndoth, roughness);
+                    double aniso0 = GgxAniso(ndoth, tdoth, bdoth, roughness, 0.0);
+
+                    // Same function at zero anisotropy.
+                    double rel = Math.Abs(aniso0 - iso) / Math.Max(1e-6, iso);
+                    if (rel > 1e-3)
+                    {
+                        collapses = false;
+                        worst = "roughness " + roughness + " ndoth " + ndoth +
+                                " iso " + iso.ToString("0.####") + " aniso " + aniso0.ToString("0.####");
+                    }
+
+                    for (int an = 0; an <= 10; an++)
+                    {
+                        double v = GgxAniso(ndoth, tdoth, bdoth, roughness, an / 10.0);
+                        if (double.IsNaN(v) || double.IsInfinity(v)) { finite = false; worst = "NaN/Inf"; }
+                        if (v < 0.0) positive = false;
+                    }
+                }
+            }
+
+            check("the anisotropic lobe collapses to the isotropic one at zero", collapses, worst);
+            check("the anisotropic lobe is finite everywhere", finite, worst);
+            check("the anisotropic lobe is never negative", positive, "");
+
+            // It must actually be anisotropic: the lobe should differ along the
+            // two tangent axes once anisotropy is on, or this is dead code that
+            // passes every safety test.
+            double along = GgxAniso(0.8, 0.6, 0.0, 0.4, 0.8);
+            double across = GgxAniso(0.8, 0.0, 0.6, 0.4, 0.8);
+
+            check("the highlight is stretched along one axis",
+                Math.Abs(along - across) / Math.Max(along, across) > 0.2,
+                "along " + along.ToString("0.###") + " across " + across.ToString("0.###"));
+
+            // Anisotropy must not create energy: integrated over the hemisphere
+            // the anisotropic lobe should not exceed the isotropic one by more
+            // than sampling error.
+            double isoSum = 0.0, anisoSum = 0.0;
+            int samples = 0;
+
+            for (int i = 1; i <= 64; i++)
+            {
+                for (int j = 0; j < 64; j++)
+                {
+                    double ndoth = i / 64.0;
+                    double phi = j * 2.0 * Math.PI / 64.0;
+                    double rest = Math.Sqrt(Math.Max(0.0, 1.0 - ndoth * ndoth));
+
+                    isoSum += Ggx(ndoth, 0.4) * ndoth;
+                    anisoSum += GgxAniso(ndoth, rest * Math.Cos(phi), rest * Math.Sin(phi), 0.4, 0.8) * ndoth;
+                    samples++;
+                }
+            }
+
+            double ratio = anisoSum / Math.Max(1e-9, isoSum);
+            check("anisotropy redistributes energy rather than creating it",
+                ratio < 1.15,
+                "anisotropic/isotropic integral " + ratio.ToString("0.###"));
+
+            // And the shader wiring.
+            check("the shader uses the anisotropic lobe only on the direct term",
+                Regex.Matches(_pbr, @"vvDistributionGGXAnisotropic\(").Count == 1,
+                "the ambient and block-light terms have no lobe shape to stretch");
+
+            check("the shader falls back to the isotropic lobe when grain is off",
+                Regex.IsMatch(_pbr, @"else\s*\{\s*distribution\s*=\s*vvDistributionGGX\("),
+                "0 must mean the previous highlight, not a degenerate one");
+
+            check("grain direction is measured, not assumed",
+                _pbr.Contains("vvGrainDirection") && _pbr.Contains("coherence"),
+                "a hand-set grain axis would be wrong on every rotated block");
         }
 
         /// <summary>Karis's single-scatter directional albedo, ported.</summary>

@@ -67,6 +67,7 @@ namespace VintageVisuals.PseudoPBR
         public const string CavityUniform = "vv_pbrCavity";
         public const string SpecOcclusionUniform = "vv_pbrSpecOcclusion";
         public const string EnergyCompensationUniform = "vv_pbrEnergyCompensation";
+        public const string GrainUniform = "vv_pbrGrain";
         public const string DappleUniform = "vv_pbrDapple";
         public const string ShaftUniform = "vv_pbrShafts";
 
@@ -383,6 +384,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, CavityUniform, _look.CavityStrength);
             SetIfPresent(program, SpecOcclusionUniform, _look.SpecularOcclusion);
             SetIfPresent(program, EnergyCompensationUniform, _look.EnergyCompensation);
+            SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
             SetIfPresent(program, DappleUniform, _look.SunDapple);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
@@ -420,6 +422,7 @@ namespace VintageVisuals.PseudoPBR
                 SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
                 SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
                 SetIfPresent(program, EnergyCompensationUniform, _look.EnergyCompensation);
+                SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
                 SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
                 SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
                 UploadScene(program);
@@ -521,6 +524,7 @@ namespace VintageVisuals.PseudoPBR
                 SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
                 SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
                 SetIfPresent(program, EnergyCompensationUniform, _look.EnergyCompensation);
+                SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
                 SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
                 SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
                 SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);

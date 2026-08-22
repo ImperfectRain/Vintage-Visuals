@@ -624,6 +624,18 @@
         "clientSide": true,
         "weight": 68
       },
+      "pbr_grain": {
+        "ingui": "Wood grain highlight",
+        "comment": "Wood is fibrous, and a surface of parallel fibres stretches its highlight across the grain rather than spreading it evenly. Applied where the texture's own microstructure is measurably linear, so planks and log sides get it and mottled stone does not. 0 is the previous isotropic highlight.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 69
+      },
       "pbr_dapple": {
         "ingui": "Sunlight dapple under trees",
         "comment": "Sunlight broken into moving patches by the leaves overhead. Only appears where the game's own sun light level says there is a canopy above - open ground and interiors are untouched. Gaps brighten by as much as the shade between them darkens, so it never dims the scene overall. 0 is vanilla.",
@@ -704,7 +716,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 23.0,
+          "max": 24.0,
           "step": 1.0
         }
       },

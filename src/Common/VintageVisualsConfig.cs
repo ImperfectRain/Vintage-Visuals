@@ -566,6 +566,17 @@ namespace VintageVisuals.Common
         /// </summary>
         public float EnergyCompensation { get; set; } = 1.0f;
 
+        /// <summary>
+        /// How far a fibrous surface stretches its highlight across the grain.
+        ///
+        /// Gated on MEASURED coherence rather than on a material label: the
+        /// effect scales with how linear the surface's own microstructure
+        /// actually is, so wood grain gets it and mottled stone does not,
+        /// without the shader needing to know which block it is looking at.
+        /// 0 is the isotropic lobe that shipped before.
+        /// </summary>
+        public float GrainAnisotropy { get; set; } = 0.6f;
+
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
@@ -702,11 +713,13 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SpecularOcclusion", corrections);
             EnergyCompensation = ColorGradeConfig.Clamp(EnergyCompensation, 0.0f, 1.0f,
                 "PseudoPBR.EnergyCompensation", corrections);
+            GrainAnisotropy = ColorGradeConfig.Clamp(GrainAnisotropy, 0.0f, 1.0f,
+                "PseudoPBR.GrainAnisotropy", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 23.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 24.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

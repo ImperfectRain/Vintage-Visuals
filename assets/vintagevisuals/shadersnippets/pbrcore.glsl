@@ -28,6 +28,7 @@ uniform vec3 lightPosition; // vintagevisuals: anchor, asserted and pasted back
 // material system happens to be feeding it.
 uniform float vv_pbrMetalResponse;   // how metallic the reflective materials read
 uniform float vv_pbrEnergyCompensation; // multi-scatter energy put back, 0 is single-scatter
+uniform float vv_pbrGrain;           // anisotropic highlight along fibrous grain, 0 is isotropic
 
 // Reflectance at normal incidence for a common dielectric. Around 4% covers
 // most non-metals - stone, wood, soil, ceramic - closely enough that the
@@ -283,7 +284,66 @@ float vvDistributionGGX(float NdotH, float roughness)
     float a = roughness * roughness;
     float a2 = a * a;
     float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    return a2 / max(1e-5, VV_PI * d * d);
+
+    // Floored at 1e-12, not 1e-5. The guard exists to stop a division by zero
+    // and nothing else; at 1e-5 it was TRUNCATING real values across the whole
+    // smooth end of the range.
+    //
+    // This form is badly conditioned near the mirror direction. At NdotH = 1 the
+    // denominator collapses to pi * a^4, which at the roughness floor of 0.04 is
+    // about 2e-11 - four orders of magnitude below the old clamp. So every
+    // smooth highlight was being flattened at its peak: at roughness 0.05 the
+    // distribution is 50930 and the clamp returned 6250.
+    //
+    // Found by the parity test against the anisotropic form. The two are the
+    // same function algebraically but floor different expressions, and the
+    // anisotropic one is far better conditioned - its denominator at NdotH = 1
+    // is pi * a^2, not pi * a^4 - so they disagreed precisely where this clamp
+    // was biting and nowhere else.
+    //
+    // The peak is large but bounded and correct: a near-mirror surface really
+    // does concentrate its energy into a very narrow lobe, and the geometry
+    // term, Fresnel and the specular-AA roughness widening all scale it back
+    // down afterwards.
+    return a2 / max(1e-12, VV_PI * d * d);
+}
+
+// Anisotropic GGX.
+//
+// Wood is fibrous. Cellulose runs along the grain, and a surface made of
+// parallel fibres does not scatter light the same way in every direction: the
+// highlight stretches ACROSS the fibres and tightens along them. That is the
+// single strongest cue that a plank is wood rather than a brown stone, and no
+// amount of adjusting roughness produces it, because roughness is one number
+// and this needs two.
+//
+// The standard Disney/Burley form. Roughness is split into two axes by an
+// aspect ratio, so a surface has a roughness along the grain and another across
+// it, and the lobe becomes an ellipse instead of a disc.
+//
+// COLLAPSES EXACTLY TO THE ISOTROPIC TERM at anisotropy 0: aspect becomes 1,
+// both alphas equal the isotropic alpha, and the expression reduces to
+// vvDistributionGGX algebraically rather than approximately. That is what makes
+// the feature free to switch off, and it is tested numerically rather than
+// asserted here.
+float vvDistributionGGXAnisotropic(float NdotH, float TdotH, float BdotH,
+                                   float roughness, float anisotropy)
+{
+    float a = roughness * roughness;
+
+    // 0.9 rather than 1.0 so the tight axis never reaches zero width. A lobe of
+    // zero width is a mirror line - infinitely bright along one direction - and
+    // that is a NaN waiting for a grazing angle.
+    float aspect = sqrt(1.0 - 0.9 * clamp(anisotropy, 0.0, 1.0));
+
+    float ax = max(1e-4, a / aspect);
+    float ay = max(1e-4, a * aspect);
+
+    float tx = TdotH / ax;
+    float ty = BdotH / ay;
+    float d = tx * tx + ty * ty + NdotH * NdotH;
+
+    return 1.0 / max(1e-12, VV_PI * ax * ay * d * d);
 }
 
 // Smith geometry term with the Schlick-GGX approximation, using the k for

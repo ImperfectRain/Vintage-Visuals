@@ -1033,6 +1033,72 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
 // shading, and occlusion in the grooves is the strongest cue available.
 // ---------------------------------------------------------------------------
 
+// Which way the grain runs, and how sure we are, measured from the texture.
+//
+// Returns (direction.x, direction.y, coherence) in tangent space. Coherence is
+// 0 where the surface has no preferred direction and 1 where it is perfectly
+// linear.
+//
+// THE DIRECTION IS NOT ASSUMED, and that is the whole design. Wood grain is a
+// set of roughly parallel lines, and the atlas already stores exactly what is
+// needed to find them: its normal's xy IS the height gradient. A gradient points
+// ACROSS a line, so the grain runs perpendicular to it.
+//
+// Averaging gradients directly would be wrong - the two sides of a grain line
+// have opposite gradients and cancel. The structure tensor is the standard fix:
+// average the OUTER PRODUCT of the gradient with itself, which is invariant to
+// sign, then take its principal axis. Its two eigenvalues also give coherence
+// for free, as their normalised difference, which is a measurement of how
+// fibrous this texel is rather than a guess.
+//
+// That measurement is what gates the effect. A plank's grain is strongly
+// coherent and gets the full anisotropic lobe; stone is mottled noise, its
+// eigenvalues are nearly equal, coherence collapses and the surface stays
+// isotropic. Nothing has to know which block it is looking at - which matters,
+// because the shader has no way to know, and fingerprinting a material from its
+// roughness and specular is exactly the kind of inference this file criticises
+// elsewhere.
+//
+// Five taps, and only on the direct lobe.
+vec3 vvGrainDirection(vec2 materialUv)
+{
+    vec2 texel = 1.0 / max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+
+    // The stored normal is centred on 0.5, so these are already signed
+    // gradients and need no decode.
+    vec2 c = vvSampleMaterial(materialUv).rg - 0.5;
+    vec2 l = vvSampleMaterial(materialUv - vec2(texel.x, 0.0)).rg - 0.5;
+    vec2 r = vvSampleMaterial(materialUv + vec2(texel.x, 0.0)).rg - 0.5;
+    vec2 d = vvSampleMaterial(materialUv - vec2(0.0, texel.y)).rg - 0.5;
+    vec2 u = vvSampleMaterial(materialUv + vec2(0.0, texel.y)).rg - 0.5;
+
+    // Structure tensor, summed over the neighbourhood.
+    float jxx = c.x * c.x + l.x * l.x + r.x * r.x + d.x * d.x + u.x * u.x;
+    float jyy = c.y * c.y + l.y * l.y + r.y * r.y + d.y * d.y + u.y * u.y;
+    float jxy = c.x * c.y + l.x * l.y + r.x * r.y + d.x * d.y + u.x * u.y;
+
+    float trace = jxx + jyy;
+    if (trace < 1e-6) return vec3(1.0, 0.0, 0.0);
+
+    // Eigenvalues of a symmetric 2x2.
+    float diff = jxx - jyy;
+    float root = sqrt(max(0.0, diff * diff + 4.0 * jxy * jxy));
+
+    float major = 0.5 * (trace + root);
+    float minor = 0.5 * (trace - root);
+
+    // Normalised difference: 0 when the two axes are equally strong (noise),
+    // 1 when one dominates completely (a clean line).
+    float coherence = clamp((major - minor) / max(1e-6, trace), 0.0, 1.0);
+
+    // Principal eigenvector - the direction the gradient prefers, i.e. ACROSS
+    // the grain.
+    vec2 across = normalize(vec2(jxy, major - jxx) + vec2(1e-6, 0.0));
+
+    // The grain itself is perpendicular to that.
+    return vec3(-across.y, across.x, coherence);
+}
+
 // Curvature of the surface, from the material atlas's own normal.
 //
 // The atlas stores a tangent-space normal whose xy IS the height gradient. The
@@ -1196,7 +1262,35 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
         : vvReflectanceF0(albedo, specularMask);
     vec3 fresnel = vvFresnelSchlick(vdoth, f0);
 
-    float distribution = vvDistributionGGX(ndoth, roughness);
+    // The highlight's shape. Anisotropic where the surface is measurably
+    // fibrous, isotropic everywhere else - see vvGrainDirection.
+    //
+    // Only the DIRECT lobe. The ambient and block-light terms are hemispherical
+    // approximations that never had a lobe shape to stretch, and giving them a
+    // grain direction would be inventing detail the model does not contain.
+    float distribution;
+
+    if (vv_pbrGrain > 0.001)
+    {
+        vec3 grain = vvGrainDirection(materialUv);
+
+        // Scaled by the material's own reflectance as well as by coherence: a
+        // matte surface has no highlight to stretch, so soil and sand stay out
+        // of this however striated their texture happens to be.
+        float anisotropy = clamp(grain.z, 0.0, 1.0) * clamp(vv_pbrGrain, 0.0, 1.0)
+                         * clamp(specularMask * 2.0, 0.0, 1.0);
+
+        mat3 frame = vvTangentFrame(normalize(faceNormal));
+        vec3 tangent = normalize(frame * vec3(grain.xy, 0.0));
+        vec3 bitangent = cross(n, tangent);
+
+        distribution = vvDistributionGGXAnisotropic(ndoth, dot(tangent, h), dot(bitangent, h),
+                                                    roughness, anisotropy);
+    }
+    else
+    {
+        distribution = vvDistributionGGX(ndoth, roughness);
+    }
     float geometry = vvGeometrySmith(ndotv, ndotl, roughness);
 
     // The standard Cook-Torrance denominator. One factor of NdotL cancels
@@ -1551,6 +1645,20 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(vv_material2Valid > 0.5
             ? vvReflectanceF0FromMetalness(color.rgb, metal)
             : vvReflectanceF0(color.rgb, mat.a), color.a);
+    }
+
+    // 24: the grain the anisotropic highlight is following. Red and green are
+    // the direction, blue is coherence - how confident the measurement is.
+    //
+    // Planks and log sides should show a strong, steady direction along the
+    // grain, and a log's end should show it curving with the rings. Stone,
+    // soil and sand should be nearly black in blue: their texture is noise, the
+    // two eigenvalues are equal, and the surface stays isotropic without
+    // anything having to know it is stone.
+    if (mode == 24)
+    {
+        vec3 grain = vvGrainDirection(materialUv);
+        return vec4(grain.xy * 0.5 + 0.5, grain.z, color.a);
     }
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
