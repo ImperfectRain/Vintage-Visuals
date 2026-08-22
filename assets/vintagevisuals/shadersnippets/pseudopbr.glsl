@@ -183,6 +183,18 @@ VvMaterial2 vvSampleMaterial2(vec2 materialUv)
     return VvMaterial2(texel.r, texel.g, texel.b, texel.a);
 }
 
+// The emission mask alone, with its own fallback.
+//
+// 1 rather than 0 when the second atlas is unavailable, and the difference is
+// the whole safety of this channel: the mask is a MULTIPLIER on emission the
+// game already granted, so "no data" has to mean "emits everywhere it used to"
+// and not "emits nowhere". Reading the neutral material's 0 here would silently
+// switch every light source in the world off.
+float vvEmissionMask(vec2 materialUv)
+{
+    return vv_material2Valid > 0.5 ? vvSampleMaterial2(materialUv).emission : 1.0;
+}
+
 // Deliberately shares vvSnapToTexel with the first atlas rather than measuring
 // its own size. The two pages are built at identical dimensions from identical
 // slot rectangles, so the same UV must land on the same texel in both - and
@@ -1299,8 +1311,26 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // business scaling it. Restraint exists to stop the mod removing light the
     // player needs; a light source is the opposite problem. Fog still applies,
     // because a distant forge is genuinely behind more air.
+    // Emission, restricted to WHERE the texture actually emits.
+    //
+    // The hierarchy matters and is deliberately one-directional. Vanilla's
+    // glowLevel decides whether this block emits at all and how strongly; the
+    // mask only redistributes that emission across the texture. A forge should
+    // not glow evenly from its stonework and its coals, and until now it did -
+    // glowLevel is per-block, so the whole texture lit uniformly.
+    //
+    // Multiplicative, so it can only ever take emission away from parts of a
+    // texture that were already emitting. It cannot grant any: on a block the
+    // game does not light, glowLevel is 0 and vvEmission returns black before
+    // the mask is even consulted. Without the second atlas the mask reads 0
+    // from the neutral material, which would remove all emission - so the
+    // fallback is an explicit 1, meaning "emits everywhere", which is exactly
+    // the behaviour that shipped before this channel existed.
+    float emissionMask = vvEmissionMask(materialUv);
+
     result += vvEmission(albedo, glowLevel, cameraRelativePos)
-            * clamp(1.0 - fog - murkiness, 0.0, 1.0);
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * emissionMask;
 
     // Sunlight broken up by the leaves overhead.
     //

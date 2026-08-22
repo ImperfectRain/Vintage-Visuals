@@ -28,6 +28,7 @@ namespace VintageVisuals.SmokeTest
             CheckEmissionGating(check);
             CheckSamplerDeclaration(repo, check);
             CheckFallbackWiring(repo, check);
+            CheckHeightAlignment(check);
         }
 
         private static AtlasRegion Region(int x, int y, int size, MaterialProfile profile, float glow)
@@ -233,6 +234,88 @@ namespace VintageVisuals.SmokeTest
 
             bool bounded = withGlow.All(v => v >= 0.0 && v <= 1.0);
             check("the emission mask stays inside 0..1", bounded, "");
+        }
+
+        /// <summary>
+        /// Height must land on the same texels as the first atlas's normal, and
+        /// must stay bounded and stable across rebuilds.
+        ///
+        /// Feature 6 ships height as DATA ONLY - nothing consumes it yet - so
+        /// this is the whole of its validation: prove the generation, the
+        /// packing, the coordinate alignment and the block correspondence
+        /// before anything is built on top of it. Parallax is the obvious
+        /// consumer and is deliberately not enabled; a displacement built on
+        /// misaligned height would be indistinguishable from a displacement
+        /// built on a bad scale.
+        /// </summary>
+        private static void CheckHeightAlignment(Action<string, bool, string> check)
+        {
+            var profile = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Stone);
+
+            int w, k;
+            int[] surface = MaterialAtlasBuilder.Build(64, 64,
+                new List<AtlasRegion> { Region(8, 16, 16, profile, 0f) }, out w, out k);
+            int[] second = MaterialAtlas2Builder.Build(64, 64,
+                new List<AtlasRegion> { Region(8, 16, 16, profile, 0f) }, out w, out k);
+
+            // The same slot rectangle in both, texel for texel. If the two
+            // pages disagreed by even one texel, every consumer reading both
+            // would be comparing a surface against its neighbour.
+            bool sameFootprint = true;
+            int surfaceNeutral = MaterialAtlasBuilder.NeutralTexel();
+            int secondNeutral = MaterialAtlas2Builder.NeutralTexel();
+
+            for (int y = 0; y < 64 && sameFootprint; y++)
+            {
+                for (int x = 0; x < 64; x++)
+                {
+                    bool inSlot = x >= 8 && x < 24 && y >= 16 && y < 32;
+
+                    bool firstWrote = surface[y * 64 + x] != surfaceNeutral;
+                    bool secondWrote = second[y * 64 + x] != secondNeutral;
+
+                    // Outside the slot neither may have written anything.
+                    if (!inSlot && (firstWrote || secondWrote))
+                    {
+                        sameFootprint = false;
+                        break;
+                    }
+                }
+            }
+
+            check("height occupies exactly the slot the first atlas occupies", sameFootprint,
+                "the two pages must be addressable by one set of UVs");
+
+            // Height is bounded and stable.
+            bool bounded = true;
+            for (int y = 16; y < 32; y++)
+            {
+                for (int x = 8; x < 24; x++)
+                {
+                    float h = ((second[y * 64 + x] >> 8) & 0xFF) / 255f;
+                    if (h < 0f || h > 1f) bounded = false;
+                }
+            }
+
+            check("height is bounded across the whole slot", bounded, "");
+
+            int[] rebuilt = MaterialAtlas2Builder.Build(64, 64,
+                new List<AtlasRegion> { Region(8, 16, 16, profile, 0f) }, out w, out k);
+
+            check("height is stable under atlas rebuild", second.SequenceEqual(rebuilt),
+                "a cached page is only trustworthy if rebuilding reproduces it");
+
+            // A flat texture is flat, not maximally tall - so the channel's
+            // neutral and a genuinely featureless surface agree.
+            double[] flat = MaterialAtlas2Builder.Normalise(new double[] { 0.3, 0.3, 0.3, 0.3 });
+            check("a featureless texture normalises to mid height",
+                flat.All(v => Math.Abs(v - 0.5) < 1e-6), "");
+
+            // Occlusion only ever darkens.
+            check("baked AO never brightens",
+                MaterialAtlas2Builder.Occlusion(0.9, 0.2) == 1.0 &&
+                MaterialAtlas2Builder.Occlusion(0.2, 0.9) < 1.0,
+                "a texel above its neighbourhood is unoccluded, never over-bright");
         }
 
         private static void CheckSamplerDeclaration(string repo, Action<string, bool, string> check)

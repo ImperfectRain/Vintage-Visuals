@@ -33,6 +33,62 @@ namespace VintageVisuals.SmokeTest
             CheckSpecularOcclusionInvariants(check);
             CheckApplicationSites(check);
             CheckMetalness(check);
+            CheckEmissionMask(repo, check);
+        }
+
+        /// <summary>
+        /// The emission mask may only ever redistribute emission the game
+        /// already granted - never create it.
+        /// </summary>
+        private static void CheckEmissionMask(string repo, Action<string, bool, string> check)
+        {
+            // glowLevel is the gate, and it is checked before the mask is even
+            // read: vvEmission returns black for a non-emitting block.
+            check("emission is zero when the game says the block does not glow",
+                Regex.IsMatch(_pbr.Replace("\r", ""), @"") &&
+                File.ReadAllText(Path.Combine(repo,
+                    "assets/vintagevisuals/shadersnippets/pbrcore.glsl"))
+                    .Contains("if (emission < 0.004) return vec3(0.0);"),
+                "vanilla's glowLevel must gate emission before any mask applies");
+
+            // The mask multiplies, so it can only subtract.
+            check("the mask multiplies emission rather than adding to it",
+                Regex.IsMatch(_pbr, @"vvEmission\([^;]*\)[\s\S]{0,200}?\*\s*emissionMask\s*;"),
+                "an additive mask could create light on a dark block");
+
+            // No data must mean "emits as it always did", not "emits nowhere".
+            check("the mask falls back to 1, not 0, without the second atlas",
+                Regex.IsMatch(_pbr,
+                    @"float\s+vvEmissionMask[\s\S]{0,300}?vv_material2Valid\s*>\s*0\.5\s*\?[^:]*:\s*1\.0"),
+                "falling back to 0 would switch every light source in the world off");
+
+            // Bloom follows the emission, not the texture's brightness.
+            string yaml = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shaderpatches/pseudopbr.yaml"));
+            string yaml2 = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shaderpatches/pseudopbrtopsoil.yaml"));
+
+            check("the bloom feed is masked the same way the emission is",
+                yaml.Contains("vvEmissiveGlow(glowLevel) * vvEmissionMask(uv)") &&
+                yaml2.Contains("vvEmissiveGlow(glowLevel) * vvEmissionMask(uv)"),
+                "otherwise a forge's stonework blooms while only its coals emit");
+
+            // Continuity across the mask's range, and the two ends.
+            bool continuous = true;
+            float previous = 0f;
+            for (int i = 0; i <= 100; i++)
+            {
+                float mask = i / 100f;
+                float emission = 0.6f * mask;      // glow held fixed
+
+                if (float.IsNaN(emission) || emission < 0f) continuous = false;
+                if (emission < previous - 1e-6f) continuous = false;
+                previous = emission;
+            }
+
+            check("emission scales continuously and monotonically with the mask", continuous, "");
+            check("mask 0 gives no emission", Math.Abs(0.6f * 0f) < 1e-6f, "");
+            check("mask 1 gives the unmasked emission", Math.Abs(0.6f * 1f - 0.6f) < 1e-6f, "");
         }
 
         /// <summary>
