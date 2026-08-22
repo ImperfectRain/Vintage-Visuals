@@ -556,6 +556,16 @@ namespace VintageVisuals.Common
         /// </summary>
         public float SpecularOcclusion { get; set; } = 1.0f;
 
+        /// <summary>
+        /// Energy a single-scatter GGX lobe loses to multiple bounces between
+        /// microfacets, put back.
+        ///
+        /// Only ever adds, only ever to rough surfaces, and only ever a few
+        /// percent on the materials this shader draws. 0 is the single-scatter
+        /// model that shipped before.
+        /// </summary>
+        public float EnergyCompensation { get; set; } = 1.0f;
+
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
@@ -690,6 +700,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SpecularStrength", corrections);
             SpecularOcclusion = ColorGradeConfig.Clamp(SpecularOcclusion, 0.0f, 1.0f,
                 "PseudoPBR.SpecularOcclusion", corrections);
+            EnergyCompensation = ColorGradeConfig.Clamp(EnergyCompensation, 0.0f, 1.0f,
+                "PseudoPBR.EnergyCompensation", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,

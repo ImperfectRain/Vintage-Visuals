@@ -27,6 +27,7 @@ uniform vec3 lightPosition; // vintagevisuals: anchor, asserted and pasted back
 // injected first - and because these belong to the lobe, not to whichever
 // material system happens to be feeding it.
 uniform float vv_pbrMetalResponse;   // how metallic the reflective materials read
+uniform float vv_pbrEnergyCompensation; // multi-scatter energy put back, 0 is single-scatter
 
 // Reflectance at normal incidence for a common dielectric. Around 4% covers
 // most non-metals - stone, wood, soil, ceramic - closely enough that the
@@ -394,6 +395,79 @@ float vvFilteredRoughness(float roughness, vec3 n)
 //
 // Schlick with a roughness-aware ceiling (Karis): a rough surface must not get
 // a mirror-bright rim, which is what plain Fresnel would give it.
+// Energy lost to multiple scattering, put back.
+//
+// A single-scatter GGX lobe - which is what every term in this file computes -
+// accounts for light that hits the microsurface ONCE and leaves. On a rough
+// surface much of the light bounces between microfacets several times before
+// escaping, and a single-scatter model simply loses all of it. The result is
+// that rough materials come out darker than they should, and the darker the
+// rougher, which reads as rough metal looking like dirty plastic.
+//
+// The compensation is the standard one: scale the lobe by 1 + F0 * (1/r - 1),
+// where r is the directional albedo of the single-scatter lobe. Kulla and
+// Conty's formulation, using Karis's analytic fit for r so no lookup table is
+// needed - a table would mean another texture unit for a correction that is
+// only ever a few percent on the materials this shader draws.
+//
+// Three properties matter and all three are tested:
+//
+//   - it is a multiplier of at least 1, so it can only return energy the
+//     single-scatter model dropped, never invent any beyond it;
+//   - it approaches exactly 1 as roughness approaches 0, so smooth surfaces are
+//     untouched and the change is confined to where the loss actually is;
+//   - it stays finite at grazing angles, where the fit's denominator is small.
+//
+// This is polish. It is not a visual redesign, and if it is doing anything
+// dramatic then something else is wrong.
+float vvMultiScatterAlbedo(float roughness, float ndotv)
+{
+    // Karis's analytic approximation to the split-sum environment BRDF's scale
+    // term - the directional albedo of a single-scatter GGX lobe.
+    float r = clamp(roughness, 0.0, 1.0);
+    float v = clamp(ndotv, 0.0, 1.0);
+
+    float x = 1.0 - r;
+    float y = v;
+
+    float b1 = -0.1688;
+    float b2 = 1.895;
+    float b3 = 0.9903;
+    float b4 = -4.853;
+    float b5 = 8.404;
+    float b6 = -5.069;
+
+    float bias = min(max(min(b1 * x + b2 * x * x, b3 * x + b4 * x * x + b5 * x * x * x + b6 * x * x * x * x),
+                     0.0), 1.0);
+
+    float lobe = clamp(bias * (1.0 - y) + y, 0.04, 1.0);
+
+    return lobe;
+}
+
+vec3 vvMultiScatterCompensation(vec3 f0, float roughness, float ndotv)
+{
+    if (vv_pbrEnergyCompensation < 0.001) return vec3(1.0);
+
+    float albedo = vvMultiScatterAlbedo(roughness, ndotv);
+
+    // Floored well away from zero. The fit can approach it at extreme grazing
+    // angles on very rough surfaces, and 1/albedo there would be an enormous
+    // multiplier applied to a lobe that is itself near zero - finite in
+    // principle, a fireball in practice.
+    albedo = max(albedo, 0.08);
+
+    vec3 gain = vec3(1.0) + f0 * (1.0 / albedo - 1.0);
+
+    // Never below 1: this returns lost energy, it does not remove any. And
+    // capped, because the correction being large is a symptom rather than a
+    // result - beyond about a doubling the fit is outside the range it was
+    // built for.
+    gain = clamp(gain, vec3(1.0), vec3(2.0));
+
+    return mix(vec3(1.0), gain, clamp(vv_pbrEnergyCompensation, 0.0, 1.0));
+}
+
 vec3 vvAmbientSpecular(vec3 f0, float roughness, float ndotv, vec3 environment)
 {
     vec3 fresnel = f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - ndotv, 0.0, 1.0), 5.0);

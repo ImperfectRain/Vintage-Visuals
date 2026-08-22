@@ -186,6 +186,9 @@ namespace VintageVisuals.Common
                 case "pbr_dapple":
                     pbr.SunDapple = tree.GetFloat("value", pbr.SunDapple);
                     break;
+                case "pbr_energy":
+                    pbr.EnergyCompensation = tree.GetFloat("value", pbr.EnergyCompensation);
+                    break;
                 case "pbr_specocclusion":
                     pbr.SpecularOcclusion = tree.GetFloat("value", pbr.SpecularOcclusion);
                     break;

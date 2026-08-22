@@ -72,6 +72,9 @@ vec4 vvApplyParticlePbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 camera
 
         vec3 specular = (distribution * geometry * fresnel) / max(1e-4, 4.0 * ndotv * ndotl);
 
+        // Same lobe, same loss - see vvMultiScatterCompensation.
+        specular *= vvMultiScatterCompensation(f0, roughness, ndotv);
+
         float visibility = clamp(shadowBrightness, 0.0, 1.0)
                          * clamp(vv_sceneDayLight, 0.0, 1.0)
                          * clamp(1.0 - fog, 0.0, 1.0)

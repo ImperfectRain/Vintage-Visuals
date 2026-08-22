@@ -1279,7 +1279,11 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Reflections lose a different amount - see vvSpecularOcclusion.
     float specularOcclusion = vvSpecularOcclusion(cavity, ndotv, roughness);
 
-    result += specular * ndotl * visibility * vv_pbrSpecularStrength * specularOcclusion;
+    // Energy the single-scatter lobe dropped, returned. A multiplier of at
+    // least 1, so this cannot make the highlight dimmer than it was.
+    vec3 energy = vvMultiScatterCompensation(f0, roughness, ndotv);
+
+    result += specular * ndotl * visibility * vv_pbrSpecularStrength * specularOcclusion * energy;
 
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
@@ -1292,6 +1296,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
             * specularOcclusion;
 
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
+            * energy
             * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * vv_pbrSpecularStrength

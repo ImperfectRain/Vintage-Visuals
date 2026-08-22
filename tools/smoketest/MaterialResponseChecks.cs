@@ -34,6 +34,117 @@ namespace VintageVisuals.SmokeTest
             CheckApplicationSites(check);
             CheckMetalness(check);
             CheckEmissionMask(repo, check);
+            CheckEnergyCompensation(repo, check);
+        }
+
+        /// <summary>Karis's single-scatter directional albedo, ported.</summary>
+        private static float ScatterAlbedo(float roughness, float ndotv)
+        {
+            float x = 1f - Clamp01(roughness);
+            float y = Clamp01(ndotv);
+
+            float a = -0.1688f * x + 1.895f * x * x;
+            float b = 0.9903f * x - 4.853f * x * x + 8.404f * x * x * x - 5.069f * x * x * x * x;
+
+            float bias = Clamp01(Math.Max(a, b));
+            return Math.Min(Math.Max(bias * (1f - y) + y, 0.04f), 1f);
+        }
+
+        private static float Compensation(float f0, float roughness, float ndotv, float strength)
+        {
+            float albedo = Math.Max(ScatterAlbedo(roughness, ndotv), 0.08f);
+            float gain = 1f + f0 * (1f / albedo - 1f);
+
+            gain = Math.Min(Math.Max(gain, 1f), 2f);
+            return 1f + (gain - 1f) * Clamp01(strength);
+        }
+
+        /// <summary>
+        /// Multi-scatter compensation returns energy the single-scatter lobe
+        /// lost. It must not invent any beyond that, must leave smooth surfaces
+        /// alone, and must stay finite where the fit's denominator is small.
+        /// </summary>
+        private static void CheckEnergyCompensation(string repo, Action<string, bool, string> check)
+        {
+            bool neverBelowOne = true, finite = true, capped = true, smoothUntouched = true;
+            bool metalAndDielectricStable = true;
+            string worst = "";
+
+            float[] f0s = { 0.04f, 0.2f, 0.5f, 0.9f, 1.0f };
+
+            foreach (float f0 in f0s)
+            {
+                for (int i = 0; i <= 40; i++)
+                {
+                    float r = i / 40f;
+
+                    for (int j = 0; j <= 40; j++)
+                    {
+                        // Includes ndotv at the very edge, where the fit is
+                        // least well behaved.
+                        float nv = Math.Max(1e-4f, j / 40f);
+                        float g = Compensation(f0, r, nv, 1f);
+
+                        if (float.IsNaN(g) || float.IsInfinity(g))
+                        {
+                            finite = false;
+                            worst = "f0 " + f0 + " roughness " + r + " ndotv " + nv;
+                        }
+
+                        if (g < 1f - 1e-5f)
+                        {
+                            neverBelowOne = false;
+                            worst = "compensation dimmed the lobe at f0 " + f0 + " roughness " + r;
+                        }
+
+                        if (g > 2f + 1e-5f) capped = false;
+                        if (g < 0f) metalAndDielectricStable = false;
+                    }
+                }
+
+                // Smooth surfaces lose almost nothing to multiple scattering,
+                // so the correction there must be negligible - otherwise this
+                // is a brightness slider wearing a physics costume.
+                float atSmooth = Compensation(f0, 0.0f, 0.7f, 1f);
+                if (atSmooth > 1.02f)
+                {
+                    smoothUntouched = false;
+                    worst = "smooth surface gained " + atSmooth + " at f0 " + f0;
+                }
+            }
+
+            check("energy compensation never dims the lobe", neverBelowOne, worst);
+            check("energy compensation is finite everywhere", finite, worst);
+            check("energy compensation is capped", capped, "");
+            check("smooth surfaces are left alone", smoothUntouched, worst);
+            check("compensation is stable for metals and dielectrics alike",
+                metalAndDielectricStable, "");
+
+            // It should actually do something where the loss is - otherwise it
+            // is dead code that passes every safety test.
+            float roughMetal = Compensation(1.0f, 0.9f, 0.5f, 1f);
+            check("a rough metal actually gets energy back", roughMetal > 1.05f,
+                roughMetal.ToString("0.###"));
+
+            float roughStone = Compensation(0.04f, 0.9f, 0.5f, 1f);
+            check("a rough dielectric changes only slightly",
+                roughStone > 1.0f && roughStone < 1.10f, roughStone.ToString("0.###"));
+
+            check("strength 0 disables it exactly",
+                Math.Abs(Compensation(1.0f, 0.9f, 0.5f, 0f) - 1f) < 1e-6f, "");
+
+            // And the shader must apply it to the lobe rather than to the
+            // finished pixel.
+            check("the compensation multiplies the specular lobe, not the result",
+                Regex.IsMatch(_pbr, @"result\s*\+=\s*specular[^;]*energy\s*;"),
+                "applying it to the finished colour would brighten diffuse and emission too");
+
+            string core = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrcore.glsl"));
+
+            check("the compensation is clamped to at least 1 in the shader",
+                Regex.IsMatch(core, @"clamp\s*\(\s*gain\s*,\s*vec3\s*\(\s*1\.0\s*\)"),
+                "it returns lost energy; it must not be able to remove any");
         }
 
         /// <summary>

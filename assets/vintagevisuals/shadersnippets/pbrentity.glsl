@@ -119,7 +119,12 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
     // that did not scatter diffusely.
     result *= mix(vec3(1.0), 1.0 - fresnel, vv_pbrEntitySpecular);
 
-    result += specular * ndotl * visibility * vv_pbrEntitySpecular;
+    // The same multi-scatter loss the terrain lobe has, since it is the same
+    // lobe. Applied here rather than only on terrain so a creature standing on
+    // a rough stone floor is not lit by a different energy model than the floor.
+    vec3 energy = vvMultiScatterCompensation(f0, roughness, ndotv);
+
+    result += specular * ndotl * visibility * vv_pbrEntitySpecular * energy;
 
     // Torches, lava and glowing blocks, with the direction recovered from the
     // block-light gradient exactly as on terrain - so a creature beside a forge
@@ -132,6 +137,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
     // what the sun does not, and killing it in shadow is what makes a creature
     // in a doorway look like a cutout.
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
+            * energy
             * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog, 0.0, 1.0)
             * vv_pbrEntitySpecular
