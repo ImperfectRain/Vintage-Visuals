@@ -710,13 +710,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-35 are the pixel reflection: 32 reflection vector, 33 the quantised reflection cell, 34 the environment gain, 35 the reflection's own contribution.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 are the pixel reflection: 32 reflection direction, 33 the material texel grid, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 35.0,
+          "max": 37.0,
           "step": 1.0
         }
       },
@@ -746,7 +746,7 @@
       },
       "pbr_pixelreflect": {
         "ingui": "Pixel reflections",
-        "comment": "Reflective surfaces pick up a discrete, pixelated impression of the sky, horizon and ground around them, aimed by the normal map and locked to the texture's own pixel grid. It is not screen-space reflection and cannot mirror actual objects. It redistributes the sky light a surface was already receiving between the directions it faces rather than adding any, so it cannot brighten a scene overall. Where it shows is decided by the existing specular and metalness, so wood and soil stay matte and wet stone lifts on its own. 0 is vanilla.",
+        "comment": "Reflective surfaces resolve what they face per texture pixel and show a discrete, low-resolution impression of the sky and horizon around them, aimed by the normal map. IT IS NOT A MIRROR: the game's scene colour is not available to the shader that draws the world, so this cannot reflect a tree, a building or you - it reflects the sky, a horizon band, and a dimmed fallback below. Exactly one colour per texture pixel, locked to the surface. Where it shows is decided by the existing specular and metalness, so wood and soil stay matte and wet stone lifts on its own. 0 is vanilla.",
         "default": 0.6,
         "clientSide": true,
         "weight": 71,

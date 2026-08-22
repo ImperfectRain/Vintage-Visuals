@@ -619,91 +619,112 @@ direct sunlight term only ->  never ambient, block light, emission or fog
 
 ## 8d. Pixelated environment reflection
 
-Stylised reflections on reflective materials, in Vintage Story's own visual
-grammar: discrete, locked to the texture's pixel grid, aimed by the normal map.
+Reflections resolved per material texel, discrete, locked to the texture grid.
 
-**It is not SSR and shares nothing with it.** No ray, no depth-buffer read, no
-scene colour, no second render target, no cubemap, no probe. Nothing here can
-reflect an actual object in the world and it does not try to.
+### It is NOT a scene reflection, and here is why
 
-### What it actually is
+**The answer to "where does the reflected image come from" is: the sky and a
+fallback. Not the scene.** Stated plainly because describing an environment
+lookup as a mirror is the failure mode this feature invites.
 
-`vvAmbientSpecular(f0, roughness, ndotv, environment)` already existed and
-already took a single FLAT environment colour. The whole feature is: replace
-that one colour with one that varies by reflection direction and is quantised.
-Everything downstream - the roughness-aware Fresnel, the metal tint carried by
-f0, energy compensation, specular occlusion, daylight, fog, overcast - is the
-existing path, unmodified. **The feature adds no term of its own.**
+That is a fact about Vintage Story's renderer, established by reading it:
 
-That is also why it cannot invent light. `vvPixelReflection` returns a GAIN on
-the environment colour whose average over all directions is exactly 1.
-`VV_REFLECT_SKY` is DERIVED from the horizon and ground gains rather than
-chosen, so the balance is structural; the smoke test computes the mean
-numerically over the sphere and fails if it drifts, and a mutation typing a
-literal over it was confirmed to fail.
-
-Uniform in Y is the correct weighting - Archimedes' hat-box theorem, equal
-bands of height carry equal solid angle - so the regions weigh `(1-h)/2`, `h`,
-`(1-h)/2`. The azimuth term is a cosine about the game's own `lightPosition`,
-which averages to zero over a turn and so cannot move the total either.
-
-### Why the pixels belong to the surface
-
-Two mechanisms, neither of them screen space:
-
-- The normal is sampled through `vvSnapToTexel`, so it is already constant
-  across a texel. The reflection direction therefore is too, and a bumpy normal
-  map genuinely **re-aims** the reflection rather than modulating its strength.
-- The quantisation grid is phase-shifted per texel by an R2 low-discrepancy
-  sequence over the texel index, taken from `textureSize(vv_materialTex, 0)` -
-  the atlas's real resolution, not an assumed 16x16. Adjacent texels land on
-  different cells, which turns a smooth gradient into a patchwork owned by the
-  texture.
-
-A mutation keying the phase to `gl_FragCoord` was confirmed to fail the tests.
-
-### Sources, all pre-existing
-
-| Input | Source |
+| Finding | Consequence |
 |---|---|
-| Texture resolution | `textureSize(vv_materialTex, 0)` - same as `vvSnapToTexel` |
-| Specular / roughness | `vvSampleMaterial` B and A channels |
-| Metalness | `vvSampleMaterial2().metalness`, via `f0` |
-| Normal | `vvSurfaceNormal` - the existing perturbed shading normal |
-| Environment colour | the `environment` argument, vanilla's `rgbaFog.rgb` |
-| Sun direction | vanilla's `lightPosition` |
-| Daylight | `vv_sceneDayLight` |
+| `chunkopaque.fsh` is a **forward opaque** pass with no scene-colour sampler bound | The frame it would sample is the one it is still drawing. There is no image to reflect |
+| The game DOES keep a G-buffer - `outGPosition` (camera-space position) and `outGNormal` at locations 2 and 3 | Every ingredient for a cheap screen-space reflection exists... |
+| ...but `ssao.fsh` reads them as `gPosition`/`gNormal`, and scene colour is `primaryScene` in `final.fsh` | ...only in POST-PROCESS passes |
+| The material UV that defines the pixel grid exists **only in the terrain pass** | The image and the grid are in different passes |
+| Locations 2 and 3 are inside `#if SSAOLEVEL > 0` | The G-buffer does not exist at all for a player with SSAO off |
 
-`sunPosition`, `dayLight` and `getSkyColorAt` are **chunkopaque-only** - absent
-from `chunktopsoil.fsh` - so a shared snippet cannot use them. `rgbaFog.rgb` and
-`lightPosition` are the best sources present in both.
+So a true scene reflection is possible in principle and needs a bridge between
+two passes. That design is written up below rather than half-built.
 
-### Deliberately not included
+### The route to a real reflection, if it is wanted
 
-A sun disc in the environment. The direct sun already has its own GGX lobe a few
-lines below; putting it into the ambient environment as well would double-count
-it, which is exactly how a feature like this ends up inventing bright light.
+The terrain pass knows the grid; the post pass knows the image. Two ways across:
 
-### Wetness came free
+1. **Carry texel identity into a post pass.** The only free G-buffer channel is
+   `outGlow.b`, which currently writes 0. Eight bits cannot hold a texel index,
+   so this only works if the post pass reconstructs the grid itself - which it
+   can: `gPosition` plus an inverse view matrix gives world position, and a
+   block face's texel grid is `floor(worldPos * texelsPerBlock)` on the face.
+   `outGlow.b` then only needs to carry texels-per-block, which fits easily.
+   This is how Minecraft's pixelated reflections work.
+2. **Read last frame's buffers in the terrain pass.** Two new samplers in
+   `chunkopaque.fsh` - the shader where adding a sampler has twice cost the
+   entire world render - plus a frame of lag. Not recommended.
 
-No integration code. `vvApplyEnvironmentLayers` already lowers roughness and
-raises the specular mask when a surface is wet, and both feed this: lower
-roughness means more, smaller cells (crisper reflection) and a higher specular
-mask means a larger f0 (stronger response). Wet stone lifts on its own through
-the existing material-state path.
+Route 1 is the sound one. It needs a new post-process pass, the G-buffer
+textures bound to it (their IDs are internal to the engine and would need
+reflection), and a graceful path for SSAO-off. It is a session of work with real
+runtime risk and no way to validate it from here.
 
-### Limits, unverified
+### What was actually built
 
-- **Nothing has been seen on screen.** L2 only.
-- Within one texel the normal is constant but the VIEW is not, so the reflection
-  direction still varies slightly across a texel. If it crosses a cell boundary
-  mid-texel the change is a clean discrete switch, which is the intended
-  behaviour, but whether it reads as stable in motion is a runtime question and
-  debug view 33 is the instrument for it.
-- Entities do not get this. They have no material atlas, so there is no texel
-  grid to attach it to; the entity path keeps the flat environment.
-- Not profiled. The added cost is a handful of ALU and no texture fetches, but
-  that is an argument, not a measurement.
+The fallback of the brief's own section 25, done honestly.
+
+**One colour per texel, guaranteed by construction.** This is the fix that
+mattered. The normal was already per-texel through `vvSnapToTexel`, but the VIEW
+vector was not - it varies continuously across a texel, so the reflection
+direction did too, and the previous version could shade a **gradient inside a
+single texture pixel** while calling itself pixel art. `vvTexelCentrePos` solves
+the UV-to-position Jacobian from screen derivatives, so every fragment in a texel
+computes the identical direction. Exact for any planar face at any orientation,
+with a fallback where the Jacobian is singular.
+
+**The R2 phase offset is gone.** It made the structure out of a low-discrepancy
+sequence: two neighbouring texels differed because the sequence said so, not
+because they see different things. That is a procedural patchwork wearing a
+reflection's clothes. Structure now comes only from the direction each texel
+actually reflects.
+
+**It returns a colour, not a gain.** The previous version multiplied the
+environment by up to 2.4, which in daylight is exactly how polished iron became
+a uniformly white slab - a metal's f0 is near its albedo, so `vvAmbientSpecular`
+passes nearly all of it through. It is now a bounded lookup into a colour,
+ceilinged at 1.2, and a test fails if that ceiling rises.
+
+### Sources
+
+| Input | Source | Class |
+|---|---|---|
+| Texture resolution | `textureSize(vv_materialTex, 0)` | Authoritative |
+| Atlas packing | 1:1 - `MaterialAtlasSource` writes each source texture into a slot sized from `TextureAtlasPosition`, and logs when it must rescale. So `floor(atlasUV * atlasSize)` **is** the source texel | Verified, not assumed |
+| Specular / roughness | `vvSampleMaterial` A / B | Existing |
+| Metalness | `vvSampleMaterial2().metalness` via `f0` | Existing |
+| Normal | `vvSurfaceNormal` | Existing |
+| Sky colour | vanilla's `rgbaFog.rgb` | Best available in both shaders |
+| Ground colour | the sky colour dimmed to 0.34 | **Fallback - no scene data exists** |
+| Sun direction | vanilla's `lightPosition` | Authoritative |
+
+`sunPosition`, `dayLight` and `getSkyColorAt` are chunkopaque-only and absent
+from `chunktopsoil.fsh`, so a shared snippet cannot use them.
+
+### Behaviour
+
+- **Roughness** sets the number of direction cells, 16 down to 3. A rough
+  surface resolves the environment more coarsely and stays discrete; it is never
+  blurred toward a gradient.
+- **Wetness** needs no integration code. `vvApplyEnvironmentLayers` already
+  lowers roughness and raises the specular mask, and both feed this.
+- **Chiselled and composite blocks** work through the existing per-texture
+  material resolution - an iron strap texel and a plank texel get different
+  metalness and therefore different reflection, with no per-voxel data.
+- **No sun disc.** The direct lobe already has it; a second copy is a double
+  count.
+
+### Limits
+
+- **Not seen on screen. L2.**
+- It cannot reflect a tree, a building or the player. Debug view 36 marks in red
+  every pixel whose reflection points below the horizon, where there is no scene
+  data at all.
+- **Entities do not get this.** They have no material atlas and so no texel grid.
+  The entity path keeps the flat environment. Vintage Story keeps separate atlas
+  infrastructure for entities and the terrain assumptions do not carry over.
+- Not profiled. The added cost is roughly four derivatives and a handful of ALU,
+  with no extra texture fetches - an argument, not a measurement.
 
 ## 9. Open problems
 
