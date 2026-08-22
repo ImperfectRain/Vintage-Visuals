@@ -39,6 +39,8 @@ namespace VintageVisuals.PseudoPBR
             var skipExamples = new Dictionary<string, string>();
             skippedTextures = 0;
             int resized = 0;
+            int reclassified = 0;
+            var reclassifiedExamples = new List<string>();
 
             int atlasWidth = capi.BlockTextureAtlas.Size.Width;
             int atlasHeight = capi.BlockTextureAtlas.Size.Height;
@@ -48,7 +50,11 @@ namespace VintageVisuals.PseudoPBR
                 if (block?.Code == null || block.Textures == null) continue;
                 if (block.BlockMaterial == EnumBlockMaterial.Air) continue;
 
-                MaterialProfile profile = MaterialProfiles.For(block.BlockMaterial);
+                // NOT the profile any more - the fallback for textures whose
+                // own evidence says nothing. See MaterialResolver: a block is
+                // one classification and a composite block draws several
+                // substances, so resolution happens per TEXTURE below.
+                EnumBlockMaterial blockMaterial = block.BlockMaterial;
 
                 // Vanilla's own emission level for this block, normalised the
                 // way the vertex shader normalises it: chunkopaque.vsh reads
@@ -106,7 +112,24 @@ namespace VintageVisuals.PseudoPBR
                         string name = block.Code.ToString() + ":" + entry.Key;
                         string reason;
                         bool rescaled;
-                        AtlasRegion region = TryBuildRegion(capi, source, position, profile,
+
+                        // Per texture, not per block. A gate's iron strapping
+                        // and its planks are the same block and different
+                        // substances.
+                        MaterialResolution resolution = MaterialResolver.Resolve(
+                            blockMaterial, entry.Key, source?.ToString());
+
+                        if (resolution.Reclassified)
+                        {
+                            reclassified++;
+                            if (reclassifiedExamples.Count < 6)
+                            {
+                                reclassifiedExamples.Add(name + " -> " + resolution.Material +
+                                                         " (from " + resolution.Evidence + ")");
+                            }
+                        }
+
+                        AtlasRegion region = TryBuildRegion(capi, source, position, resolution.Profile,
                             glowLevel, atlasWidth, atlasHeight, name, out reason, out rescaled);
                         if (rescaled) resized++;
 
@@ -158,6 +181,14 @@ namespace VintageVisuals.PseudoPBR
                 diagnostics.Note("  " + resized + " texture(s) were rescaled to their atlas slot; the source " +
                                  "PNG and the slot were different sizes, which would otherwise misalign the " +
                                  "derived maps against the diffuse.");
+            }
+
+            if (reclassified > 0)
+            {
+                diagnostics.Note("  " + reclassified + " texture(s) were classified from their own asset path or " +
+                                 "slot name rather than from their block's material - composite blocks like gates, " +
+                                 "doors and lanterns draw more than one substance. Examples: " +
+                                 string.Join(", ", reclassifiedExamples) + ".");
             }
 
             foreach (KeyValuePair<string, int> reason in skipReasons)

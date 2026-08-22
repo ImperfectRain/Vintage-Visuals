@@ -207,6 +207,9 @@ void main(void) {
         Console.WriteLine("The second material atlas");
         SecondAtlasChecks.Run(Repo, Check);
 
+        Console.WriteLine("What a surface is, versus what its block is made of");
+        MaterialResolverChecks.Run(Repo, Check);
+
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 
