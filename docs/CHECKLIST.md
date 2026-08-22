@@ -7,6 +7,9 @@ someone ran it and looked. "Visually validated" means the specific scene in
 `docs/VISUAL-TESTS.md` was checked and the result matched. Nothing here may be
 ticked because a thing compiles.
 
+Each section names the directory that owns it, so a subsystem can be traced from
+the tree to its readiness without guessing which human name it goes by.
+
 **Read with `docs/STATUS.md`.** STATUS says what each subsystem is and what is
 wrong with it. This file says only how far it has been proven.
 
@@ -26,7 +29,7 @@ Column meanings:
 
 ---
 
-## Core
+## Core — `src/Common/`, `src/Common/Patching/`, `src/Common/Scene/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -43,7 +46,7 @@ install; SSAO on and off across all 48 prefix combinations.
 
 ---
 
-## Material system
+## Material system — `src/PseudoPBR/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -71,7 +74,7 @@ from the source texture.
 
 ---
 
-## Lighting and shading
+## Lighting and shading — `src/PseudoPBR/`, `assets/vintagevisuals/shadersnippets/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -85,7 +88,7 @@ from the source texture.
 
 ---
 
-## Weather and atmosphere
+## Weather and atmosphere — `src/Weather/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -103,7 +106,7 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 
 ---
 
-## Reflections
+## Reflections — `src/Reflections/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -128,7 +131,7 @@ Not yet validated, and each is a separate question:
 
 ---
 
-## Colour and output
+## Colour and output — `src/ColorGrade/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
@@ -144,7 +147,7 @@ and that blocks further grading work.
 
 ---
 
-## Quality and performance
+## Quality and performance — cross-cutting
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|

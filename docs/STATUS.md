@@ -953,6 +953,41 @@ broken transform.
 - **Water: untouched.** It has its own shader path and was not patched.
 - Not profiled.
 
+## 8e. Documentation closure, and what the checks cannot do
+
+The reconciliation pass installed `DocumentationChecks`. A closure pass over it
+found three more stale claims it did not catch, because they are PROSE rather
+than paths or phrasing about directories:
+
+| Claim | Reality |
+|---|---|
+| `src/PseudoPBR/README.md`: "`chunktopsoil.fsh` - not started" | Patched by `pseudopbrtopsoil`, 9 anchors, all 24 combinations |
+| `src/PseudoPBR/README.md`: "Roughness modulates SSR blur - not started (needs Phase 3)" | Roughness controls reflection COARSENESS. Blur is a rejected concept (D11), and "Phase 3" referred to a roadmap that no longer exists |
+| `CHANGELOG.md`: "Weather, reflections and the in-game PBR pipeline are not implemented" | All three have shipped |
+
+The check now takes evidence from the patch YAML: a shader named there IS
+patched, and a document saying otherwise on the same line is wrong.
+
+**A false positive worth recording.** The new check immediately failed on
+`DECISIONS.md`, which quotes those exact stale claims as examples of what went
+wrong. Recording a past error is not making it. The checks now distinguish the
+two by tense - "is empty" is an assertion, "was an empty directory" is a report -
+which is a heuristic, and a deliberately narrow one. Someone writing carelessly
+in the past tense about a present state would slip through.
+
+**What these checks still cannot do**, and what therefore stays a human job:
+
+- They cannot tell whether prose is TRUE. Only whether it still refers to things
+  that exist and quotes constants correctly.
+- They cannot verify a verification level. Nothing stops a future pass writing
+  L4 next to work that has never been seen; only the definition of done in
+  `CLAUDE.md` does, and that is a rule rather than a check.
+- They cannot detect an omission of judgement - a limitation that is real and
+  simply not written down.
+
+Those belong in `docs/CHECKLIST.md`, which is explicitly a record of evidence
+rather than a record of intent.
+
 ## 9. Open problems
 
 Things known to be wrong or unverified right now. Each should be closed or

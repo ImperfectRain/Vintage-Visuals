@@ -359,3 +359,53 @@ further grading work.
 
 **Status.** OPEN. Recorded here so it is not rediscovered as a surprise. See
 STATUS "Open problems".
+
+---
+
+## D17. Documentation consistency is checked mechanically, not by review
+
+**Context.** The repository reached a state where three documents asserted
+`src/Reflections/` was an empty directory while a working reflection system lived
+in it, `CLAUDE.md` pointed at one file that had moved and one that had been
+deleted, and `src/PseudoPBR/README.md` said `chunktopsoil.fsh` was "not started"
+beside a patch group that patches it in all 24 combinations.
+
+**Problem.** Every one of those was written by someone who had just read the
+code. Review does not catch this class, because the stale claim is somewhere the
+author was not looking.
+
+**Options considered.**
+
+1. A review checklist alone. Rejected: the failure is precisely that the author
+   does not know which other document mentions their subsystem.
+2. A documentation linter that judges prose. Rejected: it would need to know what
+   is true, which is the hard part, and a check that can be argued with gets
+   argued with.
+3. Narrow, mechanical checks over facts that cannot be disputed.
+
+**Chosen.** Option 3, in `tools/smoketest/DocumentationChecks.cs`. It verifies
+that referenced paths exist, that no document calls a populated directory empty,
+that numbers quoted in prose match the constants they quote, that no document
+cites a debug view the slider cannot reach, that every subsystem appears in both
+STATUS and ARCHITECTURE with its own README, and that no document calls a
+patched shader unbuilt - evidence taken from the patch YAML, which is not a
+matter of opinion.
+
+**Why narrow.** Each check answers a question with one right answer. None of them
+can tell whether prose is TRUE, and they do not try; anything they cannot verify
+belongs in `docs/CHECKLIST.md` as a human check rather than being faked with a
+regex.
+
+**Consequences.** Renaming a file, moving a subsystem, changing a documented
+constant, or adding a subsystem without documenting it now fails the build's test
+step. Five distinct mutations were confirmed to fail it. The cost is that a
+legitimate rename requires updating the docs in the same commit - which is the
+intended pressure.
+
+**Also chosen: a source-of-truth hierarchy.** STATUS is current state, CHECKLIST
+is how far it is proven, DECISIONS is why, IMPLEMENTATION_PLAN is what is next
+and what was rejected, ARCHITECTURE is data flow and ownership. Investigation
+history is kept but explicitly labelled as history, because this project has
+twice rediscovered an approach it had already rejected.
+
+**Status.** Active. `tools/smoketest/DocumentationChecks.cs`, `CLAUDE.md`.

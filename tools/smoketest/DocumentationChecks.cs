@@ -58,6 +58,7 @@ namespace VintageVisuals.SmokeTest
             CheckQuotedConstantsMatch(repo, check);
             CheckDebugViewRangeAgrees(repo, check);
             CheckEverySubsystemHasAHome(repo, check);
+            CheckNothingBuiltIsCalledUnbuilt(repo, check);
         }
 
         private static string Read(string repo, string relative)
@@ -153,6 +154,9 @@ namespace VintageVisuals.SmokeTest
                     @"`(src/[A-Za-z0-9_/]+)/?`[^.\n]{0,80}?(empty directory|is empty|nothing here has been started|not been started)",
                     RegexOptions.IgnoreCase))
                 {
+                    // The whole matched phrase, so tense can be judged.
+                    if (IsHistoricalNote(m.Value)) continue;
+
                     string dir = Path.Combine(repo, m.Groups[1].Value);
 
                     if (Directory.Exists(dir) && Directory.GetFiles(dir, "*", SearchOption.AllDirectories).Length > 0)
@@ -254,6 +258,98 @@ namespace VintageVisuals.SmokeTest
             }
 
             check("no document cites a debug view the slider cannot reach",
+                wrong.Count == 0,
+                string.Join("; ", wrong.Take(4)));
+        }
+
+        /// <summary>
+        /// Nothing that demonstrably exists may be described as unbuilt.
+        ///
+        /// The reconciliation pass caught directories described as empty, but
+        /// not PROSE claiming a thing was unbuilt. It missed
+        /// src/PseudoPBR/README.md saying "chunktopsoil.fsh - not started"
+        /// beside a patch group that patches it in all 24 combinations, and a
+        /// CHANGELOG line saying weather, reflections and PBR were "not
+        /// implemented" - all three of which had shipped.
+        ///
+        /// The evidence used here is deliberately narrow and mechanical: a
+        /// shader named in a patch YAML IS patched. That is not an opinion, and
+        /// a document saying otherwise on the same line is wrong.
+        /// </summary>
+        /// <summary>
+        /// Is this line RECORDING a past claim rather than making one?
+        ///
+        /// DECISIONS.md exists to record superseded decisions, so it quotes the
+        /// exact stale statements this file was built to catch - "src/Reflections/
+        /// was an empty directory", "said chunktopsoil.fsh was not started". Those
+        /// are history, and flagging them would make the record unwritable.
+        ///
+        /// The distinguishing mark is grammatical and mechanical: a live claim is
+        /// present tense. "is empty" is an assertion; "was an empty directory" is
+        /// a report. This is a heuristic and it can be fooled by someone writing
+        /// carelessly in the past tense about a present state - which is why it
+        /// is narrow, and why the present-tense forms stay caught.
+        /// </summary>
+        private static bool IsHistoricalNote(string line)
+        {
+            return Regex.IsMatch(line,
+                @"\b(was|were|had been|used to|previously|no longer|until|said|asserted|claimed)\b",
+                RegexOptions.IgnoreCase);
+        }
+
+        private static void CheckNothingBuiltIsCalledUnbuilt(string repo, Action<string, bool, string> check)
+        {
+            string patches = Path.Combine(repo, "assets/vintagevisuals/shaderpatches");
+            if (!Directory.Exists(patches)) return;
+
+            // Every shader the mod actually patches.
+            var patched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string yaml in Directory.GetFiles(patches, "*.yaml"))
+            {
+                foreach (Match m in Regex.Matches(File.ReadAllText(yaml),
+                                                  @"filename:\s*([A-Za-z0-9_]+\.[fv]sh)"))
+                {
+                    patched.Add(m.Groups[1].Value);
+                }
+            }
+
+            check("the patch files name the shaders they patch",
+                patched.Count >= 4,
+                "found " + patched.Count + " - the extractor may have stopped matching");
+
+            var wrong = new List<string>();
+
+            var unbuilt = new Regex(
+                @"not started|not implemented|not yet implemented|has not been started|is empty",
+                RegexOptions.IgnoreCase);
+
+            foreach (string doc in Documents.Concat(new[] { "CHANGELOG.md" }))
+            {
+                string text = Read(repo, doc);
+                if (text == null) continue;
+
+                foreach (string line in text.Split('\n'))
+                {
+                    if (!unbuilt.IsMatch(line)) continue;
+
+                    // A line that also points at the current state is a
+                    // historical note, not a live claim.
+                    if (line.IndexOf("STATUS.md", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                    if (line.IndexOf("kept as release history", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                    if (IsHistoricalNote(line)) continue;
+
+                    foreach (string shader in patched)
+                    {
+                        if (line.IndexOf(shader, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            wrong.Add(doc + ": " + shader + " is patched but the line says it is not built");
+                        }
+                    }
+                }
+            }
+
+            check("no document calls a patched shader unbuilt",
                 wrong.Count == 0,
                 string.Join("; ", wrong.Take(4)));
         }

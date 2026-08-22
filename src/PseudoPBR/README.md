@@ -28,8 +28,9 @@ what that means and what is still unconfirmed.
 | `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 49 checks |
 | Cook-Torrance specular + energy conservation | done, level 2 (compiles) |
 | Per-layer debug views | done, level 2 (compiles) |
-| `chunktopsoil.fsh` (grass, dirt tops) | not started |
-| Roughness modulates SSR blur | not started (needs Phase 3) |
+| `chunktopsoil.fsh` (grass, dirt tops) | done, L2 - `pseudopbrtopsoil` group, 9 anchors, compiles in all 24 combinations |
+| Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
+| Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 
 ## The atlas
 

@@ -38,4 +38,7 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   look in game to confirm it is applied in the right colour space. Everything
   else in colour grading is confirmed working.
 - Compatibility with other shader mods is untested and conflicts are expected.
-- Weather, reflections and the in-game PBR pipeline are not implemented.
+- Weather, reflections and the in-game PBR pipeline have shipped since this
+  release. This entry described 0.1.0 and is kept as release history; for
+  current state read `docs/STATUS.md`, and for how far each is proven read
+  `docs/CHECKLIST.md`.
