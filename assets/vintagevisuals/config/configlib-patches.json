@@ -638,7 +638,7 @@
       },
       "pbr_dapple": {
         "ingui": "Sunlight dapple under trees",
-        "comment": "Sunlight broken into moving patches by the leaves overhead. Only appears where the game's own sun light level says there is a canopy above - open ground and interiors are untouched. Gaps brighten by as much as the shade between them darkens, so it never dims the scene overall. 0 is vanilla.",
+        "comment": "Sunlight broken into moving patches by the leaves overhead. Placed by vanilla's own sun shadow map, which already resolves individual leaf shadows: the effect appears where the thing blocking the sun is broken at leaf scale, so a canopy gets it and a wall, a cliff or a roof does not. Darken-only, applied to sunlight alone - it does not touch torches, emission or fog. 0 is vanilla.",
         "default": 0.35,
         "range": {
           "min": 0.0,
@@ -710,13 +710,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-28 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 the candidate canopy mask, 28 breeze against sun direction.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 28.0,
+          "max": 29.0,
           "step": 1.0
         }
       },

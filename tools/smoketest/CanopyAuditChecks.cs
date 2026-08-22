@@ -37,6 +37,85 @@ namespace VintageVisuals.SmokeTest
             CheckDegradesWithoutShadows(pbr, check);
             CheckBreakupMeasure(pbr, check);
             CheckDebugViewsAreReachable(repo, pbr, check);
+            CheckDappleTouchesSunlightOnly(pbr, check);
+            CheckGateIsGeometric(pbr, check);
+        }
+
+        /// <summary>
+        /// Dapple must be applied BEFORE every term that is not sunlight.
+        ///
+        /// It shipped at the very end of vvApplyPbr, multiplying the finished
+        /// pixel - so it scaled block-light specular, the sky term, foliage
+        /// transmission and emission. A canopy dimmed a torch and dimmed a
+        /// glowing forge. Nothing caught it: the value was correct, the sign
+        /// was correct, it was bounded, it conserved, and it was in the wrong
+        /// place. Position in the function is the only thing that encodes
+        /// "this is a statement about sunlight", so position is what gets
+        /// pinned.
+        ///
+        /// The diffuse term is knowingly still scaled - vanilla hands it over
+        /// with sky light already mixed in and no way to separate them.
+        /// </summary>
+        private static void CheckDappleTouchesSunlightOnly(string pbr, Action<string, bool, string> check)
+        {
+            int dapple = pbr.IndexOf("float shaded = vvCanopyDapple(", StringComparison.Ordinal);
+            check("the dapple application site is findable", dapple >= 0, "vvApplyPbr");
+            if (dapple < 0) return;
+
+            foreach (var term in new[]
+            {
+                ("torchlight highlights", "result += vvBlockLightSpecular(f0"),
+                ("the sky specular term", "result += vvAmbientSpecular(f0"),
+                ("light through leaves", "result += vvFoliageTransmission(albedo"),
+                ("emission", "result += vvEmission(albedo"),
+            })
+            {
+                int at = pbr.IndexOf(term.Item2, StringComparison.Ordinal);
+                check("dapple does not dim " + term.Item1,
+                    at > dapple,
+                    at < 0 ? "term not found: " + term.Item2
+                           : "dapple is applied after it, so it scales it");
+            }
+        }
+
+        /// <summary>
+        /// The gate must be the geometric evidence, not the photometric one.
+        ///
+        /// Measured in game: debug view 16 on a birch forest floor at midday
+        /// reads essentially 1 everywhere - open ground, under the crowns, on
+        /// the terraces alike. vv_sunExposure carries almost no canopy
+        /// information in a real scene, so a gate built on it passed nearly
+        /// nothing under actual trees and passed its maximum wherever
+        /// something else held sun light down. Meanwhile view 25 showed
+        /// vanilla's shadow map resolving individual leaf shadows.
+        /// </summary>
+        private static void CheckGateIsGeometric(string pbr, Action<string, bool, string> check)
+        {
+            Match fn = Regex.Match(pbr, @"float vvCanopyDapple\(.*?\n\}", RegexOptions.Singleline);
+            check("vvCanopyDapple is findable", fn.Success, "");
+            if (!fn.Success) return;
+
+            string body = fn.Value;
+
+            check("the dapple gate reads the shadow map, not sun exposure",
+                body.Contains("vvCanopyEvidence()"),
+                "");
+
+            check("vv_sunExposure no longer gates dapple",
+                !body.Contains("vv_sunExposure"),
+                "measured flat at ~1 across a whole forest scene");
+
+            // The fine radius is the finding. A wider one cannot tell a leaf
+            // gap from a terrace lip - view 26 shows the terrain edges lighting
+            // the 6 and 16 texel channels and not the 2 texel one.
+            Match ev = Regex.Match(pbr, @"float vvCanopyEvidence\(\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
+            check("the canopy evidence uses the fine radius",
+                ev.Success && Regex.IsMatch(ev.Groups[1].Value, @"vvSunShadowBreakup\(2\.0\)"),
+                "a wider radius cannot separate a leaf gap from a straight edge");
+
+            check("the canopy evidence requires the sun to be blocked",
+                ev.Success && ev.Groups[1].Value.Contains("1.0 - vvSunVisibility()"),
+                "a lit fragment has no shadow to break up");
         }
 
         /// <summary>

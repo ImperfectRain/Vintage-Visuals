@@ -639,6 +639,50 @@ float vvSunShadowBreakup(float radiusTexels)
 #endif
 }
 
+// Whether a CANOPY is what is blocking the sun here.
+//
+// Measured, not assumed, and it replaces vv_sunExposure as the dapple gate.
+//
+// The measurement that settled it: debug view 16 on a birch forest floor at
+// midday reads essentially 1 EVERYWHERE - open ground, under the crowns, on
+// the terraces. vv_sunExposure carries almost no canopy information at all in
+// a real scene, because Vintage Story's sunlight flood fill barely attenuates
+// through leaves. So the old gate, `smoothstep(0.97, 0.62, exposure)`, passed
+// almost nothing under actual trees and passed its maximum wherever something
+// else happened to hold sun light down - a terrace lip, an overhang, a
+// doorway. The effect was not weak in the right places, it was firing in the
+// wrong ones.
+//
+// Debug view 25 in the same spot shows vanilla's shadow map resolving
+// INDIVIDUAL LEAF SHADOWS. The information was there the whole time.
+//
+// The discriminator is SCALE, and view 26 shows it directly. A canopy breaks
+// the shadow at every scale, leaf gaps included, so the 2-texel ring
+// disagrees. A terrace lip or a wall is one straight edge: the 6- and 16-texel
+// rings disagree across it, but the 2-texel ring only disagrees within about
+// two texels of the line. In view 26 the tree crowns come out white - all
+// three radii firing - and the terrain shadow edges come out cyan, green and
+// blue with little red. That is the separation, and it is why this reads the
+// FINE radius and not the comfortable-looking middle one.
+//
+// The honest remaining leak: a straight shadow edge still produces a band
+// about two texels wide. That is a thin line against the old behaviour of
+// "everywhere under any roof", but it is not zero, and it is the first thing
+// to look at in view 29 if edges start glinting.
+float vvCanopyEvidence()
+{
+    // Only where the sun is actually blocked. A lit fragment has no shadow to
+    // be broken and nothing to redistribute.
+    float shadowed = 1.0 - vvSunVisibility();
+    if (shadowed < 0.01) return 0.0;
+
+    // Leaf scale. The whole finding is that this radius separates canopy from
+    // masonry and the wider ones do not.
+    float fine = vvSunShadowBreakup(2.0);
+
+    return clamp(fine * shadowed, 0.0, 1.0);
+}
+
 // Blocks of canopy assumed above a fragment, from just-under-the-leaves to
 // deep under a full crown. Sets both how far the pattern slides as the sun
 // moves and, through the penumbra, how soft the flecks are.
@@ -982,17 +1026,12 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // the tree should be casting this, not wearing it.
     if (vvIsFoliage()) return 0.0;
 
-    float exposure = clamp(vv_sunExposure, 0.0, 1.0);
-
-    // Rises out of deep shade and falls again as the sky opens up.
-    //
-    // The upper rolloff has to be strict. vv_sunExposure reads essentially 1
-    // under open sky - vanilla multiplies the ambient colour by it directly, so
-    // it has to - and the previous 0.99 edge meant anything reading even 0.95
-    // still passed a sixth of the effect. Spread over every open field in the
-    // world that is not a subtle leak, it is the effect being on everywhere.
-    // At 0.97 falling to 0.62, an exposure of 0.95 passes one part in a hundred.
-    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.97, 0.62, exposure);
+    // GEOMETRIC, not photometric. See vvCanopyEvidence: this asks whether the
+    // thing blocking the sun here is broken at leaf scale, which is a fact
+    // about the occluder. The value it replaced asked how much sky light
+    // reached this vertex, which is a fact about the result, and measured
+    // ~1 under a real canopy.
+    float under = vvCanopyEvidence();
     if (under < 0.001) return 0.0;
 
     // No sun, no flecks. Also kills it at night, where a dappled moon would be
@@ -1005,7 +1044,11 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // Deeper shade is read as more canopy overhead, so the pattern slides
     // further, and its flecks are softer, under a full crown than under an edge
     // branch.
-    float height = mix(VV_DAPPLE_LOW, VV_DAPPLE_HIGH, 1.0 - exposure);
+    // Deeper, more thoroughly broken shadow is read as more canopy overhead, so
+    // the pattern slides further and its flecks go softer under a full crown
+    // than under an edge branch. Driven by the evidence term now that the
+    // exposure it used to read has been shown to be flat.
+    float height = mix(VV_DAPPLE_LOW, VV_DAPPLE_HIGH, under);
 
     vec2 azimuth = toSun.xz;
     float azimuthLength = length(azimuth);
@@ -1558,6 +1601,54 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
 
     result += specular * ndotl * visibility * vv_pbrSpecularStrength * specularOcclusion * energy;
 
+    // Sunlight broken up by the leaves overhead.
+    //
+    // POSITION IN THIS FUNCTION IS THE CONTRACT. It used to sit at the very
+    // end, multiplying the finished pixel - after block-light specular, after
+    // the sky term, after foliage transmission and after EMISSION. A canopy
+    // therefore dimmed a torch and dimmed a glowing forge, which is not
+    // something a canopy does. Dapple is a statement about how much of the SUN
+    // arrives; nothing below this line is sunlight.
+    //
+    // What it still scales, and cannot help scaling: the diffuse term, which
+    // arrives from vanilla with sky light already mixed into it and no way to
+    // separate the two. A canopy does block sky light as well as sun, so that
+    // is defensible rather than merely unavoidable, but it is not exact and
+    // saying so here is cheaper than rediscovering it.
+    //
+    // SUBTRACTIVE, never additive. A fleck is where the leaves failed to block
+    // the sun, not a light of its own, so the brightest this can leave a pixel
+    // is exactly what vanilla lit it to. That is not a stylistic preference:
+    // the additive version pushed pixels past 1.0, findbright multiplies the
+    // whole frame rather than thresholding it, and a forest floor came back as
+    // white spotlights with bloom halos.
+    //
+    // Scaled by the shadow term as well, so a fragment vanilla has already put
+    // in full shade does not get dappled a second time.
+    float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
+                 * clamp(shadowBrightness, 0.0, 1.0);
+
+    if (shaded > 0.0)
+    {
+        result *= 1.0 - clamp(shaded, 0.0, 0.85);
+
+        // Green shade.
+        //
+        // A leaf transmits roughly 5-10% of the visible light that reaches it
+        // and reflects about another 10, and both are far higher in green than
+        // in red or blue - which is what makes a leaf green to begin with. So
+        // light that has been through a canopy is green-dominant: the floor of
+        // a wood is not merely darker than the field beside it, it is a
+        // different colour, and that is the strongest single cue that you are
+        // under trees.
+        //
+        // On the shaded fraction only, because a fleck is sunlight that missed
+        // every leaf on the way down and has no business being tinted. It moves
+        // colour between channels rather than adding or removing any.
+        float tint = shaded * VV_DAPPLE_GREEN;
+        result *= vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
+    }
+
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
     // metal in a doorway look like painted wood. Daylight and fog still apply.
@@ -1609,55 +1700,6 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     result += vvEmission(albedo, glowLevel, cameraRelativePos)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * emissionMask;
-
-    // Sunlight broken up by the leaves overhead.
-    //
-    // Last, and multiplicative on the whole result, because dapple is not a
-    // light of its own - it is a statement about how much of the sun reaches
-    // this spot, and everything above has already worked out what the sun does
-    // when it arrives. Scaling the finished pixel keeps the surface's own
-    // response intact: a wet stone in a sunbeam is a brighter wet stone, not a
-    // stone with a bright patch painted over it.
-    //
-    // Scaled by the shadow term as well, so a fragment vanilla has already put
-    // in full shade does not grow sunbeams. Dapple is the sun finding a way
-    // through; where there is no sun to find, there is nothing to break up.
-    // Light the canopy takes away, 0 inside a sunfleck and up to
-    // VV_DAPPLE_SHADE between them.
-    //
-    // SUBTRACTIVE, never additive. A fleck is where the leaves failed to block
-    // the sun, not a light of its own, so the brightest this can leave a pixel
-    // is exactly what vanilla lit it to. That is not a stylistic preference: the
-    // additive version pushed pixels past 1.0, findbright multiplies the whole
-    // frame rather than thresholding it, and a forest floor came back as white
-    // spotlights with bloom halos.
-    //
-    // Scaled by the shadow term as well, so a fragment vanilla has already put
-    // in full shade does not get dappled a second time. Dapple is the sun
-    // finding a way through; where there is no sun to find, there is nothing to
-    // break up.
-    float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
-                 * clamp(shadowBrightness, 0.0, 1.0);
-
-    if (shaded > 0.0)
-    {
-        result *= 1.0 - clamp(shaded, 0.0, 0.85);
-
-        // Green shade.
-        //
-        // A leaf transmits roughly 5-10% of the visible light that reaches it
-        // and reflects about another 10, and both are far higher in green than
-        // in red or blue - which is what makes a leaf green to begin with. So
-        // light that has been through a canopy is green-dominant: the floor of a
-        // wood is not merely darker than the field beside it, it is a different
-        // colour, and that is the strongest single cue that you are under trees.
-        //
-        // On the shaded fraction only, because a fleck is sunlight that missed
-        // every leaf on the way down and has no business being tinted. It moves
-        // colour between channels rather than adding or removing any.
-        float tint = shaded * VV_DAPPLE_GREEN;
-        result *= vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
-    }
 
     return vec4(result, litColor.a);
 }
@@ -1918,6 +1960,21 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // and coherently across each tree. If the shadow map resolves gaps at all,
     // the mod's separate breeze clock is a second, disagreeing animation of the
     // same leaves, and the correct fix is to delete it rather than tune it.
+    // 29: the gate the dapple system now actually uses.
+    //
+    // Fine-radius shadow breakup where the sun is blocked - see
+    // vvCanopyEvidence. This is the replacement for view 16, and comparing the
+    // two is the whole argument: 16 is white across an entire forest scene and
+    // says nothing, this should be bright under crowns and dark on open ground,
+    // in caves, and under solid roofs.
+    //
+    // Its known defect is visible here too: a straight shadow edge leaves a
+    // band about two texels wide. Walk a wall, a terrace lip and a doorway. If
+    // those bands are wide or crawl as the camera moves, the fine radius is
+    // still too coarse for this shadow resolution and the next move is to
+    // require agreement across two radii rather than trusting one.
+    if (mode == 29) return vec4(vec3(vvCanopyEvidence()), color.a);
+
     if (mode == 28)
     {
         return vec4(clamp(vv_sceneBreeze, 0.0, 1.0),

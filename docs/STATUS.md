@@ -376,17 +376,66 @@ agrees (shadowed), in a field every tap agrees (lit), under leaves they
 bright band along any straight shadow edge, roughly as wide as the sample ring -
 a thin band, against today's failure of the entire area under any roof.
 
-### What is still unknown, and blocks the rebuild
+### MEASURED IN GAME - the shadow map resolves the canopy
 
-Whether the shadow map has the resolution to resolve gaps between leaves. That
-is not answerable from source: it depends on the player's shadow quality
-setting, the cascade extents, and the viewing distance. Debug view 26 is built
-to answer it - red channel lit under a canopy means the gaps are resolved and
-most of the procedural machinery becomes sub-texel detail; red dark everywhere
-means the flecks still have a job.
+Birch woodland, midday, shadow quality medium, 480 block render. Debug views
+16, 25, 26 and 27 captured from one spot without moving.
 
-Nothing is wired to any of this. `vv_sunExposure` remains the gate until the
-measurement is made.
+| View | What it showed |
+|---|---|
+| **16** `vv_sunExposure` | **White essentially everywhere** - open ground, forest floor, terraces alike. Carries almost no canopy information in a real scene |
+| **25** vanilla sun visibility | **Individual leaf shadows, fully resolved.** Per-leaf detail in the crowns and leaf-shaped shadow on the ground |
+| **26** breakup at 2/6/16 texels | Tree crowns white - all three radii firing. Terrain shadow edges cyan/blue - the 6 and 16 texel rings, with little red |
+| **27** breakup(6) x shadowed | Fires on leaf silhouettes AND streaks along every terrace shadow edge |
+
+Three conclusions, in order of consequence.
+
+**The game already resolves canopy gaps.** View 25 settles Phase 4: the
+procedural fleck generator is not needed as the primary pattern, and the shadow
+it should be modulating was in the frame the whole time.
+
+**vv_sunExposure was worse than ambiguous - it was flat.** The audit predicted
+it could not tell a canopy from a roof. The measurement says it does not even
+distinguish a canopy from open sky: it reads ~1 under the crowns. So the old
+gate, `smoothstep(0.97, 0.62, exposure)`, passed nearly nothing under real trees
+and passed its maximum wherever something else held sun light down - a terrace
+lip, an overhang, a doorway. The effect was not weak in the right places. It was
+firing in the wrong ones, which is exactly what was reported and was
+misdiagnosed twice as a tuning problem.
+
+**The discriminator is scale, and view 26 shows it working.** A canopy breaks
+the shadow at every scale; a wall or a terrace is one straight edge, which the
+wide rings cross and the 2-texel ring only disagrees within about two texels of.
+Crowns came out white, terrain edges came out cyan. View 27 fires on those
+terrain edges precisely because radius 6 was the wrong choice - it is now
+`vvCanopyEvidence()` at radius 2 instead, exposed as view 29.
+
+### What changed
+
+- The gate is `vvCanopyEvidence()`: fine-radius shadow breakup where the sun is
+  blocked. Geometric cause, not lighting result. `vv_sunExposure` no longer
+  gates dapple, and canopy height is driven by the evidence term too.
+- Dapple was applied at the END of `vvApplyPbr`, multiplying the finished pixel
+  - after block-light specular, the sky term, foliage transmission and
+  **emission**. A canopy dimmed a torch and dimmed a glowing forge. It now sits
+  immediately after the sun specular lobe and before all four. Nothing caught
+  this: the value was right, the sign was right, it was bounded, it conserved,
+  and it was in the wrong place, so `CheckDappleTouchesSunlightOnly` pins
+  position rather than value.
+- The diffuse term is still scaled, knowingly: vanilla hands it over with sky
+  light already mixed in and no way to separate them. A canopy does block sky
+  light, so it is defensible rather than merely unavoidable.
+
+### Still open
+
+The fine radius leaves a band about two texels wide along any straight shadow
+edge. View 29 is where that shows. If those bands read as wide or crawl with the
+camera, the next move is requiring agreement across two radii rather than
+trusting one.
+
+The flecks have not yet been demoted. They are still generating the pattern
+where the gate opens, rather than filling in only what the shadow map cannot
+resolve. That is the next stage and it is now unblocked.
 
 ### The intended architecture, once measured
 
