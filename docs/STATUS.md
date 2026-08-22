@@ -278,6 +278,39 @@ costs to be wrong about them.
     often in drizzle as in a downpour. That is a real and small gap - fold the
     rain into `rate` - but not the rewrite the finding implies.
 
+## 8b. Material identity
+
+Added after an architecture review proposed a material-ID channel on the
+geometry. The investigation changed the answer.
+
+- [x] **Material resolved per TEXTURE, not per block.** `MaterialProfiles.For(
+      block.BlockMaterial)` ran once per block, so a wooden gate's iron
+      strapping got wood's roughness and a metalness of zero. `MaterialResolver`
+      ranks asset path > slot name > block material. L2.
+- [x] **Whole-segment matching**, tested against `blackstone`, `driftwood` and
+      `metalworking`. A false positive is worse than no change.
+- [x] **Chiseled blocks confirmed to need nothing.** The mesher textures each
+      voxel face with its source block's texture, and the atlas is keyed by UV,
+      so per-voxel material already resolves for free. This was expected to be
+      the hardest case.
+- [ ] **A material-ID vertex attribute is NOT available.** Investigated and
+      ruled out, recorded so it is not re-proposed:
+      `renderFlags` is completely full (0-7 glow, 8-10 zoffset, 11 reflective,
+      12 lod0, 13-24 normal, 25-28 windmode, 29-31 winddata - no free bits);
+      `colormapData` has spare bits at 6-7 and 13-15 but the chunk tesselator
+      that writes them lives in `VintagestoryLib`, out of reach of shader
+      patching; and a new attribute would mean changing the VAO layout the game
+      builds per chunk.
+- [ ] **Entities still resolve per-entity, not per-mesh-element.** A creature's
+      fur, eyes, horns and metal armour share one classification. The same
+      per-texture trick does not apply, because entity textures are one sheet
+      per creature rather than one region per substance. Genuinely open.
+- [ ] **Single-texture composites remain unsolved and are the honest limit.**
+      Where a block draws two substances into ONE texture - iron painted into a
+      wood plank image - there is no authored per-texel evidence, and inferring
+      it from pixels is the thing this project refuses to do. No effect beats a
+      wrong one.
+
 ## 9. Open problems
 
 Things known to be wrong or unverified right now. Each should be closed or
