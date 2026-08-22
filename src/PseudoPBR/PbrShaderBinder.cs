@@ -70,6 +70,7 @@ namespace VintageVisuals.PseudoPBR
         public const string GrainUniform = "vv_pbrGrain";
         public const string DappleUniform = "vv_pbrDapple";
         public const string CanopyRadiusUniform = "vv_pbrCanopyRadius";
+        public const string PixelReflectUniform = "vv_pbrPixelReflect";
         public const string ShaftUniform = "vv_pbrShafts";
 
         // Entity programme only. Named apart from the terrain controls because
@@ -388,6 +389,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
             SetIfPresent(program, DappleUniform, _look.SunDapple);
             SetIfPresent(program, CanopyRadiusUniform, _look.CanopyRadius);
+            SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);

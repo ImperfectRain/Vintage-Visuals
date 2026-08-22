@@ -592,6 +592,16 @@ namespace VintageVisuals.Common
         public float CanopyRadius { get; set; } = 6.0f;
 
         /// <summary>
+        /// Pixelated environment reflection.
+        ///
+        /// A gain on the environment colour the ambient specular term already
+        /// receives, varying by reflection direction and quantised to the
+        /// texture's pixel grid. It adds no term of its own: 0 hands the flat
+        /// colour through unchanged, which is exactly what shipped before.
+        /// </summary>
+        public float PixelReflection { get; set; } = 0.6f;
+
+        /// <summary>
         /// Visible beams of light through the canopy.
         ///
         /// Writes into vanilla's OWN god-ray channel rather than drawing
@@ -731,9 +741,11 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SunDapple", corrections);
             CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
                 "PseudoPBR.CanopyRadius", corrections);
+            PixelReflection = ColorGradeConfig.Clamp(PixelReflection, 0.0f, 1.0f,
+                "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 31.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 35.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

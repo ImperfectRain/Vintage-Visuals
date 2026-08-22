@@ -92,6 +92,7 @@ uniform float vv_pbrSpecOcclusion;   // 0 keeps the flat cavity on specular, 1 m
 uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 0 is vanilla
 uniform float vv_pbrShafts;          // visible beams through the canopy, 0 is vanilla
 uniform float vv_pbrCanopyRadius;    // shadow-map ring radius for the canopy test, in texels; 0 is vanilla
+uniform float vv_pbrPixelReflect;    // pixelated environment reflection, 0 is vanilla
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -1279,6 +1280,165 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
     return clamp(vanillaBrightness + delta, 0.0, 1.0);
 }
 
+// ---------------------------------------------------------------------------
+// Pixelated environment reflection
+//
+// A stylised standin for what a reflective surface sees, built to Vintage
+// Story's own visual grammar: discrete, attached to the texture's pixel grid,
+// and cheap. It is NOT screen-space reflection and shares nothing with it -
+// there is no ray, no depth buffer read, no scene colour, and no second render
+// target. Nothing here can reflect an actual object in the world, and it does
+// not try to.
+//
+// WHAT IT ACTUALLY DOES, stated plainly so it is not oversold: it replaces the
+// single flat environment colour that vvAmbientSpecular already receives with
+// one that VARIES BY REFLECTION DIRECTION, quantised so it reads as pixel art.
+// Every other part of the response - the roughness-aware Fresnel, the metal
+// tint through f0, the specular occlusion, daylight, fog and overcast - is the
+// existing ambient specular path, untouched. This adds no term of its own.
+//
+// That is also why it cannot invent light. The function returns a GAIN on the
+// existing environment colour whose average over all directions is exactly 1
+// (see VV_REFLECT_SKY, which is derived rather than chosen). It redistributes
+// the ambient specular a surface was already receiving between the directions
+// it might be facing. Set the strength to 0 and it returns the flat colour it
+// was given, which is what shipped before.
+//
+// The pixel structure has two sources, and neither is screen space:
+//
+//   The NORMAL is sampled from the material atlas with vvSnapToTexel, so it is
+//   already constant across a texel. The reflection direction is therefore
+//   constant across a texel too, and a bumpy normal map genuinely re-aims it
+//   rather than merely modulating its strength.
+//
+//   The QUANTISATION GRID is phase-shifted per texel, by a hash of the texel
+//   index from the atlas's own resolution. Neighbouring texels therefore land
+//   on different cells even where the reflection direction barely changes,
+//   which is what turns a smooth gradient into a patchwork that belongs to the
+//   texture rather than to the camera.
+//
+// Deliberately NOT included: a sun disc. The direct sun already has its own
+// GGX lobe a few lines below, and putting the sun into the ambient environment
+// as well would double-count it - which is exactly how this kind of feature
+// ends up "inventing arbitrary bright light".
+// ---------------------------------------------------------------------------
+
+// Direction cells across the elevation range, at the smooth and rough ends.
+//
+// Roughness changes the SIZE OF THE CELLS, not the blurriness of the result. A
+// rough surface gathers over a wider cone, so it sees a coarser version of the
+// same environment - broad patches rather than small ones - and it stays
+// pixelated the whole way. Blurring toward a smooth gradient would be the SSR
+// look this is specifically not.
+const float VV_REFLECT_CELLS_SHARP = 16.0;
+const float VV_REFLECT_CELLS_ROUGH = 3.0;
+
+// Half-width of the horizon band, in reflection-vector Y.
+const float VV_REFLECT_HORIZON = 0.18;
+
+// What each region is worth relative to the flat environment colour.
+//
+// The horizon is the brightest part of a real sky and the ground is much
+// darker than either; those two are chosen, and the sky is then DERIVED so the
+// solid-angle-weighted average comes to exactly 1. Uniform in Y is the correct
+// weighting for a sphere, by Archimedes' hat-box theorem, so the three
+// fractions are simply (1-h)/2, h and (1-h)/2.
+const float VV_REFLECT_GROUND = 0.45;
+const float VV_REFLECT_HORIZON_GAIN = 1.60;
+const float VV_REFLECT_HALF = (1.0 - VV_REFLECT_HORIZON) * 0.5;
+const float VV_REFLECT_SKY = (1.0 - VV_REFLECT_HORIZON_GAIN * VV_REFLECT_HORIZON
+                                  - VV_REFLECT_GROUND * VV_REFLECT_HALF) / VV_REFLECT_HALF;
+
+// How much brighter the half of the sky facing the sun is than the half away
+// from it. A cosine, so its average over azimuth is 0 and it cannot shift the
+// energy either - it only decides which side of a surface catches more.
+const float VV_REFLECT_TOWARD = 0.35;
+
+// Hard ceiling on the gain. The bands and the azimuth term cannot reach this
+// between them; it is here so that a later edit to any of them cannot quietly
+// turn a redistribution into an amplifier.
+const float VV_REFLECT_MAX_GAIN = 2.4;
+
+const float VV_REFLECT_TWO_PI = 6.28318530718;
+
+// Quantises one coordinate into `cells` bands, with the grid shifted by phase.
+//
+// Split out because the elevation and azimuth grids must shift IDENTICALLY per
+// texel: if only one of them did, the cells would shear rather than tile.
+float vvReflectQuantise(float t01, float cells, float phase)
+{
+    return (floor(t01 * cells + phase) + 0.5 - phase) / cells;
+}
+
+// The environment colour this texel reflects.
+//
+// Returns the colour to hand to vvAmbientSpecular in place of the flat one.
+// Strength 0 returns the input unchanged, which is the required vanilla
+// behaviour for an unset uniform.
+vec3 vvPixelReflection(vec3 n, vec3 v, vec2 materialUv, float roughness, vec3 environment)
+{
+    float strength = clamp(vv_pbrPixelReflect, 0.0, 1.0);
+    if (strength < 0.001) return environment;
+
+    vec3 r = reflect(-v, n);
+
+    // A degenerate normal - a zero-length material normal, a face seen exactly
+    // edge on - makes reflect() return something unnormalisable. Falling back
+    // to the flat environment is the only answer that cannot produce a NaN and
+    // then a black or white fragment.
+    float len = length(r);
+    if (len < 1e-4) return environment;
+    r /= len;
+
+    float cells = max(2.0, mix(VV_REFLECT_CELLS_SHARP, VV_REFLECT_CELLS_ROUGH,
+                               clamp(roughness, 0.0, 1.0)));
+
+    // The texture's own pixel grid, from the atlas's real resolution rather
+    // than an assumed 16x16 - textureSize is the same source vvSnapToTexel
+    // uses to make the normal per-texel in the first place.
+    vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+    vec2 texel = floor(materialUv * size);
+
+    // R2, the low-discrepancy sequence. A hash would scatter the phase
+    // randomly and make neighbouring texels disagree by arbitrary amounts;
+    // R2 spreads them evenly, so adjacent texels reliably differ without the
+    // field turning into noise. The pattern is a function of the texel index
+    // alone, so it is fixed to the surface and cannot crawl with the camera.
+    float phase = fract(dot(texel, vec2(0.7548776662, 0.5698402909)));
+
+    float elevation = vvReflectQuantise(clamp(r.y, -1.0, 1.0) * 0.5 + 0.5, cells, phase);
+    float qy = elevation * 2.0 - 1.0;
+
+    // Sky, horizon or ground. Hard steps rather than smoothstep, because the
+    // discreteness IS the effect, and because hard bands keep the average
+    // exactly at the value VV_REFLECT_SKY was derived for.
+    float gain = qy > VV_REFLECT_HORIZON
+        ? VV_REFLECT_SKY
+        : (qy < -VV_REFLECT_HORIZON ? VV_REFLECT_GROUND : VV_REFLECT_HORIZON_GAIN);
+
+    // Which way the cell faces relative to the sun, using the game's own light
+    // direction rather than a second solar model. Scaled by daylight so a night
+    // surface gets the neutral environment it should.
+    vec2 sunAzimuth = lightPosition.xz;
+    if (dot(sunAzimuth, sunAzimuth) > 1e-6)
+    {
+        vec2 toSun = normalize(sunAzimuth);
+
+        float azimuth = atan(r.z, r.x) / VV_REFLECT_TWO_PI + 0.5;
+        float qaz = (vvReflectQuantise(azimuth, max(3.0, cells * 2.0), phase) - 0.5)
+                  * VV_REFLECT_TWO_PI;
+
+        float toward = cos(qaz) * toSun.x + sin(qaz) * toSun.y;
+        gain *= 1.0 + VV_REFLECT_TOWARD * toward * clamp(vv_sceneDayLight, 0.0, 1.0);
+    }
+
+    gain = clamp(gain, 0.0, VV_REFLECT_MAX_GAIN);
+
+    // Faded toward the flat colour by strength, so the slider interpolates
+    // between vanilla's behaviour and the full effect rather than switching.
+    return environment * mix(1.0, gain, strength);
+}
+
 // How much light reaches the eye THROUGH the surface.
 //
 // The cheap standard model: bend the light direction backwards through the
@@ -1737,7 +1897,16 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
             * vv_pbrSpecularStrength
             * specularOcclusion;
 
-    result += vvAmbientSpecular(f0, roughness, ndotv, environment)
+    // The environment this surface reflects, per texel and per direction.
+    //
+    // Substituted INTO the existing ambient specular rather than added beside
+    // it. Everything that decides how much of it survives - the roughness-aware
+    // Fresnel, the metal tint carried by f0, energy compensation, specular
+    // occlusion, daylight, fog and overcast - is the same code as before, so
+    // the reflection cannot exceed the ambient specular the surface was already
+    // getting, and a fully matte or non-metallic texel still barely reflects.
+    result += vvAmbientSpecular(f0, roughness, ndotv,
+                                vvPixelReflection(n, v, materialUv, roughness, environment))
             * energy
             * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
@@ -2067,6 +2236,91 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // single edge scores 2 in the total variation at every radius and the band
     // starts above that. That is the check that this is counting occluders
     // rather than finding boundaries.
+    // ---- Pixel reflection, views 32-35 -----------------------------------
+    //
+    // 32: the reflection vector, as a colour. Red and blue are the horizontal
+    // direction, green is up. A FLAT surface should show one steady colour that
+    // changes only as the view moves; a bumpy one should break into per-texel
+    // patches. If a normal-mapped surface looks as smooth here as a flat one,
+    // the normal is not reaching the reflection and nothing downstream can fix
+    // that.
+    if (mode == 32)
+    {
+        vec3 n32 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 v32 = normalize(-cameraRelativePos);
+        return vec4(reflect(-v32, n32) * 0.5 + 0.5, color.a);
+    }
+
+    // 33: THE IMPORTANT ONE - the quantised reflection cell.
+    //
+    // Each cell gets a flat colour from its own index, so this shows the
+    // discrete structure directly. What it is there to prove is that the
+    // structure belongs to the TEXTURE and not to the screen: walk toward a
+    // wall and the patches should stay put on its texels and change in steps,
+    // not slide across it. If the pattern flows like liquid as you move, the
+    // effect is screen-space and wrong however good it looks standing still.
+    if (mode == 33)
+    {
+        vec3 n33 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 v33 = normalize(-cameraRelativePos);
+        vec3 r33 = reflect(-v33, n33);
+        if (length(r33) < 1e-4) return vec4(0.0, 0.0, 0.0, color.a);
+        r33 = normalize(r33);
+
+        float rough33 = clamp(vvSampleMaterial(materialUv).b + vv_pbrRoughnessBias, 0.04, 1.0);
+        float cells = max(2.0, mix(VV_REFLECT_CELLS_SHARP, VV_REFLECT_CELLS_ROUGH, rough33));
+
+        vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+        float phase = fract(dot(floor(materialUv * size), vec2(0.7548776662, 0.5698402909)));
+
+        float e = vvReflectQuantise(clamp(r33.y, -1.0, 1.0) * 0.5 + 0.5, cells, phase);
+        float a = vvReflectQuantise(atan(r33.z, r33.x) / VV_REFLECT_TWO_PI + 0.5,
+                                    max(3.0, cells * 2.0), phase);
+
+        return vec4(fract(a * 7.0), e, fract(e * 11.0 + a * 3.0), color.a);
+    }
+
+    // 34: the environment gain alone, with the surface colour taken out.
+    // Grey is 1, meaning "exactly the flat environment this replaced". Brighter
+    // is sky and horizon, darker is ground. The whole image should average to
+    // mid grey - if it reads bright overall, the redistribution has become an
+    // amplifier and VV_REFLECT_SKY is no longer derived correctly.
+    if (mode == 34)
+    {
+        vec3 n34 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 v34 = normalize(-cameraRelativePos);
+        float rough34 = clamp(vvSampleMaterial(materialUv).b + vv_pbrRoughnessBias, 0.04, 1.0);
+
+        return vec4(vvPixelReflection(n34, v34, materialUv, rough34, vec3(0.5)), color.a);
+    }
+
+    // 35: what the reflection actually contributes to the pixel, on its own.
+    //
+    // This is the honesty check on the whole feature. Bare stone, wood and soil
+    // should be nearly black; iron should show structure; wet stone should
+    // brighten noticeably as rain starts. If everything in frame glows equally,
+    // the specular mask is not reaching this and the effect is painting light
+    // onto diffuse materials.
+    if (mode == 35)
+    {
+        vec3 n35 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 v35 = normalize(-cameraRelativePos);
+        float ndotv35 = clamp(dot(n35, v35), 1e-4, 1.0);
+
+        vec4 mat35 = vvSampleMaterial(materialUv);
+        float rough35 = clamp(mat35.b + vv_pbrRoughnessBias, 0.04, 1.0);
+
+        VvMaterial2 m35 = vvSampleMaterial2(materialUv);
+        vec3 f035 = vv_material2Valid > 0.5
+            ? vvReflectanceF0FromMetalness(color.rgb,
+                  clamp(m35.metalness, 0.0, 1.0) * clamp(vv_pbrMetalResponse, 0.0, 1.0))
+            : vvReflectanceF0(color.rgb, mat35.a);
+
+        return vec4(vvAmbientSpecular(f035, rough35, ndotv35,
+                        vvPixelReflection(n35, v35, materialUv, rough35, environment)),
+                    color.a);
+    }
+
     // 31: the RAW count at the gate's own radius, banded into false colour so a
     // screenshot answers the question without needing a number read off it.
     //

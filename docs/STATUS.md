@@ -617,6 +617,94 @@ procedural sunflecks      ->  sub-texel breakup only   (what the map cannot reso
 direct sunlight term only ->  never ambient, block light, emission or fog
 ```
 
+## 8d. Pixelated environment reflection
+
+Stylised reflections on reflective materials, in Vintage Story's own visual
+grammar: discrete, locked to the texture's pixel grid, aimed by the normal map.
+
+**It is not SSR and shares nothing with it.** No ray, no depth-buffer read, no
+scene colour, no second render target, no cubemap, no probe. Nothing here can
+reflect an actual object in the world and it does not try to.
+
+### What it actually is
+
+`vvAmbientSpecular(f0, roughness, ndotv, environment)` already existed and
+already took a single FLAT environment colour. The whole feature is: replace
+that one colour with one that varies by reflection direction and is quantised.
+Everything downstream - the roughness-aware Fresnel, the metal tint carried by
+f0, energy compensation, specular occlusion, daylight, fog, overcast - is the
+existing path, unmodified. **The feature adds no term of its own.**
+
+That is also why it cannot invent light. `vvPixelReflection` returns a GAIN on
+the environment colour whose average over all directions is exactly 1.
+`VV_REFLECT_SKY` is DERIVED from the horizon and ground gains rather than
+chosen, so the balance is structural; the smoke test computes the mean
+numerically over the sphere and fails if it drifts, and a mutation typing a
+literal over it was confirmed to fail.
+
+Uniform in Y is the correct weighting - Archimedes' hat-box theorem, equal
+bands of height carry equal solid angle - so the regions weigh `(1-h)/2`, `h`,
+`(1-h)/2`. The azimuth term is a cosine about the game's own `lightPosition`,
+which averages to zero over a turn and so cannot move the total either.
+
+### Why the pixels belong to the surface
+
+Two mechanisms, neither of them screen space:
+
+- The normal is sampled through `vvSnapToTexel`, so it is already constant
+  across a texel. The reflection direction therefore is too, and a bumpy normal
+  map genuinely **re-aims** the reflection rather than modulating its strength.
+- The quantisation grid is phase-shifted per texel by an R2 low-discrepancy
+  sequence over the texel index, taken from `textureSize(vv_materialTex, 0)` -
+  the atlas's real resolution, not an assumed 16x16. Adjacent texels land on
+  different cells, which turns a smooth gradient into a patchwork owned by the
+  texture.
+
+A mutation keying the phase to `gl_FragCoord` was confirmed to fail the tests.
+
+### Sources, all pre-existing
+
+| Input | Source |
+|---|---|
+| Texture resolution | `textureSize(vv_materialTex, 0)` - same as `vvSnapToTexel` |
+| Specular / roughness | `vvSampleMaterial` B and A channels |
+| Metalness | `vvSampleMaterial2().metalness`, via `f0` |
+| Normal | `vvSurfaceNormal` - the existing perturbed shading normal |
+| Environment colour | the `environment` argument, vanilla's `rgbaFog.rgb` |
+| Sun direction | vanilla's `lightPosition` |
+| Daylight | `vv_sceneDayLight` |
+
+`sunPosition`, `dayLight` and `getSkyColorAt` are **chunkopaque-only** - absent
+from `chunktopsoil.fsh` - so a shared snippet cannot use them. `rgbaFog.rgb` and
+`lightPosition` are the best sources present in both.
+
+### Deliberately not included
+
+A sun disc in the environment. The direct sun already has its own GGX lobe a few
+lines below; putting it into the ambient environment as well would double-count
+it, which is exactly how a feature like this ends up inventing bright light.
+
+### Wetness came free
+
+No integration code. `vvApplyEnvironmentLayers` already lowers roughness and
+raises the specular mask when a surface is wet, and both feed this: lower
+roughness means more, smaller cells (crisper reflection) and a higher specular
+mask means a larger f0 (stronger response). Wet stone lifts on its own through
+the existing material-state path.
+
+### Limits, unverified
+
+- **Nothing has been seen on screen.** L2 only.
+- Within one texel the normal is constant but the VIEW is not, so the reflection
+  direction still varies slightly across a texel. If it crosses a cell boundary
+  mid-texel the change is a clean discrete switch, which is the intended
+  behaviour, but whether it reads as stable in motion is a runtime question and
+  debug view 33 is the instrument for it.
+- Entities do not get this. They have no material atlas, so there is no texel
+  grid to attach it to; the entity path keeps the flat environment.
+- Not profiled. The added cost is a handful of ALU and no texture fetches, but
+  that is an argument, not a measurement.
+
 ## 9. Open problems
 
 Things known to be wrong or unverified right now. Each should be closed or

@@ -218,6 +218,10 @@ void main(void) {
         CanopyAuditChecks.Run(Repo, Check);
 
         Console.WriteLine();
+        Console.WriteLine("Pixelated environment reflection");
+        PixelReflectionChecks.Run(Repo, Check);
+
+        Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;
     }

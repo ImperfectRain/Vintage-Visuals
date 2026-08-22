@@ -189,6 +189,9 @@ namespace VintageVisuals.Common
                 case "pbr_canopyradius":
                     pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
                     break;
+                case "pbr_pixelreflect":
+                    pbr.PixelReflection = tree.GetFloat("value", pbr.PixelReflection);
+                    break;
                 case "pbr_grain":
                     pbr.GrainAnisotropy = tree.GetFloat("value", pbr.GrainAnisotropy);
                     break;
