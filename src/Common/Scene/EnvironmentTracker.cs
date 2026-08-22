@@ -75,6 +75,14 @@ namespace VintageVisuals.Common.Scene
         private readonly ICoreClientAPI _capi;
         private readonly ILogger _logger;
 
+        // Last-good atmosphere readings. Held across a failed sample for the
+        // same reason every other field here is: a throwing API is a reason to
+        // stop reading, not evidence that the sun has gone out.
+        private Vec3f _sunColor = new Vec3f(1f, 1f, 1f);
+        private Vec3f _sunDirection = new Vec3f(0f, 1f, 0f);
+        private float _heightAboveSeaLevel;
+        private float _viewDistance = 1500f;
+
         private readonly WetnessTracker _wetness = new WetnessTracker();
         private readonly WetnessTracker _rain = new WetnessTracker();
         private readonly WetnessTracker _snow = new WetnessTracker();
@@ -153,6 +161,19 @@ namespace VintageVisuals.Common.Scene
         public EnvironmentState Current { get; private set; } = EnvironmentState.Clear;
 
         /// <summary>
+        /// What the air is doing, this frame, read from the game's own
+        /// atmosphere.
+        ///
+        /// Beside <see cref="Current"/> rather than inside it because the two
+        /// answer different questions and have different owners - see
+        /// AtmosphereState's own remarks. Sampled every frame rather than on
+        /// the tick: two of its fields move with the camera, and a value that
+        /// moves with the camera going stale for a tenth of a second is the
+        /// exact shape of the bug that made rain ripples swim.
+        /// </summary>
+        public AtmosphereState Atmosphere { get; private set; } = AtmosphereState.Clear;
+
+        /// <summary>
         /// How long a wet surface takes to dry, in seconds.
         ///
         /// Reaches in from Weather's config because drying is the one part of
@@ -167,7 +188,27 @@ namespace VintageVisuals.Common.Scene
         /// arbitration runs. Config-scaled values, so they stay out of
         /// EnvironmentState by the same rule everything else does.
         /// </summary>
-        public SceneDemand Demand { get; set; } = new SceneDemand(0f, 0f, 0f);
+        public SceneDemand Demand { get; private set; } = new SceneDemand(0f, 0f, 0f, 0f);
+
+        /// <summary>
+        /// What Weather wants, before arbitration.
+        ///
+        /// Set through a per-claimant method rather than by assigning the whole
+        /// struct. Two subsystems now claim haze, and while both were writing
+        /// the whole demand the one that rendered second silently reset the
+        /// other's field to the constructor default every frame - which reads
+        /// as "the budget refused it", not as a bug.
+        /// </summary>
+        public void DemandFromWeather(float rainFog, float cloudShadow, float overcast)
+        {
+            Demand = new SceneDemand(rainFog, cloudShadow, overcast, Demand.HeightHaze);
+        }
+
+        /// <summary>What Atmosphere wants, before arbitration. See <see cref="DemandFromWeather"/>.</summary>
+        public void DemandFromAtmosphere(float heightHaze)
+        {
+            Demand = new SceneDemand(Demand.RainFog, Demand.CloudShadow, Demand.Overcast, heightHaze);
+        }
 
         /// <summary>What the scene needs, rebuilt every tick from the state above.</summary>
         public SceneIntent Intent { get; private set; } = new SceneIntent();
@@ -208,6 +249,7 @@ namespace VintageVisuals.Common.Scene
             // Two doubles and a modulo. EnvironmentState is a readonly struct,
             // so rebuilding it costs a stack copy and no allocation.
             SampleCamera();
+            SampleAtmosphere();
             Current = BuildState();
 
             _sinceTick += deltaTime;
@@ -525,6 +567,82 @@ namespace VintageVisuals.Common.Scene
             }
         }
 
+        /// <summary>
+        /// Reads the game's atmosphere wholesale.
+        ///
+        /// Every value here is one the game has ALREADY computed this frame and
+        /// is about to hand to its own shaders. Nothing is modelled, nothing is
+        /// approximated, and nothing is scaled by a config value. That is the
+        /// whole design: the mod's atmosphere is vanilla's atmosphere plus a
+        /// directional term vanilla does not have, so the two cannot drift.
+        ///
+        /// Two APIs, both public and both read-only here:
+        ///
+        ///  - IAmbientManager, which blends a stack of named AmbientModifiers
+        ///    into the fog the game actually draws.
+        ///  - DefaultShaderUniforms, the block the renderer uploads from, which
+        ///    is where the far plane and the camera's height above sea level
+        ///    already live in the units the shaders use.
+        ///
+        /// Guarded and last-good like every other sampler here. An atmosphere
+        /// that starts throwing is a reason to stop reading it, not a reason to
+        /// claim the sky went clear.
+        /// </summary>
+        private void SampleAtmosphere()
+        {
+            try
+            {
+                IAmbientManager ambient = _capi.Ambient;
+                if (ambient == null) return;
+
+                Vec4f fog = ambient.BlendedFogColor;
+                Vec3f ambientColor = ambient.BlendedAmbientColor;
+
+                Vec3f sunColor = _sunColor;
+                Vec3f sunDirection = _sunDirection;
+
+                // The sun lives on IClientGameCalendar, not IGameCalendar - the
+                // client half, because a sun colour is a thing seen from
+                // somewhere. Cast rather than assumed: the server-side
+                // interface has neither member and this file is shared.
+                var calendar = _capi.World?.Calendar as IClientGameCalendar;
+                if (calendar != null)
+                {
+                    if (calendar.SunColor != null) sunColor = calendar.SunColor;
+                    if (calendar.SunPositionNormalized != null) sunDirection = calendar.SunPositionNormalized;
+                }
+
+                _sunColor = sunColor;
+                _sunDirection = sunDirection;
+
+                DefaultShaderUniforms uniforms = _capi.Render?.ShaderUniforms;
+                float height = uniforms == null ? _heightAboveSeaLevel : uniforms.PlayerToSealevelOffset;
+                float viewDistance = uniforms == null || uniforms.ZFar <= 0f
+                    ? _viewDistance
+                    : uniforms.ZFar;
+
+                _heightAboveSeaLevel = height;
+                _viewDistance = viewDistance;
+
+                Atmosphere = new AtmosphereState(
+                    fogColor: fog == null ? new Vec3f(1f, 1f, 1f) : new Vec3f(fog.R, fog.G, fog.B),
+                    fogDensity: ambient.BlendedFogDensity,
+                    fogMin: ambient.BlendedFogMin,
+                    fogBrightness: ambient.BlendedFogBrightness,
+                    flatFogDensity: ambient.BlendedFlatFogDensity,
+                    flatFogYPos: ambient.BlendedFlatFogYPosForShader,
+                    sunColor: sunColor,
+                    sunDirection: sunDirection,
+                    ambientColor: ambientColor == null ? new Vec3f(1f, 1f, 1f) : ambientColor,
+                    heightAboveSeaLevel: height,
+                    viewDistance: viewDistance);
+            }
+            catch (Exception)
+            {
+                // Held at the last reading, as everywhere else here.
+            }
+        }
+
         private void SampleObserver()
         {
             try
@@ -569,6 +687,7 @@ namespace VintageVisuals.Common.Scene
             RippleClock = 0f;
             BreezeClock = 0f;
             Current = EnvironmentState.Clear;
+            Atmosphere = AtmosphereState.Clear;
         }
     }
 }

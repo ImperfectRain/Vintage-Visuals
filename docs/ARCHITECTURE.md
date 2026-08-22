@@ -255,6 +255,30 @@ final.fsh                      src/ColorGrade/    GPU, post pass
 frame
 ```
 
+### The atmosphere, which is not in the shader at all
+
+The one part of the pipeline that leaves through an API rather than a patch.
+
+```
+IAmbientManager.CurrentModifiers        <- a stack the game and every mod share
+        ^                    |
+        |                    v
+AmbientBridge          the game's own blend
+src/Atmosphere/                |
+        ^                      v
+        |         flatFogDensity, flatFogStart, fogDensityIn, fogMinIn, rgbaFog
+        |                      |
+   AtmosphereState             +--> chunkopaque   chunktopsoil   entityanimated
+   Common/Scene/               |    particlescube particlesquad  chunkliquid
+   (reads the blend back)      +--> sky, clouds, everything else the game draws
+```
+
+The arrow into the sky and the water is the point. Those programs are in no
+patch group and never will be, so anything expressed here reaches parts of the
+frame that GLSL in this mod cannot. `AtmosphereState` reads the blend back so
+that a later feature which *does* need a shader is working from the same numbers
+vanilla is.
+
 ### The reflection loop, which spans two frames
 
 The only part of the pipeline that is not a straight line. `chunkopaque.fsh` is a
@@ -305,6 +329,10 @@ information ladder applies throughout: prefer what the game already computed.
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
 | Framebuffer colour + depth | `IRenderAPI.FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
+| Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
+| Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |
+| Sun colour and direction | `IClientGameCalendar.SunColor`, `SunPositionNormalized` | none | not yet uploaded | `AtmosphereState` |
+| Camera height above sea level, far plane | `DefaultShaderUniforms` | none | vanilla `playerToSealevelOffset`, `zFar` | `AtmosphereState` |
 
 **Not plumbed, and authoritative if it were:** the rain map
 (`IBlockAccessor.GetRainMapHeightAt`, `IMapChunk.RainHeightMap`) is what the game
@@ -328,6 +356,8 @@ quietly invalidate one of these.
 | Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
 | Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
 | Entity / particle PBR | own patch group | independently gated | terrain problems must not disable them | vanilla flat diffuse |
+| Height haze | modifier in the game's ambient stack | modifier **removed**, not zeroed | a zeroed entry is residue in a dictionary shared with every mod | vanilla's own atmosphere |
+| Ambient stack unavailable | modifier installed | logged once, feature off | nothing else in the frame depends on it | vanilla's own atmosphere |
 
 ## Performance contracts
 

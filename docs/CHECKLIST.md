@@ -106,6 +106,34 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 
 ---
 
+## Atmosphere — `src/Atmosphere/`
+
+| Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
+|---|---|---|---|---|---|---|---|---|---|
+| Atmosphere state from the game | x | x | x | x | – | – | – | n/a | x |
+| Ambient stack bridge | x | x | x | x | – | – | – | n/a | x |
+| Height haze | x | x | x | x | – | – | – | – | x |
+| Aerial perspective | – | – | – | – | – | – | – | – | x |
+| Horizon colouration | – | – | – | – | – | – | – | – | x |
+
+Not yet validated, and each is a separate question:
+
+- [ ] the haze band's top is at a believable height — 34 blocks above sea level is a guess
+- [ ] climbing a hill takes the player out of the haze rather than carrying it along
+- [ ] the haze reaches the sky and the water, which is the whole reason it is not in a shader
+- [ ] switching it off leaves the ambient stack exactly as vanilla left it
+- [ ] the blend reproduction agrees with the game — the log says so or it does not
+- [ ] it does not double up with rain fog on a wet still night
+
+**Nothing here has been seen in a world.** `Atmosphere.HeightHaze` defaults to 0
+for that reason, so an unmodified install is unaffected either way.
+
+**Sun attenuation has no row** because it is not this mod's to implement — see
+DECISIONS D21. `AtmosphereState.SunColor` samples vanilla's own answer and no
+consumer reads it yet.
+
+---
+
 ## Reflections — `src/Reflections/`
 
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |

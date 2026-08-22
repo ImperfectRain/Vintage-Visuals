@@ -29,6 +29,17 @@ namespace VintageVisuals.Common.Scene
         /// <summary>Rain fog, as a fraction of the configured strength.</summary>
         public readonly float RainFog;
 
+        /// <summary>
+        /// Ground haze, as a fraction of the configured strength.
+        ///
+        /// A SECOND claim on the same role as rain fog, and deliberately so.
+        /// Both put air between the camera and the world, and the budget
+        /// exists precisely so that a rainy morning in a humid valley does not
+        /// get charged for the air twice by two subsystems that were each
+        /// reasonable alone.
+        /// </summary>
+        public readonly float HeightHaze;
+
         /// <summary>Cloud shadow depth, as a fraction of the configured strength.</summary>
         public readonly float CloudShadow;
 
@@ -36,8 +47,10 @@ namespace VintageVisuals.Common.Scene
         public readonly float Overcast;
 
         public SceneGrants(float gradeSaturation, float gradeContrast, float gradeLight,
-                           float rainFog, float cloudShadow, float overcast)
+                           float rainFog, float cloudShadow, float overcast,
+                           float heightHaze = 1f)
         {
+            HeightHaze = heightHaze;
             GradeSaturation = gradeSaturation;
             GradeContrast = gradeContrast;
             GradeLight = gradeLight;
@@ -49,7 +62,7 @@ namespace VintageVisuals.Common.Scene
         /// <summary>Everything at full strength: what a consumer sees before arbitration runs.</summary>
         public static SceneGrants Full
         {
-            get { return new SceneGrants(1f, 1f, 1f, 1f, 1f, 1f); }
+            get { return new SceneGrants(1f, 1f, 1f, 1f, 1f, 1f, 1f); }
         }
     }
 
@@ -65,12 +78,14 @@ namespace VintageVisuals.Common.Scene
         public readonly float RainFog;
         public readonly float CloudShadow;
         public readonly float Overcast;
+        public readonly float HeightHaze;
 
-        public SceneDemand(float rainFog, float cloudShadow, float overcast)
+        public SceneDemand(float rainFog, float cloudShadow, float overcast, float heightHaze = 0f)
         {
             RainFog = rainFog;
             CloudShadow = cloudShadow;
             Overcast = overcast;
+            HeightHaze = heightHaze;
         }
     }
 
@@ -104,9 +119,18 @@ namespace VintageVisuals.Common.Scene
             float gotContrast = budget.Request("colorgrade", VisualRole.Contrast, wantContrast);
             float gotLight = budget.Request("colorgrade", VisualRole.SceneLight, wantLight);
 
-            // Weather owns haze.
+            // Weather owns haze. Rain that is FALLING, not rain that fell -
+            // the air clears within seconds of a shower stopping even though
+            // the ground stays wet for a minute.
             float wantFog = Clamp01(demand.RainFog) * world.Rain;
             float gotFog = budget.Request("weather", VisualRole.Haze, wantFog);
+
+            // Ground haze is a secondary claim on the same role, so it is
+            // dampened and it takes what rain fog left. That ordering is the
+            // right way round: on the morning both want, the rain is the thing
+            // the player can see a reason for.
+            float wantHaze = Clamp01(demand.HeightHaze) * HazePressure(world);
+            float gotHaze = budget.Request("atmosphere", VisualRole.Haze, wantHaze);
 
             // Cloud shadow and the overcast term are both secondary claims on
             // scene light, and both are dampened. That is the right answer:
@@ -124,7 +148,43 @@ namespace VintageVisuals.Common.Scene
                 Fraction(gotLight, wantLight),
                 Fraction(gotFog, wantFog),
                 Fraction(gotShadow, wantShadow),
-                Fraction(gotOvercast, wantOvercast));
+                Fraction(gotOvercast, wantOvercast),
+                Fraction(gotHaze, wantHaze));
+        }
+
+        /// <summary>
+        /// How much the world itself wants ground haze, before the player's
+        /// slider is applied at all.
+        ///
+        /// Haze lies on the ground when the air is humid, still and cool, and
+        /// it burns off as the day warms and the wind gets up. Every term here
+        /// is a fact the game supplies:
+        ///
+        ///  - HUMIDITY is worldgen rainfall, so it asks what KIND of place this
+        ///    is. A rainforest hazes and a desert does not, and neither changes
+        ///    because it happened to rain yesterday.
+        ///  - WETNESS carries the recent weather, so a valley hazes after rain.
+        ///  - WIND disperses it, which is the term that stops the haze being a
+        ///    constant the player learns to ignore.
+        ///  - DAYLIGHT burns it off, so it is a morning and evening thing.
+        ///  - SKY EXPOSURE keeps it out of caves, where "ground level" means
+        ///    nothing and vanilla's own fog is already doing the work.
+        ///
+        /// This is the least authoritative thing in this file and it is worth
+        /// being plain about that: no part of Vintage Story models ground haze,
+        /// so unlike the cloud shadows - which read the game's own cloud tiles -
+        /// there is nothing here to be faithful TO. It is a plausible shape, not
+        /// a measurement, and it sits at the bottom of the information ladder in
+        /// docs/VISUAL-LANGUAGE.md by necessity rather than by choice.
+        /// </summary>
+        public static float HazePressure(EnvironmentState world)
+        {
+            float damp = Clamp01(world.Humidity * 0.6f + world.Wetness * 0.4f);
+            float still = 1f - Clamp01(world.WindSpeed);
+            float cool = 1f - Clamp01(world.DayLight);
+            float outside = Clamp01(world.SkyExposure);
+
+            return Clamp01(damp * still * cool * outside);
         }
 
         /// <summary>

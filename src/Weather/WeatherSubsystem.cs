@@ -175,7 +175,7 @@ namespace VintageVisuals.Weather
                 // decides how much of it is actually available once colour
                 // grading and the overcast term have had their say.
                 PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
-                _mod.Environment.Demand = new SceneDemand(
+                _mod.Environment.DemandFromWeather(
                     config.Enabled ? config.FogStrength : 0f,
                     config.Enabled ? config.CloudShadowStrength : 0f,
                     config.Enabled && pbr.Enabled ? config.OvercastStrength : 0f);

@@ -40,6 +40,8 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 | Sun dapple from vanilla's shadow map | L2 | `pseudopbr.glsl` |
 | God-ray shafts into vanilla's own pass | L2 | `pseudopbr.glsl` |
 | Scene capture and pixelated reflections | L2 | `src/Reflections/` |
+| Atmosphere state read from the game | L2 | `src/Common/Scene/AtmosphereState.cs` |
+| Height haze through vanilla's ambient stack | L2 | `src/Atmosphere/` |
 
 ---
 
@@ -55,7 +57,13 @@ cost claim in the documentation is an argument from operation count. The scene
 capture is the obvious first target: it runs every frame whether or not anything
 reflective is visible.
 
-**3. Close the L2 backlog in the material system.** Metalness, multi-scatter
+**3. Finish the atmosphere.** Height haze ships; aerial perspective does not, and
+it is the one atmospheric effect vanilla genuinely lacks - its fog is an
+isotropic mix toward a single colour with no sun-relative term. It also needs the
+weather group's `applyFog` patch moved, since fog belongs to one owner and the
+current one reaches terrain only. See DECISIONS D18.
+
+**4. Close the L2 backlog in the material system.** Metalness, multi-scatter
 compensation, specular occlusion, anisotropic grain and emission masks are all
 implemented, tested statically, and never seen. They are cheap to validate
 because the debug views for each already exist.
@@ -73,6 +81,7 @@ because the debug views for each already exist.
 | SSAO | Vanilla has its own. Any addition must be shown to beat it rather than duplicate it |
 | Quality tiers | Premature without measurements |
 | Temporal accumulation / TAA | Last, and only if the renderer allows it |
+| Local volumetric fog | Vanilla has `fogSpheres`, three of them, fed from the ambient system. Any addition must be shown to beat it rather than duplicate it |
 
 ---
 
@@ -98,6 +107,19 @@ and unaccounted for below it.
 for entities. Whether the per-texture resolution used for blocks transfers is
 unknown.
 
+**Whether the ambient modifier survives.** `IAmbientManager.CurrentModifiers` is
+public and writable, and the blend is documented on the interface, but nothing
+documents the dictionary's LIFETIME. `AmbientBridge` re-adds its entry every tick
+and verifies the blend once, so a stack rebuilt on a world change is handled -
+but whether that ever happens has not been observed. The log answers it the first
+time anyone runs with height haze on.
+
+**A horizon colour usable by every surface.** `getSkyColorAt` and the `sky`
+sampler exist in `chunkopaque.fsh` and in no other shading program, so the
+authoritative sky colour is out of reach for grass, entities and particles. A
+derivation from `BlendedFogColor`, `SunColor` and sun elevation is the fallback -
+DECISIONS D21.
+
 ---
 
 ## DEPRECATED — tried, rejected, do not reimplement
@@ -107,6 +129,8 @@ the outside. Full reasoning in DECISIONS.md.
 
 | Approach | Why it was rejected |
 |---|---|
+| **Reimplementing height fog in GLSL** | Vanilla computes it in all seven shading programs from two ambient uniforms, including the sky and the water, which this mod does not patch. A snippet version would stop at the edge of what was patched, and the seam falls where a hillside meets its own grass — D18, D19 |
+| **A second sun-attenuation model** | `IClientGameCalendar.SunColor` already reddens the sun near the horizon per player position, with a per-day offset. A mod model would light the terrain with a sun of one colour while the player looks at a sun of another — D21 |
 | **Procedural sunfleck field** | Vanilla's shadow map already resolves individual leaf gaps and animates them with the game's own wind. A second field is a second description of the same leaves, and the invented one has no access to where the branches are. `vvSunflecks` and nine constants were deleted, not disabled — D7 |
 | **`vv_sunExposure` as a canopy gate** | Measured flat at ~1 across a whole forest. It is a lighting result, not a geometric cause — D7 |
 | **Edge detection (`4p(1-p)`) as canopy identity** | An edge detector can only outline a shadow, never fill it. Replaced by counting separate occluders — D7 |

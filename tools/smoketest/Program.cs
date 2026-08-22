@@ -223,6 +223,8 @@ void main(void) {
 
         Console.WriteLine();
         Console.WriteLine("Documentation still describes the code");
+        AtmosphereChecks.Run(Repo, Check);
+
         DocumentationChecks.Run(Repo, Check);
 
         Console.WriteLine();

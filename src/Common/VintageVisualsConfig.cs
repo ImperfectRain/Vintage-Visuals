@@ -45,6 +45,8 @@ namespace VintageVisuals.Common
         public WeatherConfig Weather { get; set; } = new WeatherConfig();
         public ReflectionsConfig Reflections { get; set; } = new ReflectionsConfig();
 
+        public AtmosphereConfig Atmosphere { get; set; } = new AtmosphereConfig();
+
         /// <summary>
         /// Clamps every value into its supported range, returning a description
         /// of anything that had to be corrected.
@@ -63,6 +65,7 @@ namespace VintageVisuals.Common
             PseudoPBR.ClampToValidRanges(corrections);
             Weather.ClampToValidRanges(corrections);
             Reflections.ClampToValidRanges(corrections);
+            Atmosphere.ClampToValidRanges(corrections);
             return corrections;
         }
     }
@@ -180,6 +183,77 @@ namespace VintageVisuals.Common
             // Nothing to clamp yet - the only setting is a flag. The method
             // exists so this section matches the shape of every other one, and
             // so adding a bounded value later cannot forget to be clamped.
+        }
+    }
+
+    /// <summary>
+    /// The air between the camera and everything else.
+    ///
+    /// Its own section rather than a Weather field because atmosphere is not a
+    /// weather effect. It is present on a clear day at noon and a weather type
+    /// modifies it; the reverse - fog as a thing rain switches on - is what the
+    /// mod did before, and it is why entities standing in a fogged valley kept
+    /// crisp edges while the hillside behind them went soft.
+    /// </summary>
+    public class AtmosphereConfig
+    {
+        /// <summary>
+        /// Master toggle. Off removes the mod's ambient modifier from the
+        /// game's stack entirely, so the atmosphere is vanilla's own rather
+        /// than vanilla's with a zeroed entry laid over it.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>
+        /// Haze that pools near the ground, as a fraction of the tuned look.
+        ///
+        /// Rendered by VANILLA, not by this mod: the game already computes a
+        /// height-banded fog term in every shading program it has, including
+        /// the sky and the water, and this drives the two numbers that term
+        /// takes. See src/Atmosphere/README.md.
+        ///
+        /// DEFAULTS TO 0. It has never been seen in a world, and a haze layer
+        /// that turns out to sit at the wrong height would be the first thing a
+        /// player noticed about the mod. Zero means vanilla exactly.
+        /// </summary>
+        public float HeightHaze { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Which atmospheric diagnostic to draw instead of shading, 0 for none.
+        ///
+        /// Numbered in this subsystem's own terms, per the project convention:
+        /// one global list stopped making sense as soon as two subsystems
+        /// wanted the same number. See src/Atmosphere/README.md for the list.
+        /// </summary>
+        public float DebugView { get; set; } = 0f;
+
+        public void ClampToValidRanges(List<string> corrections)
+        {
+            HeightHaze = Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
+            DebugView = Clamp(DebugView, 0f, 8f, "Atmosphere.DebugView", corrections);
+        }
+
+        private static float Clamp(float value, float min, float max, string name, List<string> corrections)
+        {
+            if (float.IsNaN(value))
+            {
+                corrections.Add(name + " was not a number, reset to " + min);
+                return min;
+            }
+
+            if (value < min)
+            {
+                corrections.Add(name + " was " + value + ", clamped to " + min);
+                return min;
+            }
+
+            if (value > max)
+            {
+                corrections.Add(name + " was " + value + ", clamped to " + max);
+                return max;
+            }
+
+            return value;
         }
     }
 

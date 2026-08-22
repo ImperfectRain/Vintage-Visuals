@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using VintageVisuals.Atmosphere;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
@@ -72,6 +73,16 @@ namespace VintageVisuals
         /// image; PseudoPBR owns what is done with it.
         /// </summary>
         public ReflectionsSubsystem Reflections { get; private set; }
+
+        /// <summary>
+        /// The air between the camera and the world.
+        ///
+        /// Held here rather than only in the list because the scene report
+        /// wants to say what was written to the game's ambient stack, and
+        /// digging it back out of a list of interfaces to do that would be
+        /// worse than a property.
+        /// </summary>
+        public AtmosphereSubsystem Atmosphere { get; private set; }
 
         public PseudoPbrSubsystem Pbr { get; private set; }
 
@@ -291,6 +302,13 @@ namespace VintageVisuals
             _subsystems.Add(Weather);
             Reflections = new ReflectionsSubsystem();
             _subsystems.Add(Reflections);
+
+            // Before PseudoPBR, so that on the frame a world loads the ambient
+            // stack is already this mod's before anything reads the fog it
+            // produces. Nothing depends on it, but a first frame that differs
+            // from every later one is a thing people report.
+            Atmosphere = new AtmosphereSubsystem();
+            _subsystems.Add(Atmosphere);
 
             Pbr = new PseudoPbrSubsystem();
             _subsystems.Add(Pbr);

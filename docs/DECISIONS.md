@@ -409,3 +409,169 @@ history is kept but explicitly labelled as history, because this project has
 twice rediscovered an approach it had already rejected.
 
 **Status.** Active. `tools/smoketest/DocumentationChecks.cs`, `CLAUDE.md`.
+
+---
+
+## D18. The atmosphere is driven through vanilla's ambient stack, not through GLSL
+
+**Date.** The atmospheric foundation pass.
+
+**Context.** The brief asked for five atmospheric features - aerial perspective,
+height haze, horizon colouration, sun attenuation and weather visibility - and
+said to determine what Vintage Story already provides before writing any shader
+code. The audit changed what there was to build.
+
+`IAmbientManager` blends a stack of named `AmbientModifier`s into the fog the
+game actually renders. The stack is a public, writable
+`OrderedDictionary<string, AmbientModifier>`, the blend is documented on the
+interface, and its result feeds **every shading program the game has**:
+`chunkopaque`, `chunktopsoil`, `entityanimated`, both particle shaders,
+`chunkliquid`, `chunktransparent`, and the sky.
+
+Four of the five features turned out to be values that stack can already express.
+
+**The decisive asymmetry.** This mod patches four programs. It does not patch the
+sky, the water, or `chunktransparent`, and `docs/DECISIONS.md` D6 records that
+patching the sky was tried and rejected on its own merits. An atmosphere built in
+GLSL therefore stops at the edge of what was patched - and the edges are not
+hidden. They are where a hillside meets its own grass, and where an animal stands
+in front of a fogged valley.
+
+**Options considered.**
+
+1. A snippet at the `applyFog` anchor, which is byte-identical in all seven
+   shading programs. Rejected as the *primary* mechanism: it still misses the sky
+   and it collides with the weather group, which already owns that anchor in two
+   programs.
+2. `getSkyColorAt`, which `chunkopaque.fsh` already contains and already calls.
+   Rejected: it exists in `chunkopaque.fsh` and **nowhere else** - not in
+   `chunktopsoil`, not in `entityanimated`, not in the particle shaders. Using it
+   would give opaque terrain one atmosphere and everything in front of it
+   another.
+3. Writing the game's own ambient stack.
+
+**Chosen.** Option 3 for everything it can express, with GLSL reserved for the
+one thing it cannot.
+
+**The rule this establishes.** If a value can be expressed as an ambient
+modifier, it belongs there and not in a shader - not because it is easier, but
+because it is the only way to get an answer that is consistent across the frame.
+
+**Consequences.** Height haze ships with no shader patch, no texture unit, no
+sampler, and no link-time risk, and it applies to the sky and the water for free.
+The mod's atmosphere and vanilla's cannot drift, because they are the same
+numbers. The cost is that the mod now writes into a dictionary it shares with the
+game and every other mod, which is why D20 exists.
+
+**Status.** Active. `src/Atmosphere/`, `src/Common/Scene/AtmosphereState.cs`.
+
+---
+
+## D19. Height fog is vanilla's, and the sign convention is vanilla's too
+
+**Context.** Height fog looked like the most obviously missing atmospheric
+feature. It is not missing. Every shading program in the game computes
+
+```glsl
+flatFog = 1 - 1 / exp((worldPosY - flatFogStart) * flatFogDensity);
+val = max(flatFog, distanceFog);
+```
+
+from two uniforms the ambient stack feeds. Reimplementing it would have been a
+second description of a term the game already evaluates seven times per frame.
+
+**The sign.** `flatFogDensity` **negative** puts the fog *below* `flatFogStart`.
+That is the game's own convention rather than an accident of the exponential:
+`getFogAmountForSky` branches on `flatFogDensity < 0` to add an earth-curvature
+bias, which only makes sense for a layer lying on the ground.
+
+Getting it backwards would put the haze layer in the sky, and nothing else in the
+repository could catch it - the value is written into the ambient stack and
+rendered by code this project does not own, so the first report would be a
+screenshot. `AtmosphereChecks` therefore transcribes vanilla's formula from the
+dumped shader and asserts through it that a fragment at sea level is fogged, a
+fragment at the band's top less so, and a hilltop above the band clear.
+
+**The band is anchored to sea level, not to the camera.** Haze that followed the
+camera would keep the player permanently at its surface, so climbing out of it -
+the one thing that makes a haze layer read as a layer - could never happen.
+
+**Status.** Active. Off by default: the band's height is the one number no test
+can settle.
+
+---
+
+## D20. Writing a shared dictionary requires reproducing the blend
+
+**Context.** `IAmbientManager.CurrentModifiers` is shared with the game and with
+every other mod. The entire safety argument for writing into it is that a weight
+of `0` is a true no-op, per the blend documented on the interface:
+
+```
+blended = w * modifier.Value + (1 - w) * blended
+```
+
+A documented formula in an interface comment is not a tested one, and this mod
+cannot see the fold it depends on.
+
+**Options considered.**
+
+1. Trust it. Rejected: if it changed, the haze would land at the wrong strength
+   silently, and the symptom - "the slider does not do much" - is the one this
+   project has already been fooled by twice.
+2. Invert the mod's own contribution out of the blended result to recover the
+   baseline. Rejected: it assumes this modifier blends *last*, which nothing
+   guarantees once another mod appends one.
+3. Reproduce the fold and compare it against the game's answer.
+
+**Chosen.** Option 3, once per install rather than per frame - a formula does not
+move mid-session. Compared on fog density rather than flat fog density, because
+that is the field with a non-zero value in a default world and therefore the one
+where a wrong fold shows. A mismatch logs a warning and the feature still runs;
+the warning says the strength may be wrong.
+
+**Also chosen: off removes the modifier.** Not zeroes it. A zeroed entry is
+invisible in the frame and visible everywhere else - it stays in a shared
+dictionary, survives the player unticking the feature, and is exactly the residue
+that makes a later "why is this mod in the ambient stack" unanswerable.
+
+**Also chosen: the modifier is re-added every tick if missing.** Nothing
+documents the dictionary's lifetime. A stack rebuilt on a world change would drop
+the entry, and the feature would stop with nothing in the log. Re-adding an entry
+that is already there costs a hash lookup.
+
+**Status.** Active. `src/Atmosphere/AmbientBridge.cs`.
+
+---
+
+## D21. Sun attenuation is vanilla's answer, and the mod does not get a second one
+
+**Context.** "Sun and moon attenuation through atmosphere" reads like a request
+for a Rayleigh model: redden the sun as it approaches the horizon and the path
+through the air lengthens.
+
+Vintage Story already does it. `IClientGameCalendar.SunColor` is documented as
+"a normalized color of the sun at the players current location", it varies with
+the sun's altitude, and `SunsetMod` offsets the sky-glow lookup once per day so
+that no two sunsets match.
+
+**Chosen.** Sample it. `AtmosphereState.SunColor` is that value, unmodified.
+
+**Why not model it anyway.** The sun disc is drawn by `celestialobject` and the
+sky by the sky shader, neither of which this mod patches or intends to. A second
+attenuation model would light the terrain with a sun of one colour while the
+player looks at a sun of another. The information ladder in
+`docs/VISUAL-LANGUAGE.md` puts "what the game exposes directly" at the top for
+exactly this case, and every serious bug in this project so far has come from
+working lower on it than necessary.
+
+**DATA GAP, stated rather than invented.** There is no CPU accessor for the sky's
+colour in a given direction. The gradient lives in `sky.png`, bound as the `sky`
+sampler, and is evaluated by `getSkyColorAt` - which exists in `chunkopaque.fsh`
+and in no other shading program. So a horizon colour usable by *all* surfaces
+must be derived from `BlendedFogColor`, `SunColor` and the sun's elevation rather
+than read. That derivation is not implemented yet, and when it is it should be
+labelled as a derivation.
+
+**Status.** Active for the sampling. The consumer does not exist yet - see
+`docs/STATUS.md` section 6.
