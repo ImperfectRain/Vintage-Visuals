@@ -30,13 +30,34 @@ namespace VintageVisuals.Atmosphere
         /// </summary>
         private const double UploadOrder = 0.1;
 
+        // The eleven features, one uniform each. No separate enabled flag:
+        // zero is already the vanilla value and is what an unset uniform reads
+        // as, so a second flag would be a second way to say the same thing.
         public const string AerialUniform = "vv_atmosAerial";
+        public const string HorizonUniform = "vv_atmosHorizon";
+        public const string SunScatterUniform = "vv_atmosSunScatter";
+        public const string HeightUniform = "vv_atmosHeight";
+        public const string WeatherUniform = "vv_atmosWeather";
+        public const string CloudUniform = "vv_atmosCloud";
+        public const string CloudEdgeUniform = "vv_atmosCloudEdge";
+        public const string GodrayUniform = "vv_atmosGodray";
+        public const string PrecipUniform = "vv_atmosPrecip";
+        public const string MoonUniform = "vv_atmosMoon";
+        public const string DappleUniform = "vv_atmosDapple";
+        public const string WeatherTintUniform = "vv_atmosWeatherTint";
+
+        // Normalised world state. Every one read from the game, none simulated.
         public const string SunDirUniform = "vv_atmosSunDir";
         public const string SunColorUniform = "vv_atmosSunColor";
         public const string SunElevationUniform = "vv_atmosSunElevation";
+        public const string MoonDirUniform = "vv_atmosMoonDir";
+        public const string MoonLightUniform = "vv_atmosMoonLight";
         public const string RainUniform = "vv_atmosRain";
-        public const string FogStrengthUniform = "vv_atmosFogStrength";
-        public const string FogTintUniform = "vv_atmosFogTint";
+        public const string SnowUniform = "vv_atmosSnow";
+        public const string OvercastUniform = "vv_atmosOvercast";
+        public const string BrokenCloudUniform = "vv_atmosBrokenCloud";
+        public const string DensityUniform = "vv_atmosDensity";
+        public const string AltitudeUniform = "vv_atmosAltitude";
         public const string DebugUniform = "vv_atmosDebug";
 
         /// <summary>
@@ -71,6 +92,13 @@ namespace VintageVisuals.Atmosphere
         /// <summary>Reused so the per-frame upload allocates nothing.</summary>
         private readonly Vec3f _sunDir = new Vec3f();
         private readonly Vec3f _sunColor = new Vec3f();
+        private readonly Vec3f _moonDir = new Vec3f();
+
+        /// <summary>
+        /// What was derived this frame, so the subsystem and a debug report can
+        /// see it without repeating the derivation.
+        /// </summary>
+        public AtmosphereInputs Current { get; private set; } = AtmosphereInputs.Off;
 
         public AtmosphereShaderBinder(ICoreClientAPI capi, VintageVisualsModSystem mod)
         {
@@ -107,12 +135,24 @@ namespace VintageVisuals.Atmosphere
             _consecutiveSkips = 0;
 
             AtmosphereConfig config = _mod.ConfigManager.Config.Atmosphere;
-            WeatherConfig weather = _mod.ConfigManager.Config.Weather;
+
+            // Derived ONCE per frame, on the CPU, and uploaded to every program
+            // unchanged. Not once per program and certainly not once per
+            // fragment: this is the whole reason the state/inputs split exists.
+            AtmosphereState air = _mod.Environment == null
+                ? AtmosphereState.Clear
+                : _mod.Environment.Atmosphere;
+
+            SceneGrants grants = _mod.Environment == null
+                ? SceneGrants.Full
+                : _mod.Environment.Grants;
+
+            Current = AtmosphereInputs.Derive(air, config, grants);
 
             bool reached = false;
             foreach (EnumShaderProgram id in PatchedPrograms)
             {
-                if (Upload(id, config, weather)) reached = true;
+                if (Upload(id, Current)) reached = true;
             }
 
             if (!reached)
@@ -122,8 +162,8 @@ namespace VintageVisuals.Atmosphere
                     _reportedMissing = true;
                     _capi.Logger.Warning("[VintageVisuals] atmosphere: no patched program exposes " +
                         AerialUniform + ", so the atmosphere GLSL did not reach any compiled program. " +
-                        "Aerial perspective and rain fog are inactive - look for an atmosphere patch " +
-                        "failure above. Height haze is unaffected: it does not go through a shader.");
+                        "Every shader-side feature is inactive - look for an atmosphere patch failure " +
+                        "above. Height haze is unaffected: it does not go through a shader.");
                 }
                 return;
             }
@@ -132,7 +172,7 @@ namespace VintageVisuals.Atmosphere
             {
                 _reportedActive = true;
                 _capi.Logger.Notification("[VintageVisuals] atmosphere: uniforms reaching the patched " +
-                    "programs. Fog now has one owner and covers entities and particles as well as terrain.");
+                    "programs. Fog has one owner and covers entities and particles as well as terrain.");
             }
         }
 
@@ -142,56 +182,51 @@ namespace VintageVisuals.Atmosphere
         /// HasUniform per name rather than per program, so a group that rolled
         /// back simply stops matching instead of needing to be tracked.
         /// </summary>
-        private bool Upload(EnumShaderProgram id, AtmosphereConfig config, WeatherConfig weather)
+        private bool Upload(EnumShaderProgram id, AtmosphereInputs inputs)
         {
             IShaderProgram program = _capi.Shader.GetProgram((int)id);
             if (program == null) return false;
             if (!program.HasUniform(AerialUniform)) return false;
 
-            AtmosphereState air = _mod.Environment == null
-                ? AtmosphereState.Clear
-                : _mod.Environment.Atmosphere;
-
             program.Use();
 
-            // Everything the player switched off has to upload as zero rather
-            // than simply not upload. A skipped upload leaves the LAST value in
-            // the program, so unticking the box would take effect on whichever
-            // frame something else happened to rebind.
-            bool on = config.Enabled;
+            // Every value uploads every frame, including the zeroes. A skipped
+            // upload leaves the LAST value in the program, so unticking a
+            // feature would take effect on whichever frame something else
+            // happened to rebind - which is not a fix, it is a slower bug.
+            program.Uniform(AerialUniform, inputs.Aerial);
+            program.Uniform(HorizonUniform, inputs.Horizon);
+            program.Uniform(SunScatterUniform, inputs.SunScatter);
+            program.Uniform(HeightUniform, inputs.HeightAttenuation);
+            program.Uniform(WeatherUniform, inputs.WeatherExtinction);
+            program.Uniform(CloudUniform, inputs.CloudAtmosphere);
+            program.Uniform(CloudEdgeUniform, inputs.CloudEdge);
+            program.Uniform(GodrayUniform, inputs.Godray);
+            program.Uniform(PrecipUniform, inputs.Precipitation);
+            program.Uniform(MoonUniform, inputs.Moon);
+            program.Uniform(DappleUniform, inputs.Dapple);
+            program.Uniform(WeatherTintUniform, inputs.WeatherTint);
 
-            program.Uniform(AerialUniform, on ? config.AerialPerspective : 0f);
-
-            _sunDir.Set(air.SunDirection == null ? 0f : air.SunDirection.X,
-                        air.SunDirection == null ? 1f : air.SunDirection.Y,
-                        air.SunDirection == null ? 0f : air.SunDirection.Z);
+            _sunDir.Set(inputs.SunDirection.X, inputs.SunDirection.Y, inputs.SunDirection.Z);
             program.Uniform(SunDirUniform, _sunDir);
 
             // The game's own sun colour, unmodified. See DECISIONS D21 for why
             // this mod does not compute its own.
-            _sunColor.Set(air.SunColor == null ? 1f : air.SunColor.R,
-                          air.SunColor == null ? 1f : air.SunColor.G,
-                          air.SunColor == null ? 1f : air.SunColor.B);
+            _sunColor.Set(inputs.SunColor.R, inputs.SunColor.G, inputs.SunColor.B);
             program.Uniform(SunColorUniform, _sunColor);
 
-            program.Uniform(SunElevationUniform, air.SunElevation);
+            _moonDir.Set(inputs.MoonDirection.X, inputs.MoonDirection.Y, inputs.MoonDirection.Z);
+            program.Uniform(MoonDirUniform, _moonDir);
 
-            // Rain that is FALLING, not rain that fell. The air clears within
-            // seconds of a shower stopping even though the ground stays wet for
-            // a minute, and driving both off one number leaves the world hazy
-            // long after the sky cleared.
-            //
-            // Weather still decides how much; it just no longer renders it.
-            bool raining = weather.Enabled && _mod.Weather != null;
-            program.Uniform(RainUniform, raining ? _mod.Weather.Rain : 0f);
-
-            // The GRANT, not the config value. Three subsystems used to wash out
-            // the same rainy afternoon independently.
-            float granted = _mod.Environment == null ? 1f : _mod.Environment.Grants.RainFog;
-            program.Uniform(FogStrengthUniform, weather.Enabled ? weather.FogStrength * granted : 0f);
-            program.Uniform(FogTintUniform, weather.Enabled ? weather.FogTint : 0f);
-
-            program.Uniform(DebugUniform, on ? config.AirDebugView : 0f);
+            program.Uniform(SunElevationUniform, inputs.SunElevation);
+            program.Uniform(MoonLightUniform, inputs.MoonLight);
+            program.Uniform(RainUniform, inputs.Rain);
+            program.Uniform(SnowUniform, inputs.Snow);
+            program.Uniform(OvercastUniform, inputs.Overcast);
+            program.Uniform(BrokenCloudUniform, inputs.BrokenCloud);
+            program.Uniform(DensityUniform, inputs.BaseDensity);
+            program.Uniform(AltitudeUniform, inputs.Altitude);
+            program.Uniform(DebugUniform, inputs.DebugView);
 
             return true;
         }

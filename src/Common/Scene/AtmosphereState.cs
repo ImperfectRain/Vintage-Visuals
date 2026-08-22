@@ -117,6 +117,18 @@ namespace VintageVisuals.Common.Scene
         public readonly Vec3f SunDirection;
 
         /// <summary>
+        /// SAMPLED. 0 at night, 1 at noon. <c>DayLightStrength</c>.
+        ///
+        /// Duplicated from <see cref="EnvironmentState.DayLight"/> on purpose,
+        /// and it is the same read from the same API on the same tick - not a
+        /// second answer. Everything the atmosphere uploads has to travel as one
+        /// consistent snapshot, and a consumer assembling half of it from one
+        /// struct and half from another is how two uniforms end up one frame
+        /// apart during a sunrise.
+        /// </summary>
+        public readonly float DayLight;
+
+        /// <summary>
         /// DERIVED. How high the sun is: 0 at the horizon, 1 overhead, 0 once
         /// it is below the horizon.
         ///
@@ -126,6 +138,64 @@ namespace VintageVisuals.Common.Scene
         /// making it separately is how they stop agreeing.
         /// </summary>
         public readonly float SunElevation;
+
+        // --- The moon -------------------------------------------------------
+        //
+        // Vintage Story models the moon properly: a position, a phase, a phase
+        // brightness and a light strength, all on the same calendar the sun is
+        // on. None of it is invented here.
+
+        /// <summary>SAMPLED. Unit vector toward the moon. <c>MoonPosition</c>, normalised.</summary>
+        public readonly Vec3f MoonDirection;
+
+        /// <summary>
+        /// DERIVED. How much the moon is actually lighting this night, 0..1.
+        ///
+        /// <c>MoonLightStrength</c> times the phase brightness, times how dark
+        /// it is. The last factor is the one that matters: a full moon at noon
+        /// contributes nothing, and an atmosphere that let it contribute would
+        /// be adding light to a scene the sun already owns.
+        /// </summary>
+        public readonly float MoonLight;
+
+        // --- Weather --------------------------------------------------------
+        //
+        // Carried here as well as in EnvironmentState for the same reason
+        // DayLight is: what the atmosphere uploads has to be one snapshot.
+        // These are the SAME numbers, read on the same tick, not a second
+        // weather model. Nothing in this file simulates weather - see
+        // docs/DECISIONS.md D24.
+
+        /// <summary>SAMPLED. Rain falling now, 0..1, eased over seconds.</summary>
+        public readonly float Rain;
+
+        /// <summary>SAMPLED. Snow falling now, 0..1, eased over seconds.</summary>
+        public readonly float Snow;
+
+        /// <summary>
+        /// SAMPLED. 0 clear, 1 overcast. The game's own blended cloud density,
+        /// gained once in EnvironmentTracker rather than once per consumer.
+        ///
+        /// This is the SAME value the cloud shadows read. Cloud shadows use it
+        /// to attenuate DIRECT light landing on a surface; the atmosphere uses
+        /// it to modulate what the air between camera and surface scatters.
+        /// Two uses of one fact, which is the point - not two facts.
+        /// </summary>
+        public readonly float CloudCover;
+
+        // --- Climate --------------------------------------------------------
+
+        /// <summary>SAMPLED. Air temperature at the player, in degrees C.</summary>
+        public readonly float Temperature;
+
+        /// <summary>
+        /// SAMPLED. Worldgen rainfall at the player, 0 arid to 1 rainforest.
+        ///
+        /// What KIND of place this is, not what the weather is doing. A
+        /// rainforest hazes and a desert does not, and neither changes because
+        /// it happened to rain yesterday.
+        /// </summary>
+        public readonly float Humidity;
 
         // --- Ambient --------------------------------------------------------
 
@@ -148,12 +218,37 @@ namespace VintageVisuals.Common.Scene
         /// <summary>SAMPLED. The far plane, in blocks. <c>DefaultShaderUniforms.ZFar</c>.</summary>
         public readonly float ViewDistance;
 
+        /// <summary>
+        /// SAMPLED. 0 fully enclosed, 1 open sky, from vanilla's sunlight level
+        /// at the player's head.
+        ///
+        /// The indoor/outdoor signal. An atmosphere is a thing between the
+        /// camera and the sky, so almost everything here has to fade out when
+        /// there is no sky - and it has to fade rather than snap, because a
+        /// porch is neither and anything that switched as the player stepped
+        /// under an awning would be worse than something that leans.
+        /// </summary>
+        public readonly float SkyExposure;
+
         public AtmosphereState(Vec3f fogColor, float fogDensity, float fogMin, float fogBrightness,
                                float flatFogDensity, float flatFogYPos,
-                               Vec3f sunColor, Vec3f sunDirection,
+                               Vec3f sunColor, Vec3f sunDirection, float dayLight,
+                               Vec3f moonDirection, float moonLight,
+                               float rain, float snow, float cloudCover,
+                               float temperature, float humidity,
                                Vec3f ambientColor,
-                               float heightAboveSeaLevel, float viewDistance)
+                               float heightAboveSeaLevel, float viewDistance,
+                               float skyExposure)
         {
+            DayLight = dayLight;
+            MoonDirection = moonDirection;
+            MoonLight = moonLight;
+            Rain = rain;
+            Snow = snow;
+            CloudCover = cloudCover;
+            Temperature = temperature;
+            Humidity = humidity;
+            SkyExposure = skyExposure;
             FogColor = fogColor;
             FogDensity = fogDensity;
             FogMin = fogMin;
@@ -189,9 +284,15 @@ namespace VintageVisuals.Common.Scene
                     flatFogYPos: 0f,
                     sunColor: new Vec3f(1f, 1f, 1f),
                     sunDirection: new Vec3f(0f, 1f, 0f),
+                    dayLight: 1f,
+                    moonDirection: new Vec3f(0f, -1f, 0f),
+                    moonLight: 0f,
+                    rain: 0f, snow: 0f, cloudCover: 0f,
+                    temperature: EnvironmentState.TemperateCelsius, humidity: 0.5f,
                     ambientColor: new Vec3f(1f, 1f, 1f),
                     heightAboveSeaLevel: 0f,
-                    viewDistance: 1500f);
+                    viewDistance: 1500f,
+                    skyExposure: 1f);
             }
         }
 

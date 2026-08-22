@@ -80,6 +80,7 @@ namespace VintageVisuals.Common.Scene
         // stop reading, not evidence that the sun has gone out.
         private Vec3f _sunColor = new Vec3f(1f, 1f, 1f);
         private Vec3f _sunDirection = new Vec3f(0f, 1f, 0f);
+        private Vec3f _moonDirection = new Vec3f(0f, -1f, 0f);
         private float _heightAboveSeaLevel;
         private float _viewDistance = 1500f;
 
@@ -610,6 +611,24 @@ namespace VintageVisuals.Common.Scene
                 {
                     if (calendar.SunColor != null) sunColor = calendar.SunColor;
                     if (calendar.SunPositionNormalized != null) sunDirection = calendar.SunPositionNormalized;
+
+                    // MoonPosition is not normalised the way SunPositionNormalized
+                    // is, so it is normalised here rather than in the shader -
+                    // once per frame on the CPU instead of once per fragment,
+                    // and in double before it is ever a float.
+                    Vec3f moon = calendar.MoonPosition;
+                    if (moon != null)
+                    {
+                        double len = Math.Sqrt((double)moon.X * moon.X +
+                                               (double)moon.Y * moon.Y +
+                                               (double)moon.Z * moon.Z);
+                        if (len > 1e-6)
+                        {
+                            _moonDirection = new Vec3f((float)(moon.X / len),
+                                                       (float)(moon.Y / len),
+                                                       (float)(moon.Z / len));
+                        }
+                    }
                 }
 
                 _sunColor = sunColor;
@@ -633,9 +652,20 @@ namespace VintageVisuals.Common.Scene
                     flatFogYPos: ambient.BlendedFlatFogYPosForShader,
                     sunColor: sunColor,
                     sunDirection: sunDirection,
+                    dayLight: _dayLight,
+                    moonDirection: _moonDirection,
+                    moonLight: _moonLight,
+                    // The SAME numbers EnvironmentState carries, from the same
+                    // tick. Not a second weather model - see DECISIONS D24.
+                    rain: _rain.Current,
+                    snow: _snow.Current,
+                    cloudCover: _cloudCover,
+                    temperature: _temperature,
+                    humidity: _humidity,
                     ambientColor: ambientColor == null ? new Vec3f(1f, 1f, 1f) : ambientColor,
                     heightAboveSeaLevel: height,
-                    viewDistance: viewDistance);
+                    viewDistance: viewDistance,
+                    skyExposure: _skyExposure);
             }
             catch (Exception)
             {

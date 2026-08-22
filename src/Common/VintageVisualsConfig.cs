@@ -199,10 +199,67 @@ namespace VintageVisuals.Common
     {
         /// <summary>
         /// Master toggle. Off removes the mod's ambient modifier from the
-        /// game's stack entirely, so the atmosphere is vanilla's own rather
-        /// than vanilla's with a zeroed entry laid over it.
+        /// game's stack entirely and uploads every feature strength as zero, so
+        /// the atmosphere is vanilla's own rather than vanilla's with a zeroed
+        /// entry laid over it.
         /// </summary>
         public bool Enabled { get; set; } = true;
+
+        // Eleven features, each with a strength and each independently off at
+        // zero. There is deliberately no separate Enabled flag per feature: a
+        // strength of 0 is already the "behave like vanilla" value, an unset
+        // GLSL uniform reads as exactly 0, and a second flag would give two
+        // ways to say the same thing that could disagree.
+        //
+        // Anything that needs the PATCH gone rather than the effect muted is
+        // gated in VintageVisualsModSystem.IsPatchGroupEnabled, which reads
+        // these same values.
+
+        /// <summary>
+        /// Fog that knows where the sun is.
+        ///
+        /// The one atmospheric effect Vintage Story genuinely lacks. Vanilla's
+        /// fog is an isotropic mix toward a single colour, so haze looking into
+        /// a low sun and haze looking away from it are the same grey. This is
+        /// the transport term the other ten modulate.
+        ///
+        /// GATES THE PATCH GROUP jointly with the rest: if every shader-side
+        /// strength here is zero the group is skipped and vanilla's own
+        /// applyFog is what compiles.
+        /// </summary>
+        public float AerialPerspective { get; set; } = 0.0f;
+
+        /// <summary>
+        /// The horizon becoming more atmospheric than the ground under your
+        /// feet, because you are looking through more air to reach it.
+        ///
+        /// Derived from vanilla's own fog and sun colours - there is no
+        /// hardcoded sky palette here. See DECISIONS D21 for why the game's
+        /// sky texture cannot supply this to every shading program.
+        /// </summary>
+        public float HorizonScattering { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Broad sky scattering plus forward scattering toward the sun.
+        ///
+        /// Colour comes from <c>IClientGameCalendar.SunColor</c>, which the
+        /// game already reddens near the horizon per player position. Nothing
+        /// here says "sunset is orange".
+        /// </summary>
+        public float SunScattering { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Air thinning with altitude, so a mountain top sees further than a
+        /// valley floor.
+        ///
+        /// Restrained on purpose, and NOT the same feature as
+        /// <see cref="HeightHaze"/>: that one puts a haze layer on the ground
+        /// through vanilla's own height fog, this one modulates how much the
+        /// air between camera and surface takes. Vintage Story models no
+        /// vertical density profile, so this is an approximation - see
+        /// src/Atmosphere/README.md.
+        /// </summary>
+        public float HeightAttenuation { get; set; } = 0.0f;
 
         /// <summary>
         /// Haze that pools near the ground, as a fraction of the tuned look.
@@ -210,32 +267,100 @@ namespace VintageVisuals.Common
         /// Rendered by VANILLA, not by this mod: the game already computes a
         /// height-banded fog term in every shading program it has, including
         /// the sky and the water, and this drives the two numbers that term
-        /// takes. See src/Atmosphere/README.md.
-        ///
-        /// DEFAULTS TO 0. It has never been seen in a world, and a haze layer
-        /// that turns out to sit at the wrong height would be the first thing a
-        /// player noticed about the mod. Zero means vanilla exactly.
+        /// takes. Independent of the shader features - it keeps working with
+        /// the patch group rolled back.
         /// </summary>
         public float HeightHaze { get; set; } = 0.0f;
 
         /// <summary>
-        /// Fog that knows where the sun is, as a fraction of the tuned look.
+        /// Rain and snow thickening the air.
         ///
-        /// The one atmospheric effect Vintage Story genuinely lacks. Vanilla's
-        /// fog is an isotropic mix toward a single colour, so haze looking into
-        /// a low sun and haze looking away from it are the same grey. In the
-        /// real thing they are not remotely the same, and the difference is most
-        /// of what makes distance read as distance.
-        ///
-        /// GATES THE PATCH, not just the effect. Zero here would leave the GLSL
-        /// compiled and occupying uniform slots in four programs; the patch
-        /// group is skipped instead, so "off" means vanilla source. That costs a
-        /// shader reload when it is toggled, which is why it is a strength and
-        /// not a tick box - a value crossing zero is what triggers the reload.
-        ///
-        /// DEFAULTS TO 0. Never seen in a world.
+        /// EXTINCTION only - how much of a distant surface survives the trip.
+        /// What the thickened air itself looks like is
+        /// <see cref="PrecipitationScattering"/>. Two features because they are
+        /// two questions, and a storm can reasonably want more of one than the
+        /// other.
         /// </summary>
-        public float AerialPerspective { get; set; } = 0.0f;
+        public float WeatherExtinction { get; set; } = 0.0f;
+
+        /// <summary>How much rain drains the colour out of the air it thickens.</summary>
+        public float WeatherTint { get; set; } = 0.6f;
+
+        /// <summary>
+        /// Cloud cover softening the atmosphere.
+        ///
+        /// Reads the same cloud state the cloud shadows do - it does not
+        /// simulate clouds. The two are kept separate deliberately: a cloud
+        /// shadow attenuates DIRECT light landing on a surface, this modulates
+        /// what the air between you and that surface scatters. Collapsing them
+        /// into one multiplier is how a subsystem ends up attenuating the same
+        /// overcast day twice.
+        /// </summary>
+        public float CloudAtmosphere { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Sun breaking through broken cloud.
+        ///
+        /// FOUNDATION ONLY. The game's cloud tiles say how much cloud is above
+        /// a place, not where an individual cloud's edge is, so this responds
+        /// to PARTIAL cover rather than to an edge. See src/Atmosphere/README.md
+        /// for the data gap.
+        /// </summary>
+        public float CloudEdgeScattering { get; set; } = 0.0f;
+
+        /// <summary>
+        /// How much this mod's atmosphere feeds vanilla's own godray pass.
+        ///
+        /// Vintage Story already has crepuscular rays: godrays.fsh radially
+        /// blurs the frame from the sun's screen position, weighted by the
+        /// green channel of the glow buffer that the terrain shader writes.
+        /// This scales what gets written into that channel. It adds no pass and
+        /// no render target.
+        ///
+        /// Zero writes exactly what vanilla wrote.
+        /// </summary>
+        public float Godrays { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Godray quality. 0 low, 1 medium, 2 high.
+        ///
+        /// Quality and enablement are separate concerns: this may not switch
+        /// the feature on. At <see cref="Godrays"/> 0 nothing is contributed
+        /// whatever this says.
+        ///
+        /// Limited on purpose - the sample count belongs to vanilla's own pass
+        /// and its own graphics setting, not to this mod. What this changes is
+        /// how much of the frame this mod is willing to mark as godray source.
+        /// </summary>
+        public float GodrayQuality { get; set; } = 1.0f;
+
+        /// <summary>
+        /// What falling rain and snow do to the air, as opposed to how much
+        /// they thicken it. See <see cref="WeatherExtinction"/>.
+        /// </summary>
+        public float PrecipitationScattering { get; set; } = 0.0f;
+
+        /// <summary>
+        /// Moonlight in the air on a clear night.
+        ///
+        /// Subordinate to vanilla's own night: driven by the game's
+        /// MoonLightStrength and phase, and capped hard. A night this makes
+        /// brighter is a bug, not a stronger setting.
+        /// </summary>
+        public float MoonScattering { get; set; } = 0.0f;
+
+        /// <summary>
+        /// How the atmosphere responds to dappled sunlight and cloud shadows.
+        ///
+        /// FOUNDATION ONLY, and the reason is structural rather than a lack of
+        /// time: dapple lives in the pseudopbr patch group and cloud shadows in
+        /// the weather group, while this lives in the atmosphere group. A
+        /// function or varying shared across patch groups couples their
+        /// rollbacks, which this project forbids - one group rolling back would
+        /// leave another calling something that no longer exists. See
+        /// src/Atmosphere/README.md.
+        /// </summary>
+        public float DappleInteraction { get; set; } = 0.0f;
 
         /// <summary>
         /// Which atmospheric diagnostic to draw instead of shading, 0 for none.
@@ -253,11 +378,44 @@ namespace VintageVisuals.Common
         /// </summary>
         public float AirDebugView { get; set; } = 0f;
 
+        /// <summary>
+        /// True when any feature that needs the GLSL is asking for something.
+        ///
+        /// The patch group is gated on this rather than on
+        /// <see cref="Enabled"/>, because a player who wants only the ground
+        /// haze - which goes through the game's ambient stack and no shader -
+        /// should get vanilla's own applyFog compiled rather than this mod's
+        /// arithmetic multiplied by nothing.
+        /// </summary>
+        public bool WantsShader
+        {
+            get
+            {
+                return Enabled &&
+                       (AerialPerspective > 0f || HorizonScattering > 0f || SunScattering > 0f ||
+                        HeightAttenuation > 0f || WeatherExtinction > 0f || CloudAtmosphere > 0f ||
+                        CloudEdgeScattering > 0f || Godrays > 0f || PrecipitationScattering > 0f ||
+                        MoonScattering > 0f || DappleInteraction > 0f || AirDebugView > 0f);
+            }
+        }
+
         public void ClampToValidRanges(List<string> corrections)
         {
-            HeightHaze = ColorGradeConfig.Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
             AerialPerspective = ColorGradeConfig.Clamp(AerialPerspective, 0f, 1f, "Atmosphere.AerialPerspective", corrections);
-            AirDebugView = ColorGradeConfig.Clamp(AirDebugView, 0f, 8f, "Atmosphere.AirDebugView", corrections);
+            HorizonScattering = ColorGradeConfig.Clamp(HorizonScattering, 0f, 1f, "Atmosphere.HorizonScattering", corrections);
+            SunScattering = ColorGradeConfig.Clamp(SunScattering, 0f, 1f, "Atmosphere.SunScattering", corrections);
+            HeightAttenuation = ColorGradeConfig.Clamp(HeightAttenuation, 0f, 1f, "Atmosphere.HeightAttenuation", corrections);
+            HeightHaze = ColorGradeConfig.Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
+            WeatherExtinction = ColorGradeConfig.Clamp(WeatherExtinction, 0f, 1f, "Atmosphere.WeatherExtinction", corrections);
+            WeatherTint = ColorGradeConfig.Clamp(WeatherTint, 0f, 1f, "Atmosphere.WeatherTint", corrections);
+            CloudAtmosphere = ColorGradeConfig.Clamp(CloudAtmosphere, 0f, 1f, "Atmosphere.CloudAtmosphere", corrections);
+            CloudEdgeScattering = ColorGradeConfig.Clamp(CloudEdgeScattering, 0f, 1f, "Atmosphere.CloudEdgeScattering", corrections);
+            Godrays = ColorGradeConfig.Clamp(Godrays, 0f, 1f, "Atmosphere.Godrays", corrections);
+            GodrayQuality = ColorGradeConfig.Clamp(GodrayQuality, 0f, 2f, "Atmosphere.GodrayQuality", corrections);
+            PrecipitationScattering = ColorGradeConfig.Clamp(PrecipitationScattering, 0f, 1f, "Atmosphere.PrecipitationScattering", corrections);
+            MoonScattering = ColorGradeConfig.Clamp(MoonScattering, 0f, 1f, "Atmosphere.MoonScattering", corrections);
+            DappleInteraction = ColorGradeConfig.Clamp(DappleInteraction, 0f, 1f, "Atmosphere.DappleInteraction", corrections);
+            AirDebugView = ColorGradeConfig.Clamp(AirDebugView, 0f, 13f, "Atmosphere.AirDebugView", corrections);
         }
     }
 

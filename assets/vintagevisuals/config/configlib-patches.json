@@ -796,13 +796,13 @@
       },
       "atmosphere_debugview": {
         "ingui": "Atmosphere debug view",
-        "comment": "Draws an atmospheric diagnostic instead of the world. 0 off, 1 distance, 2 scattering phase, 3 in-scattering gain, 4 fog colour used, 5 fog amount used, 6 sun direction, 7 sun colour, 8 rain. Numbered in this subsystem's own terms; see src/Atmosphere/README.md.",
+        "comment": "Draws an atmospheric diagnostic instead of the world. 0 off, 1 final atmosphere, 2 raw state, 3 transmittance, 4 horizon colour, 5 sun scattering, 6 height factor, 7 weather extinction, 8 cloud contribution, 9 godrays, 10 precipitation, 11 moon, 12 dapple, 13 combined transport. Numbered in this subsystem's own terms; see src/Atmosphere/README.md.",
         "default": 0.0,
         "clientSide": true,
         "weight": 76,
         "range": {
           "min": 0.0,
-          "max": 8.0,
+          "max": 13.0,
           "step": 1.0
         }
       }
