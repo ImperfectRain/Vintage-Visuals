@@ -273,12 +273,12 @@ hierarchy, the budgets, and what this project deliberately does not build.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is
-  deliberate — see `src/Common/ShaderPatchLoader.cs`.
+  deliberate — see `src/Common/Patching/ShaderPatchLoader.cs`.
 - `VintagestoryLib` is **not** a stable API. Every type we touch there
   (`ShaderRegistry`, `ShaderProgram`, `ShaderProgramBase`) can change without
   notice. All Harmony patches must be reflection-guarded and must log loudly
   rather than throw. Prefer prefix/postfix over transpilers — we removed the
-  transpiler approach on purpose, see `src/Common/HarmonyPatches.cs`.
+  transpiler approach on purpose, see `src/Common/ShaderSourceInterceptor.cs`.
 - The mod is **client-side only**. `ShouldLoad` returns false for the server.
 
 ## What NOT to do
@@ -319,6 +319,99 @@ inject `#define`s for `SSAOLEVEL`, `SHADOWQUALITY`, `GODRAYS`, `NORMALVIEW` and
 `SHINYEFFECT`, which the game supplies as prefix code. Sweep every combination
 and compile vanilla alongside patched, so a failure is attributable to the patch
 rather than to the harness.
+
+## Documentation is part of the implementation
+
+**Documentation that contradicts the code is worse than no documentation**,
+because a reader cannot tell which half is current. This project has shipped
+that state more than once: two documents asserted `src/Reflections/` was an
+empty directory while a working reflection system lived in it, and `CLAUDE.md`
+pointed at a file that had been deleted and one that had moved.
+
+`tools/smoketest` now checks the mechanical parts of this. It cannot check
+whether prose is true.
+
+### Source of truth
+
+| Question | Authority |
+|---|---|
+| What does the code do today? | the code |
+| What is each subsystem, and what is wrong with it? | `docs/STATUS.md` |
+| How far has it been PROVEN? | `docs/CHECKLIST.md` |
+| Why is it built this way? | `docs/DECISIONS.md` |
+| What is next, deferred, or rejected? | `docs/IMPLEMENTATION_PLAN.md` |
+| How does the data flow? | `docs/ARCHITECTURE.md` |
+| Does a feature belong at all? | `docs/VISUAL-LANGUAGE.md` |
+| What scene proves it? | `docs/VISUAL-TESTS.md` |
+
+Where documents disagree, the code wins for *what exists* and the product
+direction wins for *what is intended*. Resolve the disagreement; do not add a
+third account of it.
+
+### Before implementing
+
+1. Read `docs/STATUS.md` for the subsystem you are touching.
+2. Read the relevant architecture and subsystem `README.md`.
+3. Check `docs/DECISIONS.md` for a decision that already covers this.
+4. Check `docs/IMPLEMENTATION_PLAN.md` — it may already be listed as DEPRECATED,
+   which means it was tried and failed for a reason.
+5. Note the current verification level. **You may not build on L2 work and call
+   the result validated.**
+
+### During implementation
+
+- Do not contradict a recorded decision without adding a new one that supersedes
+  it. Superseded decisions stay in the file.
+- Do not build a second implementation of an existing system. If the existing one
+  is wrong, replace it and say so.
+- Do not remove a documented limitation without demonstrating it is gone.
+- Do not introduce a dependency that invalidates a documented fallback.
+
+### After implementing, in the same commit
+
+1. Update `docs/STATUS.md`.
+2. Update `docs/CHECKLIST.md` — and only tick a box you have evidence for.
+3. Update `docs/ARCHITECTURE.md` if data flow, ownership, fallbacks or costs
+   changed.
+4. Add a decision record if the architecture changed.
+5. Record the new limitations, and the verification level reached.
+6. Record what you tested **and what you did not**.
+7. Search the docs for stale references to what you changed.
+8. Run `dotnet run --project tools/smoketest`. Its documentation checks fail on
+   moved files, populated directories described as empty, constants quoted wrongly
+   and subsystems missing from STATUS or ARCHITECTURE.
+
+**If documentation and code disagree, stop and resolve it before committing.**
+
+## Definition of done
+
+A feature is not complete until every line is true:
+
+```
+[ ] Code implemented
+[ ] Build succeeds
+[ ] tools/smoketest passes, including the documentation checks
+[ ] tools/verifypatches passes for anything touching GLSL
+[ ] Existing tests still pass
+[ ] Runtime behaviour verified, or explicitly recorded as not verified
+[ ] Edge cases checked, or listed as unchecked
+[ ] Performance considered, and stated as "not measured" if it was not
+[ ] STATUS.md updated
+[ ] CHECKLIST.md updated with evidence, not intent
+[ ] ARCHITECTURE.md updated if data flow changed
+[ ] DECISIONS.md updated if the architecture changed
+[ ] Known limitations documented
+[ ] No stale documentation left behind
+[ ] The diff contains implementation AND documentation
+```
+
+**A test that passes is not runtime validation.** If visual validation is
+required and unavailable, mark the work L2 or L3 and say so plainly. Never
+promote something to L4 because it compiled, because the tests are green, or
+because it looks right in the code.
+
+The levels are defined in `docs/STATUS.md`. The short version: **L2 has never
+been seen working.**
 
 ## Conventions
 

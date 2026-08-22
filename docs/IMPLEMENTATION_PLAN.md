@@ -1,323 +1,129 @@
 # Vintage Visuals - Implementation Plan
 
-Vintage Visuals is a client-side **rendering framework** for Vintage Story that
-ships a visual overhaul. See [ARCHITECTURE.md](ARCHITECTURE.md) for the layering
-and for what belongs where; this file is the order of work and the honest state
-of each system.
+The roadmap. What is built, what is next, what is deliberately deferred, what is
+still an open question, and what was tried and rejected.
 
-## The ten systems
+**This file is the plan, not the status.** For what each subsystem currently is
+and what is wrong with it, read [STATUS.md](STATUS.md). For how far each has been
+proven, read [CHECKLIST.md](CHECKLIST.md). For why the architecture is what it
+is, read [DECISIONS.md](DECISIONS.md).
 
-| System | Layer | State |
+**This file previously contained two contradictory roadmaps** — a ten-system
+phase list and a separate four-phase list appended below it — plus a paragraph
+congratulating itself on having corrected stale claims, which had itself gone
+stale. Both are gone. Historical reasoning that was worth keeping moved to
+DECISIONS.md; the rest was superseded.
+
+---
+
+## CURRENT — implemented and in the tree
+
+Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
+
+| System | Level | Where |
 |---|---|---|
-| Colour management | Image Processing | **renders** - exposure, tonemap, contrast, saturation, white balance, plus an adaptive stack driven by time of day, weather, biome, indoors, depth and underwater |
-| Material system | Scene Understanding | **renders** - derived normal/roughness/specular/metal atlas from vanilla textures, keyed on `EnumBlockMaterial`, multi-page, cached |
-| Lighting | World Rendering | **renders on terrain only** - full Cook-Torrance with sun, sky, block light and shadow occlusion, but reaching only `chunkopaque` and `chunktopsoil` |
-| Environment state | Scene Understanding | **done** - one shared worldview, the only place the game is asked what is happening |
-| Weather | Environment | **partly renders** - wetness confirmed on screen; rain fog, cloud shadows, ripples and overcast light compile and are unconfirmed |
-| Atmosphere | World Rendering | **not started** - currently a rain modifier inside Weather rather than a system of its own |
-| Shadows | World Rendering | **not started** beyond cloud occlusion |
-| Water | World Rendering | **not started**. `src/Reflections/` is an empty directory |
-| Vegetation | World Rendering | **not started** |
-| Post-processing (AO, bloom, DOF) | Image Processing | **not started** |
-
-Two entries in that table are corrections to what the README used to claim.
-`src/Reflections/` has always been empty - reflections were never begun - and
-the old status text said the PBR pipeline was "not started" and that roughness
-and specular were "waiting for a lighting term" long after both had shipped. An
-outside review read those lines and concluded the project's top priority was a
-lighting model it already has.
-
-## Order of work
-
-Ordered by what unblocks the most, not by visual impact.
-
-### Phase 1 - Foundation (done)
-
-Patch engine with per-group rollback, config with live reload, ConfigLib bridge,
-colour grading, eye adaptation, material extraction, PseudoPBR, debug views,
-`verifypatches` and `smoketest`.
-
-### Phase 2 - Scene understanding (done)
-
-`EnvironmentState` and its tracker. Everything after this point reads one
-worldview rather than sampling the game itself.
-
-### Phase 3 - Lighting reach (next)
-
-The lighting model exists; it reaches two shaders. This phase is about the
-other surfaces in the frame, and it is a patching problem rather than a
-lighting-theory one.
-
-1. **Entities and held items.** A mob standing on PBR-lit ground is currently
-   shaded by a different model than the ground. `entityanimated` and
-   `helditem` need the same material lookup and the same lobe.
-2. **A shared lighting snippet.** Three programs evaluating the same
-   Cook-Torrance means one snippet included by three patch groups, not three
-   copies to keep in step.
-3. **Contact shadows and crevice shading.** The material system already
-   produces a normal and an implied height; short-range occlusion derived from
-   them is the cheapest depth cue available and needs no new buffer.
-
-### Phase 4 - Atmosphere as its own system
-
-Split the concept properly. Today "rain fog" is a weather effect that reaches
-into vanilla's fog. It should be:
-
-```
-Atmosphere (always present)  +  Weather modifiers  ->  final atmospheric state
-```
-
-so that a future weather type inherits the rendering rather than adding another
-special case. Aerial perspective, distance haze, sun and moon attenuation,
-horizon colour.
-
-### Phase 5 - Weather as a material transformation
-
-The abstraction to aim for is:
-
-```
-Base material  +  environmental layer(s)  ->  surface response
-Stone + wetness + snow + frost
-```
-
-Wetness already works this way. Snow should too - smoother normal, higher
-roughness, lighter albedo, accumulated height on up-facing sky-exposed
-surfaces - rather than being particles that happen to fall.
-
-### Phase 6 - Water
-
-Fresnel, screen-space reflection, refraction, wave normals, depth colouration,
-rain disturbance, and underwater absorption and caustics. Coherent as one
-renderer; incoherent as "SSR bolted onto vanilla water".
-
-### Phase 7 - Emissive materials
-
-`EmissionColor`, `EmissionStrength`, `EmissionFlicker`, `EmissionTemperature`
-as material properties, so a forge produces illumination, highlights on metal,
-warm reflections and atmospheric glow rather than an orange texture.
-
-### Phase 8 - Vegetation
-
-Wind deformation by plant class, backface translucency, leaf-specific
-roughness, seasonal response.
-
-### Phase 9 - Image processing
-
-Restrained bloom driven by actual emissive intensity rather than brightness.
-SSAO separated from contact shadows and crevice shading, so the three scales of
-occlusion stay independent. Optional camera effects, all defaulting to off -
-mandatory grain and chromatic aberration are the fastest way to make this feel
-like a generic shader pack.
-
-### Phase 10 - Performance and temporal
-
-Quality tiers, a rendering debug HUD, and temporal accumulation if the renderer
-turns out to allow it. Tiers should be built before the expensive systems land,
-not after: a preset that configures subsystem quality, which configures
-individual settings, with every individual setting still reachable.
+| Shader patch engine, per-group rollback | L4 | `src/Common/Patching/` |
+| Config, live reload, ConfigLib bridge | L4 | `src/Common/` |
+| Environment state and scene intent | L4 | `src/Common/Scene/` |
+| Colour management, adaptive stack | L4 | `src/ColorGrade/` |
+| Material inference and atlas (2 pages) | L4 | `src/PseudoPBR/` |
+| Per-texture material resolution | L3 | `src/PseudoPBR/MaterialResolver.cs` |
+| Second material atlas | L2 | `src/PseudoPBR/MaterialAtlas2Builder.cs` |
+| PBR on terrain | L4 | `chunkopaque`, `chunktopsoil` |
+| PBR on entities | L4 | `entityanimated` |
+| PBR on particles | L3 | `particlescube`, `particlesquad` |
+| Metalness, multi-scatter, specular occlusion, anisotropy | L2 | `pbrcore.glsl` |
+| Emission masks | L2 | atlas 2, channel A |
+| Wetness, rain ripples | L4 | `src/Weather/` |
+| Snow dusting, frost response | L2 | `src/Weather/` |
+| Cloud shadows from the game's own tiles | L4 | `src/Weather/CloudTileReader.cs` |
+| Sun dapple from vanilla's shadow map | L2 | `pseudopbr.glsl` |
+| God-ray shafts into vanilla's own pass | L2 | `pseudopbr.glsl` |
+| Scene capture and pixelated reflections | L2 | `src/Reflections/` |
 
 ---
 
-# Original plan (Phase 1 detail, retained)
+## NEXT — highest priority unfinished work
 
-The material below is the original day-zero plan. It is kept because its
-decision table is still the record of *why* the foundation is shaped as it is.
+**1. Validate the reflection.** It is the newest and least proven system, and
+several passes of correction have been driven entirely by screenshots. The
+specific scenes are listed in CHECKLIST.md under Reflections. Until those pass,
+nothing should be built on top of it.
 
-## 0. Architecture Decisions (lock these before writing code)
+**2. Measure something.** No part of this project has ever been profiled. Every
+cost claim in the documentation is an argument from operation count. The scene
+capture is the obvious first target: it runs every frame whether or not anything
+reflective is visible.
 
-| Decision | Choice | Why |
-|---|---|---|
-| Shader integration method | **YAML regex patching** over vanilla `.fsh`/`.vsh`, not full-file replacement | Survives game updates better, coexists with other shader mods (pattern used by Coriaender / Volumetric Shading Refreshed) |
-| PBR map generation | **Preprocess at texture-atlas build time**, cached, not per-frame | Sobel/variance/BFS passes are too expensive to run every frame per-texel |
-| Config/UI | Use **ConfigLib** integration + a Ctrl+C style debug menu | Matches community convention, avoids building a settings UI from scratch |
-| Module boundaries | 4 independent, toggleable subsystems (ColorGrade, Weather, Reflections, PseudoPBR) | Lets each ship and be tested/disabled independently; PBR maps feed Reflections but Reflections must degrade gracefully without them |
-| Repo layout | Single mod, multiple internal namespaces, one shaderpatches folder per subsystem | Keeps patch conflicts traceable to a subsystem when debugging |
-
----
-
-## 1. Repository Scaffolding (Day 0)
-
-```
-/YourModName
-  modinfo.json
-  modicon.png
-  /assets/yourmodname/
-    /shaders/            <- your NEW standalone shaders (post-process, compute)
-    /shaderpatches/       <- YAML regex patches against vanilla .fsh/.vsh
-      colorgrade.yaml
-      weather.yaml
-      reflections.yaml
-      pbr.yaml
-    /lang/
-  /src/
-    YourModSystem.cs       <- ModSystem entrypoint
-    /ColorGrade/
-    /Weather/
-    /Reflections/
-    /PseudoPBR/
-      AtlasPreprocessor.cs
-      NormalFromLuminance.cs
-      RoughnessFromVariance.cs
-      SpecMaskFromColorAvg.cs
-    /Common/
-      ShaderPatchLoader.cs
-      ConfigManager.cs
-  README.md
-  CHANGELOG.md
-  .gitignore
-```
-
-**Commit 1:** scaffold + empty ModSystem that loads and logs "Hello World" on
-game start. Confirms build pipeline works before any shader code exists.
-
-Reference repos to pull boilerplate from:
-- `anegostudios/vsmodexamples` → `ScreenOverlayShaderExample`, `HudOverlaySample`
-- Coriaender Shaders (Codeberg) → shaderpatches YAML structure, build pipeline
-  that renames `.frag/.vert/.glsl/.comp` → `.fsh/.vsh/.ash/.comp` at build time
+**3. Close the L2 backlog in the material system.** Metalness, multi-scatter
+compensation, specular occlusion, anisotropic grain and emission masks are all
+implemented, tested statically, and never seen. They are cheap to validate
+because the debug views for each already exist.
 
 ---
 
-## 2. Phase Order (build in this sequence — each phase is independently shippable)
+## LATER — deliberately deferred, with the reason
 
-**Why this order:** color grading has zero dependencies and validates your
-patch pipeline cheaply. Weather is visually rewarding and still low-risk.
-Reflections needs the render pipeline understanding you'll have built by
-then. PBR is last because it's the most novel/unproven and everything else
-should be stable before you're debugging texture-atlas preprocessing bugs.
-
-### Phase 1 — Color Grading (lowest risk, validates your whole pipeline)
-1. Get `ShaderPatchLoader` working: read a YAML file, regex-match against
-   `final.fsh`, apply replacement, log success/failure clearly.
-2. Patch `final.fsh` to insert a tonemap + exposure + saturation/contrast
-   function before final output.
-3. Expose 4 config values (exposure, saturation, contrast, temperature) via
-   ConfigLib.
-4. **Milestone:** toggling config values visibly changes the game's look with
-   no crashes across a world reload.
-
-### Phase 2 — Weather / Sky
-1. Patch `cloudvolumetric.fsh` for basic volumetric cloud shape (start by
-   copying/adapting an existing open-source approach, don't write noise
-   functions from scratch).
-2. Add cloud-shadow projection onto terrain (requires a shadow-sample pass
-   in `chunkopaque.fsh` or shadow shaders).
-3. Patch sky shader for Rayleigh-ish scattering gradient + god rays.
-4. Tie fog density/color to weather state (rain, time of day) via existing
-   `fogandlight.fsh` hook.
-5. **Milestone:** clouds cast moving shadows, sky color shifts with sun angle,
-   rain visibly darkens/thickens fog.
-
-### Phase 3 — Reflections (SSR)
-1. Implement basic screen-space raymarch reflection pass sampling the
-   existing depth buffer — start **water-only**, flat plane, no roughness
-   input yet (binary reflective/not, like existing mods).
-2. Add fallback/fade at raymarch misses (screen edge, occluded) so it
-   doesn't produce hard reflection cutoffs.
-3. Gate behind the "deferred lighting" pipeline the same way existing mods
-   do; add explicit fallback path for non-deferred rendering so the mod
-   doesn't hard-crash on unsupported configs.
-4. **Milestone:** water reflects sky/terrain, gracefully turns off (not crash)
-   with deferred rendering disabled.
-
-### Phase 4 — Pseudo-PBR pipeline
-1. **Offline prototype first, outside the game.** Write a standalone
-   command-line/script tool that takes a vanilla texture PNG and outputs
-   normal/roughness/specular PNGs using Sobel + variance + color-average.
-   Validate visually on 10–15 representative vanilla textures before
-   touching the live atlas.
-2. Port the validated logic into a compute shader (`.comp`) or a
-   `TextureAtlasManager` hook (Harmony patch on atlas upload, same pattern
-   Ancestral Bliss Shaders uses) that generates 3 sibling atlases at
-   world-load time, cached to disk keyed by texture hash so you don't
-   recompute every launch.
-3. Wire the derived maps into your existing lighting shader: sample all four
-   atlases, replace flat Blinn-Phong with roughness/spec-modulated term.
-4. Feed roughness/specMask into the Phase 3 reflection pass — blur/attenuate
-   reflections by roughness instead of binary on/off.
-5. **Milestone:** at least stone, metal ore, and wood block categories show
-   visually distinct specular/roughness response without manual per-block
-   authoring.
+| Work | Deferred because |
+|---|---|
+| Water reflections | The reflection geometry is not yet validated on terrain. Patching `chunkliquid.fsh` now means debugging two surfaces at once, and a wrong reflection in two places is harder to diagnose than in one |
+| Parallax / height mapping | The height channel is packed and has no consumer. Needs the reflection work to settle first, as both compete for the same shader budget |
+| Entity reflections | Entities have no material atlas, so there is no texel grid to attach a reflection to. Needs a separate decision about entity texture identity |
+| Post-processing (bloom, DoF, camera FX) | Blocked on the colour-space problem below. Grading in the wrong space makes every subsequent image operation wrong too |
+| SSAO | Vanilla has its own. Any addition must be shown to beat it rather than duplicate it |
+| Quality tiers | Premature without measurements |
+| Temporal accumulation / TAA | Last, and only if the renderer allows it |
 
 ---
 
-## 3. MVP Checklist
+## RESEARCH — open questions, not yet answerable
 
-Use this as your GitHub Projects board / issue list. Check off top-to-bottom;
-don't start a phase's tasks until the previous phase's milestone is met.
+**Colour management space.** Grading operates on vanilla's already-composed,
+display-referred output. Exposure, contrast and saturation are being applied to
+values that are not linear radiance. This is a correctness problem, it blocks
+post-processing, and the fix is not obvious without knowing what vanilla's
+pipeline guarantees. See DECISIONS D16.
 
-- [ ] Repo scaffold builds and loads in-game (empty mod)
-- [ ] `ShaderPatchLoader` applies a YAML patch and logs pass/fail clearly
-- [ ] Config system (ConfigLib) wired, at least one live-tunable value
-- [ ] **Color grade:** exposure/saturation/contrast/temperature tunable live
-- [ ] **Color grade:** basic tonemap curve (avoid blown highlights)
-- [ ] **Weather:** volumetric clouds render and move
-- [ ] **Weather:** clouds cast shadows on terrain
-- [ ] **Weather:** sky gradient reacts to sun angle
-- [ ] **Weather:** rain affects fog density/color
-- [ ] **Reflections:** water SSR working, flat/binary
-- [ ] **Reflections:** graceful fallback when deferred rendering is off
-- [ ] **Reflections:** edge/occlusion fade (no hard cutoffs)
-- [ ] **PBR:** offline prototype tool validated on sample textures
-- [ ] **PBR:** normal map atlas generated in-game, cached to disk
-- [ ] **PBR:** roughness atlas generated in-game, cached to disk
-- [ ] **PBR:** spec-mask atlas generated in-game, cached to disk
-- [ ] **PBR:** lighting shader consumes all 3 derived maps
-- [ ] **PBR → Reflections integration:** roughness modulates SSR blur
-- [ ] Mod-compat pass: verify no crash when loaded alongside 1–2 popular
-      existing shader mods (expect conflicts, document them)
-- [ ] README with config docs + known limitations
-- [ ] Tag v0.1.0
+**`vv_sunExposure`'s numeric range.** Debug view 16 showed it reads ~1 across an
+entire outdoor scene. It is still used by wetness, snow and frost as a
+sky-exposure gate. Whether those gates are meaningfully firing has not been
+measured. The game's rain map (`GetRainMapHeightAt`) is the authoritative
+replacement and is not yet plumbed.
+
+**Sub-tile cloud drift.** `windOffsetX`/`windOffsetZ` are read from the game's
+cloud renderer but not applied. Cloud shadows are correct at tile granularity
+and unaccounted for below it.
+
+**Entity material identity.** Vintage Story keeps separate atlas infrastructure
+for entities. Whether the per-texture resolution used for blocks transfers is
+unknown.
 
 ---
 
-## 4. Flowchart
+## DEPRECATED — tried, rejected, do not reimplement
 
-```mermaid
-flowchart TD
-    A[Repo Scaffold + Empty ModSystem] --> B[ShaderPatchLoader + Config System]
-    B --> C[Phase 1: Color Grading]
-    C -->|Milestone: live tunable look| D[Phase 2: Weather/Sky]
-    D -->|Milestone: dynamic clouds + fog| E[Phase 3: Reflections/SSR]
-    E -->|Milestone: water reflects, graceful fallback| F1[Phase 4a: Offline PBR prototype tool]
-    F1 -->|Validated on sample textures| F2[Phase 4b: In-game atlas preprocessor]
-    F2 --> F3[Phase 4c: Lighting shader consumes normal/rough/spec]
-    F3 --> F4[Phase 4d: Roughness feeds SSR blur]
-    F4 -->|Milestone: material-differentiated PBR look| G[Mod-compat pass]
-    G --> H[README + docs]
-    H --> I[Tag v0.1.0]
+Each of these looked reasonable and failed for a reason that is not obvious from
+the outside. Full reasoning in DECISIONS.md.
 
-    style C fill:#d4f4dd
-    style D fill:#d4f4dd
-    style E fill:#fff3cd
-    style F1 fill:#f8d7da
-    style F2 fill:#f8d7da
-    style F3 fill:#f8d7da
-    style F4 fill:#f8d7da
-```
-
-Legend: green = low risk/well-trodden, yellow = medium risk (pipeline
-dependency, fallback needed), red = novel/experimental, validate offline
-before committing to live game code.
+| Approach | Why it was rejected |
+|---|---|
+| **Procedural sunfleck field** | Vanilla's shadow map already resolves individual leaf gaps and animates them with the game's own wind. A second field is a second description of the same leaves, and the invented one has no access to where the branches are. `vvSunflecks` and nine constants were deleted, not disabled — D7 |
+| **`vv_sunExposure` as a canopy gate** | Measured flat at ~1 across a whole forest. It is a lighting result, not a geometric cause — D7 |
+| **Edge detection (`4p(1-p)`) as canopy identity** | An edge detector can only outline a shadow, never fill it. Replaced by counting separate occluders — D7 |
+| **Reflection as a directional gain on the ambient colour** | A gain is not a reflection. It conserved energy, passed its tests, and produced a stylised highlight rather than an image — D8 |
+| **R2 phase-shifted reflection cells** | Structure from a low-discrepancy sequence is a procedural patchwork; neighbouring texels differed because the sequence said so, not because they see different things — D10 |
+| **World-space reflection marching** | Steps project to wildly uneven screen distances: rings from shell sampling, then smearing from overshoot — D11 |
+| **Radial distance in the depth comparison** | The capture stores axial view-space z. The mismatch is radially symmetric and drew its own rings — D12 |
+| **Denominator clamp as a specular energy limit** | Caps the peak at `1e5*roughness^4`, so a smoother surface gets a dimmer highlight. Backwards, and why wet stone never produced a sheen — D14 |
+| **Shader transpilers for the Harmony hooks** | `VintagestoryLib` is not a stable API. Prefix/postfix only — D1 |
+| **Vegetation wind** | Vanilla already does it, including a high-frequency term and per-class bend counters |
+| **Recolouring foliage by season** | Vanilla's `colormapData` already accounts for temperature, rainfall and altitude per block |
 
 ---
 
-## 5. Working Agentically / Committing Strategy
+## Gating rule
 
-Since you're planning to commit this agentically:
-
-- **One commit per checklist item**, not per phase. Small, revertable units —
-  shader patch work is fragile and you will need to `git bisect` when a
-  patch breaks on a game update.
-- **Branch per phase** (`phase/color-grade`, `phase/weather`, etc.), merge to
-  `main` only at a milestone, tag a pre-release at each milestone
-  (`v0.1.0-colorgrade`, `v0.1.0-weather`, ...).
-- Keep the **offline PBR prototype tool** in `/tools/` as a separate
-  standalone script, not entangled with the mod's C# build — it's a
-  content-authoring aid, not runtime code, and iterating on it shouldn't
-  require a game restart.
-- Log every shader patch failure loudly and distinctly (mirror what
-  Ancestral Bliss Shaders does — "Critical shader patch failure in X" +
-  automatic fallback) so future-you debugging a version bump isn't guessing.
-- Write the README's "known limitations" section as you go, not at the end —
-  you will forget the SSR occlusion caveat and the Sobel-misreads-painted-
-  shading caveat by the time you get to Phase 4.
+A phase does not start until the previous one's milestone is **verified**, and
+verified means L4 — seen on screen and surviving a world reload. This rule has
+been broken repeatedly by building on L2 work; the reflection corrections are the
+direct cost of that.

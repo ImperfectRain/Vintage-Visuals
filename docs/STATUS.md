@@ -8,9 +8,19 @@ abandoned.
 that changed state and did not move here is a feature that will be forgotten or
 re-litigated. See [WORKFLOW.md](WORKFLOW.md).
 
-Layers and the rules about what may depend on what are in
-[ARCHITECTURE.md](ARCHITECTURE.md). Phase ordering and rationale are in
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). This file is the state.
+**This file is the authoritative snapshot of current state.** Sections 1-8 are
+that snapshot. Sections 9 onward are an investigation log kept for the reasoning,
+and a record of what was rejected - they are history, not status.
+
+| Question | Read |
+|---|---|
+| What does the code do? | the code, and sections 1-8 below |
+| How far has it been PROVEN? | [CHECKLIST.md](CHECKLIST.md) |
+| Why is it built this way? | [DECISIONS.md](DECISIONS.md) |
+| What is next, deferred or rejected? | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) |
+| How does the data flow, and what falls back to what? | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Does a feature belong at all? | [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md) |
+| What scene proves it? | [VISUAL-TESTS.md](VISUAL-TESTS.md) |
 
 ---
 
@@ -21,6 +31,7 @@ every row carries the level it has actually reached:
 
 | | |
 |---|---|
+| **L0** | proposed — an idea with no design behind it yet |
 | **L1** | parses — YAML/JSON checked, GLSL read by eye |
 | **L2** | compiles — `dotnet build`, plus `tools/verifypatches` against the game's own dumped shaders in every define combination |
 | **L3** | loads — the game starts, the log shows the group applied |
@@ -106,7 +117,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[~]` | Per-layer debug views (0–13) | L2 | adds 12 crevice occlusion, 13 foliage transmission |
+| `[x]` | Per-layer debug views (0–43) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 pixel reflection, 38-43 the scene bridge. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |
@@ -114,7 +125,15 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Crevice shading from the material normal's curvature | L2 | divergence of the stored gradient - a real cavity estimate, not an edge detector |
 | `[ ]` | Screen-space contact shadows | — | **blocked.** Needs the depth buffer, which is being written during the opaque pass, not readable |
 | `[ ]` | Separate local contrast from albedo level before the Sobel pass | — | "dark is deep" is the known weakness; belongs in `tools/pbrgen` first |
-| `[ ]` | Parallax / relief mapping | — | speculative; may fight the art direction |
+| `[~]` | **Metalness from the second atlas** | L2 | real `f0` from metalness rather than the specular-mask stand-in |
+| `[~]` | **Multi-scatter GGX compensation** | L2 | Kulla-Conty with the Karis analytic fit; only ever adds, only to rough surfaces |
+| `[~]` | **Specular occlusion** | L2 | Lagarde's fit, clamped below by the plain occlusion where it inverts at grazing angles |
+| `[~]` | **Anisotropic highlight along measured grain** | L2 | structure tensor on the material normal; collapses exactly to the isotropic lobe at zero |
+| `[~]` | **Emission masks** | L2 | atlas 2 channel A; multiplicative, so it can only ever remove emission from a block vanilla already lights |
+| `[~]` | **Baked AO** | L2 | atlas 2 channel B |
+| `[~]` | Specular lobe energy limit (`VV_GGX_MIN_ALPHA`) | L2 | display limit, not physical - see DECISIONS D14 |
+| `[~]` | Height channel | L2 | packed in atlas 2 channel G, **no consumer** - parallax deferred |
+| `[ ]` | Parallax / relief mapping | — | speculative; may fight the art direction. Height is already packed |
 
 ## 5. Weather
 
@@ -154,17 +173,33 @@ a future weather type inherits the rendering instead of adding a special case.
 
 ## 7. Water and reflections
 
-`src/Reflections/` is an empty directory. Nothing here has been started.
+`src/Reflections/` holds the scene-capture bridge. See `src/Reflections/README.md`
+and DECISIONS D8-D13.
 
 | | Feature | Level | Notes |
 |---|---|---|---|
-| `[ ]` | Fresnel-weighted surface response | — | |
-| `[ ]` | Screen-space reflections | — | |
+| `[x]` | Scene capture (previous frame, half res, depth in alpha) | **L2** | `SceneCaptureRenderer`. Confirmed alive in game via debug view 41; the reflection it feeds is not validated |
+| `[x]` | Screen-space march, crossing detection, bisection | **L2** | Uniform sampling in the image. Two earlier world-space marches produced rings and smears - D11 |
+| `[x]` | Texel-quantised reflection | **L2** | Ray starts at the texel centre, so one colour per texel is structural - D10 |
+| `[x]` | Analytic sky/horizon/ground fallback | **L2** | Used where the ray leaves the screen, hits nothing, or points at the camera |
+| `[x]` | Reflection through the existing BRDF | **L2** | Substituted into `vvAmbientSpecular`, so Fresnel, metalness, specular occlusion and wetness all apply unchanged - D13 |
+| `[x]` | Wet surfaces reflect more strongly | **L2** | No reflection-specific code: `vvApplyEnvironmentLayers` lowers roughness and raises the specular mask, and both feed the reflection |
+| `[ ]` | Water reflections | — | `chunkliquid.fsh` is in NO patch group. Deliberately deferred until the geometry is validated on terrain |
 | `[ ]` | Refraction | — | |
-| `[ ]` | Animated wave and micro-normals | — | |
+| `[ ]` | Animated wave and micro-normals | — | vanilla animates water already; check before rebuilding |
 | `[ ]` | Depth colouration | — | |
 | `[ ]` | Rain disturbance of the water surface | — | the ripple field already exists and should be reused |
 | `[ ]` | Underwater: absorption, attenuation, caustics, distortion | — | |
+
+**Known limitations of the reflection, all current:**
+
+- One frame stale. Camera movement is reprojected; world movement (leaves, mobs,
+  the player) cannot be and lags.
+- Screen-space limits apply and are not bugs: nothing behind the camera, off the
+  frame, or hidden behind nearer geometry can be reflected.
+- Depth is packed into an 8-bit alpha, so precision at distance is poor.
+- Entities are unsupported - no material atlas, so no texel grid.
+- Never profiled.
 
 ## 8. Not yet started elsewhere
 
@@ -184,6 +219,19 @@ a future weather type inherits the rendering instead of adding a special case.
 | `[ ]` | Event camera effects | damage flash, explosion distortion |
 | `[ ]` | Temporal accumulation / TAA | last, and only if the renderer allows it |
 | `[ ]` | Dynamic resolution | |
+
+---
+
+# Investigation log
+
+**Everything below is history.** It records how the current design was reached
+and what was rejected on the way. It is NOT a statement of current state - for
+that, read sections 1-8 above, or `CHECKLIST.md` for how far each thing has been
+proven.
+
+Kept because this project has twice rediscovered an approach it had already
+rejected. A rejected idea that vanishes from the record is one someone will find
+attractive again.
 
 ## 8a. External audit, checked
 
@@ -631,7 +679,7 @@ the scene but has no idea which texel a fragment belongs to.
 
 **The scene is carried across a FRAME instead of across a pass.** At
 `AfterPostProcessing`, `SceneCaptureRenderer` copies the composed frame into a
-quarter-resolution RGBA target - RGB the scene, **alpha linear view depth**. The
+half-resolution RGBA target - RGB the scene, **alpha linear view depth**. The
 next frame's terrain pass samples it. Both the image and the grid are then in one
 place, which is what makes a pixel-art mirror possible at all.
 

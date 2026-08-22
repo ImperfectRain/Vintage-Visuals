@@ -15,7 +15,7 @@ much of a modern physically-inspired pipeline as the existing renderer allows
 > are confirmed rendering in game on 1.22.7. Weather is partly confirmed -
 > wetness renders; rain fog, cloud shadows, rain ripples and overcast light
 > compile against the game's own shaders but have not been seen on screen.
-> Water and reflections have not been started. See
+> Water is not started; reflections are implemented but not visually validated. See
 > [Current state](#current-state) for exactly what has and has not been
 > verified.
 
@@ -160,7 +160,8 @@ Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
 | **Weather:** rain fog | 2 (compiles) — verified against the game's own shaders |
 | **Weather:** cloud shadows | 2 (compiles) — reported invisible three times; debug view and binder logging added to find out why |
 | **Weather:** rain ripples, overcast light | 2 (compiles) — first version was float32-quantised; field now measured for scatter and phase spread |
-| Atmosphere, shadows, water, vegetation, post FX | not started — `src/Reflections/` is an empty directory |
+| Reflections | implemented (L2) — scene capture plus a texel-quantised screen-space march. See `src/Reflections/README.md` |
+| Water, post FX | not started |
 
 Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
 

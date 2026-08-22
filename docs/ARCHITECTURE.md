@@ -206,6 +206,150 @@ The full set of rules that decide whether a feature belongs at all - the visual
 hierarchy, the budgets, readability as a hard constraint, and what this project
 deliberately does not build - is in [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md).
 
+## The pipeline, end to end
+
+The layers above say what belongs where. This says what actually runs, in order,
+and who owns each step. It exists because an isolated shader looks like an
+independent system until you find out what feeds it.
+
+```
+Vintage Story engine
+  block textures, atlas positions, light grid, shadow map,
+  cloud tiles, calendar, climate, wind, framebuffers
+        |
+        v
+EnvironmentTracker            src/Common/Scene/   CPU, once per tick
+  one shared worldview; the ONLY place the game is asked what is happening
+        |
+        v
+SceneIntent + VisualBudget    src/Common/Scene/   CPU, arbitrated once
+  what the scene needs, in one bounded vocabulary
+        |
+        v
+MaterialResolver              src/PseudoPBR/      CPU, at load
+  per-TEXTURE identity from asset path and slot name
+        |
+        v
+Material atlases 1 and 2      src/PseudoPBR/      GPU, units 15 and 14
+  normal XY / roughness / specular      metalness / height / AO / emission
+        |
+        v
+Terrain, entity, particle shading      patched vanilla fragment shaders
+  pbrcore.glsl  - the ONE Cook-Torrance evaluation
+  scene.glsl    - the ONE description of the conditions it runs in
+  pseudopbr.glsl- terrain material, dapple, ripples, reflection
+        |
+        +---- vanilla shadow map -> sun visibility -> canopy dapple, shafts
+        +---- cloud tiles         -> cloud shadows
+        +---- environment layers  -> wetness, snow, frost
+        +---- scene capture       -> pixelated reflection      (see below)
+        |
+        v
+outColor, outGlow              vanilla's own buffers
+        |
+        v
+final.fsh                      src/ColorGrade/    GPU, post pass
+  exposure, tonemap, contrast, saturation, white balance, adaptive stack
+        |
+        v
+frame
+```
+
+### The reflection loop, which spans two frames
+
+The only part of the pipeline that is not a straight line. `chunkopaque.fsh` is a
+forward opaque pass: it knows the material texel but cannot see the scene. The
+post pass can see the scene but not the texel. So the image crosses a frame
+boundary instead of a pass boundary.
+
+```
+frame N                                   frame N+1
+-------                                   ---------
+primary framebuffer (colour + depth)
+        |
+   AfterPostProcessing
+        |
+SceneCaptureRenderer   src/Reflections/
+  half res, RGB scene, alpha linear depth
+        |                                        |
+        +----------------- unit 13 -------------->
+                                                 |
+                                    vvSceneReflection  (pseudopbr.glsl)
+                                      ray from texel centre
+                                      screen-space march
+                                      crossing + bisection
+                                                 |
+                                    vvAmbientSpecular   <- substituted, not added
+                                                 |
+                                            final colour
+```
+
+## Data ownership
+
+Where each rendering input comes from, and who consumes it. The rule from the
+information ladder applies throughout: prefer what the game already computed.
+
+| Input | Source | Transformation | GPU form | Consumer |
+|---|---|---|---|---|
+| Block texture | game atlas | none | vanilla `terrainTex` | vanilla shading |
+| Texture UV | vertex data | none | `uv` varying | material sampling |
+| Material identity | asset path + slot name | `MaterialResolver`, CPU at load | baked into atlas texels | all PBR |
+| Normal / roughness / specular | derived from block textures | `PbrMapGenerator`, CPU, cached | atlas 1, unit 15 | `vvSampleMaterial` |
+| Metalness / height / AO / emission mask | derived, plus `glowLevel` | `MaterialAtlas2Builder` | atlas 2, unit 14 | `vvSampleMaterial2` |
+| Sun / moon direction | vanilla `lightPosition` | none | uniform | dapple, reflection, lobe |
+| Sun occlusion | vanilla shadow map | PCF, no block-light term | `shadowMapNear/Far` | `vvSunVisibility` |
+| Sky light level | `rgbaLightIn.a` | none | `vv_sunExposure` varying | wetness, snow, frost |
+| Glow level | vertex `renderFlags` | bit unpack | `glowLevel` | emission |
+| Wind | `GetWindSpeedAt` | tracked, clocked | `vv_sceneBreeze` | foliage response |
+| Cloud placement | game's cloud renderer tiles | `CloudTileReader`, Beer-Lambert | uniform array | cloud shadows |
+| Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
+| Framebuffer colour + depth | `IRenderAPI.FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
+| Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
+
+**Not plumbed, and authoritative if it were:** the rain map
+(`IBlockAccessor.GetRainMapHeightAt`, `IMapChunk.RainHeightMap`) is what the game
+itself uses to place splash particles and extinguish torches. Wetness currently
+thresholds `vv_sunExposure` instead, which measures flat.
+
+## Fallbacks
+
+Every system that can lack data has a defined answer. A future change must not
+quietly invalidate one of these.
+
+| System | Normal path | Fallback | Why | Visual consequence |
+|---|---|---|---|---|
+| Any patch group | applied | group disabled, rest load | a failure must not take the world render | that subsystem is vanilla |
+| Material atlas | sampled | `vv_pbrEnabled` 0 | unpatched or rolled back | vanilla shading |
+| Second atlas | sampled | `vv_material2Valid` 0, neutral material | atlas absent or failed | dielectric response, emission everywhere |
+| Atlas page | bind hook selects | page 0 | single-page installs need no swap | correct on one page |
+| Sun visibility | shadow map | returns 1.0 | `SHADOWQUALITY 0` — no shadow data exists | no dapple, rather than a dark world |
+| Canopy structure | ring of taps | returns 0 | shadows off | no dapple |
+| Cloud shadows | game's cloud tiles | **off**, not substituted | invented clouds correspond to nothing | vanilla sky lighting |
+| Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
+| Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
+| Entity / particle PBR | own patch group | independently gated | terrain problems must not disable them | vanilla flat diffuse |
+
+## Performance contracts
+
+**Nothing here has been measured.** Every figure below is a count of operations
+or a resource size, not a profile. "Not measured" is the honest entry and it
+appears often.
+
+| System | Cost | Every frame? | Previous frame? | Scales with |
+|---|---|---|---|---|
+| Material atlas build | 2 pages, 4096x2048 each, cached to disk | no, once at load | no | texture count |
+| Atlas upload | 2 textures resident | no | no | — |
+| Scene capture | 1 RGBA8 at half frame per axis; one fullscreen copy | yes, while enabled | produces it | resolution |
+| Reflection march | up to 24 texture taps plus 5 bisection taps, only on rays that cross | per reflective fragment | yes, reads it | reflective pixel count |
+| Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
+| Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |
+| Cloud shadows | uniform array lookup, no sampler | per terrain fragment | no | resolution |
+| Colour grading | one fullscreen pass | yes | no | resolution |
+
+Two costs are paid whether or not anything on screen uses them: the scene capture
+and the terrain-wide shadow taps. Both are behind switches that default off or
+are cheap to zero.
+
 ## Related reading
 
 [INSPIRATION.md](INSPIRATION.md) records what was taken from

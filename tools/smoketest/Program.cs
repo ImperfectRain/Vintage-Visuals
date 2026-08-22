@@ -222,6 +222,10 @@ void main(void) {
         PixelReflectionChecks.Run(Repo, Check);
 
         Console.WriteLine();
+        Console.WriteLine("Documentation still describes the code");
+        DocumentationChecks.Run(Repo, Check);
+
+        Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;
     }

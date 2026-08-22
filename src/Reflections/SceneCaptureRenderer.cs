@@ -23,10 +23,11 @@ namespace VintageVisuals.Reflections
     /// STATUS.md for why a quantised reflection tolerates it far better than a
     /// smooth one would.
     ///
-    /// The capture is deliberately TINY. The destination is a 16x16 block face
-    /// reduced to one colour per texel, so there is no reason to keep a
-    /// full-resolution reflection: a quarter-resolution copy carries more detail
-    /// than the destination can express.
+    /// The capture is HALF resolution in each axis, so a quarter of the pixels.
+    /// It started at a quarter in each axis on the reasoning that a 16x16
+    /// destination cannot express more, which confused two resolutions: the
+    /// destination decides how many LOOKUPS there are, the source decides
+    /// whether each lookup lands on the right thing. See CaptureScale.
     ///
     /// EVERYTHING HERE IS FAIL-SAFE. Every step that could fail - the shader,
     /// the framebuffer, the engine's texture ids - is checked, and any failure
