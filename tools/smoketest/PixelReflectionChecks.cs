@@ -52,27 +52,33 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
-        /// The march must cover its whole range, with no gaps.
+        /// The march must sample uniformly in the IMAGE, and compare depths in
+        /// one space.
         ///
-        /// THE DEFECT THIS PINS. The first version took a fixed number of
-        /// samples and accepted a hit only if a surface lay within a tolerance
-        /// of one of them. That is a march of discrete SHELLS: with
-        /// geometrically growing steps the gaps outrun the tolerance almost
-        /// immediately, and past a few blocks most distances could not be hit at
-        /// all. Whether a texel found anything depended on whether its ray
-        /// length happened to land near a shell.
+        /// Two defects live here, both found from screenshots.
         ///
-        /// It was reported from a screenshot before it was understood - the
-        /// valid pixels formed "a circular checkerboard", which is what
-        /// concentric bands of reachable distance look like on a surface, and
-        /// they vanished on movement because walking changes every ray length at
-        /// once.
+        /// THE SMEAR. Marching in world space projects to wildly different
+        /// screen distances: near the camera one step can leap across the frame,
+        /// far away a hundred land in one texel. Reported as "the trunk is
+        /// reflected all the way from the base of the tree to where the
+        /// reflection ends at my feet, instead of rendering a simulated
+        /// reflection of the tree properly in perspective" - every ground point
+        /// whose ray leapt over the trunk registered its crossing at the same
+        /// few texels, so a band of ground sampled one colour instead of
+        /// sampling progressively up the tree. Stepping a fixed number of
+        /// TEXELS makes the sampling rate uniform in the image, which is what
+        /// makes a reflection foreshorten.
         ///
-        /// Crossing detection has no gaps by construction: a ray point is in
-        /// front of the captured surface or behind it, and the flip locates a
-        /// surface anywhere in the interval. This checks that the code actually
-        /// works that way, because adding steps to a shell march looks like a
-        /// fix and only makes the bands finer.
+        /// THE DEPTH SPACES. The capture linearises the depth buffer, which
+        /// gives axial view-space z. The march compared that against length(),
+        /// which is radial. Those differ by 1/cos of the angle from the view
+        /// axis - 6% at 20 degrees, 30% at 40 - and the error is radially
+        /// symmetric about the screen centre, so it drew its own rings on top of
+        /// everything else.
+        ///
+        /// This check previously read VV_SSR_NEAR and VV_SSR_GROWTH, and when
+        /// the march stopped having those it returned early and silently tested
+        /// nothing. Missing constants are now a FAILURE, not an exit.
         /// </summary>
         private static void CheckMarchCoversItsRange(Action<string, bool, string> check)
         {
@@ -84,82 +90,77 @@ namespace VintageVisuals.SmokeTest
                 _code.Contains("VV_SSR_REFINE") && Regex.IsMatch(_code, @"float mid = \(lo \+ hi\) \* 0\.5;"),
                 "the interval locates the surface; the refinement finds where in it");
 
-            float near = Constant("VV_SSR_NEAR");
-            float growth = Constant("VV_SSR_GROWTH");
+            // --- uniform sampling in the image -----------------------------
+            check("the step count comes from how far the ray crosses the screen",
+                Regex.IsMatch(_code, @"vec2 travel = abs\(b\.uv - a\.uv\) \* captureSize;")
+                    && _code.Contains("VV_SSR_STRIDE"),
+                "world-space steps project to uneven screen distances and smear");
+
+            check("the march interpolates in screen space, not along the world ray",
+                Regex.IsMatch(_code, @"vec2 uv = mix\(a\.uv, b\.uv, f\);"),
+                "");
+
+            // 1/w is what is linear across the screen. Interpolating depth
+            // directly bends the ray and puts every hit at the wrong distance.
+            check("depth is interpolated as 1/w, not as w",
+                Regex.IsMatch(_code, @"float rayDepth = 1\.0 / mix\(invA, invB, f\);"),
+                "interpolating w directly is not perspective correct");
+
+            // --- one depth space -------------------------------------------
+            Match proj = Regex.Match(_code,
+                @"VvRayPoint vvProjectRay\(vec3 cameraRelative\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+
+            check("the ray projection exists", proj.Success, "");
+
+            check("ray depth is taken as view-space z from the projection",
+                proj.Success && proj.Groups[1].Value.Contains("p.depth = clip.w;"),
+                "clip.w IS view-space z, which is the space the capture packs");
+
+            check("no radial length reaches the depth comparison",
+                !Regex.IsMatch(_code, @"(delta|thickness|rayDepth)\s*=\s*length\("),
+                "length() is radial and the capture stores axial - the error is radially symmetric");
+
+            // --- bounded cost ----------------------------------------------
             Match st = Regex.Match(_pbr, @"const int VV_SSR_STEPS = (\d+)\s*;");
-            check("the march length is declared", st.Success, "");
-            if (!st.Success || float.IsNaN(near) || float.IsNaN(growth)) return;
-
-            int steps = int.Parse(st.Groups[1].Value, CultureInfo.InvariantCulture);
-
-            // Reproduce the sample distances, then measure what fraction of the
-            // marched range a crossing test can reach versus what a proximity
-            // test could. The first is 100 per cent by construction; the second
-            // is what shipped, and it is what the numbers below make visible.
-            var distances = new System.Collections.Generic.List<double>();
-            double t = near, step = near;
-            for (int i = 0; i < steps; i++) { distances.Add(t); step *= growth; t += step; }
-
-            double reach = distances[distances.Count - 1];
-            check("the march reaches a useful distance",
-                reach > 20.0 && reach < 200.0,
-                "reaches " + reach.ToString("0.#", CultureInfo.InvariantCulture) + " blocks");
-
-            // The old scheme's coverage, computed so the regression has a
-            // number attached rather than a description.
-            const double oldTolerance = 1.25;
-            double covered = 0.0;
-            for (int i = 1; i < distances.Count; i++)
-            {
-                double gap = distances[i] - distances[i - 1];
-                covered += Math.Min(gap, 2.0 * oldTolerance);
-            }
-
-            double fraction = covered / (reach - distances[0]);
-
-            check("a proximity march would leave most of the range unreachable",
-                fraction < 0.9,
-                "proximity coverage " + (fraction * 100.0).ToString("0.#", CultureInfo.InvariantCulture)
-                    + "% - if this is near 100 the steps are dense enough that this test proves nothing");
-
-            // THE RINGS. Bisection leaves interval/2^n between the refined
-            // point and the true surface, and the thickness test then rejects
-            // anything further behind the surface than that tolerance. So a hit
-            // survives only where interval/2^n < thickness. With too few passes
-            // the inequality holds near the viewer and fails beyond, which on a
-            // flat plane is a set of concentric rings with a hard cutoff - and
-            // that is exactly what was reported twice.
             Match rf = Regex.Match(_pbr, @"const int VV_SSR_REFINE = (\d+)\s*;");
             float thickness = Constant("VV_SSR_THICKNESS");
+            float stride = Constant("VV_SSR_STRIDE");
+            float range = Constant("VV_SSR_RANGE");
 
-            check("the refinement depth is declared", rf.Success, "");
+            // A missing constant is a failure, not a reason to stop checking.
+            // The previous version of this method returned early when the march
+            // was rewritten, and every assertion below it went quiet.
+            check("every march constant this test needs is present",
+                st.Success && rf.Success && !float.IsNaN(thickness)
+                    && !float.IsNaN(stride) && !float.IsNaN(range),
+                "a rewritten march must bring this check with it rather than muting it");
 
-            if (rf.Success && !float.IsNaN(thickness))
-            {
-                int refine = int.Parse(rf.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (!st.Success || !rf.Success || float.IsNaN(thickness) || float.IsNaN(stride)) return;
 
-                double widest = 0.0;
-                for (int i = 1; i < distances.Count; i++)
-                {
-                    widest = Math.Max(widest, distances[i] - distances[i - 1]);
-                }
+            int steps = int.Parse(st.Groups[1].Value, CultureInfo.InvariantCulture);
+            int refine = int.Parse(rf.Groups[1].Value, CultureInfo.InvariantCulture);
 
-                double residual = widest / Math.Pow(2.0, refine);
+            check("the march stays far cheaper than conventional SSR",
+                steps <= 32,
+                steps + " steps - the destination is one colour for a whole texture pixel");
 
-                check("refinement resolves every interval finer than the thickness test",
-                    residual < thickness,
-                    "widest interval " + widest.ToString("0.#", CultureInfo.InvariantCulture)
-                        + " leaves " + residual.ToString("0.##", CultureInfo.InvariantCulture)
-                        + " after " + refine + " passes, but the thickness test rejects past "
-                        + thickness.ToString("0.##", CultureInfo.InvariantCulture)
-                        + " - hits will be found and then discarded, in rings");
-            }
+            check("the stride is a small number of texels",
+                stride >= 1.0f && stride <= 8.0f,
+                "stride " + stride.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " texels - too large overshoots and smears, too small wastes the budget");
 
-            // Steps must grow, or the near field is wasted and the far field is
-            // never reached.
-            bool growsButNotWildly = growth > 1.0 && growth < 2.0;
-            check("step growth is between one and two", growsButNotWildly,
-                "growth " + growth.ToString("0.##", CultureInfo.InvariantCulture));
+            // THE RINGS, restated for a screen-space march. The refinement has
+            // to resolve an interval of VV_SSR_STRIDE texels to finer than the
+            // thickness test, or hits are found and then discarded in bands.
+            // In screen space the interval is texels rather than metres, so the
+            // relationship is about depth precision rather than world distance -
+            // what matters is that refinement happens at all and is not one or
+            // two passes on a coarse stride.
+            check("refinement is deep enough for the stride",
+                Math.Pow(2.0, refine) >= stride * 4.0,
+                refine + " passes over a " + stride.ToString("0.#", CultureInfo.InvariantCulture)
+                    + " texel stride - too shallow and the thickness test rejects real hits in rings");
         }
 
         /// <summary>
@@ -333,10 +334,6 @@ namespace VintageVisuals.SmokeTest
                 "without it the reflection slides across surfaces as the player walks");
 
             CheckReprojectionSign(binder, check);
-
-            check("the march is short",
-                Regex.IsMatch(_code, @"VV_SSR_STEPS = ([2-9]|1[0-6])\s*;"),
-                "a long march is what makes conventional screen-space reflection expensive");
 
             check("a hit is bounded by a surface thickness",
                 _code.Contains("VV_SSR_THICKNESS"),

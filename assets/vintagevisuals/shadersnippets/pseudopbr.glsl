@@ -1467,57 +1467,41 @@ vec3 vvReflectionFallback(vec3 direction, vec3 environment)
 // precisely the crawl the material pixel grid exists to rule out.
 // ---------------------------------------------------------------------------
 
-// March steps along the reflected ray.
+// How far along the reflected ray the march is willing to look, in blocks.
+const float VV_SSR_RANGE = 48.0;
+
+// Maximum march steps. The actual count is chosen per ray from how far it
+// travels ACROSS THE SCREEN, so a ray that barely moves costs a few steps and
+// only a long grazing one pays for all of these.
+const int VV_SSR_STEPS = 24;
+
+// Capture texels to advance per step.
 //
-// Twelve coarse steps, geometrically spaced, then ONE bisection refinement on
-// whichever interval the ray crossed a surface in.
+// The march is in SCREEN SPACE, not world space, and this is why. Fixed
+// world-space steps project to wildly different screen distances: near the
+// camera one step can jump across half the frame, and far away a hundred steps
+// land in the same texel. The near-camera case is what produced the reported
+// artefact - "the trunk is reflected all the way from the base of the tree to
+// where the reflection ends at my feet, instead of rendering a simulated
+// reflection of the tree properly in perspective".
 //
-// The first version took eight samples and accepted a hit only if a surface lay
-// within a tolerance of one of them. That is a march of discrete SHELLS, not of
-// a ray: the samples sat at 0.35, 1.0, 2.2, 4.4, 8.5, 16.1, 30.1 and 56 blocks,
-// so beyond about four blocks the acceptance window covered a third of the gap,
-// then a fifth, then a tenth. Whether a texel found anything depended on
-// whether its particular ray length happened to land near a shell.
-//
-// That has a signature, and it was reported before it was understood: the valid
-// pixels formed "a circular checkerboard". Ray length varies smoothly across a
-// surface, so the set of texels landing inside a covered shell is a set of
-// concentric bands. And because the shells are fixed distances from the eye,
-// walking changes every ray length at once and whole bands drop out - which is
-// why the reflection mostly vanished on movement.
-//
-// Crossing detection fixes the class of error rather than the symptom. A ray
-// point is either IN FRONT of the captured surface or BEHIND it; the moment
-// that flips, the ray passed through geometry somewhere in the interval just
-// marched. Eight shells become eight intervals with no gaps between them, and
-// the refinement finds where in the interval the crossing happened. Adding
-// steps to the old scheme could never have done this - it would only have made
-// the bands narrower and more numerous.
-const int VV_SSR_STEPS = 12;
-const float VV_SSR_NEAR = 0.25;      // blocks to the first sample
-const float VV_SSR_GROWTH = 1.42;    // each step this much longer than the last
+// That smear is overshoot. Every ground point whose ray leapt over the trunk in
+// one world-space step registered its crossing at the same few trunk texels, so
+// a whole band of ground sampled one colour instead of sampling progressively
+// higher up the tree. Stepping by a fixed number of TEXELS makes the sampling
+// rate uniform in the image, which is what makes a reflection foreshorten
+// correctly.
+const float VV_SSR_STRIDE = 2.0;
 
 // Bisection passes once a crossing interval is known.
 //
-// FIVE, and the number is derived rather than chosen. Two produced concentric
-// rings around the player and a hard cutoff beyond which nothing reflected at
-// all, and both were the same arithmetic:
-//
-// Bisection leaves a residual of interval/2^n between the refined point and the
-// true surface. The thickness test then rejects anything further behind the
-// surface than VV_SSR_THICKNESS. So a hit survives only where
-//
-//     interval / 2^n  <  VV_SSR_THICKNESS
-//
-// The intervals grow geometrically, so with n = 2 that inequality held out to
-// 6.3 blocks and failed everywhere beyond - every hit past that distance was
-// found correctly and then thrown away by the thickness test. Distance-dependent
-// rejection on a flat plane is a set of rings centred on the viewer, with a
-// hard edge where it stops entirely, which is exactly what was reported.
-//
-// The largest interval this march produces is 11.8 blocks, so n must satisfy
-// 11.8 / 2^n < 0.6, giving n = 5. The cost is five lookups, and only on rays
-// that actually crossed a surface.
+// FIVE. Bisection leaves interval/2^n between the refined point and the true
+// surface, and the thickness test rejects anything further behind the surface
+// than VV_SSR_THICKNESS, so a hit survives only where interval/2^n < thickness.
+// With too few passes that inequality holds near the viewer and fails beyond,
+// which on a flat plane is concentric rings with a hard cutoff - reported twice
+// before it was understood. In screen space the interval is now a few texels
+// rather than metres, so five is generous rather than marginal.
 const int VV_SSR_REFINE = 5;
 
 // How thick a surface is allowed to be, in blocks.
@@ -1528,9 +1512,9 @@ const int VV_SSR_REFINE = 5;
 // was hiding behind a fence post.
 //
 // It is a real geometric tolerance, NOT a way to compensate for a coarse march.
-// If it ever has to be raised to make distant reflections appear, the
-// refinement is too shallow and this is hiding it - see VV_SSR_REFINE.
-const float VV_SSR_THICKNESS = 0.6;
+// If it ever has to be raised to make distant reflections appear, the stride or
+// the refinement is too coarse and this would be hiding it.
+const float VV_SSR_THICKNESS = 0.5;
 
 // Reflection strength lost as the ray points back toward the camera.
 //
@@ -1551,47 +1535,44 @@ struct VvSceneHit
     vec2 uv;
 };
 
-// One projected lookup into the captured frame.
-//
-// Returns what the capture holds at that screen position WITHOUT judging it.
-// The march decides what is a hit; separating the two is what allows crossing
-// detection, because a point in front of the scene is not a failure - it is
-// half of the evidence that a crossing happened.
-struct VvCaptureSample
+// One point on the reflected ray, expressed in the captured frame.
+struct VvRayPoint
 {
-    vec2 uv;
-    vec3 color;
-    float sceneDistance;   // captured surface distance along the view
-    float onScreen;        // 0 if the point projects outside the capture
+    vec2 uv;         // capture coordinate, 0..1
+    float depth;     // VIEW-SPACE Z of the ray point
+    float onScreen;
 };
 
-VvCaptureSample vvProjectIntoCapture(vec3 cameraRelative)
+// Projects a camera-relative point into the captured frame.
+//
+// DEPTH IS clip.w, WHICH IS VIEW-SPACE Z, and that is the whole point of
+// returning it from here. The capture packs its depth by linearising the depth
+// buffer, which yields axial z; the march previously compared that against
+// length(), which is RADIAL distance. Those differ by 1/cos of the angle from
+// the view axis - 6% at 20 degrees off axis, 30% at 40 - and the error is
+// radially symmetric about the screen centre, so it drew its own set of rings
+// on top of every other problem. Taking both numbers from the same space
+// removes it rather than tuning around it.
+VvRayPoint vvProjectRay(vec3 cameraRelative)
 {
-    VvCaptureSample s;
-    s.uv = vec2(0.0);
-    s.color = vec3(0.0);
-    s.sceneDistance = 0.0;
-    s.onScreen = 0.0;
+    VvRayPoint p;
+    p.uv = vec2(0.0);
+    p.depth = 0.0;
+    p.onScreen = 0.0;
 
     // The capture was drawn from where the camera was LAST frame, so a point
     // held relative to this frame's origin has to be shifted before projection.
     vec4 clip = vv_reflectViewProj * vec4(cameraRelative + vv_reflectCameraDelta, 1.0);
-    if (clip.w <= 0.0001) return s;
+    if (clip.w <= 0.0001) return p;
 
-    vec3 ndc = clip.xyz / clip.w;
-    if (any(greaterThan(abs(ndc.xy), vec2(1.0)))) return s;
+    p.uv = (clip.xy / clip.w) * 0.5 + 0.5;
+    p.depth = clip.w;
+    p.onScreen = 1.0;
 
-    s.uv = ndc.xy * 0.5 + 0.5;
-
-    vec4 captured = texture(vv_reflectScene, s.uv);
-    s.color = captured.rgb;
-    s.sceneDistance = captured.a * vv_reflectFar;
-    s.onScreen = 1.0;
-
-    return s;
+    return p;
 }
 
-// Marches the reflected ray and returns what it found.
+// Marches the reflected ray across the captured frame.
 //
 // The ray starts at the texel centre, so this whole function is constant across
 // a material texel - which is where one colour per texel comes from.
@@ -1617,76 +1598,101 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     float facing = clamp(dot(r, v), 0.0, 1.0);
     if (facing > 1.0 - VV_SSR_FACING_FADE) return miss;
 
-    float t = VV_SSR_NEAR;
-    float step = VV_SSR_NEAR;
+    VvRayPoint a = vvProjectRay(origin);
+    VvRayPoint b = vvProjectRay(origin + r * VV_SSR_RANGE);
 
-    // Depth difference at the previous sample: negative while the ray is still
-    // in front of whatever the capture holds there.
-    float previousT = 0.0;
-    float previousDelta = -1.0;
-    float previousOn = 0.0;
+    if (a.onScreen < 0.5) return miss;
 
-    for (int i = 0; i < VV_SSR_STEPS; i++)
+    // The far end can fall behind the capture camera, where projection is
+    // meaningless. Pull it back to just in front rather than discarding the
+    // ray: depth is linear in the parameter, so the crossing point is exact.
+    if (b.onScreen < 0.5)
     {
-        vec3 at = origin + r * t;
-        VvCaptureSample s = vvProjectIntoCapture(at);
+        vec4 farClip = vv_reflectViewProj
+                     * vec4(origin + r * VV_SSR_RANGE + vv_reflectCameraDelta, 1.0);
 
-        if (s.onScreen > 0.5)
+        float span = farClip.w - a.depth;
+        if (abs(span) < 1e-4) return miss;
+
+        float cut = clamp((0.05 - a.depth) / span, 0.0, 1.0);
+        b = vvProjectRay(origin + r * (VV_SSR_RANGE * cut));
+
+        if (b.onScreen < 0.5) return miss;
+    }
+
+    // Steps sized from how far the ray travels ACROSS THE IMAGE, so the
+    // sampling rate is uniform in screen space no matter how the ray sits in
+    // the world. This is what makes a reflection foreshorten instead of smear.
+    vec2 captureSize = max(vec2(1.0), vec2(textureSize(vv_reflectScene, 0)));
+    vec2 travel = abs(b.uv - a.uv) * captureSize;
+
+    float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE);
+    int steps = int(clamp(wanted, 4.0, float(VV_SSR_STEPS)));
+
+    // 1/w is what interpolates linearly across the screen, not w. Interpolating
+    // depth directly would bend the ray in world space and put every hit at the
+    // wrong distance.
+    float invA = 1.0 / max(1e-4, a.depth);
+    float invB = 1.0 / max(1e-4, b.depth);
+
+    float previousF = 0.0;
+    float previousDelta = -1.0;
+    bool havePrevious = false;
+
+    for (int i = 1; i <= VV_SSR_STEPS; i++)
+    {
+        if (i > steps) break;
+
+        float f = float(i) / float(steps);
+
+        vec2 uv = mix(a.uv, b.uv, f);
+        if (any(greaterThan(abs(uv - 0.5), vec2(0.5)))) break;
+
+        float rayDepth = 1.0 / mix(invA, invB, f);
+        float sceneDepth = texture(vv_reflectScene, uv).a * vv_reflectFar;
+
+        float delta = rayDepth - sceneDepth;
+
+        if (havePrevious && previousDelta < 0.0 && delta >= 0.0)
         {
-            float delta = length(at) - s.sceneDistance;
+            float lo = previousF;
+            float hi = f;
 
-            // The ray was in front and is now behind: it passed through a
-            // surface somewhere in this interval.
-            if (previousOn > 0.5 && previousDelta < 0.0 && delta >= 0.0)
+            for (int k = 0; k < VV_SSR_REFINE; k++)
             {
-                float lo = previousT;
-                float hi = t;
+                float mid = (lo + hi) * 0.5;
+                vec2 midUv = mix(a.uv, b.uv, mid);
+                float midDepth = 1.0 / mix(invA, invB, mid);
 
-                for (int k = 0; k < VV_SSR_REFINE; k++)
-                {
-                    float mid = (lo + hi) * 0.5;
-                    VvCaptureSample m = vvProjectIntoCapture(origin + r * mid);
-
-                    if (m.onScreen < 0.5) break;
-
-                    if (length(origin + r * mid) - m.sceneDistance < 0.0) lo = mid;
-                    else                                                  hi = mid;
-                }
-
-                vec3 hitAt = origin + r * hi;
-                VvCaptureSample resolved = vvProjectIntoCapture(hitAt);
-
-                if (resolved.onScreen > 0.5)
-                {
-                    // Did the ray stop AT the surface, or sail past something
-                    // thin into whatever was behind it?
-                    float thickness = length(hitAt) - resolved.sceneDistance;
-
-                    if (thickness < VV_SSR_THICKNESS)
-                    {
-                        VvSceneHit hit;
-                        hit.color = resolved.color;
-                        hit.uv = resolved.uv;
-
-                        // Faded near the grazing limit so the reflection thins
-                        // out instead of ending at a hard line.
-                        hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
-                                                     1.0 - VV_SSR_FACING_FADE, facing);
-                        return hit;
-                    }
-                }
-
-                return miss;
+                if (midDepth - texture(vv_reflectScene, midUv).a * vv_reflectFar < 0.0) lo = mid;
+                else                                                                    hi = mid;
             }
 
-            previousDelta = delta;
+            vec2 hitUv = mix(a.uv, b.uv, hi);
+            vec4 resolved = texture(vv_reflectScene, hitUv);
+
+            // Did the ray stop AT the surface, or sail past something thin?
+            float thickness = 1.0 / mix(invA, invB, hi) - resolved.a * vv_reflectFar;
+
+            if (thickness < VV_SSR_THICKNESS)
+            {
+                VvSceneHit hit;
+                hit.color = resolved.rgb;
+                hit.uv = hitUv;
+
+                // Faded near the grazing limit so the reflection thins out
+                // instead of ending at a hard line.
+                hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
+                                             1.0 - VV_SSR_FACING_FADE, facing);
+                return hit;
+            }
+
+            return miss;
         }
 
-        previousOn = s.onScreen;
-        previousT = t;
-
-        step *= VV_SSR_GROWTH;
-        t += step;
+        previousDelta = delta;
+        previousF = f;
+        havePrevious = true;
     }
 
     return miss;

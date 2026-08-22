@@ -822,6 +822,62 @@ Capped by luminance against the environment colour, at the same
 channel, because a per-channel clamp desaturates exactly the bright reflections
 that carry the most information: a reflected tree has to stay green.
 
+### The march is now in screen space, and the depths are in one space
+
+Two defects, both found from a description rather than from code.
+
+**The smear.** Reported as *"the trunk is reflected all the way from the base of
+the tree to where the reflection ends at my feet, instead of rendering a
+simulated reflection of the tree properly in perspective"*.
+
+That is overshoot. The march stepped in WORLD space, and world-space steps
+project to wildly different screen distances - near the camera one step can leap
+across the frame, far away a hundred land in a single texel. Every ground point
+whose ray leapt over the trunk registered its crossing at the same few trunk
+texels, so a whole band of ground sampled one colour instead of sampling
+progressively higher up the tree.
+
+The march now steps a fixed number of CAPTURE TEXELS, with the step count
+derived per ray from how far it travels across the image. Uniform sampling in
+the image is what makes a reflection foreshorten. Depth is interpolated as 1/w,
+which is what is linear across a screen - interpolating depth directly bends the
+ray and puts every hit at the wrong distance.
+
+**The depth spaces disagreed.** The capture linearises the depth buffer, which
+yields AXIAL view-space z. The march compared that against `length()`, which is
+RADIAL distance. They differ by 1/cos of the angle from the view axis:
+
+| off axis | radial overstates axial by |
+|---|---|
+| 10 degrees | 1.5% |
+| 20 degrees | 6.4% |
+| 30 degrees | 15.5% |
+| 40 degrees | 30.5% |
+
+The error is radially symmetric about the screen centre, so it drew its own set
+of rings on top of every other problem. Ray depth is now `clip.w`, which IS
+view-space z, taken from the same projection - the two numbers come from one
+space rather than being reconciled by a tolerance.
+
+The test for this previously read march constants that the rewrite removed, so
+it returned early and silently asserted nothing. Missing constants are now a
+failure rather than an exit.
+
+### Wet blocks already work. Water does not.
+
+**Rain-wet surfaces need no further work.** `vvApplyEnvironmentLayers` sets
+roughness to 0.08 and the specular mask to 0.60 when wet, and both feed the same
+`f0` and `roughness` the reflection uses - so a wet block reflects the world more
+strongly than a dry one through the existing material path, with no reflection
+specific wetness code. That was the design intent and it holds.
+
+**Water is not patched at all.** `chunkliquid.fsh` appears in no patch group;
+the mod has never touched it. Giving it scene reflections means a new patch
+group on a shader with its own animated normals and its own lighting, which is a
+second surface to debug at the same time as the first. The reflection geometry
+should be right on terrain before water inherits it - otherwise a wrong
+reflection appears in two places and it is harder to tell which one is lying.
+
 ### Not changed, and why
 
 The audit also suggested using `CameraOffset` rather than the player position as
