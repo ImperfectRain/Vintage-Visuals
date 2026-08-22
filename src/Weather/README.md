@@ -4,8 +4,13 @@ What the weather does to how the world looks.
 
 ## Status
 
-**Wet surfaces, rain fog and cloud shadows.** All verified against the game's
-own shaders with `tools/verifypatches`; only wetness has been seen on screen.
+**Wet surfaces and cloud shadows.** All verified against the game's own shaders
+with `tools/verifypatches`; only wetness has been seen on screen.
+
+**Rain fog has moved out of this subsystem's shader group.** Weather still
+decides how much - `FogStrength` and `FogTint` are still here, and this is still
+where "how hard is it raining" comes from - but `src/Atmosphere/` renders it now.
+See DECISIONS D23.
 
 | Piece | State |
 |---|---|
@@ -14,7 +19,7 @@ own shaders with `tools/verifypatches`; only wetness has been seen on screen.
 | Rain ripples in standing water | done, level 2 (compiles) |
 | Overcast light response | done, level 2 (compiles) |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
-| Fog and tint by weather state | terrain only, level 2 (compiles) |
+| Fog and tint by weather state | **moved to `src/Atmosphere/`** - decided here, rendered there |
 | Cloud shadows | reworked, level 2 (compiles) |
 | Cloud shaping | **removed** - not possible from a cloud shader, see below |
 
@@ -202,26 +207,41 @@ shadows go soft and surfaces flatten, while the total light barely changes.
 Driven by the same cover figure the cloud shadows use, so the two agree about
 what kind of day it is.
 
-## Rain fog
+## Rain fog, which lives somewhere else now
 
-Rain thickens the air and drains the colour out of it. Two details matter:
+This subsystem decides **how much** the air thickens. `src/Atmosphere/` decides
+what that looks like and draws it.
+
+The split is not tidiness. Rain fog used to be rendered here, in this group's
+patch on the two terrain shaders - and in nothing else. So rain thickened the air
+for a hillside and not for the animal standing in front of it. No value of
+`FogStrength` could have fixed that: it is a consequence of which programs this
+group reaches. Fog now has one owner, anchored on vanilla's `applyFog`, which is
+byte-identical in every shading program the game has. See DECISIONS D23.
+
+What is still decided here:
+
+- `FogStrength` and `FogTint`, the player's settings
+- `Rain`, driven by rain that is *falling* rather than wetness, which is rain
+  that *fell*. One number for both would leave the air thick with fog for a
+  minute after the sky cleared - the wrong half to linger
+- the claim on the shared haze budget, which this subsystem owns
+
+The two details that mattered about the arithmetic still hold, and the
+arithmetic moved unchanged:
 
 - **Fog is added as a fraction of what is left**, not as a sum. Heavy rain
   approaches full fog without ever exceeding it; a plain addition makes distant
   terrain pop to solid grey the moment a shower starts.
 - **The fog colour is shifted, not replaced.** Vanilla's already tracks time of
   day, biome and altitude, and a fixed rain grey would fight every sunset it was
-  drawn over. Rain pulls it toward its own luminance and slightly blue.
+  drawn over.
 
-Driven by `Rain`, not by wetness. Fog belongs to the rain that is *falling*;
-wetness belongs to the rain that *fell*. One number for both would leave the air
-thick with fog for a minute after the sky cleared — the wrong half to linger.
+### Never the sky, wherever it lives
 
-### Terrain only, never the sky
-
-Rain fog is applied to the two terrain shaders and to nothing else. See "The
-clouds themselves are vanilla" below for what happened when it was applied to
-the sky dome as well.
+See "The clouds themselves are vanilla" below for what happened when rain fog was
+applied to the sky dome. The conclusion travelled with the code: nothing this mod
+writes goes on the sky.
 
 ## Cloud shadows
 

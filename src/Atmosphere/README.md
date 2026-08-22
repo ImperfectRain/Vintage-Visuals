@@ -49,7 +49,66 @@ own sign convention, not a trick - the sky shader branches on
 `flatFogDensity < 0` to add an earth-curvature bias, which only makes sense for
 a layer lying on the ground.
 
-Off by default. See Status.
+**Aerial perspective.** The one thing on the list above vanilla does not have,
+and so the only thing here with any GLSL. Vanilla's fog is
+`mix(pixel, rgbaFog.rgb, fogWeight)` - isotropic, so haze looking into a low sun
+and haze looking away from it are the same grey. This adds a Henyey-Greenstein
+in-scattering term and **nothing else**: no distance curve, no height band, no
+desaturation, because vanilla already has the first two and the third belongs to
+`VisualBudget`.
+
+**Weather visibility.** Rain thickening the air. Not new - it moved here from the
+weather group, which patched the two terrain shaders and nothing else. That is
+why an animal standing in a fogged valley used to keep crisp edges while the
+hillside behind it went soft. Weather still decides how much; it no longer
+renders it.
+
+Both haze features are off by default. See Status.
+
+## The patch group
+
+One anchor, four programs. Vanilla's `applyFog` is **byte-identical** in all
+seven shading programs the game has, which makes it the single point every fogged
+fragment passes through.
+
+`applyFog` is not handed a position, so each program supplies its own varying at
+the call site:
+
+| Program | Varying | Patched |
+|---|---|---|
+| `chunkopaque.fsh` | `worldPos.xyz` | yes |
+| `chunktopsoil.fsh` | `worldPos.xyz` | yes |
+| `entityanimated.fsh` | `worldPos.xyz` | yes - the program this move was for |
+| `particlescube.fsh` | `worldPos.xyz` | yes |
+| `particlesquad.fsh` | `vexPos` | no - a sprite shader whose fragments are metres away |
+| `chunkliquid.fsh` | `fWorldPos` | no - water is out of every patch group until the reflection is validated |
+
+`AerialPerspective` gates the **patch**, not the effect. A strength of 0 skips
+the whole group, so "off" is vanilla's own function rather than this mod's
+arithmetic multiplied by nothing. That costs a shader reload when the value
+crosses zero, which is the reason it is a strength rather than a tick box.
+
+## Debug views
+
+Numbered in this subsystem's own terms, per the project convention.
+`Atmosphere.AirDebugView`, or "Atmosphere debug view" in the F7 panel.
+
+| | Draws |
+|---|---|
+| 1 | Distance, as a fraction of vanilla's own 250-block fog clamp |
+| 2 | The phase function alone. White facing the sun |
+| 3 | The final in-scattering gain |
+| 4 | The fog colour actually used, in-scattering included |
+| 5 | The fog weight actually used, weather included |
+| 6 | The sun direction, remapped so nothing is negative |
+| 7 | The sun's own colour, flat |
+| 8 | The rain term, so a slider that does nothing shows as black |
+
+The property is `AirDebugView` and not `DebugView` because PseudoPBR already has
+a `DebugView`, and the smoke check that pairs a slider with its config clamp keys
+on the property name. Two properties sharing one gives that check two clamps for
+one slider, and its response to an ambiguity is to skip - so the collision would
+have silently removed the coverage rather than failing.
 
 ## Files
 
@@ -57,6 +116,9 @@ Off by default. See Status.
 |---|---|
 | `AtmosphereSubsystem.cs` | Lifecycle, the render tick, and the claim on the haze budget |
 | `AmbientBridge.cs` | Owns the modifier in the game's ambient stack. Installs, writes, verifies, removes |
+| `AtmosphereShaderBinder.cs` | Uploads the aerial-perspective uniforms into the four patched programs |
+| `../../assets/vintagevisuals/shadersnippets/atmosphere.glsl` | The in-scattering term and the weather fog, at vanilla's `applyFog` |
+| `../../assets/vintagevisuals/shaderpatches/atmosphere.yaml` | One anchor, four programs |
 | `../Common/Scene/AtmosphereState.cs` | The snapshot. What the air is doing, read from the game rather than modelled |
 
 `AtmosphereState` lives in `Common/Scene/` beside `EnvironmentState` rather than
@@ -117,10 +179,11 @@ value in a default world and therefore the one where a wrong fold shows.
 
 | | |
 |---|---|
-| Per frame | A handful of field reads and a dictionary lookup |
+| Per frame, CPU | A handful of field reads, a dictionary lookup, and eight uniform uploads into four programs |
+| Per fragment | One `pow`, one `length`, and a `mix`, on fragments that were already going through `applyFog` |
 | Render passes | None |
 | Texture units | None |
-| Shader patches | None |
+| Shader patches | Two per program, in four programs. Skipped entirely at strength 0 |
 | Measured | **No.** Nothing in this project has been profiled |
 
 ## Status
@@ -134,5 +197,15 @@ settle - `AtmosphereChecks` proves the haze goes *below* the band using vanilla'
 own transcribed formula, but whether 34 blocks above sea level is the right place
 for its top is a question only a screenshot answers.
 
-**Aerial perspective is not implemented.** It is the one atmospheric effect
-vanilla does not have and the one that needs GLSL. See `docs/STATUS.md`.
+**Aerial perspective compiles in every prefix combination** the game supports -
+48 for `chunkopaque` and `entityanimated`, 24 for `chunktopsoil`, 6 for
+`particlescube` - verified by `tools/verifypatches` against the game's own
+shaders, with all groups applied together as the game applies them. That proves
+it compiles and that its anchors still match 1.22.7. It proves nothing about
+whether it looks right.
+
+`Atmosphere.AerialPerspective` defaults to **0**, which skips the patch group
+entirely.
+
+**Water and sprite particles are excluded.** Named in `atmosphere.yaml` so they
+read as excluded rather than forgotten.

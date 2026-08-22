@@ -113,7 +113,8 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 | Atmosphere state from the game | x | x | x | x | – | – | – | n/a | x |
 | Ambient stack bridge | x | x | x | x | – | – | – | n/a | x |
 | Height haze | x | x | x | x | – | – | – | – | x |
-| Aerial perspective | – | – | – | – | – | – | – | – | x |
+| Aerial perspective | x | x | x | x | – | – | – | – | x |
+| Weather visibility (moved from Weather) | x | x | x | x | – | – | – | – | x |
 | Horizon colouration | – | – | – | – | – | – | – | – | x |
 
 Not yet validated, and each is a separate question:
@@ -124,6 +125,11 @@ Not yet validated, and each is a separate question:
 - [ ] switching it off leaves the ambient stack exactly as vanilla left it
 - [ ] the blend reproduction agrees with the game — the log says so or it does not
 - [ ] it does not double up with rain fog on a wet still night
+- [ ] a low sun brightens the haze toward it and not away from it
+- [ ] the in-scattering does not push the horizon past white at sunset
+- [ ] an entity standing in fogged terrain now fogs with it — this is the regression the move was for
+- [ ] terrain, ground cover, entities and particles agree at the same distance
+- [ ] setting aerial perspective to 0 restores vanilla's own `applyFog`, confirmed in a shader dump
 
 **Nothing here has been seen in a world.** `Atmosphere.HeightHaze` defaults to 0
 for that reason, so an unmodified install is unaffected either way.

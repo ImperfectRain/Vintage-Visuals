@@ -242,6 +242,23 @@ namespace VintageVisuals
                 return ConfigManager.Config.Weather.Enabled;
             }
 
+            // Gated on the aerial-perspective strength rather than on the
+            // subsystem toggle, because it is the only thing in this group that
+            // needs a shader. Height haze goes through the game's ambient stack
+            // and keeps working with the group rolled back.
+            //
+            // A strength of zero skips the whole group, so "off" is vanilla
+            // source rather than patched source with a muted uniform. That
+            // matters here beyond tidiness: with the group applied, this mod
+            // owns applyFog in four programs, and a player who wants vanilla fog
+            // should get vanilla's function rather than this mod's arithmetic
+            // multiplied by nothing.
+            if (group == AtmosphereSubsystem.GroupName)
+            {
+                return ConfigManager.Config.Atmosphere.Enabled &&
+                       ConfigManager.Config.Atmosphere.AerialPerspective > 0f;
+            }
+
             return true;
         }
 
@@ -252,7 +269,9 @@ namespace VintageVisuals
                    (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
                    (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
-                   (ConfigManager.Config.Weather.Enabled ? "W" : "-");
+                   (ConfigManager.Config.Weather.Enabled ? "W" : "-") +
+                   (ConfigManager.Config.Atmosphere.Enabled &&
+                    ConfigManager.Config.Atmosphere.AerialPerspective > 0f ? "A" : "-");
         }
 
         /// <summary>

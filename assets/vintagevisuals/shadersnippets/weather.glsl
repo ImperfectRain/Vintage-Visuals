@@ -1,8 +1,8 @@
-// Vintage Visuals - weather: fog and cloud shadows
+// Vintage Visuals - weather: cloud shadows
 //
-// Injected into chunkopaque.fsh and chunktopsoil.fsh immediately before
-// vanilla's applyFog, which is the last point before anything reads either of
-// the two things this changes.
+// Injected into chunkopaque.fsh and chunktopsoil.fsh at vanilla's
+// getBrightnessFromShadowMap, which this group wraps: a cloud occludes the sun,
+// so it belongs wherever the sun's occlusion is already decided.
 //
 // Self-contained on purpose. It shares no uniform and no function with
 // pseudopbr.glsl even though both land in the same file, because the two are
@@ -11,7 +11,8 @@
 
 // NOTE: this is applied to TERRAIN ONLY, never to the sky.
 //
-// An earlier version patched sky.fsh the same way, on the reasoning that rain
+// An earlier version patched sky.fsh with this group's fog, on the reasoning
+// that rain
 // should thicken the whole scene. It does not work: the sky dome is not
 // something you look THROUGH, it is the thing at the far end, and fogging it
 // flattens the contrast between cloud and sky into a uniform haze. Clouds
@@ -19,10 +20,10 @@
 // showing through in perspective - with both the classic and the volumetric
 // renderer, because neither was the problem. Vanilla already has horizonFog for
 // the sky's own weather response.
-
-uniform float vv_weatherRain;        // 0..1 precipitation intensity, smoothed
-uniform float vv_weatherFogStrength; // how much rain thickens the air
-uniform float vv_weatherFogTint;     // how much rain drains colour from it
+//
+// That fog has since moved out of this group entirely - see atmosphere.yaml -
+// but the conclusion travelled with it and still holds: nothing this mod writes
+// goes on the sky.
 
 uniform float vv_cloudShadowStrength; // already scaled by daylight on the CPU
 uniform float vv_cloudCover;         // 0 clear, 1 overcast - the game's own figure
@@ -104,40 +105,6 @@ uniform vec2  vv_cloudMapCorner;
 // Tiles of fade at the window edge. Without it the window boundary is a hard
 // line across the world that moves with the player.
 #define VV_CLOUD_EDGE_FADE 2.0
-
-// ---------------------------------------------------------------------------
-// Fog
-// ---------------------------------------------------------------------------
-
-float vvWeatherFogAmount(float fogWeight)
-{
-    float extra = clamp(vv_weatherRain * vv_weatherFogStrength, 0.0, 1.0);
-
-    // Returns the input untouched when it is not raining, rather than a clamped
-    // copy of it. Callers do pass values outside 0..1 and vanilla's mix handles
-    // that; quietly clamping them is a behaviour change dressed up as a no-op,
-    // and "identity" has to mean identity.
-    if (extra <= 0.0) return fogWeight;
-
-    // Added as a fraction of what is LEFT rather than as a sum, so heavy rain
-    // approaches full fog without ever exceeding it. A plain addition makes
-    // distant terrain pop to solid grey the moment a shower starts.
-    return clamp(fogWeight + (1.0 - fogWeight) * extra, 0.0, 1.0);
-}
-
-vec3 vvWeatherFogColor(vec3 fogColor)
-{
-    float blend = clamp(vv_weatherRain * vv_weatherFogTint, 0.0, 1.0);
-    if (blend <= 0.0) return fogColor;
-
-    // Shifts vanilla's fog colour rather than replacing it. That colour already
-    // tracks time of day, biome and altitude, and a fixed rain grey would fight
-    // every sunset it was drawn over.
-    float luma = dot(fogColor, vec3(0.2126, 0.7152, 0.0722));
-    vec3 overcast = mix(vec3(luma), vec3(luma) * vec3(0.94, 0.97, 1.06), 0.6);
-
-    return mix(fogColor, overcast, blend);
-}
 
 // ---------------------------------------------------------------------------
 // Cloud shadows
@@ -462,7 +429,16 @@ float getBrightnessFromShadowMap()
     return vvVanillaShadowMap() * vvCloudShadow(worldPos.xyz);
 }
 
-// The anchor line, pasted back. The patch REPLACES vanilla's applyFog signature
-// with this whole file, so dropping this would delete the function every fog
-// call in the shader goes through.
-vec4 applyFog(vec4 rgbaPixel, float fogWeight) {
+// The anchor line, pasted back RENAMED.
+//
+// The patch replaces vanilla's getBrightnessFromShadowMap signature with this
+// whole file, and this line puts the original function back under the name the
+// wrapper above calls. Dropping it would delete vanilla's shadow lookup and
+// leave the wrapper calling something that no longer exists.
+//
+// This used to be applyFog, five lines above. Fog moved to its own group when it
+// turned out to need every shading program rather than the two this one
+// patches - see atmosphere.yaml. Injecting here instead means the rename and the
+// injection are one patch, which is why there is no separate rename entry in
+// weather.yaml any more.
+float vvVanillaShadowMap() {

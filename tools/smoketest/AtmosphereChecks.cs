@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -40,6 +41,11 @@ namespace VintageVisuals.SmokeTest
             CheckBlendFormulaMatchesTheInterface(check);
             CheckFogClampMatchesTheShaders(repo, check);
             CheckNoDuplicateHeightFogInGlsl(repo, check);
+            CheckAerialIsDirectionalOnly(repo, check);
+            CheckAerialZeroIsVanilla(repo, check);
+            CheckFogHasOneOwner(repo, check);
+            CheckPhaseIsNormalisedAndBounded(check);
+            CheckDebugViewsAreReachable(repo, check);
         }
 
         /// <summary>
@@ -372,6 +378,224 @@ namespace VintageVisuals.SmokeTest
             check("height fog is left to vanilla rather than reimplemented in a snippet",
                   !found,
                   found ? where + " declares its own height-fog uniform" : "none found");
+        }
+
+        /// <summary>
+        /// The aerial-perspective snippet may add a DIRECTIONAL term and
+        /// nothing else.
+        ///
+        /// Vanilla already has a distance falloff and a height band, and colour
+        /// grading already removes saturation with the weather through the
+        /// budget. A snippet that grew its own distance curve, its own height
+        /// term or its own desaturation would be a second subsystem quietly
+        /// taking contrast out of the same pixel - which is the exact defect
+        /// VisualBudget was built for, and it would be doing it outside the
+        /// budget.
+        ///
+        /// What is checked is that the file reads the sun and the view
+        /// direction, and that it does not compute an exponential falloff of
+        /// its own.
+        /// </summary>
+        private static void CheckAerialIsDirectionalOnly(string repo, Action<string, bool, string> check)
+        {
+            string glsl = Atmosphere(repo);
+
+            check("aerial perspective is aimed by the sun direction",
+                  glsl.Contains("vv_atmosSunDir") && glsl.Contains("dot(viewDir"),
+                  "no sun-relative term found");
+
+            check("aerial perspective takes the sun's colour from the game",
+                  glsl.Contains("vv_atmosSunColor"),
+                  "no sun colour uniform");
+
+            check("the snippet grows no distance falloff of its own",
+                  !Regex.IsMatch(glsl, @"1\.0\s*(?:-|/)\s*(?:1\.0\s*/\s*)?exp\("),
+                  "found an exponential falloff - vanilla already has one");
+
+            check("the snippet grows no height band of its own",
+                  !glsl.Contains("flatFog") && !glsl.Contains("worldPosY"),
+                  "found a height term - vanilla already has one, in every program");
+
+            check("the snippet removes no saturation of its own",
+                  !Regex.IsMatch(glsl, @"\bsaturat(?:e|ion)\b", RegexOptions.IgnoreCase),
+                  "found a saturation term - that goes through VisualBudget, not here");
+        }
+
+        /// <summary>
+        /// Zero has to mean vanilla, and it has to mean it through the path an
+        /// UNSET uniform takes.
+        ///
+        /// A GLSL uniform that was never uploaded reads as exactly 0, and a
+        /// uniform can be unset for several reasons - the binder skipped the
+        /// frame, the program was not patched, the group rolled back. So 0 must
+        /// be the harmless value on every uniform this file declares, not just
+        /// on the strength. vv_cloudDensity shipped multiplying vanilla's
+        /// density term, where 0 meant NO CLOUDS AT ALL.
+        ///
+        /// The early return is what makes it true here: at strength 0 the
+        /// scatter function hands back the fog colour it was given, untouched,
+        /// before the sun direction is read at all.
+        /// </summary>
+        private static void CheckAerialZeroIsVanilla(string repo, Action<string, bool, string> check)
+        {
+            string glsl = Atmosphere(repo);
+
+            check("zero strength returns vanilla's fog colour untouched",
+                  Regex.IsMatch(glsl, @"if\s*\(\s*vv_atmosAerial\s*<=\s*0\.0\s*\)\s*return\s+fogColor\s*;"),
+                  "no early return on zero strength");
+
+            check("zero rain returns vanilla's fog amount untouched",
+                  Regex.IsMatch(glsl, @"if\s*\(extra\s*<=\s*0\.0\)\s*return\s+fogWeight\s*;"),
+                  "no early return on zero rain");
+
+            check("zero tint returns vanilla's fog colour untouched",
+                  Regex.IsMatch(glsl, @"if\s*\(blend\s*<=\s*0\.0\)\s*return\s+fogColor\s*;"),
+                  "no early return on zero tint");
+
+            // A sun BELOW the horizon lights the haze from under the world. The
+            // guard is a step on elevation, and without it a bright band would
+            // point at a sun that has set.
+            check("a sun below the horizon contributes nothing",
+                  glsl.Contains("step(0.0, vv_atmosSunElevation)"),
+                  "no below-horizon guard");
+        }
+
+        /// <summary>
+        /// Fog must have exactly one owner.
+        ///
+        /// It used to have two: weather patched applyFog in the two terrain
+        /// shaders, so rain thickened the air for a hillside and not for the
+        /// animal standing in front of it. Both groups anchoring on the same
+        /// line would also have coupled their rollbacks, which the project
+        /// forbids for a reason - a varying or a function shared across groups
+        /// means one group rolling back breaks the other.
+        /// </summary>
+        private static void CheckFogHasOneOwner(string repo, Action<string, bool, string> check)
+        {
+            string dir = Path.Combine(repo, "assets/vintagevisuals/shaderpatches");
+            const string anchor = "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {";
+
+            var owners = new System.Collections.Generic.List<string>();
+            foreach (string file in Directory.GetFiles(dir, "*.yaml"))
+            {
+                if (File.ReadAllText(file).Contains(anchor)) owners.Add(Path.GetFileName(file));
+            }
+
+            check("exactly one patch group owns vanilla's applyFog",
+                  owners.Count == 1 && owners[0] == "atmosphere.yaml",
+                  owners.Count == 0 ? "nobody owns it" : string.Join(", ", owners));
+
+            string weather = File.ReadAllText(Path.Combine(dir, "weather.yaml"));
+            check("the weather group no longer renders fog",
+                  !weather.Contains("vvWeatherFogAmount") && !weather.Contains("vvWeatherFogColor"),
+                  "weather.yaml still rewrites the fog mix");
+
+            string glsl = Atmosphere(repo);
+            check("the atmosphere group reaches entities as well as terrain",
+                  File.ReadAllText(Path.Combine(dir, "atmosphere.yaml")).Contains("entityanimated.fsh"),
+                  "entityanimated.fsh is not in the atmosphere group");
+
+            check("the atmosphere pastes its anchor back",
+                  glsl.TrimEnd().EndsWith(anchor),
+                  "the snippet does not end with the anchor line");
+        }
+
+        /// <summary>
+        /// The phase function has to be normalised and the gain has to be
+        /// capped, and both for the same reason.
+        ///
+        /// Henyey-Greenstein is unbounded as g approaches 1, and the term
+        /// multiplies a colour that has already been through vanilla's own
+        /// exposure. Un-normalised it returns about 0.08 facing the sun at
+        /// g=0.45 - which looks like the effect is off and invites tuning the
+        /// strength up until the peak is wrong instead. Uncapped, a low sun
+        /// pushes the horizon past white.
+        ///
+        /// Driven through the arithmetic rather than through the GLSL text,
+        /// because what matters is the numbers it produces.
+        /// </summary>
+        private static void CheckPhaseIsNormalisedAndBounded(Action<string, bool, string> check)
+        {
+            const float g = 0.45f;
+
+            check("the isotropic case is 1, so the strength slider means what it says",
+                  Math.Abs(Phase(g, 0f, isotropic: true) - 1f) < 1e-4f,
+                  Phase(g, 0f, isotropic: true).ToString());
+
+            float facing = Phase(g, 1f, isotropic: false);
+            float away = Phase(g, -1f, isotropic: false);
+
+            check("facing the sun scatters more than facing away",
+                  facing > away * 4f,
+                  facing + " facing vs " + away + " away");
+
+            check("facing the sun is above the isotropic case",
+                  facing > 1f, facing.ToString());
+
+            check("facing away is below it",
+                  away < 1f, away.ToString());
+
+            // The gain is clamp(phase - 1, 0, 4) times a chain of factors each
+            // at most 1, then min'd with the cap. So the cap is the bound.
+            float gain = Math.Min(Math.Max(facing - 1f, 0f), 4f);
+            check("the raw gain would exceed the cap, so the cap is doing work",
+                  gain > 0.85f,
+                  gain + " raw vs a cap of 0.85");
+        }
+
+        private static float Phase(float g, float cosTheta, bool isotropic)
+        {
+            float gg = isotropic ? 0f : g;
+            float g2 = gg * gg;
+            double denom = 1.0 + g2 - 2.0 * gg * cosTheta;
+            double hg = (1.0 - g2) / (4.0 * Math.PI * Math.Pow(Math.Max(1e-4, denom), 1.5));
+            return (float)(hg * 4.0 * Math.PI);
+        }
+
+        /// <summary>
+        /// Every debug view the slider can reach must exist, and every view the
+        /// shader implements must be reachable.
+        ///
+        /// A view the slider cannot reach is dead code that reads as a working
+        /// diagnostic; a slider position with no view behind it returns the
+        /// unshaded pixel, which looks exactly like "the effect is off" and is
+        /// the single most misleading thing a debug view can do.
+        /// </summary>
+        private static void CheckDebugViewsAreReachable(string repo, Action<string, bool, string> check)
+        {
+            string glsl = Atmosphere(repo);
+
+            var implemented = Regex.Matches(glsl, @"if\s*\(mode\s*==\s*(\d+)\)")
+                .Cast<Match>()
+                .Select(m => int.Parse(m.Groups[1].Value))
+                .Distinct()
+                .OrderBy(v => v)
+                .ToList();
+
+            string config = File.ReadAllText(Path.Combine(repo, "src/Common/VintageVisualsConfig.cs"));
+            Match clamp = Regex.Match(config,
+                @"AirDebugView\s*=\s*ColorGradeConfig\.Clamp\(\s*AirDebugView\s*,\s*[\d.]+f?\s*,\s*([\d.]+)f?\s*,");
+
+            check("the atmosphere debug slider declares a maximum",
+                  clamp.Success, "no clamp found for AirDebugView");
+
+            if (!clamp.Success) return;
+
+            int max = (int)float.Parse(clamp.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+
+            check("every atmosphere debug view the slider reaches is implemented",
+                  Enumerable.Range(1, max).All(implemented.Contains),
+                  "slider reaches 1.." + max + ", shader implements " + string.Join(",", implemented));
+
+            check("every atmosphere debug view implemented is reachable",
+                  implemented.All(v => v >= 1 && v <= max),
+                  "shader implements " + string.Join(",", implemented) + ", slider reaches 1.." + max);
+        }
+
+        private static string Atmosphere(string repo)
+        {
+            return File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/atmosphere.glsl"));
         }
 
         private static EnvironmentState Night(float humidity, float wetness, float wind, float sky)

@@ -31,10 +31,6 @@ namespace VintageVisuals.Weather
         /// </summary>
         private const double UploadOrder = 0.1;
 
-        public const string RainUniform = "vv_weatherRain";
-        public const string FogStrengthUniform = "vv_weatherFogStrength";
-        public const string FogTintUniform = "vv_weatherFogTint";
-
         public const string CloudShadowUniform = "vv_cloudShadowStrength";
         public const string CloudCoverUniform = "vv_cloudCover";
         public const string CloudScaleUniform = "vv_cloudScale";
@@ -113,8 +109,8 @@ namespace VintageVisuals.Weather
                 {
                     _reportedSkipping = true;
                     _capi.Logger.Warning("[VintageVisuals] weather: a shader program has been bound on every " +
-                        "frame for several seconds, so no weather uniform has been uploaded at all. Rain fog " +
-                        "and cloud shadows are inactive, and nothing else will say so.");
+                        "frame for several seconds, so no weather uniform has been uploaded at all. Cloud " +
+                        "shadows are inactive, and nothing else will say so.");
                 }
 
                 return;
@@ -135,9 +131,9 @@ namespace VintageVisuals.Weather
                 if (!_reportedMissing)
                 {
                     _reportedMissing = true;
-                    _capi.Logger.Warning("[VintageVisuals] weather: no patched program exposes " + RainUniform +
-                        ", so the weather GLSL did not reach any compiled program. Rain fog and cloud " +
-                        "shadows are inactive - look for a weather patch failure above.");
+                    _capi.Logger.Warning("[VintageVisuals] weather: no patched program exposes " + CloudShadowUniform +
+                        ", so the weather GLSL did not reach any compiled program. Cloud shadows are " +
+                        "inactive - look for a weather patch failure above.");
                 }
                 return;
             }
@@ -163,27 +159,13 @@ namespace VintageVisuals.Weather
             IShaderProgram program = _capi.Shader.GetProgram((int)id);
             if (program == null) return false;
 
-            bool fog = program.HasUniform(RainUniform);
             bool shadows = program.HasUniform(CloudShadowUniform);
 
-            if (!fog && !shadows) return false;
+            if (!shadows) return false;
 
             bool enabled = config.Enabled;
 
             program.Use();
-
-            if (fog)
-            {
-                // Rain drives fog directly rather than through wetness: fog
-                // thickens while it is raining, not while the ground is still
-                // drying an hour later.
-                program.Uniform(RainUniform, enabled ? _weather.Rain : 0f);
-                // Scaled by what arbitration allowed, not by the config value.
-                // Three subsystems used to wash out the same rainy afternoon
-                // independently; now they share one allowance.
-                program.Uniform(FogStrengthUniform, config.FogStrength * _weather.Grants.RainFog);
-                program.Uniform(FogTintUniform, config.FogTint);
-            }
 
             if (shadows)
             {

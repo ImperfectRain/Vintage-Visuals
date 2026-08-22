@@ -219,41 +219,45 @@ namespace VintageVisuals.Common
         public float HeightHaze { get; set; } = 0.0f;
 
         /// <summary>
+        /// Fog that knows where the sun is, as a fraction of the tuned look.
+        ///
+        /// The one atmospheric effect Vintage Story genuinely lacks. Vanilla's
+        /// fog is an isotropic mix toward a single colour, so haze looking into
+        /// a low sun and haze looking away from it are the same grey. In the
+        /// real thing they are not remotely the same, and the difference is most
+        /// of what makes distance read as distance.
+        ///
+        /// GATES THE PATCH, not just the effect. Zero here would leave the GLSL
+        /// compiled and occupying uniform slots in four programs; the patch
+        /// group is skipped instead, so "off" means vanilla source. That costs a
+        /// shader reload when it is toggled, which is why it is a strength and
+        /// not a tick box - a value crossing zero is what triggers the reload.
+        ///
+        /// DEFAULTS TO 0. Never seen in a world.
+        /// </summary>
+        public float AerialPerspective { get; set; } = 0.0f;
+
+        /// <summary>
         /// Which atmospheric diagnostic to draw instead of shading, 0 for none.
         ///
         /// Numbered in this subsystem's own terms, per the project convention:
         /// one global list stopped making sense as soon as two subsystems
         /// wanted the same number. See src/Atmosphere/README.md for the list.
+        ///
+        /// Named for the air rather than called DebugView, because PseudoPBR
+        /// already has a DebugView and the smoke check that pairs a ConfigLib
+        /// slider with its config clamp keys on the property NAME. Two
+        /// properties sharing one gives that check two clamps for one slider,
+        /// and its response to an ambiguity is to skip - so the collision would
+        /// have silently removed the coverage rather than failing.
         /// </summary>
-        public float DebugView { get; set; } = 0f;
+        public float AirDebugView { get; set; } = 0f;
 
         public void ClampToValidRanges(List<string> corrections)
         {
-            HeightHaze = Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
-            DebugView = Clamp(DebugView, 0f, 8f, "Atmosphere.DebugView", corrections);
-        }
-
-        private static float Clamp(float value, float min, float max, string name, List<string> corrections)
-        {
-            if (float.IsNaN(value))
-            {
-                corrections.Add(name + " was not a number, reset to " + min);
-                return min;
-            }
-
-            if (value < min)
-            {
-                corrections.Add(name + " was " + value + ", clamped to " + min);
-                return min;
-            }
-
-            if (value > max)
-            {
-                corrections.Add(name + " was " + value + ", clamped to " + max);
-                return max;
-            }
-
-            return value;
+            HeightHaze = ColorGradeConfig.Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
+            AerialPerspective = ColorGradeConfig.Clamp(AerialPerspective, 0f, 1f, "Atmosphere.AerialPerspective", corrections);
+            AirDebugView = ColorGradeConfig.Clamp(AirDebugView, 0f, 8f, "Atmosphere.AirDebugView", corrections);
         }
     }
 

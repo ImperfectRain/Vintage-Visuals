@@ -42,6 +42,7 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 | Scene capture and pixelated reflections | L2 | `src/Reflections/` |
 | Atmosphere state read from the game | L2 | `src/Common/Scene/AtmosphereState.cs` |
 | Height haze through vanilla's ambient stack | L2 | `src/Atmosphere/` |
+| Aerial perspective, one owner for fog | L2 | `atmosphere.glsl`, four programs |
 
 ---
 
@@ -57,13 +58,7 @@ cost claim in the documentation is an argument from operation count. The scene
 capture is the obvious first target: it runs every frame whether or not anything
 reflective is visible.
 
-**3. Finish the atmosphere.** Height haze ships; aerial perspective does not, and
-it is the one atmospheric effect vanilla genuinely lacks - its fog is an
-isotropic mix toward a single colour with no sun-relative term. It also needs the
-weather group's `applyFog` patch moved, since fog belongs to one owner and the
-current one reaches terrain only. See DECISIONS D18.
-
-**4. Close the L2 backlog in the material system.** Metalness, multi-scatter
+**3. Close the L2 backlog in the material system.** Metalness, multi-scatter
 compensation, specular occlusion, anisotropic grain and emission masks are all
 implemented, tested statically, and never seen. They are cheap to validate
 because the debug views for each already exist.
@@ -130,6 +125,7 @@ the outside. Full reasoning in DECISIONS.md.
 | Approach | Why it was rejected |
 |---|---|
 | **Reimplementing height fog in GLSL** | Vanilla computes it in all seven shading programs from two ambient uniforms, including the sky and the water, which this mod does not patch. A snippet version would stop at the edge of what was patched, and the seam falls where a hillside meets its own grass — D18, D19 |
+| **Rain fog inside the weather patch group** | It reached the two terrain shaders and nothing else, so an animal standing in a fogged valley kept crisp edges. Not a tuning problem: no value of FogStrength could reach a program the group did not patch — D23 |
 | **A second sun-attenuation model** | `IClientGameCalendar.SunColor` already reddens the sun near the horizon per player position, with a per-day offset. A mod model would light the terrain with a sun of one colour while the player looks at a sun of another — D21 |
 | **Procedural sunfleck field** | Vanilla's shadow map already resolves individual leaf gaps and animates them with the game's own wind. A second field is a second description of the same leaves, and the invented one has no access to where the branches are. `vvSunflecks` and nine constants were deleted, not disabled — D7 |
 | **`vv_sunExposure` as a canopy gate** | Measured flat at ~1 across a whole forest. It is a lighting result, not a geometric cause — D7 |

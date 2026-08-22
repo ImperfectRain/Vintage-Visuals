@@ -1,7 +1,14 @@
 # Vintage Visuals - weather patches against the terrain shaders
 #
-# Two effects, one group, because they share an injection point: rain-thickened
-# fog and cloud shadows.
+# Cloud shadows. Rain-thickened fog used to be in this group too, and it is not
+# any more: it reached the two terrain shaders and nothing else, so a hillside
+# hazed in rain while the animal standing in front of it did not. Fog now has one
+# owner - see atmosphere.yaml and DECISIONS D18. Weather still decides HOW MUCH,
+# it just no longer renders it.
+#
+# One injection point, which is now the shadow-map function rather than applyFog.
+# The snippet pastes back the RENAMED signature, so the rename and the injection
+# are one patch instead of two.
 #
 # The cloud shadow is applied by WRAPPING getBrightnessFromShadowMap rather than
 # by editing the places light is used. A cloud occludes the sun, so it belongs
@@ -18,35 +25,11 @@
 - type: token
   filename: chunkopaque.fsh
   tokens: "float getBrightnessFromShadowMap() {"
-  content: |
-    float vvVanillaShadowMap() {
-
-- type: token
-  filename: chunkopaque.fsh
-  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
   snippet: weather.glsl
-
-- type: token
-  filename: chunkopaque.fsh
-  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
-  content: |
-    return vec4(mix(rgbaPixel.rgb, vvWeatherFogColor(rgbaFog.rgb), vvWeatherFogAmount(fogWeight)), rgbaPixel.a);
 
 # --- chunktopsoil.fsh -------------------------------------------------------
 
 - type: token
   filename: chunktopsoil.fsh
   tokens: "float getBrightnessFromShadowMap() {"
-  content: |
-    float vvVanillaShadowMap() {
-
-- type: token
-  filename: chunktopsoil.fsh
-  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
   snippet: weather.glsl
-
-- type: token
-  filename: chunktopsoil.fsh
-  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
-  content: |
-    return vec4(mix(rgbaPixel.rgb, vvWeatherFogColor(rgbaFog.rgb), vvWeatherFogAmount(fogWeight)), rgbaPixel.a);

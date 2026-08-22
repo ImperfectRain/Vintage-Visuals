@@ -64,6 +64,13 @@
         "default": false,
         "clientSide": true,
         "weight": 72
+      },
+      "atmosphere_enabled": {
+        "ingui": "Atmosphere",
+        "comment": "The air between you and everything else. Most of it is driven through the game's own atmosphere rather than through this mod's shaders, so it reaches the sky, the water and the animals as well as the ground. Off leaves Vintage Story's atmosphere exactly as it was.",
+        "default": true,
+        "clientSide": true,
+        "weight": 73
       }
     },
     "float": {
@@ -761,6 +768,42 @@
           "min": 0.0,
           "max": 1.0,
           "step": 0.05
+        }
+      },
+      "atmosphere_heighthaze": {
+        "ingui": "Ground haze",
+        "comment": "Haze that pools in low ground on still, humid mornings and burns off as the day warms. Rendered by the game's own height fog, so it fills valleys, reaches the sky and the water, and thins as you climb out of it. Strongest in rainforest and after rain; wind disperses it; there is none underground. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 74,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_aerial": {
+        "ingui": "Sunlit haze",
+        "comment": "Distant haze picks up the sun's colour when you look toward it and stays cool when you look away, instead of being the same grey in every direction. Strongest with a low sun and a long view. This is the one atmospheric effect the game does not already have. 0 is vanilla, and 0 removes the shader code rather than muting it, so it needs a moment to reload shaders when you cross it.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 75,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_debugview": {
+        "ingui": "Atmosphere debug view",
+        "comment": "Draws an atmospheric diagnostic instead of the world. 0 off, 1 distance, 2 scattering phase, 3 in-scattering gain, 4 fog colour used, 5 fog amount used, 6 sun direction, 7 sun colour, 8 rain. Numbered in this subsystem's own terms; see src/Atmosphere/README.md.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 76,
+        "range": {
+          "min": 0.0,
+          "max": 8.0,
+          "step": 1.0
         }
       }
     }

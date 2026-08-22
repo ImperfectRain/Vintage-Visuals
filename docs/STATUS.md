@@ -159,7 +159,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 ## 6. Atmosphere
 
 `src/Atmosphere/` is now a subsystem rather than a rain modifier inside Weather.
-See `src/Atmosphere/README.md` and DECISIONS D18-D21.
+See `src/Atmosphere/README.md` and DECISIONS D18-D23.
 
 The audit that opened this work changed what there is to build. **Vintage Story
 already has most of an atmosphere, and it is reachable from the CPU**:
@@ -177,10 +177,10 @@ five features below turned out to be that kind of value.
 |---|---|---|---|
 | `[x]` | Atmosphere state read from the game | **L2** | `AtmosphereState`, sampled every frame in `EnvironmentTracker`. Fog, height fog, sun colour and direction, ambient colour, camera height, far plane - all read, none modelled |
 | `[x]` | Height haze | **L2** | Written into vanilla's own `flatFogDensity`/`flatFogStart`, which every shading program already computes. **Defaults to 0**: the band's height is the one number no test can settle |
-| `[ ]` | Aerial perspective / directional in-scattering | — | The one genuine gap. Vanilla's fog is an isotropic mix toward a single colour with no sun-relative term. This is where GLSL is justified |
+| `[x]` | Aerial perspective / directional in-scattering | **L2** | The one genuine gap, and so the only part of this subsystem with GLSL. Henyey-Greenstein in-scattering at vanilla's `applyFog`, in four programs. **Defaults to 0**, which skips the patch group |
 | `[ ]` | Sky scattering and horizon colouration | — | Vanilla owns the sky's own horizon (`horizonFog`, `getFogAmountForSky`) and patching the sky was already tried and rejected - D6. What is left is terrain taking the horizon's colour at distance, which is part of aerial perspective |
 | `[ ]` | Sun and moon attenuation | — | **Vanilla already does this.** `IClientGameCalendar.SunColor` reddens the sun near the horizon, per player position, with a per-day `SunsetMod` so no two sunsets match. Sampled into `AtmosphereState`; a second model would contradict the sun disc the player can see |
-| `[ ]` | Weather visibility | — | Currently rain fog inside the weather group's `applyFog` patch, so it reaches terrain only - entities in a fogged valley keep crisp edges. Belongs in the ambient stack for the same reason height haze does |
+| `[x]` | Weather visibility | **L3** | Moved out of the weather group, which patched the two terrain shaders only. Now reaches entities and particles as well, so an animal in a fogged valley no longer keeps crisp edges. The arithmetic is unchanged; only its reach is |
 | `[ ]` | Cloud attenuation of direct sunlight | — | partly done as the overcast term; belongs here |
 | `[ ]` | Godray interaction | — | vanilla has `GODRAYS`; untouched |
 

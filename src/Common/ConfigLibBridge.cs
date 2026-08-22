@@ -116,6 +116,7 @@ namespace VintageVisuals.Common
             AdaptiveExposureConfig adaptive = _mod.ConfigManager.Config.AdaptiveExposure;
             PseudoPbrConfig pbr = _mod.ConfigManager.Config.PseudoPBR;
             WeatherConfig weather = _mod.ConfigManager.Config.Weather;
+            AtmosphereConfig atmosphere = _mod.ConfigManager.Config.Atmosphere;
             AdaptiveGradeConfig adaptiveGrade = _mod.ConfigManager.Config.AdaptiveGrade;
 
             switch (code)
@@ -317,6 +318,18 @@ namespace VintageVisuals.Common
                     break;
                 case "weather_cloudheight":
                     weather.CloudHeight = tree.GetFloat("value", weather.CloudHeight);
+                    break;
+                case "atmosphere_enabled":
+                    atmosphere.Enabled = tree.GetBool("value", atmosphere.Enabled);
+                    break;
+                case "atmosphere_heighthaze":
+                    atmosphere.HeightHaze = tree.GetFloat("value", atmosphere.HeightHaze);
+                    break;
+                case "atmosphere_aerial":
+                    atmosphere.AerialPerspective = tree.GetFloat("value", atmosphere.AerialPerspective);
+                    break;
+                case "atmosphere_debugview":
+                    atmosphere.AirDebugView = tree.GetFloat("value", atmosphere.AirDebugView);
                     break;
                 case "pbr_blocklightdir":
                     pbr.BlockLightDirectionality = tree.GetFloat("value", pbr.BlockLightDirectionality);

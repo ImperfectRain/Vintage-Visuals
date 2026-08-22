@@ -1,0 +1,83 @@
+# Vintage Visuals - atmosphere patches
+#
+# One anchor, four programs. vanilla's applyFog is BYTE-IDENTICAL in all seven
+# shading programs the game has:
+#
+#   vec4 applyFog(vec4 rgbaPixel, float fogWeight) {
+#       return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);
+#   }
+#
+# which makes it the one point in the renderer where every fogged fragment,
+# whatever is drawing it, can be given the same answer.
+#
+# WHY NOT ALL SEVEN. The atmosphere function needs the fragment's
+# camera-relative position, and applyFog is not handed one - so each program
+# supplies its own varying at the call site below. Four of them call it
+# worldPos. particlesquad.fsh calls it vexPos and chunkliquid.fsh calls it
+# fWorldPos, and neither is patched here: water is deliberately out of every
+# patch group until the reflection geometry is validated on terrain, and
+# particlesquad is a sprite shader whose fragments are metres from the camera.
+# Both are named rather than forgotten.
+#
+# WHY NOT THE weather GROUP'S ANCHOR. It used to be. Weather owned applyFog in
+# the two terrain shaders, which is why rain thickened the air for a hillside
+# and not for the animal standing in front of it. Fog now has one owner; weather
+# supplies the rain and keeps the cloud shadows. See DECISIONS D18.
+#
+# Verified against 1.22.7 with tools/verifypatches.
+
+# --- chunkopaque.fsh --------------------------------------------------------
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: atmosphere.glsl
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vvAtmosphere(rgbaPixel, fogWeight, rgbaFog.rgb, worldPos.xyz);
+
+# --- chunktopsoil.fsh -------------------------------------------------------
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: atmosphere.glsl
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vvAtmosphere(rgbaPixel, fogWeight, rgbaFog.rgb, worldPos.xyz);
+
+# --- entityanimated.fsh -----------------------------------------------------
+#
+# The program this whole move was for. Every atmospheric effect this mod had
+# stopped at the terrain, so an entity was the one thing in a hazy scene that
+# never got hazier.
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: atmosphere.glsl
+
+- type: token
+  filename: entityanimated.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vvAtmosphere(rgbaPixel, fogWeight, rgbaFog.rgb, worldPos.xyz);
+
+# --- particlescube.fsh ------------------------------------------------------
+
+- type: token
+  filename: particlescube.fsh
+  tokens: "vec4 applyFog(vec4 rgbaPixel, float fogWeight) {"
+  snippet: atmosphere.glsl
+
+- type: token
+  filename: particlescube.fsh
+  tokens: "return vec4(mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight), rgbaPixel.a);"
+  content: |
+    return vvAtmosphere(rgbaPixel, fogWeight, rgbaFog.rgb, worldPos.xyz);

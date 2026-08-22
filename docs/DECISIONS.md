@@ -575,3 +575,88 @@ labelled as a derivation.
 
 **Status.** Active for the sampling. The consumer does not exist yet - see
 `docs/STATUS.md` section 6.
+
+---
+
+## D22. Aerial perspective adds a directional term and nothing else
+
+**Context.** Vanilla's fog is
+
+```glsl
+mix(rgbaPixel.rgb, rgbaFog.rgb, fogWeight)
+```
+
+- isotropic, so haze looking into a low sun and haze looking away from it are the
+same grey. In the real thing they are not remotely the same, and the difference
+is most of what makes distance read as distance. This is the one atmospheric
+effect Vintage Story genuinely lacks, and so the only one in this subsystem with
+any GLSL - see D18 for why everything else went through the ambient stack.
+
+**The restraint is the decision.** A full aerial-perspective model also adds a
+distance falloff, a height term and desaturation with depth. All three are
+already present elsewhere:
+
+| Term | Already owned by |
+|---|---|
+| Distance falloff | vanilla's `getFogLevel`, per vertex, in every program |
+| Height band | vanilla's `flatFog`, and now driven by `AmbientBridge` - D19 |
+| Desaturation with weather | colour grading, arbitrated through `VisualBudget` |
+
+Adding any of them here would be a second subsystem quietly removing contrast
+from the same pixel, outside the budget - which is the precise defect
+`VisualBudget` was built to stop, and which three subsystems were already doing
+to the same rainy afternoon before it existed. `AtmosphereChecks` therefore fails
+the build if the snippet grows an exponential falloff, a height term, or a
+saturation term.
+
+**Normalised phase, capped gain.** Henyey-Greenstein is unbounded as `g`
+approaches 1 and the term multiplies a colour that has already been through
+vanilla's exposure. Un-normalised it returns about 0.08 facing the sun at
+`g = 0.45`, which looks like the effect is off and invites raising the strength
+until the peak is wrong instead; uncapped, a low sun pushes the horizon past
+white and takes the sky's gradient with it. So the phase is normalised to 1 at
+isotropic and the gain is capped at 0.85.
+
+`g` is 0.45, deliberately below the 0.6-0.8 of real atmospheric aerosol. The
+phase function is being applied to a fog term vanilla tuned by eye rather than to
+an actual optical depth, so a physical `g` piles the whole effect into a bright
+disc a few degrees wide around the sun - correct, and it reads as a bug.
+
+**A sun below the horizon contributes nothing.** Forward scattering is strongest
+when the sun is low and its light is travelling through the most air, so the
+strength is inverted against elevation - but a sun *below* the horizon is lighting
+the haze from underneath the world, and a bright band pointing at it would be a
+hole in the ground.
+
+**Status.** Active, L2. Defaults to 0, which skips the patch group entirely.
+
+---
+
+## D23. Fog has exactly one owner, and it is not Weather
+
+**Context.** Rain-thickened fog lived in the weather patch group, which patches
+`chunkopaque.fsh` and `chunktopsoil.fsh`. Nothing else. So rain thickened the air
+for a hillside and not for the animal standing in front of it, and not for the
+leaves blowing past it either.
+
+That was not a tuning problem. It was a consequence of which programs the weather
+group happened to reach, and no amount of adjusting `FogStrength` could have
+fixed it.
+
+**Chosen.** Fog moves to the atmosphere group, which anchors on vanilla's
+`applyFog` - byte-identical in all seven shading programs - and patches four of
+them. Weather still decides *how much*; it no longer renders it. The arithmetic
+is unchanged, so the validated look is preserved; only its reach changed.
+
+**Why not both groups on one anchor.** Two groups replacing the same line couples
+their rollbacks, which this project forbids for a reason: whichever applies second
+finds its anchor gone, and a group that rolls back takes the other's declarations
+with it. Weather's snippet therefore moved five lines down, to
+`getBrightnessFromShadowMap` - which it already renamed - so the rename and the
+injection are now one patch instead of two, and the two groups share no line.
+
+**Consequence to expect in game.** Entities and particles will fog in rain where
+they previously did not. That is the fix, and it will read as a change.
+
+**Status.** Active. `atmosphere.yaml` owns `applyFog`; a smoke check fails the
+build if a second group takes it.
