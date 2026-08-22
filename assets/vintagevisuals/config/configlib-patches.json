@@ -735,7 +735,7 @@
       "pbr_canopyradius": {
         "ingui": "Debug: canopy ring radius",
         "comment": "Ring radius in shadow-map texels for the canopy test the sun dapple uses. This is a property of the shadow map rather than of the world - how many texels apart canopy gaps land depends on your shadow quality and viewing distance - so it is exposed rather than guessed. Debug views 30 and 31 show what it is counting: raise or lower it until the area under a tree crown FILLS rather than being outlined. 0 disables dapple entirely.",
-        "default": 5.0,
+        "default": 6.0,
         "clientSide": true,
         "weight": 70,
         "range": {

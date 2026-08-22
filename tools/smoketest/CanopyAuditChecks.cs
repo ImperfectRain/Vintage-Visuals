@@ -40,6 +40,74 @@ namespace VintageVisuals.SmokeTest
             CheckDappleTouchesSunlightOnly(pbr, check);
             CheckGateIsGeometric(pbr, check);
             CheckStructureCountsOccluders(pbr, check);
+            CheckNoInventedPattern(pbr, check);
+        }
+
+        /// <summary>
+        /// Neither dapple nor the shafts may generate a pattern of their own.
+        ///
+        /// Vanilla's shadow map resolves individual leaf gaps and renders them
+        /// onto the forest floor every frame, with the real canopy's shape and
+        /// the real canopy's wind. A procedural fleck field is therefore a
+        /// SECOND description of the same leaves, and the two cannot agree - the
+        /// invented one has no access to where the branches actually are.
+        ///
+        /// What is left for the mod is the part vanilla does not do: deepen the
+        /// shade between the gaps so the gaps read as bright by contrast, and
+        /// tint that shade green because the light reaching it came through
+        /// leaves. Darken-only is not a compromise in that model, it is the
+        /// only operator with anywhere to go - a lit gap is already at full sun
+        /// and has no headroom above it.
+        /// </summary>
+        private static void CheckNoInventedPattern(string source, Action<string, bool, string> check)
+        {
+            // Comments discuss what was removed and why, at length. A check for
+            // "is this gone" has to read CODE or it fails on its own
+            // explanation - which is exactly what it did.
+            string pbr = StripComments(source);
+
+            check("the procedural fleck generator is gone",
+                !pbr.Contains("float vvSunflecks("),
+                "a disabled generator beside the real one invites being switched back on");
+
+            foreach (var dead in new[]
+            {
+                "VV_DAPPLE_SCALE", "VV_DAPPLE_DENSITY", "VV_DAPPLE_RADIUS",
+                "VV_DAPPLE_JITTER", "VV_DAPPLE_PENUMBRA", "VV_DAPPLE_COVER",
+                "VV_DAPPLE_BLINK_LOW", "VV_DAPPLE_BLINK_HIGH", "VV_DAPPLE_MAX_THROW",
+            })
+            {
+                check("the tuning constant " + dead + " is gone with it",
+                    !pbr.Contains(dead),
+                    "left behind, it reads as load-bearing");
+            }
+
+            // The two halves of the model are complements of one measurement:
+            // broken and shadowed is canopy shade, broken and lit is a sunfleck.
+            Match fleck = Regex.Match(pbr, @"float vvCanopySunfleck\(\)\s*\{(.*?)\n\}",
+                                      RegexOptions.Singleline);
+            check("a sunfleck is defined as lit ground under broken canopy",
+                fleck.Success
+                    && fleck.Groups[1].Value.Contains("vvSunVisibility()")
+                    && fleck.Groups[1].Value.Contains("vvCanopyStructure("),
+                "");
+
+            Match ev = Regex.Match(pbr, @"float vvCanopyEvidence\(\)\s*\{(.*?)\n\}",
+                                   RegexOptions.Singleline);
+            check("canopy shade is its complement, not a second measurement",
+                ev.Success && ev.Groups[1].Value.Contains("1.0 - vvSunVisibility()"),
+                "");
+
+            // The shafts had the same flat gate the dapple did.
+            Match shaft = Regex.Match(pbr, @"float vvCanopyShaft\(vec3 cameraRelativePos\)\s*\{(.*?)\n\}",
+                                      RegexOptions.Singleline);
+            check("the shaft mask no longer reads sun exposure",
+                shaft.Success && !shaft.Groups[1].Value.Contains("vv_sunExposure"),
+                "measured flat at ~1 across a whole forest scene");
+
+            check("the shafts start at real sunflecks",
+                shaft.Success && shaft.Groups[1].Value.Contains("vvCanopySunfleck()"),
+                "a beam has to start where the sun actually got through");
         }
 
         /// <summary>
@@ -279,6 +347,15 @@ namespace VintageVisuals.SmokeTest
         /// reading the wrong branch and would have passed a function with no
         /// fallback at all.
         /// </summary>
+        /// <summary>
+        /// Line comments removed, so a textual check reads code rather than the
+        /// prose describing it. Block comments are not used in these snippets.
+        /// </summary>
+        private static string StripComments(string glsl)
+        {
+            return Regex.Replace(glsl, @"//[^\n]*", "");
+        }
+
         private static Match OuterElse(string body)
         {
             Match last = Match.Empty;

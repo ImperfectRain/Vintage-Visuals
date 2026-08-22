@@ -534,6 +534,68 @@ That covers 32 blocks, which is the near field where wetness detail is visible.
 
 This also unblocks the ripples, which currently ride the same flat gate.
 
+### The invented pattern is gone. Vanilla's shadow IS the fleck field
+
+Radius measured in game: 6 texels is the smallest value that fills under a
+crown rather than outlining it. That is now the default.
+
+The observation that closed the design: "the red shaded areas seem to be areas
+where the sun already hits... this feature should be aiming at letting rays of
+light break through the foliage itself, and spot the ground in a tree's
+shadow."
+
+That is exactly right, and it exposed the last piece of the old architecture
+still fighting the new one. A procedural fleck field was still generating the
+pattern, gated by a term that had itself become the real canopy structure - two
+descriptions of the same leaves, one of which has no access to where the
+branches actually are. The invented one had to lose.
+
+**Vanilla already renders the sunflecks.** View 25 proved the shadow map
+resolves individual leaf gaps; the game draws those lit gaps onto the forest
+floor every frame, with the real canopy's shape, at the real sun angle, moving
+in the real wind. There was never a pattern to invent.
+
+The model is now one measurement split by which side of the shadow test a
+fragment fell on:
+
+| | |
+|---|---|
+| broken **and shadowed** | canopy shade - deepened, and tinted green |
+| broken **and lit** | a sunfleck - where a beam starts |
+
+`vvCanopyEvidence` and `vvCanopySunfleck` are exact complements.
+
+What is left for the mod is the part vanilla does not do:
+
+- **Contrast.** Vanilla's shadow bottoms out at `1 - shadowIntensity/2`, about
+  half brightness; a real forest floor is far darker than its sunflecks.
+  Deepening the shade *between* the gaps, and leaving the gaps at exactly what
+  vanilla lit them to, widens the difference. The flecks get brighter by being
+  the only thing that did not get darker.
+- **Colour.** Light that reached the shade came through leaves; light that
+  reached a fleck missed every one of them. Only the first is green.
+
+Darken-only is therefore not a safety compromise in this model - it is the only
+operator with anywhere to go. A lit gap is already at full sun in vanilla's own
+frame and has no headroom above it.
+
+The godray shafts had the same flat `vv_sunExposure` gate and their own coarse
+cell pattern, so beams started wherever sun light happened to dip. They now
+start at `vvCanopySunfleck()` - ground the game actually lit, with broken canopy
+around it - which is the definition of where a shaft comes from, and it means
+the beams line up with the light on the floor because they are keyed to the same
+fragments.
+
+`vvSunflecks` and nine tuning constants are **deleted**, not disabled. Every
+physical property the generator reproduced by hand - discrete rounded spots,
+penumbra scaling with canopy height, elongation by 1/sin(elevation), jitter -
+the real shadow has for free, because it is cast by real geometry at the real
+sun angle. That is the whole argument for the rewrite.
+
+Cost to watch: with both dapple and shafts on, a terrain fragment can take two
+ring evaluations plus two visibility evaluations. Each is gated behind its own
+strength slider, so 0 costs nothing, but this has not been profiled.
+
 ### Still open
 
 The fine radius leaves a band about two texels wide along any straight shadow

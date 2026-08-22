@@ -589,7 +589,7 @@ namespace VintageVisuals.Common
         /// rounds of guessing it from screenshots was enough. Debug views 30
         /// and 31 show what it is counting.
         /// </summary>
-        public float CanopyRadius { get; set; } = 5.0f;
+        public float CanopyRadius { get; set; } = 6.0f;
 
         /// <summary>
         /// Visible beams of light through the canopy.

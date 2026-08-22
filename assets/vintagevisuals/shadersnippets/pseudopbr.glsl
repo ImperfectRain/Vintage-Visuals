@@ -761,6 +761,29 @@ float vvCanopyStructure(float radiusTexels)
     return clamp(features * sqrt(mixed), 0.0, 1.0);
 }
 
+// A SUNFLECK: a lit spot inside a broken canopy.
+//
+// The exact complement of vvCanopyEvidence, and between them they are the whole
+// model. One measurement - is the occluder overhead broken at leaf scale -
+// split by which side of the shadow test this fragment fell on:
+//
+//   broken AND shadowed  ->  canopy shade, which gets deepened and tinted green
+//   broken AND lit       ->  a sunfleck, which is where a beam starts
+//
+// This is what "spot the ground in a tree's shadow" is, stated so the shader
+// can find it: not a pattern to be drawn, but a place the game has already lit
+// and that happens to be surrounded by broken shadow. It needs no projection,
+// no cell grid and no jitter, because the position, shape and sun angle are the
+// real ones.
+float vvCanopySunfleck()
+{
+    float visibility = vvSunVisibility();
+    if (visibility < 0.01) return 0.0;
+
+    float structure = vvCanopyStructure(clamp(vv_pbrCanopyRadius, 0.0, 16.0));
+    return clamp(structure * visibility, 0.0, 1.0);
+}
+
 // Whether a CANOPY is what is blocking the sun here.
 //
 // Measured, not assumed, and it replaces vv_sunExposure as the dapple gate.
@@ -811,15 +834,12 @@ float vvCanopyEvidence()
 // Blocks of canopy assumed above a fragment, from just-under-the-leaves to
 // deep under a full crown. Sets both how far the pattern slides as the sun
 // moves and, through the penumbra, how soft the flecks are.
-const float VV_DAPPLE_LOW = 3.0;
-const float VV_DAPPLE_HIGH = 11.0;
 
 // Blocks between one fleck and the next.
 //
 // Not a whole number on purpose. At 1.0 the fleck grid would land in step with
 // the block grid and the texture grid under it, and a pattern that agrees with
 // the blocks reads as the blocks glowing rather than as light falling on them.
-const float VV_DAPPLE_SCALE = 0.70;
 
 // Fraction of cells with a gap in them, the fleck's radius in cell units, and
 // how much of that radius is penumbra rather than core.
@@ -828,18 +848,12 @@ const float VV_DAPPLE_SCALE = 0.70;
 // That sits inside the 10-25% real sunflecks occupy. The previous version's
 // constants were picked by eye and were out by a factor of two in the direction
 // that dims the world.
-const float VV_DAPPLE_DENSITY = 0.70;
-const float VV_DAPPLE_RADIUS = 0.42;
-const float VV_DAPPLE_PENUMBRA = 0.50;
 
 // How far a gap's centre may sit from its cell's centre.
-const float VV_DAPPLE_JITTER = 0.60;
 
 // The band a fleck's own oscillation is cut at as it winks open and shut. Wide
 // enough that flecks spend real time fully open and fully shut rather than
 // forever crossfading.
-const float VV_DAPPLE_BLINK_LOW = 0.15;
-const float VV_DAPPLE_BLINK_HIGH = 0.85;
 
 // The measured mean of the field above. 11% of the area is fleck.
 //
@@ -861,7 +875,6 @@ const float VV_DAPPLE_BLINK_HIGH = 0.85;
 // it is also the more honest model - a canopy removes light, it does not make
 // any. The cost is that dapple does dim on average, so it is a light-removing
 // term and belongs to VisualBudget's accounting like the rest of them.
-const float VV_DAPPLE_COVER = 0.1105;
 
 // How green the shade between flecks is.
 //
@@ -926,7 +939,6 @@ const float VV_DAPPLE_FADE_RANGE = 22.0;
 
 // How far the pattern may be thrown along the sun's azimuth, in blocks. The
 // projection runs away at the horizon like every other one in this mod.
-const float VV_DAPPLE_MAX_THROW = 40.0;
 
 // A bit-mixing integer hash, not the usual fract(sin(dot(p, k)) * 43758.5453).
 //
@@ -1086,60 +1098,34 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
 // is nearly a cell wide, so it reaches into its neighbours; sampling only the
 // cell a fragment falls in would clip every fleck at the cell border and put a
 // square grid through the middle of the effect.
-float vvSunflecks(vec2 p, float softness)
-{
-    vec2 base = floor(p);
-    float total = 0.0;
-
-    for (int dy = -1; dy <= 1; dy++)
-    {
-        for (int dx = -1; dx <= 1; dx++)
-        {
-            vec2 cell = base + vec2(float(dx), float(dy));
-            vec4 rnd = vvCellRandom(cell);
-
-            // Most of the canopy is leaf. Only some cells have a hole in them.
-            if (rnd.x > VV_DAPPLE_DENSITY) continue;
-
-            vec2 centre = cell + 0.5 + (rnd.yz - 0.5) * VV_DAPPLE_JITTER;
-
-            // Each fleck winks on its OWN phase. This is the part that reads as
-            // leaves moving: neighbouring flecks are unrelated, so the canopy
-            // shimmers rather than sliding as one piece. Periodic in the breeze
-            // clock by construction, so its wrap is invisible.
-            float swing = 0.5 + 0.5 * sin((vv_sceneBreeze + rnd.w) * 6.2831853);
-            float openness = smoothstep(VV_DAPPLE_BLINK_LOW, VV_DAPPLE_BLINK_HIGH, swing);
-
-            // The penumbra. Softness grows with the height of the canopy above,
-            // because the sun's half-degree spreads further the further it has
-            // to fall - so a fleck under a high crown is nearly all edge and one
-            // under a low branch has a hard core.
-            float d = length(p - centre) / VV_DAPPLE_RADIUS;
-            total += (1.0 - smoothstep(1.0 - softness, 1.0, d)) * openness;
-        }
-    }
-
-    return min(total, 1.0);
-}
-
-// Sunlight broken into moving flecks by the leaves overhead.
+// RETIRED. The procedural fleck generator lived here.
 //
-// Returns how much light the canopy TAKES AWAY, 0..1: nothing inside a fleck,
-// most of VV_DAPPLE_SHADE in the shade between. Never adds - see the note on
-// VV_DAPPLE_COVER.
+// It is gone rather than disabled, because a switched-off generator sitting
+// next to the real one is an invitation to switch it back on. What replaced it
+// is not a better pattern - it is vanilla's shadow map, which resolves
+// individual leaf gaps and animates them with the game's own wind. See
+// vvCanopyDapple.
 //
-// The gate is the whole design, and it is the game's own answer rather than a
-// guess. vv_sunExposure is vanilla's per-vertex sun light level: 0 under a
-// roof, 1 under open sky, and PARTIAL under a canopy, because leaves absorb
-// light on the way down. Partial is therefore an exact statement that something
-// leafy is overhead - which is precisely and only where dapple belongs. Open
-// ground has nothing above it to break the light; a cellar has no sunlight to
-// break. Both ends of the range return zero.
+// The parts of it that were genuinely right - discrete rounded spots, penumbra
+// scaling with canopy height, elongation by 1/sin(elevation), jitter - are all
+// properties the real shadow has for free, because it is cast by the real
+// geometry at the real sun angle. That is the whole argument for the rewrite:
+// every physical property the model was reproducing by hand was already there
+// to be read.
+
+// How much light the canopy takes away here, 0..1.
 //
-// This matters more than the pattern does. An invented field gated to the wrong
-// places is what made cloud shadows wrong for four rounds: it looked like
-// weather and corresponded to nothing. Here the invention is only the SHAPE of
-// the gaps; whether there are gaps at all, and where, comes from the game.
+// Returns a SUBTRACTION, never an addition, and the caller only ever multiplies
+// by (1 - this). A lit gap is already at full sun in vanilla's own frame, so
+// there is no headroom above it to add to; contrast between fleck and shade can
+// only come from the shade side. The additive version pushed pixels past 1.0,
+// and findbright multiplies the whole frame rather than thresholding it, which
+// turned a forest floor into white spotlights with bloom halos.
+//
+// The gate is vvCanopyEvidence - a geometric fact about the occluder overhead,
+// measured from vanilla's shadow map. It replaced a threshold on
+// vv_sunExposure, which debug view 16 showed reads ~1 across an entire forest
+// scene and therefore said nothing at all about canopy.
 float vvCanopyDapple(vec3 cameraRelativePos, float fade)
 {
     if (vv_pbrDapple < 0.001) return 0.0;
@@ -1164,70 +1150,46 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     float sun = clamp(vv_sceneDayLight, 0.0, 1.0);
     if (sun < 0.01) return 0.0;
 
-    vec3 toSun = normalize(lightPosition);
-
-    // Deeper shade is read as more canopy overhead, so the pattern slides
-    // further, and its flecks are softer, under a full crown than under an edge
-    // branch.
-    // Deeper, more thoroughly broken shadow is read as more canopy overhead, so
-    // the pattern slides further and its flecks go softer under a full crown
-    // than under an edge branch. Driven by the evidence term now that the
-    // exposure it used to read has been shown to be flat.
-    float height = mix(VV_DAPPLE_LOW, VV_DAPPLE_HIGH, under);
-
-    vec2 azimuth = toSun.xz;
-    float azimuthLength = length(azimuth);
-
-    vec3 world = cameraRelativePos + vv_pbrOrigin;
-    vec2 at = world.xz;
-
-    float stretch = 1.0;
-
-    if (azimuthLength > 0.0001)
-    {
-        float up = max(0.12, abs(toSun.y));
-
-        // height / tan(elevation), written as run and direction so the cap
-        // lands on the quantity being capped. The cloud shadows were capped on
-        // height/sin instead and sat too close under their clouds all morning.
-        float run = height * azimuthLength / up;
-        at += (azimuth / azimuthLength) * min(run, VV_DAPPLE_MAX_THROW);
-
-        // 1 / sin(elevation): a round beam meeting the floor at an angle. Capped
-        // at three, past which it stops reading as a shaft and starts reading as
-        // a smear.
-        stretch = clamp(1.0 / up, 1.0, 3.0);
-    }
-
-    vec2 p = at / VV_DAPPLE_SCALE;
-
-    // Compressed along the azimuth, so the circular flecks in cell space come
-    // out stretched along it in the world.
-    if (azimuthLength > 0.0001 && stretch > 1.0)
-    {
-        vec2 dir = azimuth / azimuthLength;
-        float along = dot(p, dir);
-        p = (p - dir * along) + dir * (along / stretch);
-    }
-
-    // The sun's angular width, spread over the fall from the canopy, as a
-    // fraction of a fleck's radius. Clamped so a fleck always keeps some core
-    // and never becomes pure gradient.
-    float penumbra = clamp(VV_DAPPLE_PENUMBRA * height / VV_DAPPLE_HIGH, 0.25, 0.85);
-
-    // Dissolved with distance before the flecks alias into scintillation. Toward
-    // 1 rather than 0, since 1 is "no light removed" - so the effect fades back
-    // into vanilla rather than into flat shade.
+    // THE FLECKS ARE ALREADY IN THE FRAME. Nothing below invents a pattern.
+    //
+    // This is the last piece of the old architecture to go, and the reason is
+    // the one thing the whole audit turned up: vanilla's shadow map resolves
+    // individual leaf gaps (debug view 25), and it renders them onto the forest
+    // floor every frame. A sunfleck is a spot of ground the leaves failed to
+    // cover, and the game has ALREADY decided which spots those are, with the
+    // real canopy's shape, moving in the real canopy's wind.
+    //
+    // So generating a second field of flecks here and multiplying it by a gate
+    // that is itself the real canopy structure was two systems describing the
+    // same leaves and disagreeing. The invented one had to lose.
+    //
+    // What is left for this function is the part vanilla does NOT do, and it
+    // is the part that makes a wood look like a wood:
+    //
+    //   CONTRAST. Vanilla's shadow bottoms out at 1 - shadowIntensity/2, so
+    //   roughly half brightness. A real forest floor is far darker than its
+    //   sunflecks - that is the whole reading of the scene. Deepening the shade
+    //   BETWEEN the gaps, and leaving the gaps at exactly what vanilla lit them
+    //   to, widens the gap between the two. The flecks get brighter by being
+    //   the only thing that did not get darker.
+    //
+    //   COLOUR. Light that reached the shade came through leaves; light that
+    //   reached a fleck missed every one of them. Only the first is green.
+    //
+    // Darken-only is therefore not a safety compromise here, it is the correct
+    // operator. There is no headroom above a lit gap to add to - vanilla
+    // already has it at full sun - so contrast can only come from the shade
+    // side, and the additive version blew the frame out through findbright.
+    //
+    // Faded with distance, because the count behind `under` is a shadow-map
+    // measurement and its texels stop resolving canopy structure at range.
+    // Toward zero, so the effect withdraws into vanilla rather than into a
+    // flat wash.
     float resolvable = clamp(1.0 - (length(cameraRelativePos) - VV_DAPPLE_FADE_START)
                                    / VV_DAPPLE_FADE_RANGE, 0.0, 1.0);
     if (resolvable < 0.004) return 0.0;
 
-    float fleck = mix(1.0, vvSunflecks(p, penumbra), resolvable);
-
-    // How much light the canopy takes away here: none inside a fleck, most of
-    // VV_DAPPLE_SHADE between them. Never negative, so the caller can only ever
-    // darken - see the note on VV_DAPPLE_COVER for why that is the whole point.
-    return (1.0 - fleck) * VV_DAPPLE_SHADE
+    return VV_DAPPLE_SHADE * resolvable
          * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
@@ -1288,25 +1250,16 @@ float vvCanopyShaft(vec3 cameraRelativePos)
     // that the same fragments are where beams start.
     if (vvIsFoliage()) return strength * VV_SHAFT_LEAF;
 
-    float exposure = clamp(vv_sunExposure, 0.0, 1.0);
-    float under = smoothstep(0.12, 0.40, exposure) * smoothstep(0.97, 0.62, exposure);
-    if (under < 0.004) return 0.0;
-
-    // A COARSE fleck - one cell, no neighbours, no blink. The radial blur
-    // smears this across a hundred-odd samples before anyone sees it, so paying
-    // for the full field here would buy detail that is destroyed by the next
-    // pass.
-    vec2 p = (cameraRelativePos.xz + vv_pbrOrigin.xz) / VV_DAPPLE_SCALE;
-    vec2 cell = floor(p);
-    vec4 rnd = vvCellRandom(cell);
-
-    if (rnd.x > VV_DAPPLE_DENSITY) return 0.0;
-
-    vec2 centre = cell + 0.5 + (rnd.yz - 0.5) * VV_DAPPLE_JITTER;
-    float d = length(p - centre) / VV_DAPPLE_RADIUS;
-    float fleck = 1.0 - smoothstep(0.5, 1.0, d);
-
-    return strength * under * fleck * VV_SHAFT_GROUND;
+    // A beam starts at a REAL gap, not an invented one.
+    //
+    // This used the same flat vv_sunExposure gate the dapple did, and drew its
+    // own coarse cell pattern on top of it - so the beams started wherever the
+    // sun light level happened to dip, which measured ~1 across an entire
+    // forest. They now start at sunflecks: ground the game has actually lit,
+    // with broken canopy around it. That is the definition of the place a shaft
+    // comes from, and it means the beams line up with the light on the floor
+    // because they are keyed to the same fragments.
+    return strength * vvCanopySunfleck() * VV_SHAFT_GROUND;
 }
 
 // Adjusts vanilla's per-vertex brightness by that difference.
