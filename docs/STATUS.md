@@ -311,6 +311,93 @@ geometry. The investigation changed the answer.
       it from pixels is the thing this project refuses to do. No effect beats a
       wrong one.
 
+## 8c. Canopy audit: what the game already knows
+
+A source audit of the dapple/sunfleck system against Vintage Story's own
+renderer. Nothing about dapple was changed - the point was to find out whether
+the effect should exist in its current form at all, and the answer is no.
+
+### The finding
+
+**Vanilla already renders the canopy's shadow, with the canopy's shape, moving
+in the canopy's wind.** The mod has been inventing a pattern to stand in for
+something the game computes correctly.
+
+Two lines of the game's own source decide this, both checked in
+`reference/game-shaders/` rather than assumed:
+
+| Where | What it says | Why it matters |
+|---|---|---|
+| `chunkshadowmap.fsh` | `outColor = texture(tex2d, uv); if (outColor.a < 0.02) discard;` | The shadow pass is alpha-tested against the block texture. Leaf blocks are cutout textures, so the gaps between leaves punch **real holes** in the shadow map. Foliage is in it, at texture resolution |
+| `chunkshadowmap.vsh` | `worldPos = applyVertexWarping(renderFlags, worldPos);` | The shadow geometry is wind-warped by the **same function as the main pass**, wind mode 3 (Leaves) included. The holes already sway, at the game's phase, coherently across a whole tree |
+
+The second is the stronger of the two. Spatial coherence is the thing a
+procedural oscillator cannot fake and the thing the mod has failed at three
+times; the game has it for free, because it is animating the actual leaves.
+
+### What each signal actually is
+
+| Signal | Source | Class | What it really means |
+|---|---|---|---|
+| `vv_sunExposure` | `rgbaLightIn.a`, per vertex | **CORRELATED** | Flood-filled sky light level. Direction-independent - identical at noon and midnight. Partial under a canopy, and equally partial under a roof edge, an overhang, a doorway, a pit |
+| `shadowMapNear/Far` + `shadowCoords` | vanilla shadow pass | **AUTHORITATIVE** | Real directional sun occlusion, PCF-filtered, foliage included, wind-animated |
+| `shadowBrightness` (the mod's `b`) | `getBrightnessFromShadowMap()` | **DERIVED, contaminated** | Its last line is `b = clamp(b + blockBrightness, 0, 1)`. A torch RAISES it. It is a brightness, not an occlusion |
+| `lightPosition` | vanilla uniform | **AUTHORITATIVE** | Normalised direction to the current light. Present in both terrain shaders |
+| `sunPosition` | vanilla uniform | **AUTHORITATIVE** | Sun specifically - but `chunkopaque.fsh` only. Not in `chunktopsoil.fsh`, so a shared snippet cannot use it |
+| `renderFlags & WindModeBitMask` | vertex flags | **AUTHORITATIVE for "wind-affected"**, correlated for "foliage" | Vanilla's own `isLeaves` test is exactly this. It also catches grass, vines, fruit and seaweed |
+| `vv_sceneBreeze` | mod clock | **PROCEDURAL** | A second animation of leaves the game is already animating |
+| `ClimateCondition.ForestDensity` | game API | **CORRELATED** | A biome prior. Not plumbed, and correctly so - a dense-forest biome contains clearings |
+
+The architectural error is one line of reasoning in `vvCanopyDapple`'s comment:
+"Partial is therefore an exact statement that something leafy is overhead."
+It is not. Partial sun exposure is a **lighting result**; leaves blocking the
+sun is a **geometric cause**. The flood fill produces partial values at any
+gradient - beside a roof edge, under an overhang, in a doorway, at a cave
+mouth. This is why dapple appears under buildings and cliffs.
+
+### Second defect, independent of the mask
+
+Dapple is applied as `result *= 1.0 - shaded` at the very END of `vvApplyPbr`,
+after ambient specular, block-light specular, foliage transmission **and
+emission**. So the canopy currently dims a torch and a glowing forge. Direct
+sunlight is the only term it has any business touching.
+
+### What was built
+
+An instrument, not a fix. `vvSunVisibility()` reads the shadow map directly and
+stops before `+ blockBrightness`, giving pure geometric sun occlusion;
+`vvSunShadowBreakup(radius)` measures how much a neighbourhood of shadow taps
+disagrees, as `4p(1-p)`. Debug views 25-28 expose both.
+
+Breakup is the candidate replacement for the `vv_sunExposure` gate, and it is a
+geometric cause rather than a lighting result: under a roof every tap for metres
+agrees (shadowed), in a field every tap agrees (lit), under leaves they
+**disagree**, because the gaps are metres apart or less. Its known leak is a
+bright band along any straight shadow edge, roughly as wide as the sample ring -
+a thin band, against today's failure of the entire area under any roof.
+
+### What is still unknown, and blocks the rebuild
+
+Whether the shadow map has the resolution to resolve gaps between leaves. That
+is not answerable from source: it depends on the player's shadow quality
+setting, the cascade extents, and the viewing distance. Debug view 26 is built
+to answer it - red channel lit under a canopy means the gaps are resolved and
+most of the procedural machinery becomes sub-texel detail; red dark everywhere
+means the flecks still have a job.
+
+Nothing is wired to any of this. `vv_sunExposure` remains the gate until the
+measurement is made.
+
+### The intended architecture, once measured
+
+```
+vanilla shadow map        ->  macro canopy shadow      (authoritative, wind-animated)
+        x
+procedural sunflecks      ->  sub-texel breakup only   (what the map cannot resolve)
+        =
+direct sunlight term only ->  never ambient, block light, emission or fog
+```
+
 ## 9. Open problems
 
 Things known to be wrong or unverified right now. Each should be closed or

@@ -214,6 +214,10 @@ void main(void) {
         UniformWiringChecks.Run(Repo, Check);
 
         Console.WriteLine();
+        Console.WriteLine("Canopy audit: vanilla's own sun occlusion");
+        CanopyAuditChecks.Run(Repo, Check);
+
+        Console.WriteLine();
         Console.WriteLine(failures == 0 ? "ALL CHECKS PASSED" : failures + " FAILURE(S)");
         return failures == 0 ? 0 : 1;
     }

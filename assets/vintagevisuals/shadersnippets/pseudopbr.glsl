@@ -460,6 +460,185 @@ const float VV_RIPPLE_TEXELS = 32.0;
 // displaced the sample point by sin and cos of one phase, so the field
 // literally orbited, once every 1.5 seconds.
 
+// ---------------------------------------------------------------------------
+// Vanilla's own sun occlusion
+//
+// The game already renders a directional sun shadow map, and both terrain
+// shaders already sample it - getBrightnessFromShadowMap() sits a few hundred
+// lines above this one. Two facts about how it is built decide the whole
+// design of the dapple system, and both were checked in the game's source
+// rather than assumed:
+//
+//   FOLIAGE IS IN IT. chunkshadowmap.fsh samples the block texture and
+//   discards where alpha < 0.02. Leaf blocks are alpha-tested cutouts, so the
+//   gaps BETWEEN the leaves in the texture punch real holes in the shadow map.
+//   The canopy's shadow already has the shape of the canopy.
+//
+//   IT ALREADY MOVES WITH THE WIND. chunkshadowmap.vsh calls the same
+//   applyVertexWarping() the main pass does, wind mode 3 (Leaves) included. So
+//   the holes sway using the game's own wind model, at the game's own phase,
+//   coherently across a whole tree - which is exactly the spatial coherence a
+//   procedural oscillator cannot fake.
+//
+// This means the mod has been inventing a pattern to stand in for something
+// the game computes correctly. What is genuinely missing is only RESOLUTION:
+// whether the shadow map has enough texels per metre to resolve a gap between
+// leaves. That is a runtime measurement, and these functions plus the debug
+// views at the bottom of this file are the instrument for making it.
+//
+// NOT THE SAME THING AS shadowBrightness. The value the mod passes around as
+// "shadow" is vanilla's getBrightnessFromShadowMap(), whose last line is
+// `b = clamp(b + blockBrightness, 0, 1)` - a torch RAISES it. It is a
+// brightness, not an occlusion, and using it to ask "does the sun reach here"
+// gets the answer wrong next to every light source. These functions read the
+// shadow map directly and stop before that step.
+// ---------------------------------------------------------------------------
+
+// How much of the sun reaches this fragment, geometrically. 1 = unoccluded,
+// 0 = fully blocked.
+//
+// Deliberately NOT scaled by shadowIntensity: that is a graphics setting
+// describing how dark the game chooses to draw a shadow, not a statement about
+// where the light goes. A player who has turned shadows down still has a tree
+// over their head.
+float vvSunVisibility()
+{
+#if SHADOWQUALITY > 0
+    float occlusion = 0.0;
+
+    if (shadowCoordsFar.w > 0.0)
+    {
+        // texture() on a sampler2DShadow returns 1 where the comparison PASSES,
+        // meaning lit. Counting down from 9 turns the taps into a count of
+        // shadowed samples, which is what vanilla does and why totalFar reads
+        // backwards at first glance.
+        float total = 9.0;
+        for (int x = -1; x <= 1; x++)
+            for (int y = -1; y <= 1; y++)
+                total -= texture(shadowMapFar,
+                                 vec3(shadowCoordsFar.xy + vec2(float(x) * shadowMapWidthInv,
+                                                                float(y) * shadowMapHeightInv),
+                                      shadowCoordsFar.z - 0.0009));
+
+        occlusion += (total / 9.0) * shadowCoordsFar.w;
+    }
+
+#if SHADOWQUALITY > 1
+    if (shadowCoordsNear.w > 0.0)
+    {
+        float total = 9.0;
+        for (int x = -1; x <= 1; x++)
+            for (int y = -1; y <= 1; y++)
+                total -= texture(shadowMapNear,
+                                 vec3(shadowCoordsNear.xy + vec2(float(x) * shadowMapWidthInv,
+                                                                 float(y) * shadowMapHeightInv),
+                                      shadowCoordsNear.z - 0.0005));
+
+        occlusion += (total / 9.0) * shadowCoordsNear.w;
+    }
+#endif
+
+    // The two cascade weights are complementary by construction - the far one
+    // subtracts the near one in chunkopaque.vsh - so they sum to at most 1 and
+    // this needs no normalising.
+    return clamp(1.0 - occlusion, 0.0, 1.0);
+#else
+    // Shadows off. There is no occlusion data at all, and saying "fully lit"
+    // is the only honest answer: anything built on this must degrade to
+    // vanilla rather than invent a shadow the player switched off.
+    return 1.0;
+#endif
+}
+
+// How BROKEN the shadow is around this fragment, over a neighbourhood several
+// times wider than the PCF kernel.
+//
+// This is the measurement that could replace vv_sunExposure as the canopy
+// signal, and the reason is the architectural rule this whole audit turns on:
+// sun exposure is a LIGHTING RESULT and this is a GEOMETRIC CAUSE.
+//
+// A canopy and a roof produce the same partial sun exposure. They do not
+// produce the same shadow map. Under a roof every tap for metres around
+// agrees: shadowed. In an open field every tap agrees: lit. Under leaves the
+// taps DISAGREE, because the gaps are metres apart or less - that disagreement
+// is the signature of a broken occluder, and nothing else in a normal world
+// produces it over a wide area.
+//
+// The honest limitation, stated here so it is not discovered later as a
+// surprise: a single straight shadow edge also produces disagreement. A wall's
+// edge will read as broken in a band about as wide as the sample radius. That
+// is a thin band, against today's failure mode of the entire area under any
+// roof, but it is a leak and it is why this is not yet wired to anything.
+//
+// Returns 0 where the neighbourhood is uniform (lit or shadowed alike) and
+// approaches 1 where it is evenly split.
+float vvSunShadowBreakup(float radiusTexels)
+{
+#if SHADOWQUALITY > 0
+    if (radiusTexels <= 0.0) return 0.0;
+
+    vec2 texel = vec2(shadowMapWidthInv, shadowMapHeightInv) * radiusTexels;
+
+    // Eight taps on a ring plus the centre. A ring rather than a filled disc
+    // because the question is how much the neighbourhood disagrees, not how
+    // much of it is shadowed, and a ring samples the widest span per tap.
+    const vec2 ring[8] = vec2[8](
+        vec2( 1.0,  0.0), vec2( 0.7071,  0.7071),
+        vec2( 0.0,  1.0), vec2(-0.7071,  0.7071),
+        vec2(-1.0,  0.0), vec2(-0.7071, -0.7071),
+        vec2( 0.0, -1.0), vec2( 0.7071, -0.7071));
+
+    float lit = 0.0;
+    float taps = 0.0;
+
+#if SHADOWQUALITY > 1
+    // The near cascade wherever it applies: it is the higher-resolution of the
+    // two, and resolving small gaps is the entire point of this measurement.
+    bool useNear = shadowCoordsNear.w > 0.0;
+#else
+    bool useNear = false;
+#endif
+
+    if (useNear)
+    {
+#if SHADOWQUALITY > 1
+        lit += texture(shadowMapNear, vec3(shadowCoordsNear.xy, shadowCoordsNear.z - 0.0005));
+        taps += 1.0;
+        for (int i = 0; i < 8; i++)
+        {
+            lit += texture(shadowMapNear,
+                           vec3(shadowCoordsNear.xy + ring[i] * texel,
+                                shadowCoordsNear.z - 0.0005));
+            taps += 1.0;
+        }
+#endif
+    }
+    else if (shadowCoordsFar.w > 0.0)
+    {
+        lit += texture(shadowMapFar, vec3(shadowCoordsFar.xy, shadowCoordsFar.z - 0.0009));
+        taps += 1.0;
+        for (int i = 0; i < 8; i++)
+        {
+            lit += texture(shadowMapFar,
+                           vec3(shadowCoordsFar.xy + ring[i] * texel,
+                                shadowCoordsFar.z - 0.0009));
+            taps += 1.0;
+        }
+    }
+
+    if (taps < 1.0) return 0.0;
+
+    float mean = lit / taps;
+
+    // 4 * p * (1 - p): the variance of a Bernoulli draw, scaled to peak at 1
+    // when the taps are evenly split. Zero at both ends, which is the property
+    // that makes open field and cave interior both read as "not broken".
+    return clamp(4.0 * mean * (1.0 - mean), 0.0, 1.0);
+#else
+    return 0.0;
+#endif
+}
+
 // Blocks of canopy assumed above a fragment, from just-under-the-leaves to
 // deep under a full crown. Sets both how far the pattern slides as the sun
 // moves and, through the penumbra, how soft the flecks are.
@@ -1659,6 +1838,91 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     {
         vec3 grain = vvGrainDirection(materialUv);
         return vec4(grain.xy * 0.5 + 0.5, grain.z, color.a);
+    }
+
+    // ---- Canopy audit instrument, views 25-28 ----------------------------
+    //
+    // These four exist to answer one question that cannot be answered by
+    // reading code: is vanilla's shadow map fine enough to resolve the gaps in
+    // a canopy? If it is, the dapple system should be modulating it rather than
+    // replacing it, and most of the procedural machinery below becomes
+    // sub-texel detail instead of the whole effect.
+    //
+    // Read them in this order, standing on a forest floor at mid-morning:
+    //
+    //   25 next to 16 - what the game knows about the sun, against what the
+    //                   mod has been using as a stand-in for it.
+    //   26            - whether leaf shadows are resolved or averaged away.
+    //   27            - whether 26 is telling apart leaves from walls.
+    //
+    // 25: vanilla's OWN sun visibility, raw. White where the sun reaches,
+    // black where geometry blocks it, grey in the PCF penumbra.
+    //
+    // This is the comparison that decides the architecture. Compare it with
+    // view 16 in the same spot: 16 is vv_sunExposure, a per-vertex flood-filled
+    // sky light value that knows nothing about where the sun is and is
+    // identical at noon and midnight. 25 is a real directional occlusion test
+    // and moves as the sun moves. If 25 shows leaf-shaped shadows under a tree,
+    // the game already resolves the canopy and the mod should stop inventing
+    // one.
+    //
+    // Unlike the shadowBrightness the rest of this file passes around, this is
+    // not raised by torchlight - see vvSunVisibility.
+    if (mode == 25) return vec4(vec3(vvSunVisibility()), color.a);
+
+    // 26: the same thing at three neighbourhood radii, as a false-colour ramp.
+    // Red is a 2-texel ring, green 6, blue 16.
+    //
+    // What to look for: an open field and a cave interior are both BLACK, since
+    // a uniform neighbourhood has nothing to disagree about. A forest floor
+    // should light up, and WHICH channel lights up says at what scale the
+    // shadow is broken - red means the shadow map is resolving individual leaf
+    // gaps, blue-only means it is only catching whole-crown structure and the
+    // fine detail has been filtered away.
+    //
+    // If red stays dark everywhere under trees, the shadow map cannot resolve
+    // canopy gaps at this quality setting and the procedural flecks have a job
+    // to do. That is the finding this view exists to produce.
+    if (mode == 26)
+    {
+        return vec4(vvSunShadowBreakup(2.0),
+                    vvSunShadowBreakup(6.0),
+                    vvSunShadowBreakup(16.0), color.a);
+    }
+
+    // 27: the candidate canopy mask - broken shadow at a mid radius, shown
+    // only where the fragment is actually in shadow.
+    //
+    // This is the proposed replacement for the vv_sunExposure gate, and this
+    // view is how its failure modes get found before it is trusted with
+    // anything. Walk it past all of: a tree, a wall, a cliff overhang, a
+    // doorway, a cave mouth.
+    //
+    // Expected to be bright under foliage and dark under solid occluders. The
+    // KNOWN leak is a bright band along any straight shadow edge, roughly as
+    // wide as the sample ring, because one edge also makes taps disagree. How
+    // wide that band actually is, and whether it reads as a defect in motion,
+    // is a runtime question.
+    if (mode == 27)
+    {
+        float visibility = vvSunVisibility();
+        return vec4(vec3(vvSunShadowBreakup(6.0) * (1.0 - visibility)), color.a);
+    }
+
+    // 28: the two motion sources side by side. Red is vv_sceneBreeze, the mod's
+    // own wind clock that currently drives the flecks; green is vanilla's sun
+    // direction projected onto this surface.
+    //
+    // The point of this one is negative: the canopy in the shadow map is ALREADY
+    // wind-animated by the game's own applyVertexWarping, at the game's phase
+    // and coherently across each tree. If the shadow map resolves gaps at all,
+    // the mod's separate breeze clock is a second, disagreeing animation of the
+    // same leaves, and the correct fix is to delete it rather than tune it.
+    if (mode == 28)
+    {
+        return vec4(clamp(vv_sceneBreeze, 0.0, 1.0),
+                    clamp(dot(faceNormal, normalize(lightPosition)) * 0.5 + 0.5, 0.0, 1.0),
+                    0.0, color.a);
     }
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
