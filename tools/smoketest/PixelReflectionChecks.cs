@@ -122,6 +122,39 @@ namespace VintageVisuals.SmokeTest
                 "proximity coverage " + (fraction * 100.0).ToString("0.#", CultureInfo.InvariantCulture)
                     + "% - if this is near 100 the steps are dense enough that this test proves nothing");
 
+            // THE RINGS. Bisection leaves interval/2^n between the refined
+            // point and the true surface, and the thickness test then rejects
+            // anything further behind the surface than that tolerance. So a hit
+            // survives only where interval/2^n < thickness. With too few passes
+            // the inequality holds near the viewer and fails beyond, which on a
+            // flat plane is a set of concentric rings with a hard cutoff - and
+            // that is exactly what was reported twice.
+            Match rf = Regex.Match(_pbr, @"const int VV_SSR_REFINE = (\d+)\s*;");
+            float thickness = Constant("VV_SSR_THICKNESS");
+
+            check("the refinement depth is declared", rf.Success, "");
+
+            if (rf.Success && !float.IsNaN(thickness))
+            {
+                int refine = int.Parse(rf.Groups[1].Value, CultureInfo.InvariantCulture);
+
+                double widest = 0.0;
+                for (int i = 1; i < distances.Count; i++)
+                {
+                    widest = Math.Max(widest, distances[i] - distances[i - 1]);
+                }
+
+                double residual = widest / Math.Pow(2.0, refine);
+
+                check("refinement resolves every interval finer than the thickness test",
+                    residual < thickness,
+                    "widest interval " + widest.ToString("0.#", CultureInfo.InvariantCulture)
+                        + " leaves " + residual.ToString("0.##", CultureInfo.InvariantCulture)
+                        + " after " + refine + " passes, but the thickness test rejects past "
+                        + thickness.ToString("0.##", CultureInfo.InvariantCulture)
+                        + " - hits will be found and then discarded, in rings");
+            }
+
             // Steps must grow, or the near field is wasted and the far field is
             // never reached.
             bool growsButNotWildly = growth > 1.0 && growth < 2.0;
@@ -316,7 +349,7 @@ namespace VintageVisuals.SmokeTest
 
             // The whole point of the pass: the analytic sky must be subordinate.
             check("the scene overrides the fallback where it is valid",
-                Regex.IsMatch(_code, @"mix\(fallback, scene\.color, clamp\(scene\.valid"),
+                Regex.IsMatch(_code, @"mix\(fallback, sceneColor, clamp\(scene\.valid"),
                 "the fallback winning would make this the previous architecture again");
         }
 
@@ -483,6 +516,18 @@ namespace VintageVisuals.SmokeTest
             check("strength zero returns the environment untouched",
                 Regex.IsMatch(_code, @"if \(strength < 0\.001\) return environment;"),
                 "an unset uniform must behave exactly like vanilla");
+
+            // The capture is the finished frame - graded, bloomed, exposure
+            // adapted - so reflecting it verbatim re-applies all of that inside
+            // the reflection and lets a bright sky push a metal past what the
+            // ambient term it replaces could ever have been.
+            check("the reflected scene is capped against the environment",
+                _code.Contains("float ceiling = envLuma * VV_REFLECT_MAX;"),
+                "an uncapped post-processed capture is how white metal returns");
+
+            check("the cap preserves hue rather than clamping channels",
+                Regex.IsMatch(_code, @"sceneColor \*= ceiling / sceneLuma;"),
+                "a per-channel clamp desaturates exactly the bright reflections that carry the most information");
 
             check("the image is blended in by strength rather than added",
                 Regex.IsMatch(_code, @"return mix\(environment, image, strength\);"),

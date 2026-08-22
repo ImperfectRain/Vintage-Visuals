@@ -1497,18 +1497,39 @@ const int VV_SSR_STEPS = 12;
 const float VV_SSR_NEAR = 0.25;      // blocks to the first sample
 const float VV_SSR_GROWTH = 1.42;    // each step this much longer than the last
 
-// Bisection passes once a crossing interval is known. Two halves the interval
-// twice, which is enough to land inside a block at every distance the march
-// reaches, and costs two lookups only on rays that actually hit something.
-const int VV_SSR_REFINE = 2;
+// Bisection passes once a crossing interval is known.
+//
+// FIVE, and the number is derived rather than chosen. Two produced concentric
+// rings around the player and a hard cutoff beyond which nothing reflected at
+// all, and both were the same arithmetic:
+//
+// Bisection leaves a residual of interval/2^n between the refined point and the
+// true surface. The thickness test then rejects anything further behind the
+// surface than VV_SSR_THICKNESS. So a hit survives only where
+//
+//     interval / 2^n  <  VV_SSR_THICKNESS
+//
+// The intervals grow geometrically, so with n = 2 that inequality held out to
+// 6.3 blocks and failed everywhere beyond - every hit past that distance was
+// found correctly and then thrown away by the thickness test. Distance-dependent
+// rejection on a flat plane is a set of rings centred on the viewer, with a
+// hard edge where it stops entirely, which is exactly what was reported.
+//
+// The largest interval this march produces is 11.8 blocks, so n must satisfy
+// 11.8 / 2^n < 0.6, giving n = 5. The cost is five lookups, and only on rays
+// that actually crossed a surface.
+const int VV_SSR_REFINE = 5;
 
 // How thick a surface is allowed to be, in blocks.
 //
 // A crossing means the ray went behind SOMETHING. This decides whether it went
 // behind the surface it hit or sailed past a thin object into empty space
 // beyond - the classic screen-space error where a reflection picks up whatever
-// was hiding behind a fence post. Much tighter than the old tolerance, because
-// crossing detection locates the surface instead of hoping to land near it.
+// was hiding behind a fence post.
+//
+// It is a real geometric tolerance, NOT a way to compensate for a coarse march.
+// If it ever has to be raised to make distant reflections appear, the
+// refinement is too shallow and this is hiding it - see VV_SSR_REFINE.
 const float VV_SSR_THICKNESS = 0.6;
 
 // Reflection strength lost as the ray points back toward the camera.
@@ -1721,7 +1742,31 @@ vec3 vvPixelReflection(vec3 n, vec2 materialUv, float roughness, vec3 cameraRela
     // vvSceneReflection. Blended by the hit's own confidence so the boundary
     // between real reflection and fallback is a fade rather than a seam.
     VvSceneHit scene = vvSceneReflection(n, materialUv, cameraRelativePos);
-    vec3 image = mix(fallback, scene.color, clamp(scene.valid, 0.0, 1.0));
+
+    // THE CAPTURE IS THE FINISHED FRAME, not raw scene radiance. It has already
+    // been colour graded, bloomed and exposure adapted, so reflecting it
+    // verbatim applies all of that a second time inside the reflection - and a
+    // bright sky then pushes a metal past anything the ambient term it replaces
+    // could ever have produced. Reported as metals suddenly reading much
+    // shinier, in daylight, with no torch involved.
+    //
+    // Capped by LUMINANCE, and the hue is kept. Scaling the colour uniformly
+    // rather than clamping each channel is what stops a bright green tree
+    // turning white on the way in: the whole point is that a reflected tree
+    // looks like a tree, and a per-channel clamp desaturates exactly the bright
+    // reflections that carry the most information.
+    vec3 sceneColor = scene.color;
+
+    float sceneLuma = dot(sceneColor, vec3(0.2126, 0.7152, 0.0722));
+    float envLuma = dot(environment, vec3(0.2126, 0.7152, 0.0722));
+    float ceiling = envLuma * VV_REFLECT_MAX;
+
+    if (sceneLuma > ceiling && sceneLuma > 1e-5)
+    {
+        sceneColor *= ceiling / sceneLuma;
+    }
+
+    vec3 image = mix(fallback, sceneColor, clamp(scene.valid, 0.0, 1.0));
 
     return mix(environment, image, strength);
 }

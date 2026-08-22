@@ -770,6 +770,58 @@ The test pins the mechanism and computes the old scheme's coverage numerically,
 so the regression has a number attached rather than a description, and so a
 future "optimisation" back to proximity fails rather than looking tidier.
 
+### The rings were the refinement, not the march
+
+Second report of rings, this time with two extra clues that identified them:
+*"the reflections only occupy an area around the player, and if standing on a
+flat reflective plane the cutoff is visible"*.
+
+A cutoff radius and rings are one cause. Bisection leaves `interval / 2^n`
+between the refined point and the true surface; the thickness test then rejects
+anything further behind the surface than `VV_SSR_THICKNESS`. So a hit survives
+only where
+
+```
+interval / 2^n  <  VV_SSR_THICKNESS
+```
+
+The intervals grow geometrically, so with two passes:
+
+| interval | length | residual | survives? |
+|---|---|---|---|
+| 2.8 - 4.3 | 1.44 | 0.36 | yes |
+| 4.3 - 6.3 | 2.05 | 0.51 | yes |
+| 6.3 - 9.2 | 2.91 | 0.73 | **no** |
+| 27.6 - 39.4 | 11.83 | 2.96 | **no** |
+
+Every hit beyond 6.3 blocks was found correctly and then **thrown away**. On a
+flat plane, distance-dependent rejection centred on the viewer is a set of rings
+with a hard edge where it stops - precisely what was on screen.
+
+The widest interval is 11.8 blocks, so `11.8 / 2^n < 0.6` gives **n = 5**. The
+number is derived, and a test recomputes it from the march constants and fails if
+a future change to either breaks the inequality. Cost is five lookups, only on
+rays that crossed a surface.
+
+The thickness constant is now documented as a real geometric tolerance rather
+than a knob: if it ever has to be raised to make distant reflections appear, the
+refinement is too shallow and raising it would hide that.
+
+### Metals got brighter: the capture is the finished frame
+
+Reported alongside: metals reading much shinier, in daylight, with no torch.
+
+The capture is the composed frame, which has already been colour graded, bloomed
+and exposure adapted. Reflecting it verbatim applies all of that a SECOND time
+inside the reflection, and a bright sky then pushes a metal past anything the
+ambient term it replaces could have produced - the white-metal failure returning
+through the new path rather than the old one.
+
+Capped by luminance against the environment colour, at the same
+`VV_REFLECT_MAX` the fallback uses. Scaled uniformly rather than clamped per
+channel, because a per-channel clamp desaturates exactly the bright reflections
+that carry the most information: a reflected tree has to stay green.
+
 ### Not changed, and why
 
 The audit also suggested using `CameraOffset` rather than the player position as
