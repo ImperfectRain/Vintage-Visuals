@@ -470,6 +470,70 @@ about shadow map scale rather than about the world. Debug view 30 shows the
 count at 3, 5 and 9 texels so it can be read off rather than argued about:
 whichever channel FILLS the area under a crown is the right radius.
 
+### The ring radius is now a slider, and the count is visible raw
+
+Two rounds of guessing the radius from screenshots was enough. It is not a fact
+about the world - it is a fact about the SHADOW MAP, namely how many texels
+apart canopy gaps land, which depends on the player's shadow quality setting and
+on how far they are standing. This code cannot know either, so
+`PseudoPBR.CanopyRadius` exposes it and views 30 and 31 show what it counts.
+
+`vvCanopyVariation` is split out from `vvCanopyStructure` for a specific
+reason: when the gate shows nothing, "there is no broken shadow here" and "the
+threshold band is above what a real canopy scores" look **identical** on screen
+and need opposite fixes. View 31 bands the raw count into false colour - black
+below 1, red for one edge, green for two features, blue for three or more - so
+one screenshot separates them.
+
+### Wetness has the same defect dapple had, and the game has the real answer
+
+Raised by the question "why can't we use the game's own raindrop data?" The
+answer is that we can, and `vvWetness` currently does not.
+
+It gates on `smoothstep(vv_weatherRainCover - 0.12, ..., vv_sunExposure)`, and
+its own comment admits it: "This is still a threshold on a soft signal rather
+than a rain occlusion test. The game has a real one." Debug view 16 has since
+shown that soft signal reads **~1 across an entire outdoor scene**, so with
+`RainCoverThreshold` at 0.82 essentially everything outdoors passes as fully
+rain-exposed. Porches, overhangs and doorways included. Same failure as the
+dapple gate, same cause, not yet fixed.
+
+The authoritative data, confirmed in the API source rather than assumed:
+
+| API | What it is |
+|---|---|
+| `IBlockAccessor.GetRainMapHeightAt(x, z)` | "The topmost non-rain-permeable position at given x/z coordinate. **This map is always updated after placing/removing blocks**" |
+| `IMapChunk.RainHeightMap` | The raw `ushort[]` behind it, per chunk column - the bulk-read path, far cheaper than per-column calls |
+| `Block.RainPermeable` | The per-block flag the map is built from |
+
+This is what the game itself uses to place rain splash particles, to decide
+whether a torch is extinguished, and to accumulate snow. It is AUTHORITATIVE by
+the ladder's definition: it directly describes the phenomenon.
+
+One property makes it especially valuable here: leaves are rain-permeable, so
+under a tree the rain map height is the GROUND, not the canopy. It therefore
+separates "under a solid roof" from "under a canopy" exactly, which is the
+discrimination the sun-exposure threshold cannot make at all.
+
+Proposed shape, following `CloudTileReader`, which already does this for cloud
+tiles and works:
+
+- A window of columns around the player, read in bulk from `RainHeightMap`.
+- Uploaded as heights RELATIVE to a base, packed to 8 bits, four per float,
+  as a `Uniforms4` array - not a sampler. Adding a sampler to `chunkopaque.fsh`
+  has twice cost the entire world render, and the project rule is to prefer a
+  uniform array below roughly a thousand values.
+- The fragment compares its own world Y against the height for its column.
+  Above it: rain reaches. Below: it does not, by the game's own definition.
+- Wrapping and registration follow the cloud reader's camera-relative pattern,
+  because true world XZ against a wrapped origin is exactly the bug that made
+  cloud shadows land nowhere for two rounds.
+
+A 32x32 window is 1024 bytes, so 64 vec4s - the same order as the cloud window.
+That covers 32 blocks, which is the near field where wetness detail is visible.
+
+This also unblocks the ripples, which currently ride the same flat gate.
+
 ### Still open
 
 The fine radius leaves a band about two texels wide along any straight shadow

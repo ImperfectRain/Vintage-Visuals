@@ -186,6 +186,9 @@ namespace VintageVisuals.Common
                 case "pbr_dapple":
                     pbr.SunDapple = tree.GetFloat("value", pbr.SunDapple);
                     break;
+                case "pbr_canopyradius":
+                    pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
+                    break;
                 case "pbr_grain":
                     pbr.GrainAnisotropy = tree.GetFloat("value", pbr.GrainAnisotropy);
                     break;

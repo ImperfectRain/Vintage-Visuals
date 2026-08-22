@@ -710,13 +710,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 30.0,
+          "max": 31.0,
           "step": 1.0
         }
       },
@@ -731,6 +731,18 @@
         },
         "clientSide": true,
         "weight": 7
+      },
+      "pbr_canopyradius": {
+        "ingui": "Debug: canopy ring radius",
+        "comment": "Ring radius in shadow-map texels for the canopy test the sun dapple uses. This is a property of the shadow map rather than of the world - how many texels apart canopy gaps land depends on your shadow quality and viewing distance - so it is exposed rather than guessed. Debug views 30 and 31 show what it is counting: raise or lower it until the area under a tree crown FILLS rather than being outlined. 0 disables dapple entirely.",
+        "default": 5.0,
+        "clientSide": true,
+        "weight": 70,
+        "range": {
+          "min": 0.0,
+          "max": 16.0,
+          "step": 1.0
+        }
       }
     }
   }

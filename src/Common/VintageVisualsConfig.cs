@@ -580,6 +580,18 @@ namespace VintageVisuals.Common
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
+        /// Ring radius, in shadow-map texels, for the canopy test.
+        ///
+        /// A slider rather than a constant because it is a fact about the
+        /// SHADOW MAP - how many texels apart the gaps in a canopy land -
+        /// which depends on the player's shadow quality setting and on how far
+        /// away they are standing, neither of which this code can know. Two
+        /// rounds of guessing it from screenshots was enough. Debug views 30
+        /// and 31 show what it is counting.
+        /// </summary>
+        public float CanopyRadius { get; set; } = 5.0f;
+
+        /// <summary>
         /// Visible beams of light through the canopy.
         ///
         /// Writes into vanilla's OWN god-ray channel rather than drawing
@@ -717,9 +729,11 @@ namespace VintageVisuals.Common
                 "PseudoPBR.GrainAnisotropy", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
+            CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
+                "PseudoPBR.CanopyRadius", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 30.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 31.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

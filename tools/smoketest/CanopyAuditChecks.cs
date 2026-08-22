@@ -54,16 +54,28 @@ namespace VintageVisuals.SmokeTest
         /// </summary>
         private static void CheckStructureCountsOccluders(string pbr, Action<string, bool, string> check)
         {
+            // The raw count and the threshold live in separate functions, so
+            // that a debug view can show the count unthresholded - "there is no
+            // structure here" and "the band is too high" look identical on
+            // screen and need opposite fixes.
+            Match raw = Regex.Match(pbr, @"float vvCanopyVariation\(float radiusTexels, out float mean\)\s*\{(.*?)\n\}",
+                                    RegexOptions.Singleline);
+            check("vvCanopyVariation exists", raw.Success, "");
+
             Match fn = Regex.Match(pbr, @"float vvCanopyStructure\(float radiusTexels\)\s*\{(.*?)\n\}",
                                    RegexOptions.Singleline);
             check("vvCanopyStructure exists", fn.Success, "");
-            if (!fn.Success) return;
+            if (!fn.Success || !raw.Success) return;
 
             string body = fn.Groups[1].Value;
 
             check("the ring is closed",
-                body.Contains("abs(first - previous)"),
+                raw.Groups[1].Value.Contains("abs(first - previous)"),
                 "an unclosed ring miscounts any feature at the seam, in a fixed screen direction");
+
+            check("the raw count is exposed unthresholded",
+                Regex.IsMatch(pbr, @"mode == 31") && pbr.Contains("vvCanopyVariation(clamp(vv_pbrCanopyRadius"),
+                "without a raw view, a silent gate cannot be told from a wrong band");
 
             Match band = Regex.Match(body, @"smoothstep\(([\d.]+), ([\d.]+), variation\)");
             check("the count has a threshold band", band.Success, "");

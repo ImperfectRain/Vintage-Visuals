@@ -91,6 +91,7 @@ uniform float vv_pbrCavity;          // small-scale occlusion from the material 
 uniform float vv_pbrSpecOcclusion;   // 0 keeps the flat cavity on specular, 1 makes it view-aware
 uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 0 is vanilla
 uniform float vv_pbrShafts;          // visible beams through the canopy, 0 is vanilla
+uniform float vv_pbrCanopyRadius;    // shadow-map ring radius for the canopy test, in texels; 0 is vanilla
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -666,8 +667,16 @@ float vvSunShadowBreakup(float radiusTexels)
 // It also degrades correctly rather than lying: a ring deep inside a solid
 // shadow with no gap within its radius returns 0, and that IS the right answer.
 // Sunflecks only exist where light gets through.
-float vvCanopyStructure(float radiusTexels)
+//
+// SPLIT IN TWO on purpose. vvCanopyVariation returns the raw count and
+// vvCanopyStructure applies the threshold, because when the gate shows nothing
+// those two failures look identical on screen and need completely different
+// fixes: "there is no broken shadow here" is the measurement working, and "the
+// band is above what a real canopy scores" is the band being wrong. Debug view
+// 31 shows the raw number for exactly this reason.
+float vvCanopyVariation(float radiusTexels, out float mean)
 {
+    mean = 0.0;
 #if SHADOWQUALITY > 0
     if (radiusTexels <= 0.0) return 0.0;
 
@@ -725,6 +734,20 @@ float vvCanopyStructure(float radiusTexels)
     // direction, so the error would be systematic rather than noise.
     variation += abs(first - previous);
 
+    mean = sum / float(VV_RING_TAPS);
+    return variation;
+#else
+    return 0.0;
+#endif
+}
+
+// The count, thresholded into canopy evidence.
+float vvCanopyStructure(float radiusTexels)
+{
+    float mean;
+    float variation = vvCanopyVariation(radiusTexels, mean);
+    if (variation <= 0.0) return 0.0;
+
     // One edge is 2. Two features are 4. The band starts above a single edge
     // so a wall contributes nothing, and saturates at three features.
     float features = smoothstep(2.6, 6.0, variation);
@@ -733,13 +756,9 @@ float vvCanopyStructure(float radiusTexels)
     // a boundary - a tangent clip. Requiring the ring to be genuinely mixed as
     // well removes those without touching a real gappy shadow, which is mixed
     // by definition.
-    float mean = sum / float(VV_RING_TAPS);
     float mixed = clamp(4.0 * mean * (1.0 - mean), 0.0, 1.0);
 
     return clamp(features * sqrt(mixed), 0.0, 1.0);
-#else
-    return 0.0;
-#endif
 }
 
 // Whether a CANOPY is what is blocking the sun here.
@@ -774,12 +793,17 @@ float vvCanopyEvidence()
     // 4p(1-p) at a small radius, which is an edge detector and could only ever
     // outline a shadow rather than fill it.
     //
-    // Radius 5 texels: wide enough that a ring sitting between two leaf gaps
-    // still crosses both, narrow enough that it does not reach around a tree
-    // trunk. This is the one number here that is genuinely a guess, and it is a
-    // guess about shadow map scale rather than about the world - view 30 shows
-    // what it is counting.
-    float structure = vvCanopyStructure(5.0);
+    // The radius is the one number here that is genuinely a guess, and it is a
+    // guess about shadow-map scale rather than about the world - how many
+    // texels apart the gaps in a canopy land, which depends on the player's
+    // shadow quality and on how far away they are standing. Two rounds of
+    // guessing it from screenshots is enough, so it is a slider: views 30 and
+    // 31 show what it is counting and the player can move it until the area
+    // under a crown fills instead of outlining.
+    //
+    // Zero disables the whole test, which is the correct vanilla behaviour for
+    // an unset uniform.
+    float structure = vvCanopyStructure(clamp(vv_pbrCanopyRadius, 0.0, 16.0));
 
     return clamp(structure * shadowed, 0.0, 1.0);
 }
@@ -2090,11 +2114,36 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // single edge scores 2 in the total variation at every radius and the band
     // starts above that. That is the check that this is counting occluders
     // rather than finding boundaries.
+    // 31: the RAW count at the gate's own radius, banded into false colour so a
+    // screenshot answers the question without needing a number read off it.
+    //
+    //   black   variation below 1     nothing is crossing the ring at all
+    //   red     1 to 3                ONE edge - a wall, a terrace, a roof
+    //   green   3 to 5                two features
+    //   blue    above 5               three or more, which is a canopy
+    //
+    // This separates the two failures that look identical in view 29. If the
+    // ground under a crown is BLACK, the shadow there really is solid and there
+    // is nothing to break up - move the radius, or the sun is too low and the
+    // shadows have merged. If it is RED or GREEN, the structure is there and
+    // the threshold band is what is wrong.
+    if (mode == 31)
+    {
+        float mean;
+        float v = vvCanopyVariation(clamp(vv_pbrCanopyRadius, 0.0, 16.0), mean);
+
+        if (v < 1.0) return vec4(0.0, 0.0, 0.0, color.a);
+        if (v < 3.0) return vec4(1.0, 0.0, 0.0, color.a);
+        if (v < 5.0) return vec4(0.0, 1.0, 0.0, color.a);
+        return vec4(0.0, 0.4, 1.0, color.a);
+    }
+
     if (mode == 30)
     {
-        return vec4(vvCanopyStructure(3.0),
-                    vvCanopyStructure(5.0),
-                    vvCanopyStructure(9.0), color.a);
+        float r = clamp(vv_pbrCanopyRadius, 0.0, 16.0);
+        return vec4(vvCanopyStructure(max(1.0, r * 0.6)),
+                    vvCanopyStructure(r),
+                    vvCanopyStructure(min(16.0, r * 1.8)), color.a);
     }
 
     if (mode == 28)
