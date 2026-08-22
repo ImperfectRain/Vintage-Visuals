@@ -600,6 +600,18 @@
           "step": 0.05
         }
       },
+      "pbr_specocclusion": {
+        "ingui": "Occlusion on reflections",
+        "comment": "Whether a groove dims a reflection by as much as it dims ambient light. It does not: a polished surface in a shallow groove still reflects, a rough one does not. 0 keeps the old flat behaviour, 1 makes it depend on roughness and viewing angle.",
+        "default": 1.0,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 67
+      },
       "pbr_dapple": {
         "ingui": "Sunlight dapple under trees",
         "comment": "Sunlight broken into moving patches by the leaves overhead. Only appears where the game's own sun light level says there is a canopy above - open ground and interiors are untouched. Gaps brighten by as much as the shade between them darkens, so it never dims the scene overall. 0 is vanilla.",
@@ -680,7 +692,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 17.0,
+          "max": 18.0,
           "step": 1.0
         }
       },

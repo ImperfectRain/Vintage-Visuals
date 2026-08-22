@@ -545,6 +545,17 @@ namespace VintageVisuals.Common
         /// shade between them darkens, so it never asks VisualBudget for
         /// anything.
         /// </summary>
+        /// <summary>
+        /// How view-aware the occlusion on reflections is.
+        ///
+        /// 0 keeps the flat cavity the shader applied to specular before, so it
+        /// reproduces the previous image exactly; 1 uses a roughness- and
+        /// view-dependent specular occlusion instead. It is not an on/off for
+        /// occlusion itself - that is CavityStrength - but for whether
+        /// reflections are occluded by the same amount as the ambient.
+        /// </summary>
+        public float SpecularOcclusion { get; set; } = 1.0f;
+
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
@@ -677,11 +688,13 @@ namespace VintageVisuals.Common
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
+            SpecularOcclusion = ColorGradeConfig.Clamp(SpecularOcclusion, 0.0f, 1.0f,
+                "PseudoPBR.SpecularOcclusion", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 17.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 18.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

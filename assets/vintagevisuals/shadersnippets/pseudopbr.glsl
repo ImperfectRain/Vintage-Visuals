@@ -64,6 +64,7 @@ uniform float vv_pbrRoughnessBias;   // matte <-> gloss, applied to every materi
 uniform float vv_pbrDetailDistance;  // blocks at which relief has faded to nothing
 uniform float vv_pbrFoliage;         // light passing through leaves, 0 is vanilla
 uniform float vv_pbrCavity;          // small-scale occlusion from the material normal, 0 is vanilla
+uniform float vv_pbrSpecOcclusion;   // 0 keeps the flat cavity on specular, 1 makes it view-aware
 uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 0 is vanilla
 uniform float vv_pbrShafts;          // visible beams through the canopy, 0 is vanilla
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
@@ -996,6 +997,57 @@ float vvCavity(vec2 materialUv, float fade)
     return 1.0 - occlusion * vv_pbrCavity * fade;
 }
 
+// How much of the REFLECTED light a groove takes away, as opposed to how much
+// of the ambient it takes away. They are not the same number and using one for
+// both is the usual shortcut.
+//
+// Occlusion derived from geometry answers "how much of the hemisphere can this
+// texel see", which is the right question for diffuse and for sky light because
+// both gather from the whole hemisphere. A reflection does not gather from the
+// hemisphere - it gathers from a lobe around the mirror direction, whose width
+// is set by roughness and whose position is set by the view. So a polished
+// surface in a shallow groove still reflects almost everything, while a rough
+// one in the same groove loses nearly all of it. Multiplying both by the same
+// cavity leaves polished stone looking dusty, which is exactly what the comment
+// above vvCavity warned about while the code did it anyway.
+//
+// Lagarde's approximation, from the Frostbite course notes. The exponent
+// collapses toward 1 as roughness rises, so a rough surface converges on plain
+// occlusion and a smooth one escapes it.
+//
+// vv_pbrSpecOcclusion blends from the previous behaviour rather than from
+// nothing: at 0 this returns the flat cavity the shader used before, so turning
+// the feature off reproduces the old image exactly rather than an
+// unoccluded one.
+float vvSpecularOcclusion(float cavity, float ndotv, float roughness)
+{
+    float occlusion = clamp(cavity, 0.0, 1.0);
+    float view = clamp(ndotv, 0.0, 1.0);
+
+    float lobe = clamp(pow(view + occlusion, exp2(-16.0 * clamp(roughness, 0.0, 1.0) - 1.0))
+                       - 1.0 + occlusion, 0.0, 1.0);
+
+    // Bounded BELOW by the hemispherical occlusion, and this is not tidying up.
+    //
+    // Lagarde's expression is an empirical fit, not a derivation, and it
+    // inverts where (ndotv + occlusion) falls below 1: at a grazing angle in a
+    // deep groove it hands a polished surface LESS reflection than a rough one,
+    // which is backwards and was caught by the monotonicity test rather than by
+    // reading it. Measured at occlusion 0.3, ndotv 0.4 the smooth answer was
+    // 0.203 against 0.300 for rough.
+    //
+    // Clamping to the plain occlusion says: a reflection is never dimmed by
+    // MORE than the ambient is. With only a scalar cavity there is no way to
+    // know whether the groove lies along the reflection lobe or across it, and
+    // under that ignorance the conservative reading is the right one. It also
+    // makes the whole term a relaxation - specular can only ever gain light
+    // relative to what shipped before, never lose it - which is what the
+    // feature is for and is a far easier property to reason about.
+    lobe = clamp(lobe, occlusion, 1.0);
+
+    return mix(occlusion, lobe, clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
+}
+
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                 vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness,
                 vec3 environment, vec3 blockLightColor)
@@ -1098,10 +1150,13 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // turns the effect off must get their old image back, not a darker one.
     result *= mix(vec3(1.0), 1.0 - fresnel, vv_pbrSpecularStrength * specularMask);
 
-    result += specular * ndotl * visibility * vv_pbrSpecularStrength;
-
-    // Occlusion in the grooves, applied to the diffuse and to everything
-    // hemispherical, and NOT to the direct lobe.
+    // Occlusion in the grooves.
+    //
+    // Computed here rather than below because the diffuse and the specular now
+    // take DIFFERENT amounts of it, and the split has to happen before the lobe
+    // is added rather than after. The previous order applied one flat cavity to
+    // everything accumulated so far - including the direct lobe, despite the
+    // comment here claiming it did not.
     //
     // That split is the whole of why this is physical rather than a texture. A
     // crevice is dark because most of the sky cannot see into it; the sun
@@ -1114,7 +1169,14 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // cost is only knowable per fragment.
     float cavity = mix(1.0, vvCavity(materialUv, vvDetailFade(cameraRelativePos)),
                        vvSceneVisibilityDampen());
+
+    // Hemispherical occlusion, on the diffuse only.
     result *= cavity;
+
+    // Reflections lose a different amount - see vvSpecularOcclusion.
+    float specularOcclusion = vvSpecularOcclusion(cavity, ndotv, roughness);
+
+    result += specular * ndotl * visibility * vv_pbrSpecularStrength * specularOcclusion;
 
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
@@ -1124,14 +1186,14 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     result += vvBlockLightSpecular(f0, roughness, n, v, blockLightColor, cameraRelativePos)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * vv_pbrSpecularStrength
-            * cavity;
+            * specularOcclusion;
 
     result += vvAmbientSpecular(f0, roughness, ndotv, environment)
             * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * vv_pbrSpecularStrength
             * mix(1.0, VV_OVERCAST_AMBIENT, overcast)
-            * cavity;
+            * specularOcclusion;
 
     // Light through leaves, last, because it is the one term that is not a
     // reflection off this surface - it is light that went past it. Fogged like
@@ -1303,6 +1365,22 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // switched off in the game's own graphics settings, which is where the
     // effect actually lives.
     if (mode == 17) return vec4(vec3(vvCanopyShaft(cameraRelativePos)), color.a);
+
+    // 18: what the grooves take from the REFLECTION, against what they take
+    // from the ambient. Red is the flat cavity, green is the specular
+    // occlusion actually applied to the highlight. On a polished surface green
+    // should sit well above red; on a rough one the two converge. Equal
+    // everywhere means the feature is switched off, which is what 0 does.
+    if (mode == 18)
+    {
+        float cav = mix(1.0, vvCavity(materialUv, vvDetailFade(cameraRelativePos)),
+                        vvSceneVisibilityDampen());
+        vec4 mat = vvSampleMaterial(materialUv);
+        float rough = clamp(mat.b + vv_pbrRoughnessBias, 0.04, 1.0);
+        vec3 nn = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        float nv = max(dot(nn, normalize(-cameraRelativePos)), 1e-4);
+        return vec4(cav, vvSpecularOcclusion(cav, nv, rough), 0.0, color.a);
+    }
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.
     // Mortar lines, plank gaps and bark furrows should read; a flat painted

@@ -201,6 +201,9 @@ void main(void) {
         Console.WriteLine("Effects respect the light they are allowed to change");
         ConservationChecks.Run(Repo, Check);
 
+        Console.WriteLine("Material response invariants");
+        MaterialResponseChecks.Run(Repo, Check);
+
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 
