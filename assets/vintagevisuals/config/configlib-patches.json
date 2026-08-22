@@ -57,6 +57,13 @@
         "default": true,
         "clientSide": true,
         "weight": 40
+      },
+      "reflections_scene": {
+        "ingui": "Scene reflections",
+        "comment": "Let reflective surfaces show ACTUAL WORLD CONTENT - trees, stone, buildings - instead of only the sky. Captures the previous frame at quarter resolution and reads it back when shading, so anything visible on screen can be reflected and anything off screen falls back to the sky. Costs a framebuffer and one full-screen copy per frame, so it is off by default. Needs Pixel reflections above zero to do anything.",
+        "default": false,
+        "clientSide": true,
+        "weight": 72
       }
     },
     "float": {
@@ -710,13 +717,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 are the pixel reflection: 32 reflection direction, 33 the material texel grid, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 are the pixel reflection: 32 reflection direction, 33 the material texel grid, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness. 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 37.0,
+          "max": 42.0,
           "step": 1.0
         }
       },

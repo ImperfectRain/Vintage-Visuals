@@ -38,7 +38,7 @@ namespace VintageVisuals.SmokeTest
                     .OrderBy(f => f)
                     .Select(File.ReadAllText));
 
-            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*(?:\[[^\]]*\])?\s*;", RegexOptions.Multiline)
+            var declared = Regex.Matches(snippets, @"^uniform\s+(?:float|vec2|vec3|vec4|mat3|mat4)\s+(vv_\w+)\s*(?:\[[^\]]*\])?\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
                 .OrderBy(n => n)
@@ -114,7 +114,7 @@ namespace VintageVisuals.SmokeTest
             string sceneGlsl = File.ReadAllText(Path.Combine(snippetDir, "scene.glsl"));
 
             var sceneUniforms = Regex.Matches(sceneGlsl,
-                    @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+                    @"^uniform\s+(?:float|vec2|vec3|vec4|mat3|mat4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .ToList();
 
@@ -187,7 +187,7 @@ namespace VintageVisuals.SmokeTest
             string coreGlsl = File.ReadAllText(Path.Combine(snippetDir, "pbrcore.glsl"));
 
             var coreUniforms = Regex.Matches(coreGlsl,
-                    @"^uniform\s+(?:float|vec2|vec3|vec4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
+                    @"^uniform\s+(?:float|vec2|vec3|vec4|mat3|mat4)\s+(vv_\w+)\s*;", RegexOptions.Multiline)
                 .Select(m => m.Groups[1].Value)
                 .ToList();
 

@@ -140,6 +140,12 @@ namespace VintageVisuals.PseudoPBR
                 _inactiveReason = null;
             }
 
+            // The capture is owned by the Reflections subsystem and may be null,
+            // may fail, or may be switched off between one Apply and the next.
+            // Re-read every time rather than caching: a stale reference here
+            // would keep binding a texture id the engine has already destroyed.
+            _binder.SceneCapture = _mod?.Reflections?.Capture;
+
             _binder.SetState(active, config);
         }
 

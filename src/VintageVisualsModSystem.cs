@@ -7,6 +7,7 @@ using VintageVisuals.Common;
 using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
 using VintageVisuals.Common.Scene;
+using VintageVisuals.Reflections;
 using VintageVisuals.Weather;
 
 namespace VintageVisuals
@@ -61,6 +62,18 @@ namespace VintageVisuals
         /// respond to light, and that response already has a shader.
         /// </summary>
         public WeatherSubsystem Weather { get; private set; }
+
+        /// <summary>
+        /// The scene capture that feeds reflections, when it is switched on.
+        ///
+        /// Exposed so PseudoPBR can read it: the reflection is shaded inside the
+        /// material system, because that is where the texture grid, normal,
+        /// roughness and metalness already are. Reflections owns the source
+        /// image; PseudoPBR owns what is done with it.
+        /// </summary>
+        public ReflectionsSubsystem Reflections { get; private set; }
+
+        public PseudoPbrSubsystem Pbr { get; private set; }
 
         /// <summary>
         /// The one place this mod asks the game what is going on.
@@ -276,7 +289,11 @@ namespace VintageVisuals
             _subsystems.Add(new ColorGradeSubsystem());
             Weather = new WeatherSubsystem();
             _subsystems.Add(Weather);
-            _subsystems.Add(new PseudoPbrSubsystem());
+            Reflections = new ReflectionsSubsystem();
+            _subsystems.Add(Reflections);
+
+            Pbr = new PseudoPbrSubsystem();
+            _subsystems.Add(Pbr);
 
             // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is
             // independently toggleable by design, so registration order carries

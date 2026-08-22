@@ -93,6 +93,18 @@ uniform float vv_pbrDapple;          // sunlight broken up by the canopy above, 
 uniform float vv_pbrShafts;          // visible beams through the canopy, 0 is vanilla
 uniform float vv_pbrCanopyRadius;    // shadow-map ring radius for the canopy test, in texels; 0 is vanilla
 uniform float vv_pbrPixelReflect;    // pixelated environment reflection, 0 is vanilla
+
+// The render-stage bridge. See SceneCaptureRenderer: a quarter-resolution copy
+// of LAST frame's composed scene, with linear view depth packed into alpha.
+//
+// vv_reflectValid is 0 until a real capture exists, and 0 means every surface
+// uses the analytic fallback - which is exactly the behaviour that shipped
+// before this feature, so a failed capture degrades rather than breaks.
+uniform sampler2D vv_reflectScene;
+uniform mat4 vv_reflectViewProj;     // the transform that capture was drawn with
+uniform vec3 vv_reflectCameraDelta;  // capture camera position minus this frame's
+uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
+uniform float vv_reflectFar;         // far plane the packed depth was normalised by
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -1403,7 +1415,7 @@ vec3 vvTexelCentrePos(vec3 cameraRelativePos, vec2 materialUv)
 // in this same function; a disc here would be the same light counted twice.
 // What the sun does get is the azimuth term, which brightens the half of the
 // sky facing it - that is atmosphere, not the disc.
-vec3 vvEnvironmentImage(vec3 direction, vec3 environment)
+vec3 vvReflectionFallback(vec3 direction, vec3 environment)
 {
     float lift = direction.y > VV_REFLECT_HORIZON
         ? 1.0
@@ -1423,6 +1435,152 @@ vec3 vvEnvironmentImage(vec3 direction, vec3 environment)
     }
 
     return environment * clamp(lift, 0.0, VV_REFLECT_MAX);
+}
+
+// ---------------------------------------------------------------------------
+// Scene reflection
+//
+// The reflection actually looks at the world. Where it can see it.
+//
+// LAYER 1 is here: where does this texel look, and what is there? Layer 2 - how
+// that image becomes discrete - is not a separate step at all, because the ray
+// starts at the TEXEL CENTRE. Every fragment inside one texture pixel therefore
+// marches the identical ray and lands on the identical sample, so one colour per
+// texel falls out of the geometry rather than being imposed by a rounding step
+// afterwards. That is the whole reason this is built around vvTexelCentrePos.
+//
+// WHAT IT CAN AND CANNOT SEE. The source is last frame's composed image, so
+// anything visible on screen last frame can be reflected: trees, stone,
+// buildings, the player. Anything NOT on screen cannot be - geometry behind the
+// camera, off the edge of the frame, or hidden behind something nearer. Those
+// are the standing limits of any screen-space method and they are not bugs. The
+// reflection reports its own validity and the caller falls back to the analytic
+// environment, which is a plain sky and is always preferable to a confidently
+// wrong piece of geometry smeared across a wall.
+//
+// THE CAMERA MOVED between the capture and now. The shader works in
+// camera-relative coordinates, so a point has to be shifted by
+// vv_reflectCameraDelta before being projected through the captured matrix.
+// Without that the reflection would be projected as though the player had not
+// moved since last frame, and would slide across every surface as they walk -
+// precisely the crawl the material pixel grid exists to rule out.
+// ---------------------------------------------------------------------------
+
+// March steps along the reflected ray.
+//
+// Eight, fixed, no refinement pass. The destination is one colour for a whole
+// texture pixel, so precision beyond "which surface did I hit" buys nothing that
+// can be displayed, and a long march is what makes conventional screen-space
+// reflection expensive. Spacing grows geometrically so near hits are precise and
+// distant ones are still reachable.
+const int VV_SSR_STEPS = 8;
+const float VV_SSR_NEAR = 0.35;      // blocks to the first sample
+const float VV_SSR_GROWTH = 1.85;    // each step this much longer than the last
+
+// How close a hit has to be, in blocks, to count.
+//
+// Generous on purpose. A tight tolerance turns every slightly-off sample into a
+// fallback and the reflection becomes a flickering patchwork of sky; a loose one
+// occasionally accepts a neighbouring surface, which at this resolution is a
+// plausible colour rather than a visible error.
+const float VV_SSR_TOLERANCE = 1.25;
+
+// Reflection strength lost as the ray points back toward the camera.
+//
+// Rays coming at the viewer are the ones screen-space methods cannot serve -
+// what they would reflect is behind the camera and was never in the frame. Fading
+// them out is cheaper and far more honest than sampling something wrong.
+const float VV_SSR_FACING_FADE = 0.25;
+
+// Result of a scene lookup: the colour, and whether to believe it.
+struct VvSceneHit
+{
+    vec3 color;
+    float valid;
+};
+
+// Projects a camera-relative point into the captured frame and reads it.
+//
+// Returns validity 0 for anything off-screen or behind the capture camera,
+// rather than clamping into range - a clamped sample is a confident lie, and the
+// texture is allocated ClampToEdge specifically so a stray read cannot wrap to
+// the far side of the frame either.
+VvSceneHit vvSampleCapture(vec3 cameraRelative, float expectedDistance)
+{
+    VvSceneHit hit;
+    hit.color = vec3(0.0);
+    hit.valid = 0.0;
+
+    vec4 clip = vv_reflectViewProj * vec4(cameraRelative + vv_reflectCameraDelta, 1.0);
+    if (clip.w <= 0.0001) return hit;
+
+    vec3 ndc = clip.xyz / clip.w;
+    if (any(greaterThan(abs(ndc.xy), vec2(1.0)))) return hit;
+
+    vec2 uv = ndc.xy * 0.5 + 0.5;
+    vec4 captured = texture(vv_reflectScene, uv);
+
+    // Alpha carries linear view distance, normalised by the far plane.
+    float sceneDistance = captured.a * vv_reflectFar;
+
+    // The ray point is only a hit if the scene surface at that screen position
+    // is at about the same distance. Further away means the ray passed in front
+    // of the geometry and has not arrived yet; much nearer means something is
+    // occluding, and reflecting an occluder is the classic screen-space error.
+    if (abs(sceneDistance - expectedDistance) > VV_SSR_TOLERANCE) return hit;
+
+    hit.color = captured.rgb;
+    hit.valid = 1.0;
+    return hit;
+}
+
+// Marches the reflected ray and returns what it found.
+//
+// The ray starts at the texel centre, so this whole function is constant across
+// a material texel.
+VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
+{
+    VvSceneHit miss;
+    miss.color = vec3(0.0);
+    miss.valid = 0.0;
+
+    if (vv_reflectValid < 0.5) return miss;
+
+    vec3 origin = vvTexelCentrePos(cameraRelativePos, materialUv);
+    vec3 v = normalize(-origin);
+    vec3 r = reflect(-v, n);
+
+    float len = length(r);
+    if (len < 1e-4) return miss;
+    r /= len;
+
+    // A ray pointing back at the viewer reflects what is behind the camera, and
+    // the capture never contained it.
+    float facing = clamp(dot(r, v), 0.0, 1.0);
+    if (facing > 1.0 - VV_SSR_FACING_FADE) return miss;
+
+    float t = VV_SSR_NEAR;
+    float step = VV_SSR_NEAR;
+
+    for (int i = 0; i < VV_SSR_STEPS; i++)
+    {
+        vec3 at = origin + r * t;
+        VvSceneHit hit = vvSampleCapture(at, length(at));
+
+        if (hit.valid > 0.5)
+        {
+            // Faded near the grazing limit so the reflection thins out instead
+            // of ending at a hard line where the march stops being able to help.
+            hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
+                                         1.0 - VV_SSR_FACING_FADE, facing);
+            return hit;
+        }
+
+        step *= VV_SSR_GROWTH;
+        t += step;
+    }
+
+    return miss;
 }
 
 // The environment colour this texel reflects.
@@ -1468,7 +1626,16 @@ vec3 vvPixelReflection(vec3 n, vec2 materialUv, float roughness, vec3 cameraRela
 
     vec3 cell = vec3(cos(theta) * radius, y, sin(theta) * radius);
 
-    return mix(environment, vvEnvironmentImage(cell, environment), strength);
+    vec3 fallback = vvReflectionFallback(cell, environment);
+
+    // THE SCENE WINS WHERE IT EXISTS. The analytic sky is what is left when the
+    // world cannot be seen, not the model - see the architecture note above
+    // vvSceneReflection. Blended by the hit's own confidence so the boundary
+    // between real reflection and fallback is a fade rather than a seam.
+    VvSceneHit scene = vvSceneReflection(n, materialUv, cameraRelativePos);
+    vec3 image = mix(fallback, scene.color, clamp(scene.valid, 0.0, 1.0));
+
+    return mix(environment, image, strength);
 }
 
 // How much light reaches the eye THROUGH the surface.
@@ -2160,6 +2327,90 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     {
         vec3 grain = vvGrainDirection(materialUv);
         return vec4(grain.xy * 0.5 + 0.5, grain.z, color.a);
+    }
+
+    // ---- Scene reflection bridge, views 38-42 ----------------------------
+    //
+    // These diagnose the bridge itself. Read them in order: if 42 is wrong,
+    // nothing after it can be right.
+    //
+    // 38: where on the captured frame this texel is reading.
+    // Red and green are the screen coordinate of the hit; black means the ray
+    // found nothing and the analytic fallback is showing instead. Should sweep
+    // smoothly as you turn, in blocks the size of a texture pixel.
+    if (mode == 38)
+    {
+        vec3 n38 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 origin = vvTexelCentrePos(cameraRelativePos, materialUv);
+        vec3 r38 = reflect(-normalize(-origin), n38);
+
+        if (vv_reflectValid < 0.5 || length(r38) < 1e-4)
+            return vec4(0.0, 0.0, 0.0, color.a);
+
+        vec4 clip = vv_reflectViewProj
+                  * vec4(origin + normalize(r38) * 2.0 + vv_reflectCameraDelta, 1.0);
+
+        if (clip.w <= 0.0001) return vec4(0.0, 0.0, 0.0, color.a);
+
+        vec2 ndc = clip.xy / clip.w;
+        if (any(greaterThan(abs(ndc), vec2(1.0)))) return vec4(0.0, 0.0, 0.3, color.a);
+
+        return vec4(ndc * 0.5 + 0.5, 0.0, color.a);
+    }
+
+    // 39: the validity test, as a traffic light.
+    //   green  the ray hit real geometry and this pixel reflects the world
+    //   red    the ray found nothing - off screen, occluded, or facing the camera
+    //   blue   no capture at all: the feature is off, or it failed
+    //
+    // THE MOST IMPORTANT VIEW ON THIS FEATURE. Green means the bridge works.
+    // A frame with no green anywhere means the capture is not reaching the
+    // shader, and every prettier view below is showing the fallback.
+    if (mode == 39)
+    {
+        if (vv_reflectValid < 0.5) return vec4(0.0, 0.0, 1.0, color.a);
+
+        vec3 n39 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        VvSceneHit hit39 = vvSceneReflection(n39, materialUv, cameraRelativePos);
+
+        return vec4(hit39.valid > 0.5 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), color.a);
+    }
+
+    // 40: the raw captured scene sample, before any material response.
+    //
+    // This is the answer to "is it really reflecting the world". Point a
+    // reflective face at a tree and this should contain green; at stone, grey.
+    // If it is a flat sky colour everywhere, the ray is missing and 39 will say
+    // so in red.
+    if (mode == 40)
+    {
+        vec3 n40 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        VvSceneHit hit40 = vvSceneReflection(n40, materialUv, cameraRelativePos);
+        return vec4(hit40.color * hit40.valid, color.a);
+    }
+
+    // 41: the captured frame itself, projected flat.
+    //
+    // A sanity check on the capture rather than on the reflection: it should
+    // look like last frame, shrunk. If it is black, the capture pass is not
+    // running; if it is a single colour, the framebuffer bound but nothing drew
+    // into it. Alpha carries depth and is shown in blue.
+    if (mode == 41)
+    {
+        vec2 screen = gl_FragCoord.xy / max(vec2(1.0), vec2(textureSize(vv_reflectScene, 0)) * 4.0);
+        vec4 cap = texture(vv_reflectScene, clamp(screen, 0.0, 1.0));
+        return vec4(mix(cap.rgb, vec3(0.0, 0.0, cap.a), 0.35), color.a);
+    }
+
+    // 42: how far the camera has moved since the capture, as a colour.
+    //
+    // Should be near black standing still and brighten as you move. If it stays
+    // black while walking, the delta is not being uploaded and the reflection
+    // will slide across surfaces; if it is huge, the capture is stale by more
+    // than a frame.
+    if (mode == 42)
+    {
+        return vec4(abs(vv_reflectCameraDelta) * 4.0, color.a);
     }
 
     // ---- Canopy audit instrument, views 25-28 ----------------------------

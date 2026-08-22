@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Reflections;
 
 namespace VintageVisuals.PseudoPBR
 {
@@ -71,6 +73,13 @@ namespace VintageVisuals.PseudoPBR
         public const string DappleUniform = "vv_pbrDapple";
         public const string CanopyRadiusUniform = "vv_pbrCanopyRadius";
         public const string PixelReflectUniform = "vv_pbrPixelReflect";
+
+        // The render-stage bridge. See SceneCaptureRenderer.
+        public const string ReflectSceneUniform = "vv_reflectScene";
+        public const string ReflectViewProjUniform = "vv_reflectViewProj";
+        public const string ReflectCameraDeltaUniform = "vv_reflectCameraDelta";
+        public const string ReflectValidUniform = "vv_reflectValid";
+        public const string ReflectFarUniform = "vv_reflectFar";
         public const string ShaftUniform = "vv_pbrShafts";
 
         // Entity programme only. Named apart from the terrain controls because
@@ -168,6 +177,17 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedBusy;
         private bool _reportedEntities;
         private bool _reportedParticles;
+
+        /// <summary>
+        /// The scene capture, when the reflection subsystem has one.
+        ///
+        /// Settable rather than constructor-injected because the capture is
+        /// optional and can fail at any point - a driver refusing the
+        /// framebuffer, a shader that will not compile - and the terrain path
+        /// must keep working exactly as before when it does. Null here uploads
+        /// a validity of 0, which every consumer reads as "use the fallback".
+        /// </summary>
+        public SceneCaptureRenderer SceneCapture { get; set; }
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas, MaterialAtlasSet atlas2,
                                Func<Dictionary<int, int>> buildPageMap,
@@ -373,6 +393,8 @@ namespace VintageVisuals.PseudoPBR
 
             SetIfPresent(program, SecondValidUniform, _secondAtlasReady ? 1f : 0f);
 
+            BindSceneCapture(program);
+
             SetIfPresent(program, EnabledUniform, 1f);
             SetIfPresent(program, NormalStrengthUniform, _look.NormalStrength);
             SetIfPresent(program, SpecularStrengthUniform, _look.SpecularStrength);
@@ -493,12 +515,66 @@ namespace VintageVisuals.PseudoPBR
         /// questions. Asking per name is a dictionary lookup; assuming from one
         /// name cost the particle path every scene value it needed.
         /// </summary>
+        /// <summary>
+        /// Hands the terrain program last frame's scene, and the transform it
+        /// was drawn with.
+        ///
+        /// EVERY PATH UPLOADS A VALIDITY. A missing capture, a failed one, a
+        /// program compiled before the feature existed - all of them end with
+        /// vv_reflectValid at 0, and 0 means the shader uses the analytic
+        /// fallback. An unset GLSL uniform also reads as 0, so the failure mode
+        /// of forgetting to call this at all is the safe one, which is the only
+        /// arrangement worth having for something that binds a texture unit.
+        /// </summary>
+        private void BindSceneCapture(IShaderProgram program)
+        {
+            if (!program.HasUniform(ReflectValidUniform)) return;
+
+            SceneCaptureRenderer capture = SceneCapture;
+
+            if (capture == null || !capture.HasCapture || capture.TextureId == 0)
+            {
+                program.Uniform(ReflectValidUniform, 0f);
+                return;
+            }
+
+            program.BindTexture2D(ReflectSceneUniform, capture.TextureId,
+                                  SceneCaptureRenderer.TextureUnit);
+
+            SetIfPresent(program, ReflectViewProjUniform, capture.CaptureViewProjection);
+
+            // Where the camera was at capture time, RELATIVE to where it is now.
+            // The shader works in camera-relative coordinates, so without this
+            // the reflection is projected as though the player had not moved
+            // since last frame and slides across every surface as they walk.
+            EntityPos now = _capi.World?.Player?.Entity?.Pos;
+            Vec3d then = capture.CapturePosition;
+
+            Vec3f delta = now == null
+                ? new Vec3f()
+                : new Vec3f((float)(then.X - now.X), (float)(then.Y - now.Y), (float)(then.Z - now.Z));
+
+            SetIfPresent(program, ReflectCameraDeltaUniform, delta);
+            SetIfPresent(program, ReflectFarUniform, _capi.Render.ShaderUniforms.ZFar);
+
+            program.Uniform(ReflectValidUniform, 1f);
+        }
+
         private static void SetIfPresent(IShaderProgram program, string name, float value)
         {
             if (program.HasUniform(name)) program.Uniform(name, value);
         }
 
         /// <summary>Same rule for the vec3 uploads.</summary>
+        /// <summary>A 4x4 matrix, for the captured view-projection.</summary>
+        private static void SetIfPresent(IShaderProgram program, string name, float[] matrix)
+        {
+            if (matrix != null && matrix.Length == 16 && program.HasUniform(name))
+            {
+                program.UniformMatrix(name, matrix);
+            }
+        }
+
         private static void SetIfPresent(IShaderProgram program, string name, Vec3f value)
         {
             if (program.HasUniform(name)) program.Uniform(name, value);

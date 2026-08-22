@@ -165,6 +165,9 @@ namespace VintageVisuals.Common
                 case "pbr_entitylighting":
                     pbr.EntityLighting = tree.GetBool("value", pbr.EntityLighting);
                     break;
+                case "reflections_scene":
+                    _mod.ConfigManager.Config.Reflections.SceneReflections = tree.GetBool("value", _mod.ConfigManager.Config.Reflections.SceneReflections);
+                    break;
                 case "pbr_emissive":
                     pbr.EmissiveStrength = tree.GetFloat("value", pbr.EmissiveStrength);
                     break;

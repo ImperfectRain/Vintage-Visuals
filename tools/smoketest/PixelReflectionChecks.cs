@@ -48,6 +48,106 @@ namespace VintageVisuals.SmokeTest
             CheckRoughnessCoarsens(check);
             CheckIntegrationPoint(check);
             CheckHonestLabelling(repo, check);
+            CheckSceneBridge(repo, check);
+        }
+
+        /// <summary>
+        /// The render-stage bridge: the thing that makes this a reflection of
+        /// the world rather than of the sky.
+        ///
+        /// The terrain shader knows the texture grid but cannot see the scene;
+        /// the post pass can see the scene but not the grid. The bridge carries
+        /// the scene ACROSS A FRAME instead of across a pass, so both live in
+        /// one place. What is pinned here is that each end of it is actually
+        /// connected - a capture nothing reads, or a sampler nothing binds, look
+        /// exactly like a working feature that happens to reflect only sky.
+        /// </summary>
+        private static void CheckSceneBridge(string repo, Action<string, bool, string> check)
+        {
+            string capture = File.ReadAllText(
+                Path.Combine(repo, "src/Reflections/SceneCaptureRenderer.cs"));
+            string binder = File.ReadAllText(
+                Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+
+            // --- the capture end -------------------------------------------
+            check("the capture reads the engine's primary framebuffer",
+                capture.Contains("EnumFrameBuffer.Primary") && capture.Contains("ColorTextureIds"),
+                "without the real scene texture there is nothing to reflect");
+
+            check("depth comes from the depth attachment, not from gPosition",
+                capture.Contains("DepthTextureId") && !capture.Contains("gPosition"),
+                "gPosition lives inside #if SSAOLEVEL > 0 and vanishes when SSAO is off");
+
+            check("the capture runs after the scene is composed",
+                capture.Contains("AfterPostProcessing")
+                    || File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"))
+                           .Contains("AfterPostProcessing"),
+                "reading the primary buffer any earlier reads a frame mid-render");
+
+            check("the capture is smaller than the screen",
+                Regex.IsMatch(capture, @"CaptureScale = 0\.\d+f"),
+                "a full-resolution capture is detail the destination texel cannot express");
+
+            check("an off-screen ray cannot wrap to the far side of the frame",
+                capture.Contains("EnumTextureWrap.ClampToEdge"),
+                "Repeat here paints unrelated geometry onto surfaces");
+
+            check("every failure path disables rather than throws",
+                capture.Contains("private void Fail(") && capture.Contains("catch (Exception"),
+                "an optional visual feature must not take the client down");
+
+            // --- the shader end --------------------------------------------
+            check("the shader declares the captured scene sampler",
+                _pbr.Contains("uniform sampler2D vv_reflectScene;"), "");
+
+            check("the sampler is declared below every vanilla sampler",
+                _pbr.IndexOf("uniform sampler2D vv_reflectScene;", StringComparison.Ordinal)
+                    > _pbr.IndexOf("uniform sampler2D vv_materialTex;", StringComparison.Ordinal),
+                "a sampler above vanilla's shifts every unit below it at link time");
+
+            check("the binder actually binds the captured scene",
+                binder.Contains("BindTexture2D(ReflectSceneUniform"), "");
+
+            check("the binder uploads a validity on EVERY path",
+                Regex.Matches(binder, @"Uniform\(ReflectValidUniform").Count >= 2,
+                "one path that skips it leaves the uniform at whatever was there before");
+
+            check("no capture means validity zero",
+                Regex.IsMatch(binder, @"capture == null[^;]*\|\|[^;]*HasCapture[\s\S]{0,200}?Uniform\(ReflectValidUniform, 0f\)"),
+                "the safe default has to be the fallback, not a stale texture id");
+
+            // --- the geometry ----------------------------------------------
+            Match ssr = Regex.Match(_code,
+                @"VvSceneHit vvSceneReflection\(vec3 n, vec2 materialUv, vec3 cameraRelativePos\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+            check("the scene reflection exists", ssr.Success, "");
+            if (!ssr.Success) return;
+
+            string body = ssr.Groups[1].Value;
+
+            check("the ray starts at the texel centre",
+                body.Contains("vvTexelCentrePos(cameraRelativePos, materialUv)"),
+                "one colour per texel comes from the ray origin, not from rounding afterwards");
+
+            check("the march accounts for camera movement since the capture",
+                _code.Contains("vv_reflectCameraDelta"),
+                "without it the reflection slides across surfaces as the player walks");
+
+            check("the march is short",
+                Regex.IsMatch(_code, @"VV_SSR_STEPS = ([2-9]|1[0-6])\s*;"),
+                "a long march is what makes conventional screen-space reflection expensive");
+
+            check("a hit is validated against captured depth",
+                _code.Contains("VV_SSR_TOLERANCE"),
+                "an unvalidated sample reflects whatever happened to be at that pixel");
+
+            check("an invalid sample returns no confidence rather than a colour",
+                Regex.IsMatch(_code, @"hit\.valid = 0\.0;"), "");
+
+            // The whole point of the pass: the analytic sky must be subordinate.
+            check("the scene overrides the fallback where it is valid",
+                Regex.IsMatch(_code, @"mix\(fallback, scene\.color, clamp\(scene\.valid"),
+                "the fallback winning would make this the previous architecture again");
         }
 
         private static float Constant(string name)
@@ -215,7 +315,7 @@ namespace VintageVisuals.SmokeTest
                 "an unset uniform must behave exactly like vanilla");
 
             check("the image is blended in by strength rather than added",
-                Regex.IsMatch(_code, @"return mix\(environment, vvEnvironmentImage\("),
+                Regex.IsMatch(_code, @"return mix\(environment, image, strength\);"),
                 "adding would make the slider an amplifier");
         }
 
@@ -272,10 +372,14 @@ namespace VintageVisuals.SmokeTest
 
             // The sun disc must not be drawn into the environment: the direct
             // lobe already has it, and a second copy is the double count.
+            // Named for its ROLE. It is what is shown when the world cannot be
+            // seen, not the reflection model - see section 41 of the brief and
+            // the architecture note above vvSceneReflection.
             Match env = Regex.Match(_code,
-                @"vec3 vvEnvironmentImage\(vec3 direction, vec3 environment\)\s*\{(.*?)\n\}",
+                @"vec3 vvReflectionFallback\(vec3 direction, vec3 environment\)\s*\{(.*?)\n\}",
                 RegexOptions.Singleline);
-            check("the environment image exists", env.Success, "");
+            check("the analytic path is named as a fallback", env.Success,
+                "vvEnvironmentImage read as though it were the model");
 
             check("no sun disc is drawn into the environment",
                 env.Success && !Regex.IsMatch(env.Groups[1].Value, @"pow\(|exp\("),

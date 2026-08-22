@@ -617,114 +617,92 @@ procedural sunflecks      ->  sub-texel breakup only   (what the map cannot reso
 direct sunlight term only ->  never ambient, block light, emission or fog
 ```
 
-## 8d. Pixelated environment reflection
+## 8d. Pixelated scene reflection
 
-Reflections resolved per material texel, discrete, locked to the texture grid.
+Reflective surfaces read the ACTUAL WORLD, reduced to one colour per material
+texel. The analytic sky is now the fallback, not the model.
 
-### It is NOT a scene reflection, and here is why
+### The bridge
 
-**The answer to "where does the reflected image come from" is: the sky and a
-fallback. Not the scene.** Stated plainly because describing an environment
-lookup as a mirror is the failure mode this feature invites.
+The problem the previous pass identified: the terrain shader knows the texture
+grid but cannot see the scene - `chunkopaque.fsh` is a forward opaque pass and
+the frame it would sample is the one it is still drawing. The post pass can see
+the scene but has no idea which texel a fragment belongs to.
 
-That is a fact about Vintage Story's renderer, established by reading it:
+**The scene is carried across a FRAME instead of across a pass.** At
+`AfterPostProcessing`, `SceneCaptureRenderer` copies the composed frame into a
+quarter-resolution RGBA target - RGB the scene, **alpha linear view depth**. The
+next frame's terrain pass samples it. Both the image and the grid are then in one
+place, which is what makes a pixel-art mirror possible at all.
 
-| Finding | Consequence |
+Everything needed turned out to be public API, which is why the previous pass's
+"engine-internal texture IDs" blocker was wrong:
+
+| Need | API |
 |---|---|
-| `chunkopaque.fsh` is a **forward opaque** pass with no scene-colour sampler bound | The frame it would sample is the one it is still drawing. There is no image to reflect |
-| The game DOES keep a G-buffer - `outGPosition` (camera-space position) and `outGNormal` at locations 2 and 3 | Every ingredient for a cheap screen-space reflection exists... |
-| ...but `ssao.fsh` reads them as `gPosition`/`gNormal`, and scene colour is `primaryScene` in `final.fsh` | ...only in POST-PROCESS passes |
-| The material UV that defines the pixel grid exists **only in the terrain pass** | The image and the grid are in different passes |
-| Locations 2 and 3 are inside `#if SSAOLEVEL > 0` | The G-buffer does not exist at all for a player with SSAO off |
+| Scene colour | `IRenderAPI.FrameBuffers[(int)EnumFrameBuffer.Primary].ColorTextureIds[0]` |
+| Depth | the same `FrameBufferRef.DepthTextureId` |
+| Own target | `IRenderAPI.CreateFrameBuffer(FramebufferAttrs)` |
+| Capture transform | `CurrentProjectionMatrix` x `CameraMatrixOriginf` |
 
-So a true scene reflection is possible in principle and needs a bridge between
-two passes. That design is written up below rather than half-built.
+**Depth comes from the depth attachment, never from `gPosition`.** That is what
+resolves the SSAO problem: `outGPosition` is written inside `#if SSAOLEVEL > 0`
+and does not exist for a player with SSAO off, while a depth buffer always does.
+The feature is therefore independent of the SSAO setting - option C of the
+brief's section 29, and the smallest safe change.
 
-### The route to a real reflection, if it is wanted
+### One colour per texel, still by construction
 
-The terrain pass knows the grid; the post pass knows the image. Two ways across:
+The ray starts at `vvTexelCentrePos`, so every fragment inside a texture pixel
+marches the **identical ray** and lands on the identical sample. Discreteness is
+not a rounding step applied afterwards - it falls out of the geometry. Layer 2 of
+the brief's section 40 needs no separate solution because Layer 1 was built at
+the right origin.
 
-1. **Carry texel identity into a post pass.** The only free G-buffer channel is
-   `outGlow.b`, which currently writes 0. Eight bits cannot hold a texel index,
-   so this only works if the post pass reconstructs the grid itself - which it
-   can: `gPosition` plus an inverse view matrix gives world position, and a
-   block face's texel grid is `floor(worldPos * texelsPerBlock)` on the face.
-   `outGlow.b` then only needs to carry texels-per-block, which fits easily.
-   This is how Minecraft's pixelated reflections work.
-2. **Read last frame's buffers in the terrain pass.** Two new samplers in
-   `chunkopaque.fsh` - the shader where adding a sampler has twice cost the
-   entire world render - plus a frame of lag. Not recommended.
+### The march
 
-Route 1 is the sound one. It needs a new post-process pass, the G-buffer
-textures bound to it (their IDs are internal to the engine and would need
-reflection), and a graceful path for SSAO-off. It is a session of work with real
-runtime risk and no way to validate it from here.
+Eight fixed steps, geometrically spaced, no refinement pass. The destination is
+one colour for a whole texture pixel, so precision beyond "which surface did I
+hit" buys nothing displayable - which is the entire reason this is far cheaper
+than conventional screen-space reflection. A hit is accepted only if the captured
+depth at that screen position matches the ray point's distance within
+`VV_SSR_TOLERANCE`; anything else is a miss.
 
-### What was actually built
+The camera moved between capture and use, so points are shifted by
+`vv_reflectCameraDelta` before projection. Without it the reflection would slide
+across every surface as the player walks - the crawl the pixel grid exists to
+prevent.
 
-The fallback of the brief's own section 25, done honestly.
+### What falls back, and when
 
-**One colour per texel, guaranteed by construction.** This is the fix that
-mattered. The normal was already per-texel through `vvSnapToTexel`, but the VIEW
-vector was not - it varies continuously across a texel, so the reflection
-direction did too, and the previous version could shade a **gradient inside a
-single texture pixel** while calling itself pixel art. `vvTexelCentrePos` solves
-the UV-to-position Jacobian from screen derivatives, so every fragment in a texel
-computes the identical direction. Exact for any planar face at any orientation,
-with a fallback where the Jacobian is singular.
+Rays that leave the screen, hit nothing, are occluded, or point back toward the
+camera return no confidence and the analytic `vvReflectionFallback` shows
+instead. The capture texture is allocated **ClampToEdge** so a stray read cannot
+wrap to the far side of the frame and paint unrelated geometry onto a wall.
 
-**The R2 phase offset is gone.** It made the structure out of a low-discrepancy
-sequence: two neighbouring texels differed because the sequence said so, not
-because they see different things. That is a procedural patchwork wearing a
-reflection's clothes. Structure now comes only from the direction each texel
-actually reflects.
+**Debug view 39 is the traffic light**: green means this pixel genuinely reflects
+the world, red means fallback, blue means no capture at all.
 
-**It returns a colour, not a gain.** The previous version multiplied the
-environment by up to 2.4, which in daylight is exactly how polished iron became
-a uniformly white slab - a metal's f0 is near its albedo, so `vvAmbientSpecular`
-passes nearly all of it through. It is now a bounded lookup into a colour,
-ceilinged at 1.2, and a test fails if that ceiling rises.
+### Off by default
 
-### Sources
-
-| Input | Source | Class |
-|---|---|---|
-| Texture resolution | `textureSize(vv_materialTex, 0)` | Authoritative |
-| Atlas packing | 1:1 - `MaterialAtlasSource` writes each source texture into a slot sized from `TextureAtlasPosition`, and logs when it must rescale. So `floor(atlasUV * atlasSize)` **is** the source texel | Verified, not assumed |
-| Specular / roughness | `vvSampleMaterial` A / B | Existing |
-| Metalness | `vvSampleMaterial2().metalness` via `f0` | Existing |
-| Normal | `vvSurfaceNormal` | Existing |
-| Sky colour | vanilla's `rgbaFog.rgb` | Best available in both shaders |
-| Ground colour | the sky colour dimmed to 0.34 | **Fallback - no scene data exists** |
-| Sun direction | vanilla's `lightPosition` | Authoritative |
-
-`sunPosition`, `dayLight` and `getSkyColorAt` are chunkopaque-only and absent
-from `chunktopsoil.fsh`, so a shared snippet cannot use them.
-
-### Behaviour
-
-- **Roughness** sets the number of direction cells, 16 down to 3. A rough
-  surface resolves the environment more coarsely and stays discrete; it is never
-  blurred toward a gradient.
-- **Wetness** needs no integration code. `vvApplyEnvironmentLayers` already
-  lowers roughness and raises the specular mask, and both feed this.
-- **Chiselled and composite blocks** work through the existing per-texture
-  material resolution - an iron strap texel and a plank texel get different
-  metalness and therefore different reflection, with no per-voxel data.
-- **No sun disc.** The direct lobe already has it; a second copy is a double
-  count.
+It costs a framebuffer and one full-screen copy per frame whether or not anything
+reflective is in view. `Reflections.SceneReflections` is false until asked for,
+and every failure path - shader, framebuffer, engine texture ids - disables and
+logs rather than throwing. The shader's validity uniform is 0 in all of those
+cases, and 0 means the fallback, which is exactly what shipped before.
 
 ### Limits
 
-- **Not seen on screen. L2.**
-- It cannot reflect a tree, a building or the player. Debug view 36 marks in red
-  every pixel whose reflection points below the horizon, where there is no scene
-  data at all.
-- **Entities do not get this.** They have no material atlas and so no texel grid.
-  The entity path keeps the flat environment. Vintage Story keeps separate atlas
-  infrastructure for entities and the terrain assumptions do not carry over.
-- Not profiled. The added cost is roughly four derivatives and a handful of ALU,
-  with no extra texture fetches - an argument, not a measurement.
+- **NOT SEEN ON SCREEN. L2.** Every claim here is static: shaders compile in all
+  48 prefix combinations and 578 checks pass. Whether a reflective block visibly
+  shows a tree is unverified.
+- **One frame stale.** The price of the bridge. A quantised reflection tolerates
+  it far better than a smooth one, but fast camera motion will show it.
+- Screen-space limits apply and are not bugs: nothing behind the camera, off the
+  frame, or hidden behind nearer geometry can be reflected.
+- **Entities: unsupported.** No material atlas, so no texel grid.
+- **Water: untouched.** It has its own shader path and was not patched.
+- Not profiled.
 
 ## 9. Open problems
 

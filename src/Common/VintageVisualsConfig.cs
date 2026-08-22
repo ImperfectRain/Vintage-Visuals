@@ -43,6 +43,7 @@ namespace VintageVisuals.Common
         public PseudoPbrConfig PseudoPBR { get; set; } = new PseudoPbrConfig();
 
         public WeatherConfig Weather { get; set; } = new WeatherConfig();
+        public ReflectionsConfig Reflections { get; set; } = new ReflectionsConfig();
 
         /// <summary>
         /// Clamps every value into its supported range, returning a description
@@ -61,6 +62,7 @@ namespace VintageVisuals.Common
             AdaptiveGrade.ClampToValidRanges(corrections);
             PseudoPBR.ClampToValidRanges(corrections);
             Weather.ClampToValidRanges(corrections);
+            Reflections.ClampToValidRanges(corrections);
             return corrections;
         }
     }
@@ -154,6 +156,33 @@ namespace VintageVisuals.Common
     /// Phase 2 weather system. Currently one effect: what rain does to how
     /// surfaces respond to light.
     /// </summary>
+    /// <summary>
+    /// The render-stage bridge that lets reflective surfaces see the world.
+    ///
+    /// Its own section rather than a PseudoPBR field because it owns a
+    /// framebuffer and a per-frame render pass, which is a different kind of
+    /// cost from a shader uniform and deserves to be switched independently.
+    /// </summary>
+    public class ReflectionsConfig
+    {
+        /// <summary>
+        /// Capture the frame so reflections can show actual world content.
+        ///
+        /// OFF BY DEFAULT. It costs a framebuffer and a full-screen copy every
+        /// frame whether or not anything reflective is in view, and it is the
+        /// newest machinery in the mod. Off, reflective surfaces use the
+        /// analytic sky fallback, which is what shipped before it existed.
+        /// </summary>
+        public bool SceneReflections { get; set; } = false;
+
+        public void ClampToValidRanges(List<string> corrections)
+        {
+            // Nothing to clamp yet - the only setting is a flag. The method
+            // exists so this section matches the shape of every other one, and
+            // so adding a bounded value later cannot forget to be clamped.
+        }
+    }
+
     public class WeatherConfig
     {
         /// <summary>
@@ -745,7 +774,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 37.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 42.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);
