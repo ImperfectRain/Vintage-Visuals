@@ -1170,7 +1170,18 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // the ambient ceiling all agree on how rough the surface is at this scale.
     roughness = vvFilteredRoughness(roughness, n);
 
-    vec3 f0 = vvReflectanceF0(albedo, specularMask);
+    // Real metalness when the second atlas has it, the specular-mask stand-in
+    // when it does not.
+    //
+    // Scaled by vv_pbrMetalResponse so the player keeps the same control they
+    // had over the stand-in, and so 0 collapses to a fully dielectric world
+    // rather than to a different kind of metal.
+    VvMaterial2 material2 = vvSampleMaterial2(materialUv);
+    float metalness = clamp(material2.metalness, 0.0, 1.0) * clamp(vv_pbrMetalResponse, 0.0, 1.0);
+
+    vec3 f0 = vv_material2Valid > 0.5
+        ? vvReflectanceF0FromMetalness(albedo, metalness)
+        : vvReflectanceF0(albedo, specularMask);
     vec3 fresnel = vvFresnelSchlick(vdoth, f0);
 
     float distribution = vvDistributionGGX(ndoth, roughness);
@@ -1213,6 +1224,22 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Scaled by the strength slider so that 0 is exactly vanilla: a player who
     // turns the effect off must get their old image back, not a darker one.
     result *= mix(vec3(1.0), 1.0 - fresnel, vv_pbrSpecularStrength * specularMask);
+
+    // A conductor has essentially no diffuse lobe. Light either reflects off
+    // the surface or is absorbed by the free electrons underneath it; almost
+    // none re-emerges scattered, which is why a polished metal shows you the
+    // room rather than its own colour.
+    //
+    // This is the second half of metalness and the half that is usually
+    // skipped. Raising F0 alone makes metal brighter - a shinier dielectric.
+    // Removing the diffuse at the same time is what makes it darker where it is
+    // not reflecting anything, and that contrast is the whole read.
+    //
+    // Only where the atlas actually said so: without the second page metalness
+    // is zero and this is exactly 1, so the line costs nothing and changes
+    // nothing. Scaled by the specular slider for the same reason the line above
+    // it is - a player who turns the effect off gets their old image back.
+    result *= mix(1.0, 1.0 - metalness, vv_pbrSpecularStrength);
 
     // Occlusion in the grooves.
     //
@@ -1444,6 +1471,51 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         vec3 nn = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
         float nv = max(dot(nn, normalize(-cameraRelativePos)), 1e-4);
         return vec4(cav, vvSpecularOcclusion(cav, nv, rough), 0.0, color.a);
+    }
+
+    // ---------------------------------------------------------------------
+    // The second material atlas, one channel per view.
+    //
+    // All four read BLACK when the page is unavailable, because
+    // vvSampleMaterial2 returns the neutral material - which is exactly what
+    // the lighting sees in that case. A view that showed something plausible
+    // while the lighting saw nothing would defeat the point of having it.
+    // ---------------------------------------------------------------------
+
+    // 19: metalness. Iron, steel, copper, gold and anvils should read white;
+    // stone, wood, soil and leaves black. Anything dark reading as metal means
+    // the classification is coming from pixels rather than from
+    // EnumBlockMaterial, which it must never be.
+    if (mode == 19) return vec4(vec3(vvSampleMaterial2(materialUv).metalness), color.a);
+
+    // 20: height, mid grey where flat. Should look like the texture's own
+    // relief - mortar recessed, cobbles raised - and must line up exactly with
+    // the normal in view 1, since both derive from the same luminance.
+    if (mode == 20) return vec4(vec3(vvSampleMaterial2(materialUv).height), color.a);
+
+    // 21: baked AO. White is open, dark is recessed. Broader and smoother than
+    // view 12's crevice term, which is the point of having both - this is the
+    // shape of the surface, that is the grain of it.
+    if (mode == 21) return vec4(vec3(vvSampleMaterial2(materialUv).occlusion), color.a);
+
+    // 22: the emission mask. BLACK on every block the game does not light, no
+    // matter how bright its texture - that is the check that vanilla's
+    // glowLevel is the only thing granting emission. On a forge or a lantern
+    // the hot part should read and the casing should not.
+    if (mode == 22) return vec4(vec3(vvSampleMaterial2(materialUv).emission), color.a);
+
+    // 23: what metalness does to reflectance. The F0 the shader actually uses -
+    // grey means dielectric, a coloured surface means the highlight will be
+    // tinted by the albedo. Copper should read orange here and steel white.
+    if (mode == 23)
+    {
+        vec4 mat = vvSampleMaterial(materialUv);
+        VvMaterial2 m2 = vvSampleMaterial2(materialUv);
+        float metal = clamp(m2.metalness, 0.0, 1.0) * clamp(vv_pbrMetalResponse, 0.0, 1.0);
+
+        return vec4(vv_material2Valid > 0.5
+            ? vvReflectanceF0FromMetalness(color.rgb, metal)
+            : vvReflectanceF0(color.rgb, mat.a), color.a);
     }
 
     // 12: crevice occlusion alone. White is open surface, dark is a groove.

@@ -27,6 +27,11 @@ uniform vec3 lightPosition; // vintagevisuals: anchor, asserted and pasted back
 // injected first - and because these belong to the lobe, not to whichever
 // material system happens to be feeding it.
 uniform float vv_pbrMetalResponse;   // how metallic the reflective materials read
+
+// Reflectance at normal incidence for a common dielectric. Around 4% covers
+// most non-metals - stone, wood, soil, ceramic - closely enough that the
+// differences between them live in roughness rather than here.
+const float VV_DIELECTRIC_F0 = 0.04;
 uniform float vv_pbrAmbient;         // sky/environment reflection strength
 uniform float vv_pbrSpecularAA;      // geometric specular antialiasing strength
 uniform float vv_pbrBlockLight;      // strength of highlights from torches, lava and glowing blocks
@@ -317,7 +322,29 @@ vec3 vvFresnelSchlick(float VdotH, vec3 f0)
 // not a cleverer curve.
 vec3 vvReflectanceF0(vec3 albedo, float specularMask)
 {
-    return mix(vec3(0.04), albedo, specularMask * specularMask * clamp(vv_pbrMetalResponse, 0.0, 1.0));
+    return mix(vec3(VV_DIELECTRIC_F0), albedo, specularMask * specularMask * clamp(vv_pbrMetalResponse, 0.0, 1.0));
+}
+
+// The same question answered from REAL metalness, once the second atlas can
+// supply it.
+//
+// The comment above ends "if this ever reads wrong, the fix is a second atlas
+// carrying real metalness, not a cleverer curve". This is that atlas. The
+// stand-in is kept rather than deleted because it is still the only answer
+// available to the entity and particle paths, which have no material atlas of
+// their own - so both live here and the caller picks based on whether it has
+// data, not on which is newer.
+//
+// Dielectrics reflect about 4% of incident light, and they reflect it WHITE
+// whatever colour they are: a red brick has a white highlight. Metals have no
+// diffuse to speak of and reflect their own albedo, which is why copper's
+// highlight is orange and steel's is not. That single difference is most of
+// what makes metal read as metal, and it cannot be faked by making a surface
+// shinier - a shiny dielectric is polished plastic, which is exactly what
+// vanilla metal currently looks like.
+vec3 vvReflectanceF0FromMetalness(vec3 albedo, float metalness)
+{
+    return mix(vec3(VV_DIELECTRIC_F0), albedo, clamp(metalness, 0.0, 1.0));
 }
 
 // Geometric specular antialiasing, after Kaplanyan et al. 2016 and the

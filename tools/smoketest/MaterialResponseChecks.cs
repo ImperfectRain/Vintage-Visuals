@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.RegularExpressions;
+using VintageVisuals.PseudoPBR;
 
 namespace VintageVisuals.SmokeTest
 {
@@ -31,6 +32,139 @@ namespace VintageVisuals.SmokeTest
             CheckSpecularOcclusionPinned(check);
             CheckSpecularOcclusionInvariants(check);
             CheckApplicationSites(check);
+            CheckMetalness(check);
+        }
+
+        /// <summary>
+        /// F0 and the diffuse weight, ported from the shader's metalness path.
+        /// </summary>
+        private static float[] ReflectanceF0(float[] albedo, float metalness)
+        {
+            float m = Clamp01(metalness);
+            var f0 = new float[3];
+            for (int i = 0; i < 3; i++) f0[i] = 0.04f + (albedo[i] - 0.04f) * m;
+            return f0;
+        }
+
+        private static float DiffuseWeight(float metalness, float specularStrength)
+        {
+            return 1f + ((1f - Clamp01(metalness)) - 1f) * specularStrength;
+        }
+
+        /// <summary>
+        /// Metalness must change what a material IS, not merely how bright it
+        /// is, and it must not create energy doing so.
+        ///
+        /// The validation targets are the real Vintage Story material classes
+        /// rather than invented numbers: the classification is authoritative and
+        /// the test's job is to prove the transport and the BRDF respect it, not
+        /// to second-guess it.
+        /// </summary>
+        private static void CheckMetalness(Action<string, bool, string> check)
+        {
+            float[] copper = { 0.72f, 0.45f, 0.20f };
+            float[] steel = { 0.56f, 0.57f, 0.58f };
+
+            // Dielectric end: unchanged from the existing behaviour.
+            float[] dielectric = ReflectanceF0(copper, 0f);
+            check("metalness 0 gives the dielectric reflectance",
+                Math.Abs(dielectric[0] - 0.04f) < 1e-5f &&
+                Math.Abs(dielectric[1] - 0.04f) < 1e-5f &&
+                Math.Abs(dielectric[2] - 0.04f) < 1e-5f,
+                "a non-metal reflects about 4% and reflects it white");
+
+            // Metal end: F0 becomes the albedo, so the highlight is tinted.
+            float[] metal = ReflectanceF0(copper, 1f);
+            check("metalness 1 tints reflectance by the base colour",
+                Math.Abs(metal[0] - copper[0]) < 1e-5f && metal[0] > metal[2] + 0.3f,
+                "copper's highlight is orange because its F0 is orange");
+
+            float[] white = ReflectanceF0(steel, 1f);
+            check("a grey metal keeps a neutral highlight",
+                Math.Abs(white[0] - white[2]) < 0.05f, "steel is not tinted");
+
+            // Diffuse must vanish as metalness rises.
+            check("metalness 1 suppresses diffuse", Math.Abs(DiffuseWeight(1f, 1f)) < 1e-5f, "");
+            check("metalness 0 leaves diffuse untouched", Math.Abs(DiffuseWeight(0f, 1f) - 1f) < 1e-5f, "");
+
+            // Continuity and monotonicity across the range, plus the energy
+            // rule: nothing may exceed 1 or drop below 0 anywhere.
+            bool continuous = true, monotone = true, bounded = true, finite = true;
+            float previousDiffuse = float.MaxValue;
+            float[] previousF0 = null;
+
+            for (int i = 0; i <= 100; i++)
+            {
+                float m = i / 100f;
+                float[] f0 = ReflectanceF0(copper, m);
+                float diffuse = DiffuseWeight(m, 1f);
+
+                for (int c = 0; c < 3; c++)
+                {
+                    if (float.IsNaN(f0[c]) || float.IsInfinity(f0[c])) finite = false;
+                    if (f0[c] < -1e-5f || f0[c] > 1f + 1e-5f) bounded = false;
+                    if (previousF0 != null && Math.Abs(f0[c] - previousF0[c]) > 0.05f) continuous = false;
+                }
+
+                if (float.IsNaN(diffuse) || float.IsInfinity(diffuse)) finite = false;
+                if (diffuse < -1e-5f || diffuse > 1f + 1e-5f) bounded = false;
+                if (diffuse > previousDiffuse + 1e-5f) monotone = false;
+
+                previousDiffuse = diffuse;
+                previousF0 = f0;
+            }
+
+            check("metalness interpolates continuously", continuous, "");
+            check("more metalness never increases the diffuse weight", monotone, "");
+            check("reflectance and diffuse weight stay inside 0..1", bounded, "");
+            check("the metalness path is finite across the whole range", finite, "");
+
+            // The energy rule stated plainly: a metal is not a brighter
+            // dielectric. What it gains in reflectance it loses in diffuse.
+            check("metalness cannot brighten a material merely by being metal",
+                DiffuseWeight(1f, 1f) < DiffuseWeight(0f, 1f),
+                "raising F0 without removing diffuse is how metal becomes shiny plastic");
+
+            // The classification itself: dark does not mean metallic.
+            CheckClassification(check);
+
+            // And the shader must actually contain both halves.
+            check("the shader derives F0 from real metalness when it has it",
+                _pbr.Contains("vvReflectanceF0FromMetalness(albedo, metalness)"), "");
+
+            check("the shader falls back to the stand-in without the second atlas",
+                Regex.IsMatch(_pbr, @"vv_material2Valid\s*>\s*0\.5[\s\S]{0,200}?vvReflectanceF0\(albedo,\s*specularMask\)"),
+                "the entity and particle paths have no atlas and must keep the old answer");
+
+            check("the shader removes diffuse as metalness rises",
+                Regex.IsMatch(_pbr, @"result\s*\*=\s*mix\s*\(\s*1\.0\s*,\s*1\.0\s*-\s*metalness"),
+                "raising F0 alone would make metal a brighter dielectric");
+        }
+
+        /// <summary>
+        /// Metalness comes from the block's material class, never from how dark
+        /// its texture is.
+        /// </summary>
+        private static void CheckClassification(Action<string, bool, string> check)
+        {
+            var metal = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Metal);
+            var ore = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Ore);
+            var stone = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Stone);
+            var wood = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Wood);
+            var soil = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Soil);
+            var leaves = MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Leaves);
+
+            check("metal is classified metallic", metal.Metalness > 0.9f, metal.Metalness.ToString());
+
+            check("stone, wood, soil and leaves are not metallic",
+                stone.Metalness < 0.05f && wood.Metalness < 0.05f &&
+                soil.Metalness < 0.05f && leaves.Metalness < 0.05f,
+                "stone " + stone.Metalness + " wood " + wood.Metalness +
+                " soil " + soil.Metalness + " leaves " + leaves.Metalness);
+
+            check("ore sits between metal and stone",
+                ore.Metalness > stone.Metalness && ore.Metalness < metal.Metalness,
+                ore.Metalness.ToString());
         }
 
         /// <summary>
