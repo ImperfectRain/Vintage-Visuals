@@ -426,6 +426,50 @@ terrain edges precisely because radius 6 was the wrong choice - it is now
   light already mixed in and no way to separate them. A canopy does block sky
   light, so it is defensible rather than merely unavoidable.
 
+### The first gate was an edge detector, and only drew outlines
+
+Reported from view 29: "the visible effect seems to only be an outline around
+already present shadows." Correct, and guaranteed by the formula rather than by
+tuning.
+
+`4p(1-p)` over a ring of shadow taps is maximal where the taps DISAGREE and
+zero wherever the neighbourhood is uniform. It is an edge detector. A point in
+the middle of a leaf shadow reads zero; so does a point in the middle of a wall
+shadow. What distinguishes a canopy is the DENSITY of edges over an area, and
+disagreement measured at a point cannot see density - it can only ever trace a
+boundary.
+
+The correct property is a count, and it is topological rather than photometric.
+Walk a ring of taps in angular order and total the absolute differences:
+
+| Occluder | Total variation around the ring |
+|---|---|
+| Uniform, lit or shadowed alike | 0 |
+| One straight edge, wherever the ring sits | 2 |
+| N separate gaps | 2N |
+
+A wall, a terrace lip, a cliff and a roof are each **one** edge. A canopy is
+many, everywhere. Thresholding above 2 rejects every solid occluder by
+construction rather than by picking a radius that happens to work, and it fills
+regions instead of outlining them, because a ring sitting between two leaf gaps
+still crosses both.
+
+`vvCanopyStructure(radius)` is 12 taps on a closed ring - closed because a
+feature at the seam would otherwise be counted once instead of twice, and the
+seam is a fixed screen direction, so that error would be systematic rather than
+noise. Banded at 2.6..6.0, so one edge scores nothing and three features
+saturate. Multiplied by the ring's own mixedness to reject tangent clips.
+
+It degrades honestly in one respect worth stating: a ring deep inside a solid
+shadow with no gap within its radius returns 0. That IS the right answer -
+sunflecks only exist where light gets through - but it means dapple will not
+tint deep closed-canopy shade, and that is a look question still to be settled.
+
+The ring radius is now the one genuine guess in the system, and it is a guess
+about shadow map scale rather than about the world. Debug view 30 shows the
+count at 3, 5 and 9 texels so it can be read off rather than argued about:
+whichever channel FILLS the area under a crown is the right radius.
+
 ### Still open
 
 The fine radius leaves a band about two texels wide along any straight shadow

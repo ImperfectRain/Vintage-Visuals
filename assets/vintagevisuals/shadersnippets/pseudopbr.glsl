@@ -639,6 +639,109 @@ float vvSunShadowBreakup(float radiusTexels)
 #endif
 }
 
+// How many separate things the shadow boundary crosses around this fragment.
+//
+// This replaces disagreement-at-a-radius as the canopy test, because
+// disagreement is an EDGE DETECTOR and edges are not what distinguishes a
+// canopy. 4p(1-p) is maximal where the taps differ and zero wherever the
+// neighbourhood is uniform, so it can only ever draw outlines: a point in the
+// middle of a leaf shadow reads zero, and so does a point in the middle of a
+// wall shadow. Seen in game as "only an outline around already present
+// shadows", which is precisely what the formula guarantees.
+//
+// What actually separates the two is how many times the shadow CHANGES going
+// around a circle. Walk a ring of taps in angular order and total the
+// absolute differences - the total variation of the ring:
+//
+//   uniform, lit or shadowed alike   TV = 0
+//   one straight edge across it      TV = 2   (out once, back once)
+//   N separate gaps or occluders     TV = 2N
+//
+// A wall, a terrace lip, a cliff and a roof are all ONE edge, wherever the ring
+// is placed. A canopy is many, everywhere. That is a topological property of
+// the occluder rather than a photometric one, it does not care how deep the
+// shadow is, and it fills regions instead of tracing them, because a ring sat
+// entirely inside a gappy shadow still crosses several gaps.
+//
+// It also degrades correctly rather than lying: a ring deep inside a solid
+// shadow with no gap within its radius returns 0, and that IS the right answer.
+// Sunflecks only exist where light gets through.
+float vvCanopyStructure(float radiusTexels)
+{
+#if SHADOWQUALITY > 0
+    if (radiusTexels <= 0.0) return 0.0;
+
+    vec2 texel = vec2(shadowMapWidthInv, shadowMapHeightInv) * radiusTexels;
+
+    // Twelve taps. Eight is enough to count a single edge but too coarse to
+    // separate two nearby gaps from one wide one, and the whole measure is a
+    // count.
+    const int VV_RING_TAPS = 12;
+    const float VV_RING_STEP = 6.28318530718 / 12.0;
+
+#if SHADOWQUALITY > 1
+    bool useNear = shadowCoordsNear.w > 0.0;
+#else
+    bool useNear = false;
+#endif
+
+    if (!useNear && shadowCoordsFar.w <= 0.0) return 0.0;
+
+    float first = 0.0;
+    float previous = 0.0;
+    float variation = 0.0;
+    float sum = 0.0;
+
+    for (int i = 0; i < VV_RING_TAPS; i++)
+    {
+        float angle = float(i) * VV_RING_STEP;
+        vec2 offset = vec2(cos(angle), sin(angle)) * texel;
+
+        float lit;
+        if (useNear)
+        {
+#if SHADOWQUALITY > 1
+            lit = texture(shadowMapNear, vec3(shadowCoordsNear.xy + offset,
+                                              shadowCoordsNear.z - 0.0005));
+#else
+            lit = 1.0;
+#endif
+        }
+        else
+        {
+            lit = texture(shadowMapFar, vec3(shadowCoordsFar.xy + offset,
+                                             shadowCoordsFar.z - 0.0009));
+        }
+
+        if (i == 0) first = lit;
+        else        variation += abs(lit - previous);
+
+        previous = lit;
+        sum += lit;
+    }
+
+    // Close the ring. Without this a feature sitting exactly at the seam is
+    // counted once instead of twice, and the seam is a fixed screen-space
+    // direction, so the error would be systematic rather than noise.
+    variation += abs(first - previous);
+
+    // One edge is 2. Two features are 4. The band starts above a single edge
+    // so a wall contributes nothing, and saturates at three features.
+    float features = smoothstep(2.6, 6.0, variation);
+
+    // A ring can register variation while being almost entirely on one side of
+    // a boundary - a tangent clip. Requiring the ring to be genuinely mixed as
+    // well removes those without touching a real gappy shadow, which is mixed
+    // by definition.
+    float mean = sum / float(VV_RING_TAPS);
+    float mixed = clamp(4.0 * mean * (1.0 - mean), 0.0, 1.0);
+
+    return clamp(features * sqrt(mixed), 0.0, 1.0);
+#else
+    return 0.0;
+#endif
+}
+
 // Whether a CANOPY is what is blocking the sun here.
 //
 // Measured, not assumed, and it replaces vv_sunExposure as the dapple gate.
@@ -656,19 +759,10 @@ float vvSunShadowBreakup(float radiusTexels)
 // Debug view 25 in the same spot shows vanilla's shadow map resolving
 // INDIVIDUAL LEAF SHADOWS. The information was there the whole time.
 //
-// The discriminator is SCALE, and view 26 shows it directly. A canopy breaks
-// the shadow at every scale, leaf gaps included, so the 2-texel ring
-// disagrees. A terrace lip or a wall is one straight edge: the 6- and 16-texel
-// rings disagree across it, but the 2-texel ring only disagrees within about
-// two texels of the line. In view 26 the tree crowns come out white - all
-// three radii firing - and the terrain shadow edges come out cyan, green and
-// blue with little red. That is the separation, and it is why this reads the
-// FINE radius and not the comfortable-looking middle one.
-//
-// The honest remaining leak: a straight shadow edge still produces a band
-// about two texels wide. That is a thin line against the old behaviour of
-// "everywhere under any roof", but it is not zero, and it is the first thing
-// to look at in view 29 if edges start glinting.
+// The discriminator is COUNT, not scale and not depth. A wall, a terrace lip,
+// a cliff and a roof are each ONE edge; a canopy is many. See
+// vvCanopyStructure for why that is the property worth measuring and why the
+// first attempt - disagreement at a small radius - could only draw outlines.
 float vvCanopyEvidence()
 {
     // Only where the sun is actually blocked. A lit fragment has no shadow to
@@ -676,11 +770,18 @@ float vvCanopyEvidence()
     float shadowed = 1.0 - vvSunVisibility();
     if (shadowed < 0.01) return 0.0;
 
-    // Leaf scale. The whole finding is that this radius separates canopy from
-    // masonry and the wider ones do not.
-    float fine = vvSunShadowBreakup(2.0);
+    // Counted, not detected. See vvCanopyStructure: the previous version used
+    // 4p(1-p) at a small radius, which is an edge detector and could only ever
+    // outline a shadow rather than fill it.
+    //
+    // Radius 5 texels: wide enough that a ring sitting between two leaf gaps
+    // still crosses both, narrow enough that it does not reach around a tree
+    // trunk. This is the one number here that is genuinely a guess, and it is a
+    // guess about shadow map scale rather than about the world - view 30 shows
+    // what it is counting.
+    float structure = vvCanopyStructure(5.0);
 
-    return clamp(fine * shadowed, 0.0, 1.0);
+    return clamp(structure * shadowed, 0.0, 1.0);
 }
 
 // Blocks of canopy assumed above a fragment, from just-under-the-leaves to
@@ -1974,6 +2075,27 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // still too coarse for this shadow resolution and the next move is to
     // require agreement across two radii rather than trusting one.
     if (mode == 29) return vec4(vec3(vvCanopyEvidence()), color.a);
+
+    // 30: the structure count at three ring radii. Red 3 texels, green 5
+    // (what the gate uses), blue 9.
+    //
+    // This exists because the ring radius is the one number in the canopy test
+    // that is a guess. It is a guess about shadow map scale, not about the
+    // world, and this view settles it: whichever channel FILLS the area under a
+    // crown - rather than tracing its edges - is the right radius. If red fills
+    // and green only outlines, the gaps are finer than assumed and the radius
+    // should come down; if only blue fills, it should go up.
+    //
+    // A wall, a terrace and a roof should stay dark in ALL THREE, because a
+    // single edge scores 2 in the total variation at every radius and the band
+    // starts above that. That is the check that this is counting occluders
+    // rather than finding boundaries.
+    if (mode == 30)
+    {
+        return vec4(vvCanopyStructure(3.0),
+                    vvCanopyStructure(5.0),
+                    vvCanopyStructure(9.0), color.a);
+    }
 
     if (mode == 28)
     {

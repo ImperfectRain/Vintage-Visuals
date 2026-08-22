@@ -39,6 +39,64 @@ namespace VintageVisuals.SmokeTest
             CheckDebugViewsAreReachable(repo, pbr, check);
             CheckDappleTouchesSunlightOnly(pbr, check);
             CheckGateIsGeometric(pbr, check);
+            CheckStructureCountsOccluders(pbr, check);
+        }
+
+        /// <summary>
+        /// The total-variation count, ported and checked against the shapes it
+        /// has to tell apart.
+        ///
+        /// Walking a ring of taps in angular order and summing the absolute
+        /// differences gives 2 per feature crossed: 0 for a uniform
+        /// neighbourhood, 2 for one straight edge however it is placed, 2N for
+        /// N separate gaps. The gate's threshold has to sit ABOVE 2, or every
+        /// wall, terrace lip, cliff and roof in the world reads as canopy.
+        /// </summary>
+        private static void CheckStructureCountsOccluders(string pbr, Action<string, bool, string> check)
+        {
+            Match fn = Regex.Match(pbr, @"float vvCanopyStructure\(float radiusTexels\)\s*\{(.*?)\n\}",
+                                   RegexOptions.Singleline);
+            check("vvCanopyStructure exists", fn.Success, "");
+            if (!fn.Success) return;
+
+            string body = fn.Groups[1].Value;
+
+            check("the ring is closed",
+                body.Contains("abs(first - previous)"),
+                "an unclosed ring miscounts any feature at the seam, in a fixed screen direction");
+
+            Match band = Regex.Match(body, @"smoothstep\(([\d.]+), ([\d.]+), variation\)");
+            check("the count has a threshold band", band.Success, "");
+            if (!band.Success) return;
+
+            double low = double.Parse(band.Groups[1].Value, CultureInfo.InvariantCulture);
+            double high = double.Parse(band.Groups[2].Value, CultureInfo.InvariantCulture);
+
+            // Total variation around a closed ring for the shapes that matter.
+            const double uniform = 0.0;
+            const double oneEdge = 2.0;
+            const double twoFeatures = 4.0;
+
+            Func<double, double> gate = tv =>
+            {
+                double t = Math.Min(Math.Max((tv - low) / (high - low), 0.0), 1.0);
+                return t * t * (3.0 - 2.0 * t);
+            };
+
+            check("a uniform neighbourhood is not canopy",
+                gate(uniform) < 1e-9, "");
+
+            check("a single straight edge is not canopy",
+                gate(oneEdge) < 1e-9,
+                "threshold band starts at " + low + ", which a wall reaches");
+
+            check("several separate gaps do read as canopy",
+                gate(twoFeatures) > 0.05,
+                "band is so high that real canopy scores nothing");
+
+            check("the band saturates within reach of a real canopy",
+                high <= 8.0,
+                "12 taps cap total variation at 12; a band ending near that is unreachable");
         }
 
         /// <summary>
@@ -105,13 +163,18 @@ namespace VintageVisuals.SmokeTest
                 !body.Contains("vv_sunExposure"),
                 "measured flat at ~1 across a whole forest scene");
 
-            // The fine radius is the finding. A wider one cannot tell a leaf
-            // gap from a terrace lip - view 26 shows the terrain edges lighting
-            // the 6 and 16 texel channels and not the 2 texel one.
+            // COUNTING, not edge detection. 4p(1-p) is maximal where taps
+            // disagree and zero where they agree, so it can only outline a
+            // shadow - seen in game as "only an outline around already present
+            // shadows". The gate must not go back to it.
             Match ev = Regex.Match(pbr, @"float vvCanopyEvidence\(\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
-            check("the canopy evidence uses the fine radius",
-                ev.Success && Regex.IsMatch(ev.Groups[1].Value, @"vvSunShadowBreakup\(2\.0\)"),
-                "a wider radius cannot separate a leaf gap from a straight edge");
+            check("the canopy evidence counts occluders",
+                ev.Success && Regex.IsMatch(ev.Groups[1].Value, @"vvCanopyStructure\("),
+                "");
+
+            check("the canopy evidence is not a bare edge detector",
+                ev.Success && !ev.Groups[1].Value.Contains("vvSunShadowBreakup("),
+                "4p(1-p) at a point can only trace a boundary, never fill a region");
 
             check("the canopy evidence requires the sun to be blocked",
                 ev.Success && ev.Groups[1].Value.Contains("1.0 - vvSunVisibility()"),
