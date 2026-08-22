@@ -80,6 +80,7 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectCameraDeltaUniform = "vv_reflectCameraDelta";
         public const string ReflectValidUniform = "vv_reflectValid";
         public const string ReflectFarUniform = "vv_reflectFar";
+        public const string ReflectFrameSizeUniform = "vv_reflectFrameSize";
         public const string ShaftUniform = "vv_pbrShafts";
 
         // Entity programme only. Named apart from the terrain controls because
@@ -534,28 +535,55 @@ namespace VintageVisuals.PseudoPBR
 
             if (capture == null || !capture.HasCapture || capture.TextureId == 0)
             {
+                TerrainTextureBindInterceptor.SetSceneCapture(0);
                 program.Uniform(ReflectValidUniform, 0f);
                 return;
             }
+
+            // The per-draw rebind is what actually reaches the chunk draws; this
+            // bind only makes the sampler uniform point at the right unit.
+            TerrainTextureBindInterceptor.SetSceneCapture(capture.TextureId);
 
             program.BindTexture2D(ReflectSceneUniform, capture.TextureId,
                                   SceneCaptureRenderer.TextureUnit);
 
             SetIfPresent(program, ReflectViewProjUniform, capture.CaptureViewProjection);
 
-            // Where the camera was at capture time, RELATIVE to where it is now.
-            // The shader works in camera-relative coordinates, so without this
-            // the reflection is projected as though the player had not moved
-            // since last frame and slides across every surface as they walk.
+            // CURRENT MINUS CAPTURE. The direction of this subtraction is the
+            // whole correctness of the reprojection, and it shipped backwards.
+            //
+            // The shader has a point as `cameraRelative = world - currentOrigin`
+            // and must hand the captured matrix `world - captureOrigin`. Those
+            // differ by exactly (currentOrigin - captureOrigin):
+            //
+            //   world - captureOrigin
+            //     = (world - currentOrigin) + (currentOrigin - captureOrigin)
+            //
+            // so the shader adds THIS. Supplying capture-minus-current instead
+            // moves every reflected point the wrong way by twice the camera's
+            // travel, which reads as the reflection sliding across surfaces as
+            // the player walks - the exact failure the correction exists to
+            // prevent, and indistinguishable from having no correction at all
+            // except that it is worse.
+            //
+            // ORIGIN IS THE PLAYER, not the camera. CameraMatrixOriginf is
+            // documented as "player camera matrix with PLAYER positioned at
+            // 0,0,0", and chunkopaque.vsh builds its worldPos the same way -
+            // `xyz + origin`, where origin is chunk-relative-to-player. Both
+            // ends already agree on the player as the origin, and the camera's
+            // own offset is baked into the matrix. Subtracting CameraOffset here
+            // would introduce an error rather than remove one.
             EntityPos now = _capi.World?.Player?.Entity?.Pos;
             Vec3d then = capture.CapturePosition;
 
             Vec3f delta = now == null
                 ? new Vec3f()
-                : new Vec3f((float)(then.X - now.X), (float)(then.Y - now.Y), (float)(then.Z - now.Z));
+                : new Vec3f((float)(now.X - then.X), (float)(now.Y - then.Y), (float)(now.Z - then.Z));
 
             SetIfPresent(program, ReflectCameraDeltaUniform, delta);
             SetIfPresent(program, ReflectFarUniform, _capi.Render.ShaderUniforms.ZFar);
+            SetIfPresent(program, ReflectFrameSizeUniform,
+                         new Vec2f(_capi.Render.FrameWidth, _capi.Render.FrameHeight));
 
             program.Uniform(ReflectValidUniform, 1f);
         }
@@ -566,6 +594,11 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>Same rule for the vec3 uploads.</summary>
+        private static void SetIfPresent(IShaderProgram program, string name, Vec2f value)
+        {
+            if (program.HasUniform(name)) program.Uniform(name, value);
+        }
+
         /// <summary>A 4x4 matrix, for the captured view-projection.</summary>
         private static void SetIfPresent(IShaderProgram program, string name, float[] matrix)
         {

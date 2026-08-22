@@ -49,12 +49,18 @@ namespace VintageVisuals.Reflections
         /// <summary>
         /// Fraction of the screen the capture is rendered at.
         ///
-        /// A quarter in each axis, so a sixteenth of the pixels. The reflection
-        /// resolves to one colour per material texel, so anything finer is
-        /// detail the destination cannot represent, and the capture is a
-        /// per-frame cost paid whether or not anything reflective is on screen.
-        /// </summary>
-        private const float CaptureScale = 0.25f;
+        /// HALF, not a quarter. The first version reasoned that a 16x16
+        /// destination cannot express more than a coarse source, which confuses
+        /// two different resolutions: the destination decides how many LOOKUPS
+        /// there are, the source decides whether each lookup lands on the right
+        /// thing. A block filling 600 screen pixels is served fine by a quarter
+        /// capture; the same block 30 pixels away gets about eight source pixels
+        /// to reflect a whole world into, and the image is destroyed before it
+        /// ever reaches the material grid.
+        ///
+        /// Half is still a quarter of the pixels and, with nearest sampling
+        /// below, keeps the reflected colour a real pixel of the captured world.
+        private const float CaptureScale = 0.5f;
 
         private readonly ICoreClientAPI _capi;
         private readonly Action<string> _log;
@@ -195,8 +201,15 @@ namespace VintageVisuals.Reflections
                             Height = wantH,
                             PixelInternalFormat = EnumTextureInternalFormat.Rgba8,
                             PixelFormat = EnumTexturePixelFormat.Rgba,
-                            MinFilter = EnumTextureFilter.Linear,
-                            MagFilter = EnumTextureFilter.Linear,
+                            // NEAREST, not linear. Bilinear filtering blends
+                            // four captured pixels into every lookup, so the
+                            // colour a texel receives is an interpolation of
+                            // things that are not there - a blurry
+                            // reconstruction wearing a pixel grid. The whole
+                            // visual language depends on the reflected colour
+                            // being a real pixel of the captured world.
+                            MinFilter = EnumTextureFilter.Nearest,
+                            MagFilter = EnumTextureFilter.Nearest,
                             WrapS = EnumTextureWrap.ClampToEdge,
                             WrapT = EnumTextureWrap.ClampToEdge,
                         },

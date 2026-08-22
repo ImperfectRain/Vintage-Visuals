@@ -105,6 +105,7 @@ uniform mat4 vv_reflectViewProj;     // the transform that capture was drawn wit
 uniform vec3 vv_reflectCameraDelta;  // capture camera position minus this frame's
 uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
 uniform float vv_reflectFar;         // far plane the packed depth was normalised by
+uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -1497,6 +1498,11 @@ struct VvSceneHit
 {
     vec3 color;
     float valid;
+
+    // Where on the captured frame this ended up. Carried out purely so debug
+    // view 43 can show it: a sign error in the camera reprojection is invisible
+    // in a colour and obvious in a coordinate field.
+    vec2 uv;
 };
 
 // Projects a camera-relative point into the captured frame and reads it.
@@ -1510,6 +1516,7 @@ VvSceneHit vvSampleCapture(vec3 cameraRelative, float expectedDistance)
     VvSceneHit hit;
     hit.color = vec3(0.0);
     hit.valid = 0.0;
+    hit.uv = vec2(0.0);
 
     vec4 clip = vv_reflectViewProj * vec4(cameraRelative + vv_reflectCameraDelta, 1.0);
     if (clip.w <= 0.0001) return hit;
@@ -1518,6 +1525,7 @@ VvSceneHit vvSampleCapture(vec3 cameraRelative, float expectedDistance)
     if (any(greaterThan(abs(ndc.xy), vec2(1.0)))) return hit;
 
     vec2 uv = ndc.xy * 0.5 + 0.5;
+    hit.uv = uv;
     vec4 captured = texture(vv_reflectScene, uv);
 
     // Alpha carries linear view distance, normalised by the far plane.
@@ -1543,6 +1551,7 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     VvSceneHit miss;
     miss.color = vec3(0.0);
     miss.valid = 0.0;
+    miss.uv = vec2(0.0);
 
     if (vv_reflectValid < 0.5) return miss;
 
@@ -2391,15 +2400,52 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
 
     // 41: the captured frame itself, projected flat.
     //
-    // A sanity check on the capture rather than on the reflection: it should
-    // look like last frame, shrunk. If it is black, the capture pass is not
-    // running; if it is a single colour, the framebuffer bound but nothing drew
-    // into it. Alpha carries depth and is shown in blue.
+    // A sanity check on the CAPTURE, not on the reflection. It should look like
+    // last frame, shrunk and soft. What it must not look like is a texture
+    // atlas: this view showed plant sprites and brickwork once, which is how the
+    // per-draw rebinding bug was found - the sampler was reading whatever
+    // texture happened to be on its unit when the chunk was drawn, and view 39
+    // was reporting confident hits against that garbage.
+    //
+    // Blue is the packed depth. A frame with structure in RGB but a flat blue
+    // is a capture whose depth pass is wrong; a frame that is flat in both is a
+    // capture that never drew.
+    //
+    // Screen coordinates come from the mod's own frame size rather than from
+    // textureSize scaled by a guess at the capture ratio - the old form assumed
+    // the capture was exactly a quarter of the screen, which integer truncation
+    // makes false at most window sizes.
     if (mode == 41)
     {
-        vec2 screen = gl_FragCoord.xy / max(vec2(1.0), vec2(textureSize(vv_reflectScene, 0)) * 4.0);
+        if (vv_reflectValid < 0.5) return vec4(0.0, 0.0, 0.35, color.a);
+
+        vec2 screen = gl_FragCoord.xy / max(vec2(1.0), vv_reflectFrameSize);
         vec4 cap = texture(vv_reflectScene, clamp(screen, 0.0, 1.0));
+
         return vec4(mix(cap.rgb, vec3(0.0, 0.0, cap.a), 0.35), color.a);
+    }
+
+    // 43: the capture coordinate each texel is reading. Red is U, green is V.
+    //
+    // THE VIEW THAT CATCHES REPROJECTION ERRORS. A colour hides a wrong
+    // transform; a coordinate field cannot. On a large flat surface this should
+    // be a smooth, continuous gradient that shifts steadily as the camera moves.
+    //
+    //   torn or discontinuous   the march is jumping between surfaces
+    //   sliding the wrong way   the camera delta has the wrong sign
+    //   frozen while walking    the delta is not reaching the shader
+    //   clamped to an edge      the reflected point is off screen
+    //
+    // The camera-delta sign shipped backwards once and was invisible in every
+    // other view, because a reflection of the wrong part of the world is still
+    // a plausible-looking reflection. It is not subtle here.
+    if (mode == 43)
+    {
+        vec3 n43 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        VvSceneHit hit43 = vvSceneReflection(n43, materialUv, cameraRelativePos);
+
+        if (hit43.valid < 0.5) return vec4(vec3(0.08), color.a);
+        return vec4(hit43.uv, 0.0, color.a);
     }
 
     // 42: how far the camera has moved since the capture, as a colour.

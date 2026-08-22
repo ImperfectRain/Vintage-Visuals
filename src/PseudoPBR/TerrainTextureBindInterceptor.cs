@@ -5,6 +5,7 @@ using System.Reflection;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using VintageVisuals.Reflections;
 
 namespace VintageVisuals.PseudoPBR
 {
@@ -45,6 +46,25 @@ namespace VintageVisuals.PseudoPBR
         
         /// <summary>Second material page per atlas texture. May be empty; see SetPages.</summary>
         private static readonly Dictionary<int, int> SecondPageByAtlasTexture = new Dictionary<int, int>();
+
+        /// <summary>
+        /// The captured scene texture, rebound alongside the material atlases.
+        ///
+        /// It has to be rebound HERE, per draw call, for exactly the reason the
+        /// atlases do. A texture unit is global GL state, not per-program: the
+        /// binder sets it once at the start of the frame, and anything the game
+        /// binds afterwards - GUI, held item, another atlas page - replaces
+        /// whatever was on that unit before the terrain chunks are drawn.
+        ///
+        /// This was diagnosed from debug view 41, which showed the block atlas
+        /// and pieces of unrelated textures where the captured frame should have
+        /// been, while view 39 reported valid hits: the reflection was sampling
+        /// whatever happened to be on unit 13 at draw time and finding alpha
+        /// values that passed the depth test by chance. A per-frame bind and a
+        /// per-draw bind look identical in every static test and completely
+        /// different on screen.
+        /// </summary>
+        private static volatile int _captureTextureId;
         private static ILogger _logger;
         private static volatile bool _active;
 
@@ -143,6 +163,17 @@ namespace VintageVisuals.PseudoPBR
         /// Passing null deactivates the hook without unpatching it, which is
         /// what "the subsystem is switched off" should cost.
         /// </summary>
+        /// <summary>
+        /// The captured scene texture to rebind per draw, or 0 for none.
+        ///
+        /// 0 is the safe value and means the shader's validity uniform decides:
+        /// nothing is bound, the reflection falls back to the analytic sky.
+        /// </summary>
+        public static void SetSceneCapture(int textureId)
+        {
+            _captureTextureId = textureId;
+        }
+
         public static void SetPages(Dictionary<int, int> materialPageByAtlasTexture)
         {
             SetPages(materialPageByAtlasTexture, null);
@@ -259,6 +290,18 @@ namespace VintageVisuals.PseudoPBR
                 {
                     program.BindTexture2D(PbrShaderBinder.SecondSamplerUniform, secondTextureId,
                                           MaterialAtlasTexture.SecondTextureUnit);
+                }
+
+                // The captured scene, on the same per-draw footing. See the
+                // note on _captureTextureId: bound once a frame it does not
+                // survive to the chunk draws, and the reflection then samples
+                // whatever texture the unit is holding instead.
+                int captureId = _captureTextureId;
+
+                if (captureId != 0 && program.HasUniform(PbrShaderBinder.ReflectSceneUniform))
+                {
+                    program.BindTexture2D(PbrShaderBinder.ReflectSceneUniform, captureId,
+                                          SceneCaptureRenderer.TextureUnit);
                 }
             }
             catch (Exception ex)

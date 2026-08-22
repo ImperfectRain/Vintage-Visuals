@@ -691,6 +691,56 @@ and every failure path - shader, framebuffer, engine texture ids - disables and
 logs rather than throwing. The shader's validity uniform is 0 in all of those
 cases, and 0 means the fallback, which is exactly what shipped before.
 
+### Corrected after the first in-game test
+
+Two screenshots and an external audit. The bridge was alive - view 39 showed
+green, never blue - but the image was wrong, and there were four separate causes.
+
+**The sampler was not surviving to the draw call.** Debug view 41 showed the
+block atlas and pieces of unrelated textures where the captured frame should
+have been. A texture unit is GLOBAL GL state, not per-program: binding once a
+frame in `PbrShaderBinder.Upload` does not survive to the chunk draws, because
+anything the game binds in between replaces it. The material atlases already had
+this problem and `TerrainTextureBindInterceptor` exists to solve it; the capture
+now rides the same per-draw path. **This also means every green pixel in view 39
+was a false positive** - the march was finding alpha values in whatever texture
+was on unit 13 and passing them off as depth.
+
+**The camera reprojection had the sign backwards.** The shader holds a point as
+`world - currentOrigin` and must hand the captured matrix `world -
+captureOrigin`. Those differ by `currentOrigin - captureOrigin`; the binder
+supplied the negative of that. The result moves every reflected point the wrong
+way by TWICE the camera's travel - worse than having no correction at all, and
+invisible in every view except a coordinate field, because a reflection of the
+wrong part of the world still looks like a reflection.
+
+The identity is now pinned numerically rather than by matching an expression, so
+a rewrite that keeps the shape and flips the meaning still fails.
+
+**The capture was bilinearly filtered.** Every lookup blended four captured
+pixels, so the colour a texel received was an interpolation of things that are
+not in the world - a blurry reconstruction wearing a pixel grid. Nearest now.
+
+**The capture was too coarse.** A quarter in each axis was justified by "the
+destination is 16x16", which confuses two resolutions: the destination decides
+how many LOOKUPS there are, the source decides whether each lands on the right
+thing. A block 30 pixels away got about eight source pixels to reflect a world
+into. Half now.
+
+### Not changed, and why
+
+The audit also suggested using `CameraOffset` rather than the player position as
+the capture origin. That would introduce an error rather than remove one:
+`CameraMatrixOriginf` is documented as *"player camera matrix with **player**
+positioned at 0,0,0"*, and `chunkopaque.vsh` builds its `worldPos` the same way -
+`xyz + origin`, with origin chunk-relative-to-player. Both ends already agree on
+the player as the origin and the camera's own offset is baked into the matrix. A
+test pins this so it is not "fixed" later.
+
+Ray traversal and depth precision are deliberately untouched. The audit is right
+that tuning them before the coordinate system is correct means tuning against a
+broken transform.
+
 ### Limits
 
 - **NOT SEEN ON SCREEN. L2.** Every claim here is static: shaders compile in all

@@ -52,6 +52,73 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
+        /// The reprojection identity, checked as arithmetic.
+        ///
+        /// The shader holds a point as `cameraRelative = world - currentOrigin`
+        /// and must hand the captured matrix `world - captureOrigin`. Those
+        /// differ by exactly (currentOrigin - captureOrigin), so:
+        ///
+        ///   cameraRelative + delta == world - captureOrigin
+        ///
+        /// must hold. It shipped with the subtraction the other way round, which
+        /// moves every reflected point the wrong way by twice the camera's
+        /// travel. That is worse than having no correction at all, and it was
+        /// invisible in every debug view except a coordinate field, because a
+        /// reflection of the wrong part of the world still looks like a
+        /// reflection.
+        ///
+        /// Pinned numerically rather than by matching the expression, so it
+        /// cannot be satisfied by a rewrite that keeps the shape and flips the
+        /// meaning.
+        /// </summary>
+        private static void CheckReprojectionSign(string binder, Action<string, bool, string> check)
+        {
+            Match m = Regex.Match(binder,
+                @"new Vec3f\(\(float\)\((\w+)\.X - (\w+)\.X\)");
+
+            check("the camera delta is computed", m.Success, "");
+            if (!m.Success) return;
+
+            bool currentMinusCapture = m.Groups[1].Value == "now" && m.Groups[2].Value == "then";
+
+            // Concrete numbers, so the assertion is about behaviour and not
+            // about which identifier is spelled first.
+            const double world = 100.0;
+            const double captureOrigin = 10.0;
+            const double currentOrigin = 13.0;
+
+            double cameraRelative = world - currentOrigin;
+            double delta = currentMinusCapture ? currentOrigin - captureOrigin
+                                               : captureOrigin - currentOrigin;
+
+            double projected = cameraRelative + delta;
+            double wanted = world - captureOrigin;
+
+            check("a point reprojects into the captured frame exactly",
+                Math.Abs(projected - wanted) < 1e-9,
+                "got " + projected + ", the captured matrix needs " + wanted
+                    + " - the subtraction is the wrong way round");
+
+            check("the shader adds the delta rather than subtracting it",
+                _code.Contains("cameraRelative + vv_reflectCameraDelta"),
+                "the sign convention is split across two files and must agree");
+
+            // The origin is the PLAYER, both ends. CameraMatrixOriginf is
+            // documented as "player camera matrix with player positioned at
+            // 0,0,0", and chunkopaque.vsh builds worldPos as xyz + origin with
+            // origin chunk-relative-to-player. Introducing CameraOffset here
+            // would add an error rather than remove one.
+            // Comments stripped: the explanation of why CameraOffset is WRONG
+            // here names it, and a check that reads prose fails on its own
+            // reasoning. Third time this file has been caught by that.
+            string code = Regex.Replace(binder, @"//[^\n]*", "");
+
+            check("the capture records the same origin the matrix uses",
+                code.Contains("Player?.Entity?.Pos") && !code.Contains("CameraOffset"),
+                "CameraMatrixOriginf puts the PLAYER at the origin, not the camera");
+        }
+
+        /// <summary>
         /// The render-stage bridge: the thing that makes this a reflection of
         /// the world rather than of the sky.
         ///
@@ -108,6 +175,27 @@ namespace VintageVisuals.SmokeTest
             check("the binder actually binds the captured scene",
                 binder.Contains("BindTexture2D(ReflectSceneUniform"), "");
 
+            // THE BUG THIS PINS. A texture unit is global GL state, not
+            // per-program. Binding once a frame in the binder does not survive
+            // to the chunk draws - anything the game binds in between replaces
+            // it - so the reflection sampled whatever texture happened to be on
+            // its unit at draw time. Debug view 41 showed the block atlas where
+            // the captured frame should have been, while view 39 reported
+            // confident hits against that garbage.
+            //
+            // The material atlases already had this problem and the interceptor
+            // was written to solve it. The capture has to ride the same path.
+            string interceptor = File.ReadAllText(
+                Path.Combine(repo, "src/PseudoPBR/TerrainTextureBindInterceptor.cs"));
+
+            check("the capture is rebound per draw call, not once per frame",
+                interceptor.Contains("BindTexture2D(PbrShaderBinder.ReflectSceneUniform"),
+                "a per-frame bind and a per-draw bind are identical in every static test");
+
+            check("the per-draw capture id is cleared when there is no capture",
+                Regex.IsMatch(binder, @"SetSceneCapture\(0\)"),
+                "a stale id keeps a destroyed texture bound");
+
             check("the binder uploads a validity on EVERY path",
                 Regex.Matches(binder, @"Uniform\(ReflectValidUniform").Count >= 2,
                 "one path that skips it leaves the uniform at whatever was there before");
@@ -132,6 +220,8 @@ namespace VintageVisuals.SmokeTest
             check("the march accounts for camera movement since the capture",
                 _code.Contains("vv_reflectCameraDelta"),
                 "without it the reflection slides across surfaces as the player walks");
+
+            CheckReprojectionSign(binder, check);
 
             check("the march is short",
                 Regex.IsMatch(_code, @"VV_SSR_STEPS = ([2-9]|1[0-6])\s*;"),
