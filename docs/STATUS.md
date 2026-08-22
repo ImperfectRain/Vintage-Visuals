@@ -959,11 +959,11 @@ The reconciliation pass installed `DocumentationChecks`. A closure pass over it
 found three more stale claims it did not catch, because they are PROSE rather
 than paths or phrasing about directories:
 
-| Claim | Reality |
+| What the document said | Reality |
 |---|---|
-| `src/PseudoPBR/README.md`: "`chunktopsoil.fsh` - not started" | Patched by `pseudopbrtopsoil`, 9 anchors, all 24 combinations |
-| `src/PseudoPBR/README.md`: "Roughness modulates SSR blur - not started (needs Phase 3)" | Roughness controls reflection COARSENESS. Blur is a rejected concept (D11), and "Phase 3" referred to a roadmap that no longer exists |
-| `CHANGELOG.md`: "Weather, reflections and the in-game PBR pipeline are not implemented" | All three have shipped |
+| `src/PseudoPBR/README.md` said "`chunktopsoil.fsh` - not started" | Patched by `pseudopbrtopsoil`, 9 anchors, all 24 combinations |
+| `src/PseudoPBR/README.md` said "Roughness modulates SSR blur - not started (needs Phase 3)" | Roughness controls reflection COARSENESS. Blur is a rejected concept (D11), and "Phase 3" referred to a roadmap that no longer exists |
+| `CHANGELOG.md` said "Weather, reflections and the in-game PBR pipeline are not implemented" | All three have shipped |
 
 The check now takes evidence from the patch YAML: a shader named there IS
 patched, and a document saying otherwise on the same line is wrong.
