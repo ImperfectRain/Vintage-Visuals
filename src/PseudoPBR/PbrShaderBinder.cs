@@ -33,6 +33,18 @@ namespace VintageVisuals.PseudoPBR
         private const double BindBeforeTerrainOpaque = 0.35;
 
         public const string SamplerUniform = "vv_materialTex";
+        public const string SecondSamplerUniform = "vv_materialTex2";
+
+        /// <summary>
+        /// 1 only when the second atlas is genuinely on the GPU.
+        ///
+        /// Its zero is the fallback, and zero is also what an unset uniform
+        /// reads - so a program that never received this, or one whose group
+        /// rolled back, reads exactly what a failed build produces rather than
+        /// sampling an uninitialised texture unit and calling the result
+        /// metalness.
+        /// </summary>
+        public const string SecondValidUniform = "vv_material2Valid";
         public const string EnabledUniform = "vv_pbrEnabled";
         public const string NormalStrengthUniform = "vv_pbrNormalStrength";
         public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
@@ -124,7 +136,9 @@ namespace VintageVisuals.PseudoPBR
 
         private readonly ICoreClientAPI _capi;
         private readonly MaterialAtlasSet _atlas;
+        private readonly MaterialAtlasSet _atlas2;
         private readonly Func<Dictionary<int, int>> _buildPageMap;
+        private readonly Func<Dictionary<int, int>> _buildSecondPageMap;
 
         private bool _enabled;
         private PseudoPbrConfig _look = new PseudoPbrConfig();
@@ -143,19 +157,24 @@ namespace VintageVisuals.PseudoPBR
         // staying silent.
         private bool _reportedNoPixels;
         private bool _reportedNoTexture;
+        private bool _reportedNoSecond;
+        private bool _secondAtlasReady;
         private bool _reportedMissingUniform;
         private bool _reportedActive;
         private bool _reportedBusy;
         private bool _reportedEntities;
         private bool _reportedParticles;
 
-        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas,
+        public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas, MaterialAtlasSet atlas2,
                                Func<Dictionary<int, int>> buildPageMap,
+                               Func<Dictionary<int, int>> buildSecondPageMap,
                                Func<SceneInputs> readScene)
         {
             _capi = capi;
             _atlas = atlas;
+            _atlas2 = atlas2;
             _buildPageMap = buildPageMap;
+            _buildSecondPageMap = buildSecondPageMap;
             _readScene = readScene;
         }
 
@@ -239,6 +258,25 @@ namespace VintageVisuals.PseudoPBR
             // binds it to the active unit as a side effect, and doing that at
             // an arbitrary moment during startup means clobbering whatever the
             // game had bound there.
+            // The second atlas is a strict addition, so its upload is attempted
+            // separately and its failure is not allowed to cost the first. A
+            // missing second page means metalness, height, AO and the emission
+            // mask fall back to neutral; a missing FIRST page means there is no
+            // material system at all, and conflating the two would let a new
+            // feature take out an established one.
+            bool second = _atlas2 != null && _atlas2.HasPixels &&
+                          _atlas2.EnsureUploaded(_capi, _capi.Logger);
+
+            if (!second && _atlas2 != null && _atlas2.HasPixels && !_reportedNoSecond)
+            {
+                _reportedNoSecond = true;
+                _capi.Logger.Warning("[VintageVisuals] pseudopbr: the second material atlas is not on the GPU. " +
+                    "Metalness, height, baked AO and the emission mask fall back to neutral; everything else " +
+                    "is unaffected.");
+            }
+
+            _secondAtlasReady = second;
+
             if (!_atlas.EnsureUploaded(_capi, _capi.Logger))
             {
                 if (!_reportedNoTexture)
@@ -256,7 +294,8 @@ namespace VintageVisuals.PseudoPBR
             // its atlas textures on reload and their ids change with them, and
             // a stale map is a page rendering with another page's material
             // data - silent and wrong, the worst of the two failure modes.
-            TerrainTextureBindInterceptor.SetPages(_buildPageMap());
+            TerrainTextureBindInterceptor.SetPages(_buildPageMap(),
+                _secondAtlasReady && _buildSecondPageMap != null ? _buildSecondPageMap() : null);
 
             int uploaded = 0;
             foreach (EnumShaderProgram id in PatchedPrograms)
@@ -317,6 +356,18 @@ namespace VintageVisuals.PseudoPBR
             // vanilla selects it, but on a single-page atlas there is nothing
             // to swap and this is the whole binding.
             program.BindTexture2D(SamplerUniform, _atlas.TextureIdFor(0), MaterialAtlasTexture.TextureUnit);
+
+            // Same story for the second page: bound to its own explicit unit,
+            // and only when it is genuinely there. vv_material2Valid is
+            // uploaded either way, and its zero is what makes every consumer
+            // fall back rather than sample an unbound unit.
+            if (_secondAtlasReady && program.HasUniform(SecondSamplerUniform))
+            {
+                program.BindTexture2D(SecondSamplerUniform, _atlas2.TextureIdFor(0),
+                                      MaterialAtlasTexture.SecondTextureUnit);
+            }
+
+            SetIfPresent(program, SecondValidUniform, _secondAtlasReady ? 1f : 0f);
 
             SetIfPresent(program, EnabledUniform, 1f);
             SetIfPresent(program, NormalStrengthUniform, _look.NormalStrength);
@@ -510,6 +561,12 @@ namespace VintageVisuals.PseudoPBR
                 }
 
                 _programsThinkEnabled = false;
+            }
+
+            if (_atlas2 != null && _atlas2.AnyUploaded)
+            {
+                _atlas2.Release();
+                _secondAtlasReady = false;
             }
 
             if (_atlas.AnyUploaded)

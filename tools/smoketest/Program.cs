@@ -204,6 +204,9 @@ void main(void) {
         Console.WriteLine("Material response invariants");
         MaterialResponseChecks.Run(Repo, Check);
 
+        Console.WriteLine("The second material atlas");
+        SecondAtlasChecks.Run(Repo, Check);
+
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 

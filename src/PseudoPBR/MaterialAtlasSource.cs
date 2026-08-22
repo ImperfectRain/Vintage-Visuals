@@ -50,6 +50,27 @@ namespace VintageVisuals.PseudoPBR
 
                 MaterialProfile profile = MaterialProfiles.For(block.BlockMaterial);
 
+                // Vanilla's own emission level for this block, normalised the
+                // way the vertex shader normalises it: chunkopaque.vsh reads
+                // glowLevel = (renderFlags & GlowLevelBitMask) / 256.0, and
+                // GlowLevel is that same byte. Matching the divisor keeps the
+                // CPU's idea of "does this emit" identical to the shader's.
+                //
+                // This is the ONLY thing that decides whether a texture is
+                // allowed an emission mask at all. Nothing about the pixels can
+                // grant one.
+                float glowLevel = 0f;
+                try
+                {
+                    if (block.VertexFlags != null) glowLevel = block.VertexFlags.GlowLevel / 256f;
+                }
+                catch (Exception)
+                {
+                    // A block whose flags cannot be read simply does not emit,
+                    // which is the safe direction: no mask rather than a
+                    // guessed one.
+                }
+
                 foreach (KeyValuePair<string, CompositeTexture> entry in block.Textures)
                 {
                     CompositeTexture composite = entry.Value;
@@ -86,7 +107,7 @@ namespace VintageVisuals.PseudoPBR
                         string reason;
                         bool rescaled;
                         AtlasRegion region = TryBuildRegion(capi, source, position, profile,
-                            atlasWidth, atlasHeight, name, out reason, out rescaled);
+                            glowLevel, atlasWidth, atlasHeight, name, out reason, out rescaled);
                         if (rescaled) resized++;
 
                         if (region != null)
@@ -231,6 +252,7 @@ namespace VintageVisuals.PseudoPBR
 
         private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, AssetLocation source,
                                                   TextureAtlasPosition position, MaterialProfile profile,
+                                                  float glowLevel,
                                                   int atlasWidth, int atlasHeight, string name,
                                                   out string skipReason, out bool rescaled)
         {
@@ -288,6 +310,7 @@ namespace VintageVisuals.PseudoPBR
                         Height = slotHeight,
                         Texture = texture,
                         Profile = profile,
+                        GlowLevel = glowLevel,
                         Name = name,
                     };
                 }

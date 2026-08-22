@@ -51,6 +51,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _atlasBuilt;
 
         private MaterialAtlasSet _atlasTexture;
+        private MaterialAtlasSet _atlasTexture2;
         private TerrainTextureBindInterceptor _bindInterceptor;
         private PbrShaderBinder _binder;
 
@@ -73,6 +74,7 @@ namespace VintageVisuals.PseudoPBR
             _mod = mod;
 
             _atlasTexture = new MaterialAtlasSet();
+            _atlasTexture2 = new MaterialAtlasSet();
 
             // Installed up front, before anything knows how many pages the
             // block atlas will need. Its success is what decides whether a
@@ -81,7 +83,8 @@ namespace VintageVisuals.PseudoPBR
             _bindInterceptor = new TerrainTextureBindInterceptor(mod.HarmonyId, mod.Mod.Logger);
             _bindInterceptor.Install();
 
-            _binder = new PbrShaderBinder(mod.Capi, _atlasTexture, BuildPageMap, ReadScene);
+            _binder = new PbrShaderBinder(mod.Capi, _atlasTexture, _atlasTexture2, BuildPageMap,
+                                          BuildSecondPageMap, ReadScene);
 
             // Registered up front and left registered. It is a no-op until the
             // atlas is uploaded, and registering it here rather than at upload
@@ -305,6 +308,63 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>Derives, caches and previews one page. Returns false if it could not be built yet.</summary>
+        /// <summary>
+        /// Builds and caches the second material page for one atlas page.
+        ///
+        /// Never returns failure. The second atlas is a strict addition: if it
+        /// cannot be built the first still works and the shader falls back to
+        /// neutral, so a fault here must cost metalness and the emission mask
+        /// rather than the whole material system. That asymmetry is deliberate
+        /// and is the reason this is not folded into BuildAtlasPage.
+        /// </summary>
+        private void BuildSecondAtlasPage(int page, List<AtlasRegion> regions, PbrDiagnostics diagnostics,
+                                          string directory, int width, int height)
+        {
+            try
+            {
+                string cachePath = Path.Combine(directory, "material2-atlas-" + page + ".bin");
+
+                ulong fingerprint = MaterialAtlas2Builder.Fingerprint(width, height, regions,
+                                                                     MaterialAtlasCache.FormatVersion);
+
+                MaterialAtlasCache.CachedAtlas cached = MaterialAtlasCache.TryLoad(cachePath, fingerprint);
+
+                int[] pixels;
+                if (cached != null && cached.Width == width && cached.Height == height)
+                {
+                    pixels = cached.Pixels;
+                    diagnostics.Note("reused cached second material atlas page " + page + ".");
+                }
+                else
+                {
+                    int written, outOfBounds;
+                    pixels = MaterialAtlas2Builder.Build(width, height, regions, out written, out outOfBounds);
+
+                    diagnostics.Note("built second material atlas page " + page + " (" + width + "x" + height +
+                                     ") from " + written + " texture(s)" +
+                                     (outOfBounds > 0 ? ", " + outOfBounds + " outside the atlas bounds" : "") +
+                                     " - metalness, height, baked AO, emission mask.");
+
+                    try
+                    {
+                        MaterialAtlasCache.Save(cachePath, width, height, fingerprint, pixels);
+                    }
+                    catch (Exception ex)
+                    {
+                        diagnostics.Warn("could not cache second atlas page " + page + ": " + ex.Message);
+                    }
+                }
+
+                _atlasTexture2.SetPending(page, width, height, pixels);
+            }
+            catch (Exception ex)
+            {
+                diagnostics.Warn("the second material atlas page " + page + " could not be built (" +
+                                 ex.Message + "). Metalness, height, baked AO and the emission mask fall back " +
+                                 "to neutral; the rest of the material system is unaffected.");
+            }
+        }
+
         private bool BuildAtlasPage(int page, PseudoPbrConfig config, PbrDiagnostics diagnostics,
                                     string directory, int width, int height)
         {
@@ -369,6 +429,13 @@ namespace VintageVisuals.PseudoPBR
             // the active unit as a side effect, and doing that here, during an
             // asset-load event, means clobbering whatever the game had bound.
             _atlasTexture.SetPending(page, width, height, pixels);
+
+            // The second page, from the SAME region list. Sharing the regions
+            // rather than collecting them again is what guarantees the two
+            // atlases describe the same slots at the same coordinates - the
+            // property every consumer that reads both depends on, and one that
+            // a second collection pass could silently break.
+            BuildSecondAtlasPage(page, regions, diagnostics, directory, width, height);
 
             if (config.WriteAtlasPreview)
             {
@@ -439,16 +506,35 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         private Dictionary<int, int> BuildPageMap()
         {
+            return BuildPageMapFor(_atlasTexture);
+        }
+
+        private Dictionary<int, int> BuildSecondPageMap()
+        {
+            return BuildPageMapFor(_atlasTexture2);
+        }
+
+        /// <summary>
+        /// Maps each of the game's atlas textures to our page for it.
+        ///
+        /// Shared by both atlases so the two maps are built from the same
+        /// enumeration in the same order. A page missing from one set simply
+        /// does not appear in its map, which for the second atlas means that
+        /// draw call binds no second page and the shader falls back - rather
+        /// than binding a page belonging to a different atlas texture.
+        /// </summary>
+        private Dictionary<int, int> BuildPageMapFor(MaterialAtlasSet set)
+        {
             var map = new Dictionary<int, int>();
 
-            if (_mod?.Capi == null || _atlasTexture == null) return map;
+            if (_mod?.Capi == null || set == null) return map;
 
             List<LoadedTexture> atlases = _mod.Capi.BlockTextureAtlas.AtlasTextures;
             if (atlases == null) return map;
 
             for (int page = 0; page < atlases.Count; page++)
             {
-                int ours = _atlasTexture.TextureIdFor(page);
+                int ours = set.TextureIdFor(page);
                 if (ours == 0 || atlases[page] == null || atlases[page].TextureId == 0) continue;
 
                 map[atlases[page].TextureId] = ours;
@@ -474,6 +560,12 @@ namespace VintageVisuals.PseudoPBR
             {
                 _atlasTexture.Dispose();
                 _atlasTexture = null;
+            }
+
+            if (_atlasTexture2 != null)
+            {
+                _atlasTexture2.Dispose();
+                _atlasTexture2 = null;
             }
 
             _binder = null;

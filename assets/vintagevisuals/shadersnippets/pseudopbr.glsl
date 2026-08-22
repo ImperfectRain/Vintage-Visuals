@@ -34,6 +34,30 @@ uniform sampler2D liquidDepth;
 
 uniform sampler2D vv_materialTex;
 
+// The SECOND material atlas. Same layout, same slots, same UVs - a different
+// four properties.
+//
+// Declared immediately BELOW the first, which is below every vanilla sampler.
+// That ordering is not stylistic. Sampler texture units are assigned at LINK
+// time from the program's active sampler list, so a sampler inserted above
+// vanilla's shifts every unit below it; doing exactly that once pushed
+// liquidDepth off the end, saturated getUnderwaterMurkiness, and turned every
+// terrain fragment the colour of water murk. Both atlases are also bound to
+// explicit units at bind time rather than trusting the linker, so the two
+// defences are independent.
+//
+//   R = metalness      is this surface a conductor
+//   G = height         the surface's own relief, normalised per texture
+//   B = baked AO       broad occlusion from that height
+//   A = emission mask  WHERE an already-emitting block emits
+uniform sampler2D vv_materialTex2;
+
+// 0 when the second atlas is unavailable - not built, not uploaded, rolled
+// back, or switched off. Zero is also what an unset uniform reads, so every
+// consumer below falls back to the pre-second-atlas behaviour by default rather
+// than by remembering to.
+uniform float vv_material2Valid;
+
 // Master switch AND the "did the CPU side actually bind anything" flag. An
 // unset GLSL uniform reads as exactly 0, so a failure to bind lands on the
 // same branch as a deliberate disable: vanilla shading, vanilla output.
@@ -125,6 +149,46 @@ vec4 vvSampleMaterial(vec2 materialUv)
 {
     return texture(vv_materialTex, vvSnapToTexel(materialUv));
 }
+
+// Everything the second atlas knows about one texel, in one place.
+//
+// A struct rather than four calls to .r/.g/.b/.a scattered through the shader:
+// channel assignments are the kind of knowledge that gets duplicated and then
+// only half-updated, and a consumer that reads .b thinking it is height is a
+// bug no compiler will catch.
+struct VvMaterial2
+{
+    float metalness;
+    float height;
+    float occlusion;
+    float emission;
+};
+
+// The neutral reading: not metal, mid height, unoccluded, not emitting.
+//
+// Every field is the value that makes its consumer behave as though this atlas
+// did not exist, so an unavailable page degrades to the previous renderer
+// rather than to a half-metallic glowing one. It matches the builder's own
+// NeutralTexel exactly, and a test pins the two together.
+VvMaterial2 vvNeutralMaterial2()
+{
+    return VvMaterial2(0.0, 0.5, 1.0, 0.0);
+}
+
+VvMaterial2 vvSampleMaterial2(vec2 materialUv)
+{
+    if (vv_material2Valid < 0.5) return vvNeutralMaterial2();
+
+    vec4 texel = texture(vv_materialTex2, vvSnapToTexel(materialUv));
+    return VvMaterial2(texel.r, texel.g, texel.b, texel.a);
+}
+
+// Deliberately shares vvSnapToTexel with the first atlas rather than measuring
+// its own size. The two pages are built at identical dimensions from identical
+// slot rectangles, so the same UV must land on the same texel in both - and
+// giving the second page its own snap would let them disagree by a texel the
+// moment anything about the layout changed. A test pins the dimensions
+// together for the same reason.
 
 // Pure: no enable check. With vv_pbrNormalStrength unset (0) this returns the
 // face normal unchanged, so it degrades to vanilla on its own.

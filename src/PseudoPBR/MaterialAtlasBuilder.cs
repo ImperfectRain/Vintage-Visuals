@@ -26,6 +26,18 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Light response for the block this texture belongs to.</summary>
         public MaterialProfile Profile;
 
+        /// <summary>
+        /// The block's own emission level, 0..1, straight from vanilla.
+        ///
+        /// Authoritative and non-negotiable: it decides WHETHER this texture may
+        /// emit at all. The emission mask derived from the pixels only ever
+        /// decides WHERE within an already-emitting texture the light comes
+        /// from. A block the game says does not glow gets a mask of zero no
+        /// matter how bright its pixels are, which is the difference between
+        /// reading vanilla's answer and inventing one from brightness.
+        /// </summary>
+        public float GlowLevel;
+
         /// <summary>For logging and the cache key. Not used in the maths.</summary>
         public string Name;
     }

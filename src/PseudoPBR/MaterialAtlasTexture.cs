@@ -39,6 +39,22 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public const int TextureUnit = 15;
 
+        /// <summary>
+        /// Texture unit the second material atlas is bound to.
+        ///
+        /// 14, immediately below the first. Vanilla chunkopaque.fsh declares
+        /// seven samplers, so units 0..6 are the game's and 7..13 remain free
+        /// above them - this pair takes the top of the guaranteed range and
+        /// grows downward, so the two allocations move away from each other
+        /// rather than toward a collision.
+        ///
+        /// The unit is also set explicitly at bind time rather than left to the
+        /// linker, which is the half that actually matters: link-time
+        /// assignment is what pushed liquidDepth off the end and turned the
+        /// world to water murk the last time a sampler was added here.
+        /// </summary>
+        public const int SecondTextureUnit = 14;
+
         private LoadedTexture _texture;
 
         private int[] _pendingPixels;

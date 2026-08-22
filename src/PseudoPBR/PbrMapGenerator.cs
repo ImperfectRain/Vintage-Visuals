@@ -146,7 +146,7 @@ namespace VintageVisuals.PseudoPBR
         /// this is far easier to check by eye; the SAT there remains the model
         /// for an eventual compute-shader pass, where window size does matter.
         /// </summary>
-        private static double[] BoxMean(double[] data, int width, int height, int radius, bool tiling)
+        public static double[] BoxMean(double[] data, int width, int height, int radius, bool tiling)
         {
             var result = new double[width * height];
             double window = (2 * radius + 1) * (2 * radius + 1);

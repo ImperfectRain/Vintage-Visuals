@@ -42,6 +42,9 @@ namespace VintageVisuals.PseudoPBR
         // Static because Harmony patches must be. There is one client and one
         // instance of this mod per process, which is what makes that safe.
         private static readonly Dictionary<int, int> MaterialPageByAtlasTexture = new Dictionary<int, int>();
+        
+        /// <summary>Second material page per atlas texture. May be empty; see SetPages.</summary>
+        private static readonly Dictionary<int, int> SecondPageByAtlasTexture = new Dictionary<int, int>();
         private static ILogger _logger;
         private static volatile bool _active;
 
@@ -142,6 +145,33 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public static void SetPages(Dictionary<int, int> materialPageByAtlasTexture)
         {
+            SetPages(materialPageByAtlasTexture, null);
+        }
+
+        /// <summary>
+        /// Both material pages for the same atlas texture.
+        ///
+        /// The second map is optional and is allowed to be null or short: the
+        /// second atlas is a strict addition, so a draw call that has a first
+        /// page and no second one must still bind the first and shade exactly
+        /// as it did before this page existed.
+        /// </summary>
+        public static void SetPages(Dictionary<int, int> materialPageByAtlasTexture,
+                                    Dictionary<int, int> secondPageByAtlasTexture)
+        {
+            lock (SecondPageByAtlasTexture)
+            {
+                SecondPageByAtlasTexture.Clear();
+
+                if (secondPageByAtlasTexture != null)
+                {
+                    foreach (KeyValuePair<int, int> entry in secondPageByAtlasTexture)
+                    {
+                        SecondPageByAtlasTexture[entry.Key] = entry.Value;
+                    }
+                }
+            }
+
             lock (MaterialPageByAtlasTexture)
             {
                 MaterialPageByAtlasTexture.Clear();
@@ -213,6 +243,23 @@ namespace VintageVisuals.PseudoPBR
             {
                 program.BindTexture2D(PbrShaderBinder.SamplerUniform, materialTextureId,
                                       MaterialAtlasTexture.TextureUnit);
+
+                // The second page, when there is one. Guarded on the uniform
+                // rather than on our own bookkeeping: if the group that
+                // declares vv_materialTex2 rolled back, the program genuinely
+                // does not have it and binding would be writing to a name that
+                // is not there.
+                int secondTextureId;
+                lock (SecondPageByAtlasTexture)
+                {
+                    SecondPageByAtlasTexture.TryGetValue(__1, out secondTextureId);
+                }
+
+                if (secondTextureId != 0 && program.HasUniform(PbrShaderBinder.SecondSamplerUniform))
+                {
+                    program.BindTexture2D(PbrShaderBinder.SecondSamplerUniform, secondTextureId,
+                                          MaterialAtlasTexture.SecondTextureUnit);
+                }
             }
             catch (Exception ex)
             {
