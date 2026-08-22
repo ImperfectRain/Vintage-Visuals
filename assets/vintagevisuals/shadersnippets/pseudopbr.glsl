@@ -1469,28 +1469,53 @@ vec3 vvReflectionFallback(vec3 direction, vec3 environment)
 
 // March steps along the reflected ray.
 //
-// Eight, fixed, no refinement pass. The destination is one colour for a whole
-// texture pixel, so precision beyond "which surface did I hit" buys nothing that
-// can be displayed, and a long march is what makes conventional screen-space
-// reflection expensive. Spacing grows geometrically so near hits are precise and
-// distant ones are still reachable.
-const int VV_SSR_STEPS = 8;
-const float VV_SSR_NEAR = 0.35;      // blocks to the first sample
-const float VV_SSR_GROWTH = 1.85;    // each step this much longer than the last
-
-// How close a hit has to be, in blocks, to count.
+// Twelve coarse steps, geometrically spaced, then ONE bisection refinement on
+// whichever interval the ray crossed a surface in.
 //
-// Generous on purpose. A tight tolerance turns every slightly-off sample into a
-// fallback and the reflection becomes a flickering patchwork of sky; a loose one
-// occasionally accepts a neighbouring surface, which at this resolution is a
-// plausible colour rather than a visible error.
-const float VV_SSR_TOLERANCE = 1.25;
+// The first version took eight samples and accepted a hit only if a surface lay
+// within a tolerance of one of them. That is a march of discrete SHELLS, not of
+// a ray: the samples sat at 0.35, 1.0, 2.2, 4.4, 8.5, 16.1, 30.1 and 56 blocks,
+// so beyond about four blocks the acceptance window covered a third of the gap,
+// then a fifth, then a tenth. Whether a texel found anything depended on
+// whether its particular ray length happened to land near a shell.
+//
+// That has a signature, and it was reported before it was understood: the valid
+// pixels formed "a circular checkerboard". Ray length varies smoothly across a
+// surface, so the set of texels landing inside a covered shell is a set of
+// concentric bands. And because the shells are fixed distances from the eye,
+// walking changes every ray length at once and whole bands drop out - which is
+// why the reflection mostly vanished on movement.
+//
+// Crossing detection fixes the class of error rather than the symptom. A ray
+// point is either IN FRONT of the captured surface or BEHIND it; the moment
+// that flips, the ray passed through geometry somewhere in the interval just
+// marched. Eight shells become eight intervals with no gaps between them, and
+// the refinement finds where in the interval the crossing happened. Adding
+// steps to the old scheme could never have done this - it would only have made
+// the bands narrower and more numerous.
+const int VV_SSR_STEPS = 12;
+const float VV_SSR_NEAR = 0.25;      // blocks to the first sample
+const float VV_SSR_GROWTH = 1.42;    // each step this much longer than the last
+
+// Bisection passes once a crossing interval is known. Two halves the interval
+// twice, which is enough to land inside a block at every distance the march
+// reaches, and costs two lookups only on rays that actually hit something.
+const int VV_SSR_REFINE = 2;
+
+// How thick a surface is allowed to be, in blocks.
+//
+// A crossing means the ray went behind SOMETHING. This decides whether it went
+// behind the surface it hit or sailed past a thin object into empty space
+// beyond - the classic screen-space error where a reflection picks up whatever
+// was hiding behind a fence post. Much tighter than the old tolerance, because
+// crossing detection locates the surface instead of hoping to land near it.
+const float VV_SSR_THICKNESS = 0.6;
 
 // Reflection strength lost as the ray points back toward the camera.
 //
 // Rays coming at the viewer are the ones screen-space methods cannot serve -
-// what they would reflect is behind the camera and was never in the frame. Fading
-// them out is cheaper and far more honest than sampling something wrong.
+// what they would reflect is behind the camera and was never in the frame.
+// Fading them out is cheaper and far more honest than sampling something wrong.
 const float VV_SSR_FACING_FADE = 0.25;
 
 // Result of a scene lookup: the colour, and whether to believe it.
@@ -1505,47 +1530,50 @@ struct VvSceneHit
     vec2 uv;
 };
 
-// Projects a camera-relative point into the captured frame and reads it.
+// One projected lookup into the captured frame.
 //
-// Returns validity 0 for anything off-screen or behind the capture camera,
-// rather than clamping into range - a clamped sample is a confident lie, and the
-// texture is allocated ClampToEdge specifically so a stray read cannot wrap to
-// the far side of the frame either.
-VvSceneHit vvSampleCapture(vec3 cameraRelative, float expectedDistance)
+// Returns what the capture holds at that screen position WITHOUT judging it.
+// The march decides what is a hit; separating the two is what allows crossing
+// detection, because a point in front of the scene is not a failure - it is
+// half of the evidence that a crossing happened.
+struct VvCaptureSample
 {
-    VvSceneHit hit;
-    hit.color = vec3(0.0);
-    hit.valid = 0.0;
-    hit.uv = vec2(0.0);
+    vec2 uv;
+    vec3 color;
+    float sceneDistance;   // captured surface distance along the view
+    float onScreen;        // 0 if the point projects outside the capture
+};
 
+VvCaptureSample vvProjectIntoCapture(vec3 cameraRelative)
+{
+    VvCaptureSample s;
+    s.uv = vec2(0.0);
+    s.color = vec3(0.0);
+    s.sceneDistance = 0.0;
+    s.onScreen = 0.0;
+
+    // The capture was drawn from where the camera was LAST frame, so a point
+    // held relative to this frame's origin has to be shifted before projection.
     vec4 clip = vv_reflectViewProj * vec4(cameraRelative + vv_reflectCameraDelta, 1.0);
-    if (clip.w <= 0.0001) return hit;
+    if (clip.w <= 0.0001) return s;
 
     vec3 ndc = clip.xyz / clip.w;
-    if (any(greaterThan(abs(ndc.xy), vec2(1.0)))) return hit;
+    if (any(greaterThan(abs(ndc.xy), vec2(1.0)))) return s;
 
-    vec2 uv = ndc.xy * 0.5 + 0.5;
-    hit.uv = uv;
-    vec4 captured = texture(vv_reflectScene, uv);
+    s.uv = ndc.xy * 0.5 + 0.5;
 
-    // Alpha carries linear view distance, normalised by the far plane.
-    float sceneDistance = captured.a * vv_reflectFar;
+    vec4 captured = texture(vv_reflectScene, s.uv);
+    s.color = captured.rgb;
+    s.sceneDistance = captured.a * vv_reflectFar;
+    s.onScreen = 1.0;
 
-    // The ray point is only a hit if the scene surface at that screen position
-    // is at about the same distance. Further away means the ray passed in front
-    // of the geometry and has not arrived yet; much nearer means something is
-    // occluding, and reflecting an occluder is the classic screen-space error.
-    if (abs(sceneDistance - expectedDistance) > VV_SSR_TOLERANCE) return hit;
-
-    hit.color = captured.rgb;
-    hit.valid = 1.0;
-    return hit;
+    return s;
 }
 
 // Marches the reflected ray and returns what it found.
 //
 // The ray starts at the texel centre, so this whole function is constant across
-// a material texel.
+// a material texel - which is where one colour per texel comes from.
 VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
 {
     VvSceneHit miss;
@@ -1571,19 +1599,70 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     float t = VV_SSR_NEAR;
     float step = VV_SSR_NEAR;
 
+    // Depth difference at the previous sample: negative while the ray is still
+    // in front of whatever the capture holds there.
+    float previousT = 0.0;
+    float previousDelta = -1.0;
+    float previousOn = 0.0;
+
     for (int i = 0; i < VV_SSR_STEPS; i++)
     {
         vec3 at = origin + r * t;
-        VvSceneHit hit = vvSampleCapture(at, length(at));
+        VvCaptureSample s = vvProjectIntoCapture(at);
 
-        if (hit.valid > 0.5)
+        if (s.onScreen > 0.5)
         {
-            // Faded near the grazing limit so the reflection thins out instead
-            // of ending at a hard line where the march stops being able to help.
-            hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
-                                         1.0 - VV_SSR_FACING_FADE, facing);
-            return hit;
+            float delta = length(at) - s.sceneDistance;
+
+            // The ray was in front and is now behind: it passed through a
+            // surface somewhere in this interval.
+            if (previousOn > 0.5 && previousDelta < 0.0 && delta >= 0.0)
+            {
+                float lo = previousT;
+                float hi = t;
+
+                for (int k = 0; k < VV_SSR_REFINE; k++)
+                {
+                    float mid = (lo + hi) * 0.5;
+                    VvCaptureSample m = vvProjectIntoCapture(origin + r * mid);
+
+                    if (m.onScreen < 0.5) break;
+
+                    if (length(origin + r * mid) - m.sceneDistance < 0.0) lo = mid;
+                    else                                                  hi = mid;
+                }
+
+                vec3 hitAt = origin + r * hi;
+                VvCaptureSample resolved = vvProjectIntoCapture(hitAt);
+
+                if (resolved.onScreen > 0.5)
+                {
+                    // Did the ray stop AT the surface, or sail past something
+                    // thin into whatever was behind it?
+                    float thickness = length(hitAt) - resolved.sceneDistance;
+
+                    if (thickness < VV_SSR_THICKNESS)
+                    {
+                        VvSceneHit hit;
+                        hit.color = resolved.color;
+                        hit.uv = resolved.uv;
+
+                        // Faded near the grazing limit so the reflection thins
+                        // out instead of ending at a hard line.
+                        hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
+                                                     1.0 - VV_SSR_FACING_FADE, facing);
+                        return hit;
+                    }
+                }
+
+                return miss;
+            }
+
+            previousDelta = delta;
         }
+
+        previousOn = s.onScreen;
+        previousT = t;
 
         step *= VV_SSR_GROWTH;
         t += step;

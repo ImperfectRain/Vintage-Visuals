@@ -52,6 +52,84 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
+        /// The march must cover its whole range, with no gaps.
+        ///
+        /// THE DEFECT THIS PINS. The first version took a fixed number of
+        /// samples and accepted a hit only if a surface lay within a tolerance
+        /// of one of them. That is a march of discrete SHELLS: with
+        /// geometrically growing steps the gaps outrun the tolerance almost
+        /// immediately, and past a few blocks most distances could not be hit at
+        /// all. Whether a texel found anything depended on whether its ray
+        /// length happened to land near a shell.
+        ///
+        /// It was reported from a screenshot before it was understood - the
+        /// valid pixels formed "a circular checkerboard", which is what
+        /// concentric bands of reachable distance look like on a surface, and
+        /// they vanished on movement because walking changes every ray length at
+        /// once.
+        ///
+        /// Crossing detection has no gaps by construction: a ray point is in
+        /// front of the captured surface or behind it, and the flip locates a
+        /// surface anywhere in the interval. This checks that the code actually
+        /// works that way, because adding steps to a shell march looks like a
+        /// fix and only makes the bands finer.
+        /// </summary>
+        private static void CheckMarchCoversItsRange(Action<string, bool, string> check)
+        {
+            check("the march detects a depth crossing rather than proximity",
+                _code.Contains("previousDelta < 0.0") && _code.Contains("delta >= 0.0"),
+                "proximity to a sample leaves gaps between the samples");
+
+            check("a crossing is refined by bisection",
+                _code.Contains("VV_SSR_REFINE") && Regex.IsMatch(_code, @"float mid = \(lo \+ hi\) \* 0\.5;"),
+                "the interval locates the surface; the refinement finds where in it");
+
+            float near = Constant("VV_SSR_NEAR");
+            float growth = Constant("VV_SSR_GROWTH");
+            Match st = Regex.Match(_pbr, @"const int VV_SSR_STEPS = (\d+)\s*;");
+            check("the march length is declared", st.Success, "");
+            if (!st.Success || float.IsNaN(near) || float.IsNaN(growth)) return;
+
+            int steps = int.Parse(st.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            // Reproduce the sample distances, then measure what fraction of the
+            // marched range a crossing test can reach versus what a proximity
+            // test could. The first is 100 per cent by construction; the second
+            // is what shipped, and it is what the numbers below make visible.
+            var distances = new System.Collections.Generic.List<double>();
+            double t = near, step = near;
+            for (int i = 0; i < steps; i++) { distances.Add(t); step *= growth; t += step; }
+
+            double reach = distances[distances.Count - 1];
+            check("the march reaches a useful distance",
+                reach > 20.0 && reach < 200.0,
+                "reaches " + reach.ToString("0.#", CultureInfo.InvariantCulture) + " blocks");
+
+            // The old scheme's coverage, computed so the regression has a
+            // number attached rather than a description.
+            const double oldTolerance = 1.25;
+            double covered = 0.0;
+            for (int i = 1; i < distances.Count; i++)
+            {
+                double gap = distances[i] - distances[i - 1];
+                covered += Math.Min(gap, 2.0 * oldTolerance);
+            }
+
+            double fraction = covered / (reach - distances[0]);
+
+            check("a proximity march would leave most of the range unreachable",
+                fraction < 0.9,
+                "proximity coverage " + (fraction * 100.0).ToString("0.#", CultureInfo.InvariantCulture)
+                    + "% - if this is near 100 the steps are dense enough that this test proves nothing");
+
+            // Steps must grow, or the near field is wasted and the far field is
+            // never reached.
+            bool growsButNotWildly = growth > 1.0 && growth < 2.0;
+            check("step growth is between one and two", growsButNotWildly,
+                "growth " + growth.ToString("0.##", CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>
         /// The reprojection identity, checked as arithmetic.
         ///
         /// The shader holds a point as `cameraRelative = world - currentOrigin`
@@ -227,12 +305,14 @@ namespace VintageVisuals.SmokeTest
                 Regex.IsMatch(_code, @"VV_SSR_STEPS = ([2-9]|1[0-6])\s*;"),
                 "a long march is what makes conventional screen-space reflection expensive");
 
-            check("a hit is validated against captured depth",
-                _code.Contains("VV_SSR_TOLERANCE"),
-                "an unvalidated sample reflects whatever happened to be at that pixel");
+            check("a hit is bounded by a surface thickness",
+                _code.Contains("VV_SSR_THICKNESS"),
+                "without it the ray sails past thin geometry into whatever is behind");
 
-            check("an invalid sample returns no confidence rather than a colour",
-                Regex.IsMatch(_code, @"hit\.valid = 0\.0;"), "");
+            check("a miss returns no confidence rather than a colour",
+                Regex.IsMatch(_code, @"miss\.valid = 0\.0;"), "");
+
+            CheckMarchCoversItsRange(check);
 
             // The whole point of the pass: the analytic sky must be subordinate.
             check("the scene overrides the fallback where it is valid",

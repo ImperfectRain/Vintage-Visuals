@@ -727,6 +727,49 @@ how many LOOKUPS there are, the source decides whether each lands on the right
 thing. A block 30 pixels away got about eight source pixels to reflect a world
 into. Half now.
 
+### The march was shells, not a ray
+
+Reported from a screenshot before it was understood: *"a circular checkerboard
+of affected pixels"*, and *"the green in 40 mostly vanishes after moving"*.
+
+Both are one defect. The march took eight samples and accepted a hit only if a
+surface lay within 1.25 blocks of ONE of them - proximity to a sample, not
+traversal of a ray. With geometrically growing steps the gaps outrun the
+tolerance almost immediately:
+
+| interval | gap | reachable |
+|---|---|---|
+| 0.35 - 1.0 | 0.65 | 100% |
+| 2.2 - 4.4 | 2.22 | 100% |
+| 4.4 - 8.5 | 4.10 | **61%** |
+| 8.5 - 16.1 | 7.58 | **33%** |
+| 16.1 - 30.1 | 14.03 | **18%** |
+| 30.1 - 56.1 | 25.96 | **9.6%** |
+
+So the march was a set of concentric SHELLS around the eye. Whether a texel
+found anything depended on whether its ray length happened to land in one, and
+ray length varies smoothly across a surface - which draws exactly the concentric
+bands that were reported as a circular checkerboard. Walking changes every ray
+length at once, so whole bands drop out together: the vanishing on movement.
+
+**Adding steps could not have fixed this.** It makes the bands finer and more
+numerous, and the coverage still collapses with distance.
+
+Crossing detection fixes the class of error. A ray point is either in front of
+the captured surface or behind it; the moment that flips, the ray passed through
+geometry somewhere in the interval just marched. Twelve shells become twelve
+intervals with **no gaps between them**, and two bisection passes locate the
+crossing inside its interval. The thickness test then asks whether the ray
+stopped at that surface or sailed past something thin - the classic screen-space
+error where a reflection picks up what was hiding behind a fence post.
+
+Reach is 39 blocks in 12 steps, fully covered, against 56 blocks in 8 steps that
+were mostly unreachable.
+
+The test pins the mechanism and computes the old scheme's coverage numerically,
+so the regression has a number attached rather than a description, and so a
+future "optimisation" back to proximity fails rather than looking tidier.
+
 ### Not changed, and why
 
 The audit also suggested using `CameraOffset` rather than the player position as
