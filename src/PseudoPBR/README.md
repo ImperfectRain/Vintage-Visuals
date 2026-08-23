@@ -897,6 +897,42 @@ the build if the amount stops being measured or acquires a hard step.
 `vvIsUnderstory` stays. It answers a real question, and the separation needs both
 sides to exist to be a separation.
 
+### The canopy takes sunlight, not torchlight
+
+A canopy blocks **the sun**. It does not block a torch hanging under it.
+
+Vanilla hands the fragment shader one colour with sun, sky and block light
+already mixed, and there is no way to unmix it — so multiplying that colour by
+the canopy term dimmed the torch along with the sunlight the tree was actually
+blocking. This was a *known* limitation rather than an unnoticed one, and it
+stood because separating the terms looked impossible from inside the function.
+
+It is not. Vanilla already computes, for its own use:
+
+```glsl
+blockBrightness = clamp(max(bGlow, max(bPoint, bBlock)) - bSun/2, 0, 1)
+```
+
+The strongest of glow, point light and block light, net of half the sun — high
+where a torch dominates, zero where the sun does. That is exactly the local share
+a canopy must not touch, so the canopy term is scaled by its complement.
+
+| | Before | Now |
+|---|---|---|
+| Torch under a tree at dusk | dimmed by the canopy | keeps its light |
+| Glowing plant under a canopy | dimmed | keeps its glow |
+| Lantern-lit forest camp | read as shaded | reads as lit |
+| Open forest floor at noon | full dapple | **unchanged** — local share is zero there |
+
+The green shade tint rides the same protected fraction: torchlight did not pass
+through a leaf, so it did not pick up a leaf's colour on the way.
+
+`blockBrightness` lives inside `#if SHADOWQUALITY > 0`, so the accessor is
+guarded and returns 0 with shadows off — where there is no shadow map and the
+canopy term is inert anyway. **`tools/verifypatches` proves the guard is
+load-bearing: without it, 16 of 48 prefix combinations fail to compile**, exactly
+the `SHADOWQUALITY=0` third.
+
 ### Transmission needs a beam
 
 A clear sky is a small, very bright source: light arrives at a leaf from one

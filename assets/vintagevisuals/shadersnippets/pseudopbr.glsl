@@ -1356,6 +1356,34 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
 // every physical property the model was reproducing by hand was already there
 // to be read.
 
+// How much of this fragment's light is LOCAL rather than solar, 0..1.
+//
+// Vanilla's own answer, and it already exists:
+//
+//     blockBrightness = clamp(max(bGlow, max(bPoint, bBlock)) - bSun/2, 0, 1)
+//
+// - the strongest of glow, point light and block light, net of half the sun.
+// It is high where a torch dominates and zero where the sun does, which is
+// exactly the fraction a canopy has no business touching.
+//
+// This is the fact that makes the canopy term correct rather than merely
+// approximately correct. A canopy blocks THE SUN. It does not block a torch
+// hanging under it, and multiplying vanilla's combined colour by the canopy
+// term dimmed both, because vanilla hands the two over already mixed.
+//
+// Guarded, because vanilla declares it inside `#if SHADOWQUALITY > 0`. With
+// shadows off there is no shadow map, so vvCanopyEvidence returns 0 and the
+// canopy term is already inert - the fallback below is never reached in
+// anger, and returning 0 keeps it inert rather than making it wrong.
+float vvLocalLightShare()
+{
+#if SHADOWQUALITY > 0
+    return clamp(blockBrightness, 0.0, 1.0);
+#else
+    return 0.0;
+#endif
+}
+
 // How much light the canopy takes away here, 0..1.
 //
 // Returns a SUBTRACTION, never an addition, and the caller only ever multiplies
@@ -2495,9 +2523,33 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
                  * clamp(shadowBrightness, 0.0, 1.0);
 
+    // THE CANOPY TAKES SUNLIGHT, NOT TORCHLIGHT.
+    //
+    // vanilla hands over one colour with sun, sky and block light already
+    // mixed, and there is no way to unmix it - so multiplying that colour by
+    // the canopy term dimmed a torch hanging under a tree along with the
+    // sunlight the tree was actually blocking. This was a known limitation
+    // rather than an unnoticed one, and the reason it stood is that separating
+    // the terms looked impossible from inside this function.
+    //
+    // It is not. vanilla already computes blockBrightness - the strongest of
+    // glow, point light and block light, net of half the sun - and hands it to
+    // the fragment shader for its own use. That is precisely "how much of the
+    // light here is local", so the canopy term is scaled by its complement.
+    //
+    // What this changes, in order of how obvious it is:
+    //
+    //   a torch under a tree at dusk keeps its light;
+    //   a glowing plant under a canopy keeps its glow;
+    //   a lantern-lit forest camp reads as lit rather than as shaded;
+    //   an open forest floor at noon is unaffected, because there the local
+    //   share is zero and the term is exactly what it was.
+    float local = vvLocalLightShare();
+    float canopy = clamp(shaded, 0.0, 0.85) * (1.0 - local);
+
     if (shaded > 0.0)
     {
-        result *= 1.0 - clamp(shaded, 0.0, 0.85);
+        result *= 1.0 - canopy;
 
         // Green shade.
         //
@@ -2512,7 +2564,10 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
         // On the shaded fraction only, because a fleck is sunlight that missed
         // every leaf on the way down and has no business being tinted. It moves
         // colour between channels rather than adding or removing any.
-        float tint = shaded * VV_DAPPLE_GREEN;
+        // On the canopy-attenuated fraction, not the raw one, for the same
+        // reason: torchlight did not come through a leaf, so it did not pick up
+        // a leaf's colour on the way.
+        float tint = canopy * VV_DAPPLE_GREEN;
         result *= vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
     }
 

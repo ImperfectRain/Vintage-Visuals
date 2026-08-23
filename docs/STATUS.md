@@ -116,6 +116,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
 | `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |
 | `[x]` | Transmission collapses under overcast | L2 | Shares the direct lobe's constant. A backlit leaf under a flat grey sky has no beam to glow along |
+| `[x]` | **Canopy spares local light** | L2 | Scaled by the complement of vanilla's own `blockBrightness`. A torch under a tree keeps its light; an open forest floor at noon is unchanged |
 | `[~]` | Surface relief in `chunktopsoil.fsh` (forest floor) | L2 | anchors confirmed against the real shader |
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |

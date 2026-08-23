@@ -87,6 +87,7 @@ from the source texture.
 | Understory receives canopy dapple | x | x | x | x | – | – | – | – | x |
 | Optical role (`vvIsCanopyReceiver`) | x | x | x | x | – | x | – | – | x |
 | Transmission responds to overcast | x | x | x | x | – | – | – | – | x |
+| Canopy spares local light | x | x | x | x | – | x | – | – | x |
 | Block-light specular | x | x | x | x | x | – | – | x | x |
 | Sun dapple | x | x | x | x | x | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
@@ -168,6 +169,8 @@ Not yet validated, and each is a separate question:
 - [ ] a mountain top sees further than the valley below it
 - [ ] a moonlit night is not brighter than vanilla's, only differently shaped
 - [ ] each of the thirteen debug views shows what it claims
+- [ ] a torch under a tree at dusk is not dimmed by the canopy — benchmark C's core claim
+- [ ] an open forest floor at noon looks exactly as it did before the local-light change
 - [ ] the F7 panel renders at all — a duplicate weight blanks the whole thing, and only the game says
 - [ ] dragging a strength through zero reloads shaders without a visible stall
 

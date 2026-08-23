@@ -191,8 +191,13 @@ namespace VintageVisuals.SmokeTest
         /// "this is a statement about sunlight", so position is what gets
         /// pinned.
         ///
-        /// The diffuse term is knowingly still scaled - vanilla hands it over
-        /// with sky light already mixed in and no way to separate them.
+        /// The diffuse term used to be knowingly scaled too - vanilla hands it
+        /// over with block light already mixed in - and that limitation stood
+        /// because separating them looked impossible from inside this function.
+        /// It is not: vanilla computes blockBrightness for its own use, which is
+        /// the strongest of glow, point light and block light net of half the
+        /// sun, and that is exactly the local share the canopy must not touch.
+        /// The last three checks below pin the separation.
         /// </summary>
         private static void CheckDappleTouchesSunlightOnly(string pbr, Action<string, bool, string> check)
         {
@@ -214,6 +219,42 @@ namespace VintageVisuals.SmokeTest
                     at < 0 ? "term not found: " + term.Item2
                            : "dapple is applied after it, so it scales it");
             }
+
+            // The diffuse half. A canopy blocks the SUN; it does not block a
+            // torch hanging under it. vanilla hands over one colour with sun,
+            // sky and block light already mixed, so the canopy term has to be
+            // scaled by the complement of vanilla's own local-light measure
+            // rather than applied to the whole thing.
+            // The protected value must be DEFINED and USED. Checking only that
+            // it is defined is the dead-check failure this suite has been
+            // bitten by before: reverting the application while leaving the
+            // definition in place passed a first draft of this check.
+            check("the canopy term computes a local-light-sparing value",
+                pbr.Contains("float local = vvLocalLightShare();") &&
+                pbr.Contains("clamp(shaded, 0.0, 0.85) * (1.0 - local)"),
+                "a torch under a tree is dimmed by the canopy without this");
+
+            check("the canopy term actually applies the sparing value",
+                pbr.Contains("result *= 1.0 - canopy;") &&
+                !Regex.IsMatch(pbr, @"result \*= 1\.0 - clamp\(shaded, 0\.0, 0\.85\);"),
+                "the raw shaded value is being applied, so the sparing is computed and discarded");
+
+            check("the local share is vanilla's own measure, not an invention",
+                Regex.IsMatch(pbr, @"float vvLocalLightShare\(\)[\s\S]{0,220}?blockBrightness"),
+                "blockBrightness is the game's answer; a second one would disagree with it");
+
+            // blockBrightness lives inside `#if SHADOWQUALITY > 0`. Referencing
+            // it unguarded fails to compile for a player with shadows off - and
+            // that player has no shadow map, so the canopy term is inert anyway.
+            check("the local share degrades safely with shadows off",
+                Regex.IsMatch(pbr, @"float vvLocalLightShare\(\)[\s\S]{0,260}?#else[\s\S]{0,60}?return 0\.0;"),
+                "vanilla declares blockBrightness only under SHADOWQUALITY > 0");
+
+            // The green tint is light that came THROUGH a leaf. Torchlight did
+            // not, so it must ride the same protected fraction.
+            check("the canopy's green tint spares local light too",
+                pbr.Contains("float tint = canopy * VV_DAPPLE_GREEN;"),
+                "torchlight did not pass through a leaf and did not pick up its colour");
         }
 
         /// <summary>

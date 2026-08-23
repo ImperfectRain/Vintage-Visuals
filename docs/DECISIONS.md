@@ -890,3 +890,64 @@ animation on this mod's side. Adding one would replace an authoritative motion
 with an invented one.
 
 **Status.** Active, L2. `pseudopbr.glsl`, `tools/smoketest/FloraTaxonomyChecks.cs`.
+
+---
+
+## D28. The canopy takes sunlight, and vanilla already says which light that is
+
+**Context.** `vvCanopyDapple` returns how much light a canopy removes, and the
+caller multiplied the shaded pixel by its complement. That pixel is vanilla's
+`litColor`, which arrives with sun, sky and block light **already mixed** - so a
+torch hanging under a tree was dimmed by the tree.
+
+This was recorded as an accepted limitation rather than missed:
+`CheckDappleTouchesSunlightOnly` said so in its own summary. It stood because
+separating the terms looked impossible from inside the function - vanilla mixes
+them in the vertex shader and hands over one colour.
+
+**What was already there.** Vanilla computes, for its own use in
+`getBrightnessFromShadowMap`:
+
+```glsl
+blockBrightness = clamp(max(bGlow, max(bPoint, bBlock)) - bSun/2, 0, 1)
+```
+
+The strongest of glow, point light and block light, net of half the sun. High
+where a torch dominates, zero where the sun does. It is precisely "how much of
+the light here is local", and it is already a varying in both patched programs.
+
+**Chosen.** Scale the canopy term by its complement:
+
+```glsl
+float local = vvLocalLightShare();
+float canopy = clamp(shaded, 0.0, 0.85) * (1.0 - local);
+```
+
+The green shade tint rides the same protected fraction, for the same reason:
+torchlight did not pass through a leaf and did not pick up its colour.
+
+**Why not an invented measure.** A second answer derived from daylight or scene
+state would disagree with vanilla's in exactly the cases that matter - dusk, a
+cave mouth, a lantern under a crown - and the disagreement would look like the
+canopy flickering. A check fails the build if `vvLocalLightShare` stops reading
+`blockBrightness`.
+
+**Nothing changes where nothing should.** On an open forest floor at noon the
+local share is zero and the term is bit-identical to what it was. The change is
+confined to fragments a local light is actually reaching, which is the definition
+of the defect.
+
+**The guard is load-bearing, and measured.** `blockBrightness` is declared inside
+`#if SHADOWQUALITY > 0`. `tools/verifypatches` was run with the guard removed:
+**16 of 48 prefix combinations fail to compile**, exactly the `SHADOWQUALITY=0`
+third. With shadows off there is no shadow map, `vvCanopyEvidence` returns 0 and
+the canopy term is inert, so returning 0 keeps it inert rather than making it
+wrong.
+
+**A test lesson worth keeping.** The first draft of the new check verified only
+that the sparing value was *defined*. Reverting the application while leaving the
+definition in place passed it - the dead-check failure this suite has been bitten
+by before. It now pins the application too, and the mutation fails.
+
+**Status.** Active, L2. Not seen in a world: the scene that proves it is a torch
+under a tree at dusk.
