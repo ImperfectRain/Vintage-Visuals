@@ -42,7 +42,8 @@ namespace VintageVisuals.SmokeTest
             CheckThinnessOrdering(check);
             CheckFruitIsNotALeaf(check);
             CheckCanopyAndUnderstoryAreDisjoint(check);
-            CheckUnderstoryTakesDapple(check);
+            CheckOpticalRoleIsNotTheTaxonomy(check);
+            CheckDappleAsksTheOpticalQuestion(check);
             CheckShaftsStartAtTheCanopyOnly(check);
             CheckPoolingIsPerPlant(check);
             CheckUnknownFloraIsSafe(check);
@@ -228,35 +229,116 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
-        /// The forest-floor defect, pinned.
+        /// The optical role must not be the taxonomy wearing a different name.
         ///
-        /// vvCanopyDapple used to reject every plant, so a forest floor's tall
-        /// grass and flowers stayed evenly lit while the soil between them was
-        /// dappled - and the two read as different places. Only the canopy is
-        /// exempt: grass, herbs, crops and bushes take the broken light like
-        /// anything else standing under a tree.
+        /// vvFloraClass answers "what kind of plant is this". vvIsCanopyReceiver
+        /// answers "can the sunlight arriving here have come through leaves".
+        /// Those are different questions, and the first standing in for the
+        /// second is a specific bug rather than an untidiness:
+        ///
+        ///   A pear hanging under a tree is not understory - it is fruit,
+        ///   ecologically part of the canopy plant. It is physically BELOW
+        ///   leaves, so it should be shaded like everything else under that
+        ///   tree. While the dapple gate asked the ecological question it was
+        ///   the one lit object in a shaded wood.
+        ///
+        /// So this pins the two apart. If the receiver set ever collapses back
+        /// onto the understory set, that pear is lit again.
         /// </summary>
-        private static void CheckUnderstoryTakesDapple(Action<string, bool, string> check)
+        private static void CheckOpticalRoleIsNotTheTaxonomy(Action<string, bool, string> check)
+        {
+            Match receiver = Regex.Match(_pbr,
+                @"bool vvIsCanopyReceiver\(\)\s*\{(.*?)
+\}", RegexOptions.Singleline);
+            Match understory = Regex.Match(_pbr,
+                @"bool vvIsUnderstory\(\)\s*\{(.*?)
+\}", RegexOptions.Singleline);
+
+            check("an optical role exists separately from the taxonomy",
+                  receiver.Success, "vvIsCanopyReceiver not found");
+            check("the ecological classification still exists too",
+                  understory.Success, "vvIsUnderstory not found - the separation needs both sides");
+
+            if (!receiver.Success || !understory.Success) return;
+
+            string r = receiver.Groups[1].Value;
+            string u = understory.Groups[1].Value;
+
+            check("the optical role is not the ecological one under another name",
+                  r.Trim() != u.Trim(),
+                  "vvIsCanopyReceiver and vvIsUnderstory have identical bodies");
+
+            // The receiver set is a SHORT EXCLUSION LIST, not a membership list.
+            // Almost everything can be under leaves - stone, soil, trunks and
+            // every plant that is not the canopy - so enumerating what receives
+            // is how classes get forgotten. Fruit was the one that was.
+            check("the optical role excludes rather than enumerates",
+                  r.Contains("return true;") && !r.Contains("flora == VV_FLORA_GRASS"),
+                  "listing what receives is how a class gets left out; list what does not");
+
+            check("the canopy is excluded from receiving, because it is the occluder",
+                  r.Contains("VV_FLORA_LEAVES") && r.Contains("return false"),
+                  "a leaf cannot be in its own shadow");
+
+            check("aquatic flora is excluded, because water owns that attenuation",
+                  r.Contains("VV_FLORA_AQUATIC"),
+                  "vanilla already attenuates through water; a second term double-counts");
+
+            // The regression this whole correction exists for.
+            check("fruit is NOT excluded from receiving canopy light",
+                  !r.Contains("VV_FLORA_FRUIT"),
+                  "a pear under a tree is in that tree's shade whatever its botany says");
+
+            check("vines are NOT excluded from receiving canopy light",
+                  !r.Contains("VV_FLORA_VINE"),
+                  "whether a strand is in a sunbeam is what the shadow map already knows");
+        }
+
+        /// <summary>
+        /// The dapple gate must ask the optical question.
+        ///
+        /// It used to reject every plant, which left a forest floor's grass
+        /// evenly lit beside dappled soil. Then it asked "is this understory",
+        /// which fixed the grass and left fruit and vines lit. It now asks
+        /// whether sunlight arriving here could have come through leaves, which
+        /// is the question it was always trying to ask.
+        ///
+        /// HOW MUCH the light was filtered is not decided here at all - that is
+        /// measured per fragment from vanilla's shadow map. This only decides
+        /// whether the question applies.
+        /// </summary>
+        private static void CheckDappleAsksTheOpticalQuestion(Action<string, bool, string> check)
         {
             Match dapple = Regex.Match(_pbr,
-                @"float vvCanopyDapple\([^)]*\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
+                @"float vvCanopyDapple\([^)]*\)\s*\{(.*?)
+\}", RegexOptions.Singleline);
 
             check("the dapple function exists", dapple.Success, "");
             if (!dapple.Success) return;
 
             string body = dapple.Groups[1].Value;
 
-            check("the canopy itself is never dappled",
-                  body.Contains("if (vvIsCanopy()) return 0.0;"),
-                  "a tree casts this rather than wearing it");
+            check("dapple gates on the optical role",
+                  body.Contains("if (!vvIsCanopyReceiver()) return 0.0;"),
+                  "the gate must ask whether light could have come through leaves");
 
-            check("the understory is no longer excluded along with the canopy",
-                  !Regex.IsMatch(body, @"if \(vvIsFoliage\(\)\) return 0\.0;\s*\n\s*(?!.*vvIsUnderstory)"),
-                  "rejecting all foliage leaves a forest floor's grass evenly lit");
+            check("dapple no longer gates on the ecological classification",
+                  !body.Contains("vvIsUnderstory()"),
+                  "an ecological list cannot answer an optical question");
 
-            check("the understory is admitted explicitly",
-                  body.Contains("vvIsUnderstory()"),
-                  "grass under a tree is exactly what should catch sunflecks");
+            check("the canopy is still never dappled",
+                  body.Contains("vvIsCanopyReceiver"),
+                  "the receiver test is what keeps a tree from wearing its own shade");
+
+            // The amount has to stay a measurement. A class-based strength would
+            // be the taxonomy deciding the optical result again, one level down.
+            check("the amount of shade is still measured, not classified",
+                  body.Contains("vvCanopyEvidence()"),
+                  "how much light was filtered comes from the shadow map, per fragment");
+
+            check("the measurement is continuous rather than banded",
+                  !Regex.IsMatch(body, @"step\s*\(") ,
+                  "a hard step here would read as 'dapple mode activated'");
         }
 
         /// <summary>

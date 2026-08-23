@@ -424,6 +424,49 @@ bool vvIsUnderstory()
            flora == VV_FLORA_THIN;
 }
 
+// Can the sunlight reaching this fragment have been filtered by vegetation
+// ABOVE it?
+//
+// THE OPTICAL ROLE, WHICH IS NOT THE TAXONOMY. vvFloraClass answers "what kind
+// of plant is this"; this answers "how does it take part in light transport",
+// and the two are different questions with different answers. Letting the first
+// stand in for the second is a specific bug rather than an untidiness:
+//
+//   A pear hanging under a tree is not understory - it is fruit, ecologically
+//   part of the canopy plant. But it is physically BELOW leaves, so the sun
+//   reaching it has been through them. It should be shaded like everything else
+//   under that tree, and while the dapple gate asked the ecological question it
+//   was the one lit object in a shaded wood.
+//
+//   A vine hangs in the canopy's own gaps. Whether a given strand is in a
+//   sunbeam or in shade is exactly what the shadow map already knows, and
+//   excluding vines by class threw that measurement away.
+//
+// So the list is inverted. Almost everything receives; only two things do not,
+// and both for a physical reason rather than a botanical one:
+//
+//   THE CANOPY ITSELF is the occluder. It cannot be in its own shadow, and
+//   putting it there lit every tree in the world from the outside.
+//
+//   AQUATIC FLORA is under water rather than under air. Water owns that
+//   attenuation, vanilla already applies it, and a terrestrial canopy term on
+//   top would be a second attenuation of the same light.
+//
+// Everything else - stone, soil, trunks, grass, flowers, crops, bushes, reeds,
+// vines, fruit - is somewhere sunlight might arrive having passed through
+// leaves. HOW MUCH it was filtered is not decided here at all: that is measured
+// per fragment from vanilla's shadow map, continuously, in vvCanopyEvidence.
+// This only says whether the question applies.
+bool vvIsCanopyReceiver()
+{
+    int flora = vvFloraClass();
+
+    if (flora == VV_FLORA_LEAVES) return false;
+    if (flora == VV_FLORA_AQUATIC) return false;
+
+    return true;
+}
+
 // How far up its own plant this fragment sits, 0 at the root and 1 at the tip.
 //
 // Vanilla's wind data, normalised. It is a bend multiplier there and a
@@ -1336,14 +1379,19 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // tree in the world from the outside, which is the opposite of the effect:
     // the tree should be casting this, not wearing it.
     //
-    // UNDERGROWTH IS BELOW, NOT ABOVE. This used to test "is this foliage",
-    // which excluded the whole understory along with the canopy - so a forest
-    // floor's tall grass and flowers stayed evenly lit while the soil between
-    // them was dappled, and the two read as different places. Only the canopy
-    // is exempt now; grass, herbs, crops and bushes take the broken light like
-    // anything else standing under a tree.
-    if (vvIsCanopy()) return 0.0;
-    if (vvIsFoliage() && !vvIsUnderstory()) return 0.0;
+    // THE QUESTION HERE IS OPTICAL, NOT BOTANICAL.
+    //
+    // This asked "is this understory" - an ecological classification - to decide
+    // whether sunlight reaching the fragment might have been filtered by leaves.
+    // Those are different questions, and the difference showed: a pear hanging
+    // under a tree is not understory, so it stayed lit while everything around
+    // it was shaded, and a vine's own shadow-map evidence was thrown away
+    // because of what kind of plant it is.
+    //
+    // vvIsCanopyReceiver asks the right one. Almost everything is a receiver;
+    // the canopy is not, because it is the occluder, and aquatic flora is not,
+    // because water rather than air owns that attenuation.
+    if (!vvIsCanopyReceiver()) return 0.0;
 
     // GEOMETRIC, not photometric. See vvCanopyEvidence: this asks whether the
     // thing blocking the sun here is broken at leaf scale, which is a fact
@@ -2877,6 +2925,28 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         if (vvIsCanopy()) return vec4(1.0, 0.0, 0.0, color.a);
         if (vvIsUnderstory()) return vec4(0.0, 1.0, 0.0, color.a);
         return vec4(0.0, 0.0, 1.0, color.a);
+    }
+
+    // 47: the optical role, next to view 46's ecological one.
+    //
+    // These two views exist as a PAIR, and the point is that they disagree.
+    // View 46 is the taxonomy - what kind of plant. This is the optical role -
+    // whether sunlight arriving here might have come through leaves.
+    //
+    //   green  receives canopy-filtered light
+    //   red    the canopy itself, which is the occluder
+    //   blue   aquatic, where water owns the attenuation
+    //
+    // Compare them on a fruit tree. In 46 a pear is blue - neither canopy nor
+    // understory - and in 47 it is green, because it hangs below leaves whatever
+    // its botany says. If 47 ever matches 46 exactly, the optical role has
+    // collapsed back into the taxonomy and the pear is lit in a shaded wood
+    // again.
+    if (mode == 47)
+    {
+        if (vvIsCanopy()) return vec4(1.0, 0.0, 0.0, color.a);
+        if (!vvIsCanopyReceiver()) return vec4(0.0, 0.0, 1.0, color.a);
+        return vec4(0.0, 1.0, 0.0, color.a);
     }
 
     // ---- Canopy audit instrument, views 25-28 ----------------------------
