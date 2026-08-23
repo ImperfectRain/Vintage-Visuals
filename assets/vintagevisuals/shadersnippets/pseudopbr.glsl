@@ -158,7 +158,7 @@ uniform float vv_pbrPixelReflect;    // pixelated environment reflection, 0 is v
 // before this feature, so a failed capture degrades rather than breaks.
 uniform sampler2D vv_reflectScene;
 uniform mat4 vv_reflectViewProj;     // the transform that capture was drawn with
-uniform vec3 vv_reflectCameraDelta;  // capture camera position minus this frame's
+uniform vec3 vv_reflectCameraDelta;  // THIS frame's camera position minus the capture's
 uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
 uniform float vv_reflectFar;         // far plane the packed depth was normalised by
 uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
@@ -3276,6 +3276,39 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         if (m50.reason == VV_SSR_HIT)       return vec4(0.0, clamp(ratio, 0.0, 1.0), 0.0, color.a);
         if (m50.reason == VV_SSR_TOO_THICK) return vec4(clamp(ratio - 1.0, 0.0, 1.0), 0.0, 0.0, color.a);
         return vec4(0.0, 0.0, 0.0, color.a);
+    }
+
+    // 51: is the hit decision being made on geometry, or on rounding?
+    //
+    // The capture packs linear depth into the alpha of an RGBA8 target as
+    // linear/zFar, so the finest depth difference it can represent anywhere is
+    // vv_reflectFar/255 blocks. The march then asks whether a refined crossing
+    // landed within VV_SSR_THICKNESS - half a block - of the surface. At the
+    // far planes Vintage Story actually uses those two numbers are not in the
+    // same league.
+    //
+    //   red     constant across the frame: how far the depth quantum exceeds
+    //           the tolerance. Any red at all means the tolerance is finer than
+    //           the data everywhere, and accept/reject is rounding, not geometry
+    //   green   per texel: this crossing's residual measured in QUANTA rather
+    //           than in blocks. Below one quantum the number is noise
+    //   blue     this crossing was rejected as too thick
+    //
+    // Bisection cannot rescue this. Five passes refine the ray parameter
+    // against the same quantised sample, so they converge precisely onto a
+    // number that was rounded before the shader ever saw it.
+    if (mode == 51)
+    {
+        vec3 n51 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        VvSceneHit m51 = vvSceneReflection(n51, materialUv, cameraRelativePos);
+
+        float quantum = max(1e-5, vv_reflectFar / 255.0);
+        float coarse = clamp(quantum / max(1e-5, VV_SSR_THICKNESS) - 1.0, 0.0, 1.0);
+        float inQuanta = (m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK)
+            ? clamp(abs(m51.thickness) / quantum, 0.0, 1.0)
+            : 0.0;
+
+        return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
     }
 
     // ---- Flora taxonomy, views 44-46 -------------------------------------

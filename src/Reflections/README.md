@@ -118,6 +118,71 @@ landed against the tolerance judging it.
 Neither finding has been acted on. Both are stated here so the next run measures
 instead of guessing.
 
+### The depth is one byte, and the tolerance is half a block
+
+The capture packs linear view depth into the **alpha of an RGBA8 target** as
+`linear / zFar`. The finest depth difference it can express anywhere in the world
+is therefore `zFar / 255` blocks:
+
+| `zFar` | one alpha step |
+|---|---|
+| 128 | 0.50 blocks |
+| 256 | 1.00 block |
+| 512 | 2.01 blocks |
+| 1024 | 4.02 blocks |
+
+The march then decides whether a refined crossing landed within
+`VV_SSR_THICKNESS` — **half a block** — of the surface it hit. Those cross over
+at `zFar = 128`, and Vintage Story's far plane follows the player's view
+distance, which is routinely several hundred blocks.
+
+Above the crossover the accept/reject decision is being made **inside the
+quantisation noise**: correct hits are discarded and wrong ones kept, in a
+pattern that follows depth rather than anything in the scene. It produces both
+halves of the reported symptom at once — reflections that respond to the world
+without resolving it.
+
+**Neither more steps nor more refinement can fix this.** `VV_SSR_REFINE`'s
+comment reasons about the ray interval shrinking to a few texels, which is true
+and beside the point: five passes converge the ray parameter against the *same
+quantised sample*. The precision was lost in the capture, not in the search.
+
+`SceneCaptureRenderer` now reports the measured quantum against the tolerance
+once per session, at warning level when the tolerance is the finer of the two, so
+this stops being arithmetic on paper. **Read that line before changing any march
+constant** — raising `VV_SSR_THICKNESS` to make reflections appear would be doing
+exactly what its own comment forbids.
+
+If the report fires, the fix is in the capture format rather than the march: an
+`Rgba16f` target keeps the entire bridge conceptually identical and costs memory
+and bandwidth, which is a measurable trade rather than a guess. That has **not**
+been done, because it should be decided against a measured `zFar`.
+
+### Two smaller findings, confirmed and not acted on
+
+**Roughness does not coarsen the scene reflection.** `vvPixelReflection`
+quantises the reflection direction into `cells` chosen by roughness — and then
+uses that quantised direction *only* for `vvReflectionFallback`.
+`vvSceneReflection` recomputes `r = reflect(-v, n)` from the unquantised normal,
+so a rough surface with a valid scene hit gets exactly the same reflection
+geometry as a polished one. The documented hierarchy — smooth reflects sharply,
+rough reflects coarsely — currently applies to the analytic sky and not to the
+captured world, so the two can have visibly different character on the same
+surface either side of a hit boundary.
+
+**The luminance ceiling is a compression rule, not an energy rule.** A scene hit
+brighter than `envLuma * VV_REFLECT_MAX` (1.2) is scaled down to it. With a local
+environment at 0.20 and a sunlit tree at 0.70, the tree arrives at 0.24 — losing
+about two thirds of its luminance before PBR sees it. A sunlit surface can
+legitimately be several times brighter than the local horizon colour, so this is
+bounding the reflection by something that does not bound the world. It may still
+be the right visual choice; it is not the conservation rule its placement
+suggests.
+
+Both are recorded rather than changed. They sit downstream of the depth problem,
+and changing them first would be tuning the visible result before the information
+pipeline is trustworthy.
+
 ### Reading the march views
 
 Only meaningful once view 39 shows green somewhere; if the bridge is dead these

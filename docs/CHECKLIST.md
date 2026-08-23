@@ -289,8 +289,11 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | Two march outcomes sharing a code | source audit | I11 | x |
 | The step-budget diagnostic never reporting saturation (`D42`) | source audit | I12 | x |
 | The march sampling coarser than `VV_SSR_STRIDE` names | source audit | I12 | x |
+| The depth report comparing against a stale tolerance (`D43`) | external audit, verified | I13 | x |
+| The capture's depth assumed finer than one byte (`D43`) | external audit, verified | I13 | x |
+| The depth-precision view never reporting coarse data | `D43` | I13 | x |
 
-**21 mutations, 21 caught, 0 missed** at `HEAD`.
+**24 mutations, 24 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

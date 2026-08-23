@@ -63,6 +63,75 @@ namespace VintageVisuals.Reflections
         /// below, keeps the reflected colour a real pixel of the captured world.
         private const float CaptureScale = 0.5f;
 
+        /// <summary>
+        /// How thick a surface the reflection march is willing to accept, in
+        /// blocks. Pinned to VV_SSR_THICKNESS in pseudopbr.glsl by a smoke
+        /// check, because the whole point of the report below is comparing the
+        /// two and a stale copy would compare against a number nobody ships.
+        /// </summary>
+        private const float ReflectionThicknessBlocks = 0.5f;
+
+        /// <summary>Values an RGBA8 channel can hold, minus one: the divisor of its quantum.</summary>
+        private const float DepthChannelLevels = 255f;
+
+        private bool _reportedDepthResolution;
+
+        /// <summary>
+        /// Says, once, whether the capture can answer the question the march
+        /// asks of it.
+        ///
+        /// THE DEPTH IS ONE BYTE. The capture packs linear view depth into the
+        /// alpha of an RGBA8 target as `linear / zFar`, so the smallest depth
+        /// difference it can represent anywhere in the world is zFar/255 blocks.
+        /// The march then decides whether a refined crossing landed within
+        /// VV_SSR_THICKNESS - half a block - of the surface it hit.
+        ///
+        /// Those two numbers cross over at zFar = 128. Above it the tolerance is
+        /// finer than the data, and the accept/reject decision is being made
+        /// inside the quantisation noise rather than on geometry: correct hits
+        /// are discarded and wrong ones are kept, in a pattern that follows
+        /// depth rather than anything in the scene. Five bisection passes cannot
+        /// help, because they refine the ray parameter against the same
+        /// quantised sample - the precision was lost in the capture, not in the
+        /// search.
+        ///
+        /// Vintage Story's far plane follows the player's view distance and is
+        /// routinely several hundred blocks, so this is expected to fire. It is
+        /// logged rather than fixed here: changing the capture format is a real
+        /// change with a real cost, and it should be made against a measured
+        /// number rather than an assumed one.
+        /// </summary>
+        private void ReportDepthResolution(float zFar)
+        {
+            if (_reportedDepthResolution) return;
+            _reportedDepthResolution = true;
+
+            float quantum = zFar / DepthChannelLevels;
+
+            if (quantum <= ReflectionThicknessBlocks)
+            {
+                _capi.Logger.Notification(
+                    "[VintageVisuals] reflections: capture depth quantum is " +
+                    quantum.ToString("0.000") + " blocks at zFar " + zFar.ToString("0") +
+                    ", inside the " + ReflectionThicknessBlocks.ToString("0.00") +
+                    " block hit tolerance. The march is deciding on geometry.");
+                return;
+            }
+
+            _capi.Logger.Warning(
+                "[VintageVisuals] reflections: capture depth quantum is " +
+                quantum.ToString("0.000") + " blocks at zFar " + zFar.ToString("0") +
+                ", which is " + (quantum / ReflectionThicknessBlocks).ToString("0.0") +
+                "x COARSER than the " + ReflectionThicknessBlocks.ToString("0.00") +
+                " block hit tolerance that judges a crossing. Depth is packed into one byte of " +
+                "an RGBA8 capture, so the tolerance is finer than the data and hits are being " +
+                "accepted or rejected inside the quantisation noise. Refinement cannot recover " +
+                "this - it searches the ray against the same quantised sample. Reflections will " +
+                "read as environmental colour rather than as recognizable geometry until the " +
+                "capture carries more depth precision.");
+        }
+
+
         private readonly ICoreClientAPI _capi;
         private readonly Action<string> _log;
 
@@ -308,6 +377,8 @@ namespace VintageVisuals.Reflections
                 _program.BindTexture2D("sceneDepth", primary.DepthTextureId, 1);
                 _program.Uniform("zNear", _capi.Render.ShaderUniforms.ZNear);
                 _program.Uniform("zFar", _capi.Render.ShaderUniforms.ZFar);
+
+                ReportDepthResolution(_capi.Render.ShaderUniforms.ZFar);
 
                 _capi.Render.RenderMesh(_quad);
                 _program.Stop();

@@ -1711,3 +1711,83 @@ would mean tuning a downstream variable to compensate for an upstream failure.
 **Status.** STRUCTURALLY CORRECT - VISUALLY UNVALIDATED. Two new invariants,
 I11 and I12, four new mutations, all caught. `verifypatches` compiles the new
 views in all 48 combinations.
+
+---
+
+## D43. The reflection's hit tolerance is finer than the depth it judges
+
+**Extends [D42](#d42-a-budget-that-overrides-a-rate-must-say-when-it-does).** D42
+found the march coarse. This is the reason a finer march would not have helped.
+
+An external audit of the reflection path was put to the code rather than taken at
+its word. Most of it holds; one item needed correcting; one is an addition the
+audit did not reach.
+
+**Confirmed, and it outranks everything else in this subsystem.** The capture
+target is `Rgba8` and `vvscenecapture.fsh` writes
+`clamp(linear / max(1.0, zFar), 0.0, 1.0)` into alpha, so depth is **one byte**
+and the finest difference expressible anywhere is `zFar / 255` blocks. The march
+judges a crossing against `VV_SSR_THICKNESS`, half a block. They cross over at
+`zFar = 128`; Vintage Story's far plane follows view distance and is routinely
+several hundred. At `zFar = 512` the quantum is 2.01 blocks - four times the
+tolerance - so a hit is accepted or rejected by rounding rather than by geometry,
+which discards correct hits and keeps wrong ones in a pattern that follows depth
+and nothing in the scene. That is both halves of the reported symptom at once:
+surfaces that respond to the world without resolving it.
+
+**The addition the audit did not reach: refinement cannot rescue it either.** The
+audit noted that more steps would not fix the depth problem. Nor will more
+bisection, and `VV_SSR_REFINE`'s own comment invites the mistake - it reasons
+about the ray interval shrinking to a few texels, which is true and irrelevant.
+Five passes converge the ray parameter against the *same quantised sample*. The
+precision was lost in the capture, not in the search, so every knob in the march
+is downstream of it.
+
+**Confirmed: roughness does not coarsen the scene reflection.**
+`vvPixelReflection` picks `cells` from roughness, quantises the direction, and
+hands the quantised direction to `vvReflectionFallback` only. `vvSceneReflection`
+recomputes `reflect(-v, n)` from the unquantised normal. So the documented
+hierarchy - smooth sharp, rough coarse - governs the analytic sky and not the
+captured world, and one surface can change character across a hit boundary.
+
+**Confirmed: the luminance ceiling is a compression rule wearing an energy
+rule's clothes.** A scene hit above `envLuma * 1.2` is scaled to it. Environment
+0.20 against a sunlit tree at 0.70 delivers 0.24 - two thirds of the tree's
+luminance gone before PBR sees it - and a sunlit surface is legitimately allowed
+to be several times brighter than the local horizon colour.
+
+**Confirmed and fixed, because it is a comment**: `vv_reflectCameraDelta` was
+documented as "capture camera position minus this frame's" while
+`PbrShaderBinder` uploads `now - then`. The upload is the correct one for the
+shader's addition; the comment was backwards, in the one place a reader
+debugging a sign error would look first.
+
+**Corrected.** The audit reported that the documentation still describes the
+capture's scale inconsistently. The code comments are explicit and right - HALF
+in each axis, which is a quarter of the pixels - and the runtime log line used
+the pixel-count wording, true of the count and ambiguous about the axis. It
+misled a careful reader, so the log now says "half resolution in each axis". The
+audit's conclusion was wrong; its instinct was not.
+
+**Chosen: measure, do not convert.** `SceneCaptureRenderer` reports the actual
+quantum against the tolerance once per session, at warning level when the
+tolerance is the finer of the two. Debug view 51 shows the same comparison per
+texel, with each crossing's residual expressed in QUANTA rather than blocks -
+below one quantum, the number the march is deciding on is noise.
+
+**Not done, deliberately.** No capture format change, no constant changed, no
+roughness plumbed into the SSR path, no ceiling raised. An `Rgba16f` target keeps
+the bridge conceptually identical and costs memory and bandwidth - a measurable
+trade, and one to make against a measured `zFar` rather than an assumed one. The
+roughness inconsistency and the luminance ceiling both sit DOWNSTREAM of the
+depth problem, and changing them first would be tuning the visible result before
+the information pipeline is trustworthy, which is the mistake the vegetation work
+spent this project's last four passes eliminating.
+
+**Ranking, for the next pass.** Depth precision first, because everything else in
+the march is conditioned on it. Then the step budget from D42. Then the roughness
+inconsistency. Then the luminance ceiling. Only then anything that could be
+called strength.
+
+**Status.** STRUCTURALLY CORRECT - VISUALLY UNVALIDATED, unchanged. I13 added,
+three mutations, 24 of 24 caught.

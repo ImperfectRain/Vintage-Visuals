@@ -96,7 +96,7 @@ namespace VintageVisuals.Reflections
             {
                 _reported = true;
                 Log("reflections: scene capture active - reflective surfaces read the previous "
-                  + "frame at quarter resolution, with depth packed into its alpha. Rays that "
+                  + "frame at half resolution in each axis, with depth packed into its alpha. Rays that "
                   + "leave the screen fall back to the analytic environment.");
             }
         }

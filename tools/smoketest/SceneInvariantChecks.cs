@@ -72,6 +72,7 @@ namespace VintageVisuals.SmokeTest
             I10_DebugViewsAreDistinct(check);
             I11_ADiagnosticKeepsItsStatesApart(check);
             I12_ARateConstantIsTheRateUsed(check);
+            I13_AToleranceIsNotFinerThanItsData(repo, check);
         }
 
         // -------------------------------------------------------------------
@@ -996,6 +997,93 @@ namespace VintageVisuals.SmokeTest
             check("I12 budget usage is reported as a fraction, not a count",
                   Used(longTravel) <= 1.0 + 1e-9 && Used(shortTravel) < 1.0,
                   "long " + Used(longTravel) + ", short " + Used(shortTravel));
+        }
+
+
+        // -------------------------------------------------------------------
+        // I13  A TOLERANCE MUST NOT BE FINER THAN THE DATA IT JUDGES
+        //
+        // The scene capture packs linear view depth into the ALPHA OF AN RGBA8
+        // target as linear/zFar, so the finest depth difference it can express
+        // anywhere in the world is zFar/255 blocks. The reflection march then
+        // decides whether a refined crossing landed within VV_SSR_THICKNESS -
+        // half a block - of the surface it hit.
+        //
+        // Those cross over at zFar = 128, and Vintage Story's far plane follows
+        // the player's view distance, which is routinely several hundred blocks.
+        // Above the crossover the accept/reject decision is being made inside
+        // the quantisation noise: correct hits are discarded and wrong ones are
+        // kept, in a pattern that follows depth rather than anything in the
+        // scene. Five bisection passes cannot help, because they refine the ray
+        // parameter against the same quantised sample - the precision was lost
+        // in the capture, not in the search.
+        //
+        // This invariant does NOT assert the tolerance is adequate; it is not,
+        // at any ordinary view distance, and asserting otherwise would be a
+        // green line stating the opposite of the arithmetic. It asserts that
+        // the mismatch is MEASURED - that the two numbers are compared, that
+        // the comparison is honest at both ends, and that the C# side is not
+        // comparing against a stale copy of a constant it does not own.
+        // -------------------------------------------------------------------
+        static void I13_AToleranceIsNotFinerThanItsData(string repo, Action<string, bool, string> check)
+        {
+            double tolerance;
+            try { tolerance = Const(_pbr, "VV_SSR_THICKNESS"); }
+            catch (Exception ex) { check("I13 the hit tolerance is readable", false, ex.Message); return; }
+
+            // The reporter lives in C# because zFar does, and a copied constant
+            // drifts. Pin it.
+            string capture;
+            try { capture = File.ReadAllText(Path.Combine(repo, "src/Reflections/SceneCaptureRenderer.cs")); }
+            catch (Exception ex) { check("I13 the capture renderer is readable", false, ex.Message); return; }
+
+            var pinned = Regex.Match(capture, @"ReflectionThicknessBlocks\s*=\s*([0-9.]+)f");
+            check("I13 the depth report compares against the tolerance that ships",
+                  pinned.Success && Math.Abs(double.Parse(pinned.Groups[1].Value) - tolerance) < 1e-9,
+                  pinned.Success ? pinned.Groups[1].Value + " vs GLSL " + tolerance : "no pinned constant");
+
+            var levels = Regex.Match(capture, @"DepthChannelLevels\s*=\s*([0-9.]+)f");
+            check("I13 the depth channel is treated as one byte",
+                  levels.Success && Math.Abs(double.Parse(levels.Groups[1].Value) - 255.0) < 1e-9,
+                  levels.Success ? levels.Groups[1].Value : "no channel-depth constant");
+
+            check("I13 the capture really is eight bits per channel",
+                  Regex.IsMatch(capture, @"PixelInternalFormat\s*=\s*EnumTextureInternalFormat\.Rgba8"),
+                  "the report's arithmetic assumes Rgba8 and the target is no longer Rgba8");
+
+            // And the view that shows it, evaluated from the shipped GLSL.
+            string coarseExpr;
+            try
+            {
+                string views = FunctionBody(_pbr, "vec4 vvDebugView(");
+                coarseExpr = Rhs(Statement(views, "float coarse ="));
+            }
+            catch (Exception ex) { check("I13 the depth-precision view is readable", false, ex.Message); return; }
+
+            double Coarse(double zFar)
+            {
+                var syms = Syms("vv_reflectFar", zFar, "VV_SSR_THICKNESS", tolerance);
+                syms["quantum"] = new Val(Math.Max(1e-5, zFar / 255.0));
+                return Scalar(coarseExpr, syms);
+            }
+
+            // Below the crossover the data is finer than the tolerance and the
+            // diagnostic must stay silent, or it would cry wolf on every scene.
+            double belowCrossover = tolerance * 255.0 * 0.5;
+            check("I13 the depth-precision view is quiet when the data is fine enough",
+                  Math.Abs(Coarse(belowCrossover)) < 1e-9,
+                  "zFar " + belowCrossover + " -> " + Coarse(belowCrossover));
+
+            // And above it, it must say so - this is the case that ships.
+            check("I13 the depth-precision view reports a tolerance finer than its data",
+                  Coarse(512.0) > 0.5, "zFar 512 -> " + Coarse(512.0));
+
+            // The crossover itself, stated as arithmetic rather than as prose,
+            // so a change to either number moves it here too.
+            double crossover = tolerance * 255.0;
+            check("I13 the crossover sits where the two constants put it",
+                  Math.Abs(Coarse(crossover * 0.99)) < 1e-9 && Coarse(crossover * 4.0) > 0.0,
+                  "crossover at zFar " + crossover);
         }
 
         // -------------------------------------------------------------------
