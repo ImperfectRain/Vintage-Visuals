@@ -2076,6 +2076,25 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
     float chlorophyll = (vvFloraClass() == VV_FLORA_FRUIT) ? 0.0 : 1.0;
     vec3 tint = albedo * mix(vec3(1.0), vec3(1.06, 1.12, 0.72), chlorophyll);
 
+    // Cloud cover diffuses the sun, and transmission needs a BEAM.
+    //
+    // The same physics the direct specular lobe already models, and deliberately
+    // the same constant, so the two cannot drift apart. A clear sky is a small
+    // very bright source: light arrives at a leaf from one direction, goes
+    // through, and comes out the other side pointed at the camera. An overcast
+    // sky replaces it with a source the size of the sky - light enters the leaf
+    // from everywhere at once, so there is no direction for it to glow ALONG.
+    //
+    // A backlit leaf on an overcast afternoon does not glow, and until this it
+    // did. It is also what makes the low clear sun read as special: the effect
+    // has to be able to switch off for its presence to mean anything.
+    //
+    // Not double-counting the cloud shadows. Those are a cloud passing in front
+    // of the sun and arrive through shadowBrightness; this is how diffuse the
+    // sky is. Two different facts, used together here exactly as the direct
+    // lobe uses them.
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+
     // Shadowed leaves do not glow - there is no sun behind them to come
     // through - and daylight scales it for the same reason. Wetness is
     // deliberately absent: a wet leaf transmits no differently, it only
@@ -2085,7 +2104,8 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
          * thinness
          * vv_pbrFoliage
          * clamp(shadowBrightness, 0.0, 1.0)
-         * clamp(vv_sceneDayLight, 0.0, 1.0);
+         * clamp(vv_sceneDayLight, 0.0, 1.0)
+         * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 }
 
 // ---------------------------------------------------------------------------

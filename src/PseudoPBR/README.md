@@ -861,13 +861,75 @@ Vines stay out of the understory because they hang from the occluder rather than
 under it. Aquatic flora stays out because the water above it already attenuates
 the sun and vanilla handles that.
 
+### The optical role is not the taxonomy
+
+`vvFloraClass` answers *what kind of plant is this*. `vvIsCanopyReceiver`
+answers *can the sunlight arriving here have come through leaves*. Those are
+different questions, and letting the first answer the second is a specific bug:
+
+> A pear hanging under a tree is not understory. It is fruit, ecologically part
+> of the canopy plant. It is also physically **below leaves**, so the sun
+> reaching it has been through them.
+
+While the dapple gate asked the botanical question, that pear was the one lit
+object in a shaded wood. A vine had the same problem in reverse: whether a strand
+hangs in a sunbeam or in shade is exactly what the shadow map already knows, and
+excluding vines by class threw the measurement away.
+
+So the receiver test is an **exclusion list**, not a membership list —
+enumerating what receives is how fruit got forgotten. Two exclusions, both
+physical rather than botanical:
+
+| Excluded | Why |
+|---|---|
+| The canopy | It is the occluder. A leaf cannot be in its own shadow |
+| Aquatic flora | It is under water, not under air. Vanilla already attenuates that light |
+
+Everything else — stone, soil, trunks, grass, flowers, crops, bushes, reeds,
+vines, fruit — is somewhere sunlight might arrive having passed through leaves.
+
+**How much** it was filtered is not decided here at all. That stays a per-fragment
+measurement from vanilla's shadow map, continuous, in `vvCanopyEvidence`. The
+role only says whether the question applies. A class-based *strength* would be
+the taxonomy deciding the optical result again, one level down, and a check fails
+the build if the amount stops being measured or acquires a hard step.
+
+`vvIsUnderstory` stays. It answers a real question, and the separation needs both
+sides to exist to be a separation.
+
+### Transmission needs a beam
+
+A clear sky is a small, very bright source: light arrives at a leaf from one
+direction, passes through, and comes out the other side pointed at the camera.
+An overcast sky replaces it with a source the size of the sky — light enters from
+everywhere at once and there is no direction to glow *along*.
+
+So transmission collapses under overcast, using **the same constant as the direct
+specular lobe**, because it is the same physical fact. Two constants for one fact
+is how they drift, and the symptom would be a leaf glowing on a grey day while
+the highlight beside it had correctly gone flat.
+
+It is also what makes a low clear sun read as special. An effect that is always
+on cannot mean anything by being on.
+
+This is not double-counting the cloud shadows: those are a cloud passing in front
+of the sun and arrive through `shadowBrightness`. Overcast is how diffuse the sky
+is. Two facts, used together here exactly as the direct lobe uses them.
+
 ### Debug views
 
 | | Draws |
 |---|---|
 | 44 | The class, one flat hue per plant. Black is "not a plant" |
 | 45 | Red thinness, green height up the plant. Flat green 0.5 means the wind-data height is not reaching the shader |
-| 46 | Green understory (takes dapple), red canopy (must not), blue neither |
+| 46 | **Ecological:** green understory, red canopy, blue neither |
+| 47 | **Optical:** green receives canopy-filtered light, red the canopy itself, blue aquatic |
+
+**46 and 47 are a pair, and the point is that they disagree.** On a fruit tree a
+pear is blue in 46 — neither canopy nor understory — and green in 47, because it
+hangs below leaves whatever its botany says. If 47 ever matches 46 exactly, the
+optical role has collapsed back into the taxonomy and the pear is lit in a shaded
+wood again.
 
 ### Wind, which this does not implement
 

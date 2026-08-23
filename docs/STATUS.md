@@ -114,6 +114,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | **Foliage translucency** | L2 | light through leaves, grass and crops, per plant. See the flora taxonomy below |
 | `[x]` | **Flora taxonomy from vanilla's wind modes** | L2 | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. No block IDs, correct for modded flora for free |
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
+| `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |
+| `[x]` | Transmission collapses under overcast | L2 | Shares the direct lobe's constant. A backlit leaf under a flat grey sky has no beam to glow along |
 | `[~]` | Surface relief in `chunktopsoil.fsh` (forest floor) | L2 | anchors confirmed against the real shader |
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |

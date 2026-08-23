@@ -85,6 +85,8 @@ from the source texture.
 | Flora taxonomy (11 classes, vanilla wind modes) | x | x | x | x | – | x | – | – | x |
 | Per-plant transmission and pooling | x | x | x | x | – | – | – | – | x |
 | Understory receives canopy dapple | x | x | x | x | – | – | – | – | x |
+| Optical role (`vvIsCanopyReceiver`) | x | x | x | x | – | x | – | – | x |
+| Transmission responds to overcast | x | x | x | x | – | – | – | – | x |
 | Block-light specular | x | x | x | x | x | – | – | x | x |
 | Sun dapple | x | x | x | x | x | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
@@ -95,6 +97,12 @@ Flora edge cases exercised, statically: the eleven wind modes checked against th
 game's own shader constants; the two liquid modes excluded; an unrecognised mode
 landing on a conservative middle rather than zero or maximum; canopy and
 understory proven disjoint; fruit proven the least translucent tissue.
+
+Optical-role edge cases exercised, statically: the receiver set proven not to be
+the understory set; fruit and vines proven NOT excluded; canopy and aquatic
+proven excluded; the shade amount proven still measured from the shadow map
+rather than assigned by class; transmission proven to share the direct lobe's
+overcast constant rather than carry its own.
 
 **No flora scene has been rendered.** `docs/VISUAL-TESTS.md` carries the matrix
 and every row in it is unmarked. The single clearest one-object check is a

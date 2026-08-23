@@ -44,6 +44,7 @@ namespace VintageVisuals.SmokeTest
             CheckCanopyAndUnderstoryAreDisjoint(check);
             CheckOpticalRoleIsNotTheTaxonomy(check);
             CheckDappleAsksTheOpticalQuestion(check);
+            CheckTransmissionNeedsABeam(check);
             CheckShaftsStartAtTheCanopyOnly(check);
             CheckPoolingIsPerPlant(check);
             CheckUnknownFloraIsSafe(check);
@@ -339,6 +340,56 @@ namespace VintageVisuals.SmokeTest
             check("the measurement is continuous rather than banded",
                   !Regex.IsMatch(body, @"step\s*\(") ,
                   "a hard step here would read as 'dapple mode activated'");
+        }
+
+        /// <summary>
+        /// Transmission needs a directional beam, and must collapse without one.
+        ///
+        /// A clear sky is a small very bright source: light arrives at a leaf
+        /// from one direction, passes through, and comes out the other side
+        /// pointed at the camera. An overcast sky replaces it with a source the
+        /// size of the sky - light enters from everywhere at once and there is
+        /// no direction to glow ALONG.
+        ///
+        /// The direct specular lobe already models exactly this, so the two use
+        /// the SAME constant. That is the point of the check: two places
+        /// modelling one physical fact with two constants is how they drift, and
+        /// the symptom would be a leaf that glows on an overcast day while the
+        /// highlight beside it has correctly gone flat.
+        ///
+        /// It is also what makes a low clear sun read as special. An effect that
+        /// is always on cannot mean anything by being on.
+        /// </summary>
+        private static void CheckTransmissionNeedsABeam(Action<string, bool, string> check)
+        {
+            Match transmission = Regex.Match(_pbr,
+                @"vec3 vvFoliageTransmission\([^)]*\)\s*\{(.*?)
+\}", RegexOptions.Singleline);
+
+            check("the transmission function exists", transmission.Success, "");
+            if (!transmission.Success) return;
+
+            string body = transmission.Groups[1].Value;
+
+            check("transmission collapses under overcast",
+                  body.Contains("vv_sceneOvercast"),
+                  "a backlit leaf under a flat grey sky has no beam to glow along");
+
+            check("transmission uses the same overcast constant as the direct lobe",
+                  body.Contains("VV_OVERCAST_DIRECT"),
+                  "one physical fact, two constants, is how the two drift apart");
+
+            check("transmission still stops in shadow",
+                  body.Contains("shadowBrightness"),
+                  "a leaf with no sun behind it has nothing to transmit");
+
+            check("transmission still stops at night",
+                  body.Contains("vv_sceneDayLight"),
+                  "there is no sun to come through after dark");
+
+            check("transmission is not scaled by wetness",
+                  !body.Contains("wetness"),
+                  "a wet leaf transmits no differently, it only reflects more");
         }
 
         /// <summary>
