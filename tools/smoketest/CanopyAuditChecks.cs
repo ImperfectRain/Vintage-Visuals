@@ -40,6 +40,7 @@ namespace VintageVisuals.SmokeTest
             CheckDappleTouchesSunlightOnly(pbr, check);
             CheckShaftNeedsABeam(pbr, check);
             CheckSunGateIsAGate(pbr, check);
+            CheckDappleGateAndApplicationAgree(pbr, check);
             CheckGateIsGeometric(pbr, check);
             CheckStructureCountsOccluders(pbr, check);
             CheckNoInventedPattern(pbr, check);
@@ -257,6 +258,64 @@ namespace VintageVisuals.SmokeTest
             check("the canopy's green tint spares local light too",
                 pbr.Contains("float tint = canopy * VV_DAPPLE_GREEN;"),
                 "torchlight did not pass through a leaf and did not pick up its colour");
+        }
+
+        /// <summary>
+        /// The gate and the application must not require opposite conditions.
+        ///
+        /// vvCanopyEvidence returns zero unless the fragment is IN SHADOW. The
+        /// application then multiplied by shadowBrightness, which is high only
+        /// where the fragment is LIT. Their product was near zero at both ends
+        /// and non-zero only in the narrow penumbra between - so the mod added
+        /// almost nothing beyond the shadow edges vanilla already draws.
+        ///
+        /// Reported from the game as "no visible sunspots apart from where the
+        /// sun breaks through the shadows in vanilla", which is precisely what
+        /// a self-cancelling pair leaves behind.
+        ///
+        /// This is the third defect of this shape found by running the game and
+        /// not by reading the code: two terms, each individually defensible,
+        /// each with a comment explaining why it is right, multiplying to
+        /// nothing. Nothing static asks whether two conditions can be true at
+        /// once.
+        /// </summary>
+        private static void CheckDappleGateAndApplicationAgree(string pbr, Action<string, bool, string> check)
+        {
+            int at = pbr.IndexOf("float shaded = vvCanopyDapple(", StringComparison.Ordinal);
+            check("the dapple application site is findable", at >= 0, "vvApplyPbr");
+            if (at < 0) return;
+
+            // The statement, up to its semicolon.
+            int end = pbr.IndexOf(';', at);
+            string statement = pbr.Substring(at, end - at);
+
+            check("the dapple result is not scaled by lit-ness",
+                !statement.Contains("shadowBrightness"),
+                "the evidence requires shadow and this requires light; together they cancel");
+
+            // And the evidence must still require shadow - the other half of
+            // the pair. If that were dropped instead, the canopy would darken
+            // sunlit ground.
+            Match evidence = Regex.Match(pbr,
+                @"float vvCanopyEvidence\(\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
+
+            check("the canopy evidence still requires shadow",
+                evidence.Success && evidence.Groups[1].Value.Contains("1.0 - vvSunVisibility()"),
+                "a lit fragment has no shadow to break and nothing to redistribute");
+
+            // The three protections that make the multiply unnecessary. If any
+            // of them goes, the multiply's removal stops being safe.
+            check("a single straight edge is still rejected as canopy",
+                pbr.Contains("smoothstep(2.6, 6.0, variation)"),
+                "without this a wall or cave mouth would read as broken canopy");
+
+            check("the darkening is still capped",
+                pbr.Contains("clamp(shaded, 0.0, 0.85)"),
+                "nothing may reach black however deep the shade");
+
+            check("local light is still spared",
+                pbr.Contains("vvLocalLightShare()"),
+                "a torch under a canopy must keep its light");
         }
 
         /// <summary>

@@ -2662,8 +2662,36 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     //
     // Scaled by the shadow term as well, so a fragment vanilla has already put
     // in full shade does not get dappled a second time.
-    float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos))
-                 * clamp(shadowBrightness, 0.0, 1.0);
+    // THE TWO HALVES OF THIS USED TO CANCEL.
+    //
+    // vvCanopyEvidence returns zero unless the fragment is IN SHADOW - it opens
+    // with `if (1 - vvSunVisibility() < 0.01) return 0`. This line then
+    // multiplied the result by shadowBrightness, which is high only where the
+    // fragment is LIT. The product was near zero at both ends and non-zero only
+    // in the narrow penumbra between them, so the mod contributed almost
+    // nothing beyond the shadow edges vanilla already draws. Reported from the
+    // game as "no visible sunspots apart from where the sun breaks through the
+    // shadows in vanilla", which is exactly and literally what was left.
+    //
+    // The multiply was there to stop a fragment vanilla had already put in full
+    // shade being darkened twice. That is a real concern and it is handled
+    // three times over without this:
+    //
+    //   vvCanopyStructure rejects a single straight edge, so a wall, a cave
+    //   mouth or a building's shadow scores nothing - only a broken occluder
+    //   does, which is what a canopy is;
+    //
+    //   the application below caps the darkening at 0.85, so nothing reaches
+    //   black however deep the shade;
+    //
+    //   vvLocalLightShare keeps torches, glow and point lights out of it.
+    //
+    // So the multiply removed the effect and protected against nothing that was
+    // not already protected. It also contradicted this function's own stated
+    // purpose one screen above: deepening the shade BETWEEN the gaps is how the
+    // flecks get their contrast, and it can only happen where the fragment is
+    // shadowed.
+    float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos));
 
     // THE CANOPY TAKES SUNLIGHT, NOT TORCHLIGHT.
     //

@@ -1254,3 +1254,65 @@ inversion and a drift in the transcription.
 
 **Status.** Fixed, runtime-unverified. The scene that proves it is the one that
 exposed it: debug view 13, low sun, facing into it.
+
+---
+
+## D35. The dapple gate and its application required opposite conditions
+
+**Reported from the game**: "no visible sunspots apart from where the sun breaks
+through the shadows in vanilla." That sentence is a precise description of a
+self-cancelling pair, and it was one.
+
+`vvCanopyEvidence` opens with
+
+```glsl
+float shadowed = 1.0 - vvSunVisibility();
+if (shadowed < 0.01) return 0.0;      // must be IN SHADOW
+```
+
+and the application site was
+
+```glsl
+float shaded = vvCanopyDapple(...) * clamp(shadowBrightness, 0.0, 1.0);
+                                     //  ^ high only where LIT
+```
+
+The product is near zero at both ends and non-zero only in the narrow penumbra
+between them. So the mod contributed essentially nothing beyond the shadow edges
+vanilla already draws - which is exactly what the player saw and exactly what
+they said.
+
+**Both halves had a comment explaining why they were right.** The evidence needs
+shadow because a lit fragment has no shadow to break up. The multiply was there
+so a fragment vanilla had already put in full shade would not be darkened twice.
+Each is defensible alone. Nothing in the codebase asks whether two conditions can
+be true at the same time.
+
+**Worse, the multiply contradicted the same function's stated purpose**, one
+screen above it: *"CONTRAST. Vanilla's shadow bottoms out at 1 - shadowIntensity/2
+... Deepening the shade BETWEEN the gaps, and leaving the gaps at exactly what
+vanilla lit them to, widens the gap between the two."* Deepening the shade can
+only happen where the fragment is shadowed. The multiply removed the effect
+precisely there.
+
+**Chosen.** Drop the multiply. Everything it nominally protected is protected
+three times over already:
+
+| Concern | Handled by |
+|---|---|
+| A wall or cave mouth reading as canopy | `vvCanopyStructure` rejects a single straight edge |
+| Anything reaching black | the application caps at 0.85 |
+| Torches being dimmed | `vvLocalLightShare` - D28 |
+
+A check now pins that the gate and the application do not require opposite
+conditions, and separately that each of those three protections is still in
+place - because the multiply's removal is only safe while they are.
+
+**The pattern, third time.** Two terms, each individually correct, each with a
+comment justifying it, multiplying to nothing. This is the third defect of that
+shape found by running the game rather than reading the code, after the inverted
+transmission sign and the sunset gate. Static analysis reasons about statements;
+it has no notion of whether two predicates can hold together in a real scene.
+
+**Status.** Fixed, runtime-unverified. The scene is a forest floor under broken
+canopy, and it is the scene that has failed three times now.
