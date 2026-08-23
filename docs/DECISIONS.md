@@ -951,3 +951,102 @@ by before. It now pins the application too, and the mutation fails.
 
 **Status.** Active, L2. Not seen in a world: the scene that proves it is a torch
 under a tree at dusk.
+
+---
+
+## D29. blockBrightness is the right local-light measure, because it is already
+## vanilla's
+
+**Context.** D28 scaled the canopy term by the complement of vanilla's
+`blockBrightness`. That decision recorded *what* was done; this one records the
+audit that was owed - whether the value actually means what the canopy term needs
+it to mean.
+
+**What vanilla computes.** Two branches, on `DYNLIGHTS`:
+
+```glsl
+// DYNLIGHTS == 0
+blockBrightness = clamp(max(bGlow, bBlock) - bSun/2, 0, 1);
+// DYNLIGHTS != 0
+blockBrightness = clamp(max(bGlow, max(bPoint, bBlock)) - bSun/2, 0, 1);
+```
+
+Same shape in both: **the strongest local source, net of half the sun.** `bGlow`
+is the block's own glow level from `renderFlags`; `bBlock` is the block-light
+colour's mean; `bPoint` is the accumulated dynamic point lights; `bSun` is the
+sun colour's mean. Identical in `chunkopaque` and `chunktopsoil`.
+
+**What vanilla uses it for.** This is the finding that settles it. Inside
+`getBrightnessFromShadowMap`:
+
+```glsl
+b = clamp(b + blockBrightness, 0, 1);
+```
+
+The game lifts its **own shadow term** by this value, so a torch-lit fragment is
+not darkened by being in shadow. The canopy term is a second shadow-like
+attenuation one stage later and needs the same protection for the same reason.
+The mod is not repurposing the value; it is applying the value's own purpose once
+more.
+
+**Is it a share?** Not literally - it is a brightness difference, not a ratio.
+Checked across the range anyway:
+
+| State | max(local) | bSun/2 | Result | Behaviour |
+|---|---|---|---|---|
+| Daylight, no local light | 0 | 0.5 | 0 | canopy **bit-identical** to before |
+| Strong torch, no sun | ~1 | 0 | ~1 | canopy fully spared |
+| Strong torch, full sun | ~1 | 0.5 | 0.5 | canopy half applied |
+| Weak torch, full sun | 0.3 | 0.5 | 0 | canopy full - the sun dominates |
+
+Monotone, bounded, and zero exactly where there is no local light. `MINBRIGHT`
+defaults to `0`, so `bBlock = max(MINBRIGHT, bBlock)` introduces no floor and the
+first row is exact rather than approximate. Sufficient for a stylized renderer,
+and it is the game's own number.
+
+**The deliberate asymmetry.** `vvSunVisibility` **excludes** `blockBrightness`
+and is tested for it. The two requirements are opposite and both are correct:
+measuring how much canopy is overhead is a question about geometry, where a torch
+is not a gap in the leaves; attenuating by that canopy is a question about which
+light is solar, where a torch is not sunlight.
+
+**Conclusion: no change.** The architecture was validated, not corrected.
+
+---
+
+## D30. A shaft needs a beam, and vanilla's godray pass never asks about weather
+
+**Context.** `vvCanopyShaft` writes `outGlow.g`, the source mask `godrays.fsh`
+radially blurs outward from the sun's screen position. It is **live** in both
+patched programs - an earlier report calling it foundation-only had confused it
+with the atmosphere subsystem's separate, genuinely unwired godray feature.
+
+It responded to daylight, sun direction and angular proximity to the sun. It did
+not respond to overcast.
+
+**Why that is a gap and not a redundancy.** A shaft is sunlight scattering in air
+along one direction. Under overcast there is no such direction: the sky becomes a
+source the size of the sky, light arrives from everywhere, and there is nothing
+for a beam to be made of.
+
+Nothing downstream supplies it. `godrays.vsh` computes its `intensity` from the
+sun-to-view angle and a dusk multiplier and **nothing else** - no cloud, no
+weather, no ambient state. The mask this mod writes is the only place weather can
+enter the beams at all.
+
+**Chosen.** Scale the mask by `mix(1.0, VV_OVERCAST_DIRECT, overcast)` - the same
+constant the direct specular lobe and foliage transmission already use.
+
+Three places now model one physical fact: *a clear sky is a small bright source
+and an overcast one is not*. Three constants would be three things to drift
+apart, so there is one, and checks fail the build if a second appears.
+
+**What was deliberately not changed.** The shaft's flora dependence -
+`vvIsCanopy()` gives a strong mask, other flora none - looks at first like a
+material property leaking into atmospheric transport. It is not: it asks *what is
+occluding the sun here*, which is the shaft's own question. A check now fails the
+build if it ever consults wetness, pooling, roughness or thinness, which would be
+the real violation.
+
+**Status.** Active, L2. Runtime-unverified: the scene is a low sun through a
+forest opening, first clear and then overcast.

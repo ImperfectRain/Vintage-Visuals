@@ -927,11 +927,50 @@ a canopy must not touch, so the canopy term is scaled by its complement.
 The green shade tint rides the same protected fraction: torchlight did not pass
 through a leaf, so it did not pick up a leaf's colour on the way.
 
+**This is what vanilla uses the value for too.** Inside
+`getBrightnessFromShadowMap` the game does `b = clamp(b + blockBrightness, 0, 1)`
+— it lifts its own shadow term so a torch-lit fragment is not darkened by being
+in shadow. The canopy term is a second shadow-like attenuation one stage later,
+and it needs the same protection for the same reason. This is not a repurposing
+of the value; it is the value's own purpose applied once more.
+
+Note the deliberate asymmetry with `vvSunVisibility`, which **excludes**
+`blockBrightness` and is tested for it. The two are opposite requirements and
+both are right:
+
+| Question | blockBrightness |
+|---|---|
+| *How much canopy is overhead?* — geometry | **excluded.** A torch is not a gap in the leaves |
+| *How much of this light is solar?* — attenuation | **used.** A torch is not sunlight |
+
 `blockBrightness` lives inside `#if SHADOWQUALITY > 0`, so the accessor is
 guarded and returns 0 with shadows off — where there is no shadow map and the
 canopy term is inert anyway. **`tools/verifypatches` proves the guard is
 load-bearing: without it, 16 of 48 prefix combinations fail to compile**, exactly
 the `SHADOWQUALITY=0` third.
+
+### A shaft needs a beam too
+
+`vvCanopyShaft` writes `outGlow.g`, which is the source mask
+[vanilla's own godray pass](../../reference) radially blurs outward from the
+sun's screen position. It is **live**, in both `chunkopaque` and `chunktopsoil` —
+it is not foundation-only, and an earlier report saying so had confused it with
+the *atmosphere* subsystem's separate, genuinely unwired godray feature.
+
+It did not respond to overcast. A shaft is sunlight scattering in the air along
+**one direction**; under overcast the sky becomes a source the size of the sky,
+light arrives from everywhere at once, and there is nothing for a beam to be made
+of. A wood on a flat grey afternoon had the same shafts it has at noon on a clear
+day.
+
+Nothing downstream supplied it either: `godrays.vsh` computes its `intensity`
+from the sun-to-view angle and a dusk multiplier and **nothing else** — no cloud,
+no weather. The mask written here is the only place weather can enter the beams
+at all, which is why the absence was a gap rather than a redundancy.
+
+**Three places now model "a clear sky is a small bright source and an overcast
+one is not"** — the direct specular lobe, foliage transmission, and the shaft.
+They share one constant. Three would be three things to drift apart.
 
 ### Transmission needs a beam
 

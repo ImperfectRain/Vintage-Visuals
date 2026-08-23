@@ -1528,7 +1528,27 @@ float vvCanopyShaft(vec3 cameraRelativePos)
     float facing = smoothstep(0.35, 0.95, look);
     if (facing < 0.004) return 0.0;
 
-    float strength = clamp(vv_pbrShafts, 0.0, 2.0) * sun * facing;
+    // A SHAFT NEEDS A BEAM, exactly as transmission does.
+    //
+    // A shaft is sunlight scattering in the air along one direction. Under
+    // overcast there is no such direction: the sky becomes a source the size of
+    // the sky, light arrives from everywhere at once, and there is nothing for
+    // a beam to be made of. A wood on a flat grey afternoon has no shafts in
+    // it, and until this it had the same ones it has at noon on a clear day.
+    //
+    // The same constant as the direct specular lobe and as foliage
+    // transmission, deliberately. Three places now model "a clear sky is a
+    // small bright source and an overcast one is not", and three constants
+    // would be three things to drift apart.
+    //
+    // NOT double-counting anything downstream. vanilla's godrays.vsh computes
+    // its intensity from the sun-to-view angle and a dusk multiplier and
+    // nothing else - no cloud, no weather - so the mask this writes is the only
+    // place weather can enter the beams at all.
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+
+    float strength = clamp(vv_pbrShafts, 0.0, 2.0) * sun * facing
+                   * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 
     // Leaves lit from behind. Vanilla already draws the transmission; this says
     // that the same fragments are where beams start.

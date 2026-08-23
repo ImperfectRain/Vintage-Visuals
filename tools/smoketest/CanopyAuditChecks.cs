@@ -38,6 +38,7 @@ namespace VintageVisuals.SmokeTest
             CheckBreakupMeasure(pbr, check);
             CheckDebugViewsAreReachable(repo, pbr, check);
             CheckDappleTouchesSunlightOnly(pbr, check);
+            CheckShaftNeedsABeam(pbr, check);
             CheckGateIsGeometric(pbr, check);
             CheckStructureCountsOccluders(pbr, check);
             CheckNoInventedPattern(pbr, check);
@@ -255,6 +256,71 @@ namespace VintageVisuals.SmokeTest
             check("the canopy's green tint spares local light too",
                 pbr.Contains("float tint = canopy * VV_DAPPLE_GREEN;"),
                 "torchlight did not pass through a leaf and did not pick up its colour");
+        }
+
+        /// <summary>
+        /// A shaft needs a beam, and must collapse without one.
+        ///
+        /// A shaft is sunlight scattering in the air along ONE direction. Under
+        /// overcast there is no such direction - the sky becomes a source the
+        /// size of the sky and light arrives from everywhere at once - so a wood
+        /// on a flat grey afternoon has no shafts in it.
+        ///
+        /// Nothing downstream supplies this. vanilla's godrays.vsh computes its
+        /// intensity from the sun-to-view angle and a dusk multiplier and
+        /// nothing else: no cloud, no weather. The mask the mod writes is the
+        /// only place weather can enter the beams at all, which is why its
+        /// absence was a real gap rather than a redundancy.
+        ///
+        /// Three places now model "a clear sky is a small bright source and an
+        /// overcast one is not" - the direct lobe, foliage transmission, and
+        /// this. They share ONE constant, and that is what these checks pin.
+        /// </summary>
+        private static void CheckShaftNeedsABeam(string pbr, Action<string, bool, string> check)
+        {
+            Match shaft = Regex.Match(pbr,
+                @"float vvCanopyShaft\([^)]*\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
+
+            check("the shaft function exists", shaft.Success, "");
+            if (!shaft.Success) return;
+
+            string body = shaft.Groups[1].Value;
+
+            check("shafts collapse under overcast",
+                body.Contains("vv_sceneOvercast"),
+                "a flat grey sky has no beam for a shaft to be made of");
+
+            check("shafts use the shared overcast constant",
+                body.Contains("VV_OVERCAST_DIRECT"),
+                "a third constant for one physical fact is a third thing to drift");
+
+            // Definition is not application - the dead-check failure this suite
+            // has been bitten by twice now.
+            check("the shaft actually applies the overcast factor",
+                Regex.IsMatch(body, @"strength\s*=[^;]*mix\(1\.0, VV_OVERCAST_DIRECT, overcast\)"),
+                "the factor is computed and discarded");
+
+            // A shaft is SUNLIGHT scattering. A torch under a tree must not make
+            // one, and neither must the moon.
+            check("shafts are driven by daylight, not by any light",
+                body.Contains("vv_sceneDayLight"),
+                "a torch under a canopy must not cast a sunbeam");
+
+            check("shafts stop at night",
+                Regex.IsMatch(body, @"if \(sun < 0\.01\) return 0\.0;"),
+                "there is no sun to make a beam from after dark");
+
+            check("shafts follow the real sun direction",
+                body.Contains("normalize(lightPosition)"),
+                "the beams must swing with the sun rather than be placed");
+
+            // Section 15 of the flora contract: a shaft is atmospheric, not a
+            // material property. It may ask what is occluding, never how wet or
+            // how rough that thing is.
+            check("shafts do not consult flora material state",
+                !body.Contains("vvWetness") && !body.Contains("vvFloraPooling") &&
+                !body.Contains("roughness") && !body.Contains("vvFloraThinness"),
+                "a shaft is atmospheric transport, not a leaf's material response");
         }
 
         /// <summary>

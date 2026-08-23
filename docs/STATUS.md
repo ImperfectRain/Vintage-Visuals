@@ -117,6 +117,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |
 | `[x]` | Transmission collapses under overcast | L2 | Shares the direct lobe's constant. A backlit leaf under a flat grey sky has no beam to glow along |
 | `[x]` | **Canopy spares local light** | L2 | Scaled by the complement of vanilla's own `blockBrightness`. A torch under a tree keeps its light; an open forest floor at noon is unchanged |
+| `[x]` | Shafts collapse under overcast | L2 | Third consumer of the shared overcast constant. `godrays.vsh` asks only about sun angle and dusk, so this mask is the only place weather reaches the beams |
 | `[~]` | Surface relief in `chunktopsoil.fsh` (forest floor) | L2 | anchors confirmed against the real shader |
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
@@ -191,7 +192,7 @@ five features below turned out to be that kind of value.
 | `[x]` | 5 Weather extinction | **L3** | Moved out of the weather group; now reaches entities and particles |
 | `[x]` | 6 Cloud-atmosphere coupling | **L2** | Damps the directional gains. Kept separate from cloud shadows deliberately |
 | `[~]` | 7 Cloud-edge scattering | **L2, foundation** | **DATA GAP.** The game's tiles say how much cloud, never where an edge is. Keys on partial cover |
-| `[~]` | 8 Godrays | **L2, foundation** | **ARCHITECTURE GAP.** Vanilla's pass is the right target, but `pseudopbr` owns the `outGlow` anchor. Function and debug view exist, nothing writes |
+| `[~]` | 8 Godrays (atmosphere's own) | **L2, foundation** | **ARCHITECTURE GAP.** Vanilla's pass is the right target, but `pseudopbr` owns the `outGlow` anchor. Function and debug view exist, nothing writes |
 | `[x]` | 9 Precipitation scattering | **L2** | Rain and snow as different media: g 0.65 vs 0.15 |
 | `[x]` | 10 Moon scattering | **L2** | From the game's own moon. Zero by day by construction |
 | `[~]` | 11 Dapple interaction | **L2, foundation** | **ARCHITECTURE GAP.** Dapple is pseudopbr's, cloud shadows are weather's, and a function shared across patch groups couples their rollbacks |
