@@ -1637,6 +1637,14 @@ several speculative ones. When the authoritative path is not known, say so and
 measure - do not widen the net and hope. Widening the net is what took a mod that
 half worked and made it not work at all.
 
-**Status.** Reverted and instrumented. L2: builds, 916 checks, 17 mutations all
-caught, `verifypatches` unchanged. The root cause of the ORIGINAL partial failure
-is still not established - that is what the next log is for.
+**Status.** Reverted and instrumented, and **confirmed in game**: reported
+functional again at `8b318ea`. That closes the total loss and settles the
+mechanism above - the multi-overload hook was the regression.
+
+The ORIGINAL partial failure that `bd988bd` was trying to diagnose is a separate,
+still-open question, and it is now unmeasured rather than merely unexplained. It
+was observed in exactly one log; the visuals being back suggests the chunk and
+final shaders are being delivered, which that log said they were not. Either the
+earlier reading was of a transient startup state, or it persists and something
+else is carrying the visuals. `LogDelivery()` answers it in one line per target
+and has not been read yet.

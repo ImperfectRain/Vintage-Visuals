@@ -63,7 +63,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |
 | `[-]` | Hooking every `LoadShader` overload | — | shipped as a total regression and reverted; [D41](DECISIONS.md) |
 | `[-]` | Per-group source sentinel | — | existed only for multi-hook delivery; removed with it |
-| `[~]` | **Chunk, topsoil and final shaders unpatched at runtime** | — | REGRESSION, cause not established. Only `entityanimated.fsh` and `particlescube.fsh` reached the patcher; see [D40](DECISIONS.md) |
+| `[~]` | **Chunk, topsoil and final shaders unpatched at runtime** | L3 | Total loss at `bd988bd` CLOSED — reported functional again at `8b318ea` ([D41](DECISIONS.md)). Whether the earlier PARTIAL failure persists is unmeasured: it was observed in one log where only `entityanimated.fsh` and `particlescube.fsh` reached the patcher ([D40](DECISIONS.md)), and the delivery table has not been read since |
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |
