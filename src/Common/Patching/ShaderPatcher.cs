@@ -43,6 +43,27 @@ namespace VintageVisuals.Common.Patching
         private readonly Dictionary<string, HashSet<string>> _everApplied =
             new Dictionary<string, HashSet<string>>();
 
+        /// <summary>
+        /// Every filename the hook has ever handed this patcher, and how many
+        /// patches were applicable to it.
+        ///
+        /// THIS EXISTS BECAUSE "loaded but not applied" NAMES A SYMPTOM AND NOT
+        /// A CAUSE. A group reports it in two completely different situations:
+        /// the hook never saw the group's target shader at all, or the hook saw
+        /// it under a name no patch matches. Those have opposite fixes, and the
+        /// summary could not tell them apart - which cost a full round of
+        /// guessing at a session where chunkopaque.fsh, chunktopsoil.fsh,
+        /// final.fsh and particlesquad.fsh were all inert while
+        /// entityanimated.fsh and particlescube.fsh worked.
+        ///
+        /// The census answers it directly: here is every name that reached the
+        /// patcher, and here are the targets that never did.
+        /// </summary>
+        private readonly Dictionary<string, int> _seen = new Dictionary<string, int>();
+
+        /// <summary>Filenames the hook saw but whose source was null or empty.</summary>
+        private readonly HashSet<string> _emptySource = new HashSet<string>();
+
         public void SetPatches(IEnumerable<ShaderPatch> patches)
         {
             _groups.Clear();
@@ -88,14 +109,39 @@ namespace VintageVisuals.Common.Patching
         /// </summary>
         public string Patch(string filename, string code)
         {
-            if (string.IsNullOrEmpty(code)) return code;
+            if (string.IsNullOrEmpty(code))
+            {
+                if (!string.IsNullOrEmpty(filename)) _emptySource.Add(filename);
+                return code;
+            }
+
+            if (!string.IsNullOrEmpty(filename) && !_seen.ContainsKey(filename)) _seen[filename] = 0;
 
             foreach (ShaderPatchGroup group in _groups)
             {
                 if (group.Failed) continue;
 
+                // ALREADY PATCHED SOURCE MUST NOT BE PATCHED AGAIN.
+                //
+                // Applying a group twice is not a doubled effect, it is a
+                // duplicate function definition and a shader that will not
+                // compile - so it costs the world render rather than the
+                // feature. That is not hypothetical: the game exposes more than
+                // one route into shader loading, this mod's dumps have arrived
+                // with its own injections already in them, and any future
+                // re-entry through a second route would land here with patched
+                // source in hand.
+                //
+                // A sentinel line is cheaper than trying to detect the anchors
+                // a second time, survives being handed back through any route,
+                // and shows up in a dump where it tells a reader exactly which
+                // groups reached the file.
+                if (code.IndexOf(SentinelFor(group.Name), StringComparison.Ordinal) >= 0) continue;
+
                 List<ShaderPatch> applicable = group.Patches.Where(p => p.AppliesTo(filename)).ToList();
                 if (applicable.Count == 0) continue;
+
+                if (!string.IsNullOrEmpty(filename)) _seen[filename] = _seen[filename] + applicable.Count;
 
                 try
                 {
@@ -104,7 +150,7 @@ namespace VintageVisuals.Common.Patching
                     string staged = code;
                     foreach (ShaderPatch patch in applicable) staged = patch.Apply(filename, staged);
 
-                    code = staged;
+                    code = staged + "\n" + SentinelFor(group.Name) + "\n";
                     if (!group.PatchedFiles.Contains(filename)) group.PatchedFiles.Add(filename);
 
                     HashSet<string> everApplied;
@@ -137,6 +183,59 @@ namespace VintageVisuals.Common.Patching
             }
 
             return code;
+        }
+
+        /// <summary>
+        /// The line a successfully applied group leaves at the end of the file.
+        ///
+        /// A GLSL line comment, so it is inert to every compiler, and after the
+        /// last line so it can never displace <c>#version</c>.
+        /// </summary>
+        internal static string SentinelFor(string groupName) => "// VintageVisuals:" + groupName;
+
+        /// <summary>
+        /// What the hook actually delivered, and what it never did.
+        ///
+        /// Logged only when something is missing, because in the healthy case
+        /// it is forty lines saying nothing. When a group reports "loaded but
+        /// not applied", this is the line that says whether its target reached
+        /// the patcher at all - which is the difference between a patch that
+        /// does not match and a shader the hook never sees, and those have
+        /// nothing in common but the symptom.
+        /// </summary>
+        public void LogCensus()
+        {
+            var targets = new HashSet<string>(
+                _groups.SelectMany(g => g.Patches).Select(p => p.Filename),
+                StringComparer.OrdinalIgnoreCase);
+
+            var missing = targets.Where(t => !_seen.ContainsKey(t)).OrderBy(t => t).ToList();
+            if (missing.Count == 0) return;
+
+            if (_seen.Count == 0)
+            {
+                _logger.Error("[VintageVisuals] shader census: the source hook has never been handed a single " +
+                              "shader. Nothing is patched, and no patch is at fault - the interceptor is not " +
+                              "reaching the game's shader loader at all.");
+                return;
+            }
+
+            _logger.Warning("[VintageVisuals] shader census: " + missing.Count + " of " + targets.Count +
+                            " patch target(s) NEVER reached the patcher: " + string.Join(", ", missing) +
+                            ". Their groups are inert, and no patch of theirs has been tried, let alone failed.");
+
+            _logger.Notification("[VintageVisuals] shader census: the hook did deliver " + _seen.Count +
+                                 " file(s): " + string.Join(", ", _seen.Keys.OrderBy(k => k)) +
+                                 ". If a missing target appears in that list under another name, the patch " +
+                                 "filename is wrong; if it does not appear at all, the hook never saw the program.");
+
+            if (_emptySource.Count > 0)
+            {
+                _logger.Warning("[VintageVisuals] shader census: " + _emptySource.Count +
+                                " file(s) arrived with empty source and were skipped: " +
+                                string.Join(", ", _emptySource.OrderBy(k => k)) +
+                                ". A target here is loaded by a path that fills its code in later.");
+            }
         }
 
         /// <summary>

@@ -1498,3 +1498,76 @@ a real light loss outside `VisualBudget` without a check failing.
 
 **Status.** 12 mutations, 12 caught, 0 missed. Run it with
 `VINTAGE_STORY=... bash tools/mutate/mutation-test.sh` on a clean tree.
+
+---
+
+## D40. "Loaded but not applied" named a symptom shared by two opposite causes
+
+**Reported from the game**: "effects apart from some atmosphere effects are no
+longer functional." The log agreed, and was specific about it:
+
+```
+patch group 'pbrparticle':     OK (particlescube.fsh)
+patch group 'pbrentity':       OK (entityanimated.fsh)
+patch group 'atmosphere':      OK (entityanimated.fsh, particlescube.fsh)
+patch group 'pseudopbr':       loaded but not applied to any shader yet.
+patch group 'pseudopbrtopsoil':loaded but not applied to any shader yet.
+patch group 'colorgrade':      loaded but not applied to any shader yet.
+patch group 'weather':         loaded but not applied to any shader yet.
+```
+
+`_everApplied` is session-lifetime, so that is not a snapshot: across the whole
+session the only two files ever patched were `entityanimated.fsh` and
+`particlescube.fsh`. `chunkopaque.fsh`, `chunkopaque.vsh`, `chunktopsoil.*`,
+`final.fsh` and `particlesquad.fsh` were never patched once - and `atmosphere`,
+which targets both sets, landed on exactly the first and none of the second.
+
+The split is not per group, per subsystem or per config flag. It is per FILE, and
+it falls exactly along the game's two shader-loading batches: everything in the
+partial reload was patched, everything that only appears under the game's own
+`Loading shaders...` pass was not. Meanwhile `tools/verifypatches` applies every
+one of those patches to the game's own dumped shaders and compiles the result in
+all 48 define combinations. The patches are fine. The delivery is not.
+
+**The diagnostic could not tell the two apart, and that is the actual defect
+being fixed here.** "Loaded but not applied" is reported in two situations with
+nothing in common but the wording: the hook never saw the target shader, or the
+hook saw it under a name no patch matches. Opposite fixes. The line sent this
+round hunting a patch failure that had never occurred, which is the second time
+this exact message has cost a debugging round - see the comment on
+`_everApplied`, written after the first.
+
+**Chosen, first.** A census: every filename the hook has ever handed the patcher,
+and every patch target that never arrived. Silent when nothing is missing,
+because in the healthy case it is forty lines saying nothing. When something is
+missing it prints both lists, so a target absent from the delivered list means
+the hook never saw the program, and a target present under another name means the
+patch filename is wrong. One run now separates causes that previously needed
+guessing.
+
+**Chosen, second, and this one is a HYPOTHESIS.** `FindLoadShaderMethod` took
+`FirstOrDefault` over the `LoadShader(.., EnumShaderType)` overloads.
+`Type.GetMethods` makes no ordering guarantee, so which overload got hooked was a
+property of how the game's assembly happened to be compiled rather than of
+anything this mod decided. If `ShaderRegistry` exposes more than one route into
+shader loading, hooking one of them produces precisely the observed shape:
+some files patched, others silently never seen, no error anywhere. The hook now
+patches EVERY matching overload, and logs their signatures at install so the next
+log answers the question directly.
+
+That it is the right fix is not yet established - the census run will say. It is
+a defect on its own terms regardless: a lookup whose result depends on reflection
+ordering is a coin toss dressed as a lookup.
+
+**What makes hooking all of them safe.** Applying a group twice is not a doubled
+effect, it is a duplicate function definition and a shader that will not compile
+- so it costs the world render rather than the feature. `ShaderPatcher` now
+appends `// VintageVisuals:<group>` after a successful group and refuses source
+that already carries it. A GLSL line comment, after the last line, so it can
+never displace `#version`; visible in a dump, where it tells a reader exactly
+which groups reached the file; and it is the same guard that would have caught
+this mod's own contaminated shader dumps.
+
+**Status.** Census and idempotence: implemented, L2, mutation-proven. Root cause:
+NOT established. The next log decides whether the overload change fixed it or
+merely ruled a cause out.

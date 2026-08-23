@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -81,8 +82,8 @@ namespace VintageVisuals.Common
                 return false;
             }
 
-            MethodInfo target = FindLoadShaderMethod(registryType);
-            if (target == null)
+            List<MethodInfo> targets = FindLoadShaderMethods(registryType);
+            if (targets.Count == 0)
             {
                 _instanceLogger.Error("[VintageVisuals] CRITICAL cannot find a suitable " + LoadShaderMethodName +
                     "(.., EnumShaderType) on " + ShaderRegistryTypeName + ". No shader patches can be applied. " +
@@ -95,11 +96,12 @@ namespace VintageVisuals.Common
                 var postfix = new HarmonyMethod(
                     AccessTools.Method(typeof(ShaderSourceInterceptor), nameof(LoadShaderPostfix)));
 
-                _harmony.Patch(target, postfix: postfix);
+                foreach (MethodInfo target in targets) _harmony.Patch(target, postfix: postfix);
                 _installed = true;
 
                 _instanceLogger.Notification("[VintageVisuals] shader source interceptor installed on " +
-                                             target.DeclaringType?.Name + "." + target.Name);
+                                             targets.Count + " " + LoadShaderMethodName + " overload(s): " +
+                                             string.Join(", ", targets.Select(Describe)));
                 return true;
             }
             catch (Exception ex)
@@ -132,16 +134,35 @@ namespace VintageVisuals.Common
         /// <summary>
         /// Finds LoadShader by shape rather than exact signature: its first
         /// parameter is an internal type this assembly deliberately cannot name.
+        ///
+        /// EVERY overload, not the first one reflection happens to return.
+        ///
+        /// This used to take FirstOrDefault, which is a coin toss dressed as a
+        /// lookup: GetMethods makes no ordering guarantee, so which overload got
+        /// hooked was a property of how the game's assembly was compiled rather
+        /// than of anything this mod decided. Hook one of two loading routes and
+        /// the shaders that travel the other are silently never patched, which
+        /// is indistinguishable in the log from a patch that does not match -
+        /// the group just reports "loaded but not applied to any shader yet".
+        ///
+        /// Hooking all of them is safe because applying a group is idempotent:
+        /// ShaderPatcher leaves a sentinel and refuses source that already
+        /// carries it, so a shader reaching this postfix twice is patched once.
         /// </summary>
-        private static MethodInfo FindLoadShaderMethod(Type registryType)
+        private static List<MethodInfo> FindLoadShaderMethods(Type registryType)
         {
             return registryType
                 .GetMethods(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(m =>
+                .Where(m =>
                     m.Name == LoadShaderMethodName &&
                     m.GetParameters().Length == 2 &&
-                    m.GetParameters()[1].ParameterType == typeof(EnumShaderType));
+                    m.GetParameters()[1].ParameterType == typeof(EnumShaderType))
+                .ToList();
         }
+
+        private static string Describe(MethodInfo m)
+            => m.DeclaringType?.Name + "." + m.Name + "(" +
+               string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name)) + ")";
 
         /// <summary>
         /// Runs after the game has loaded a shader's source but before it is

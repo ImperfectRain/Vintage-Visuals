@@ -287,6 +287,17 @@ hierarchy, the budgets, and what this project deliberately does not build.
   each program at an anchor all three declare (`uniform vec3 lightPosition;`,
   pasted back). Sharing one injection between groups would couple their
   rollbacks.
+- **A shader that does not reach the hook is indistinguishable from a patch that
+  does not match.** Both report `patch group 'x': loaded but not applied to any
+  shader yet`, and they have opposite fixes; the message has now cost two
+  debugging rounds. `ShaderPatcher.LogCensus()` prints every filename the hook
+  delivered and every target that never arrived, and stays silent when nothing is
+  missing. Read it before suspecting an anchor. Relatedly, the interceptor hooks
+  EVERY `LoadShader(.., EnumShaderType)` overload - `GetMethods` has no ordering
+  guarantee, so `FirstOrDefault` was choosing a loading route at random - and a
+  group applies once per file because it leaves a `// VintageVisuals:<group>`
+  sentinel. Applying a group twice is a duplicate definition and a dead world
+  render, not a doubled effect.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is

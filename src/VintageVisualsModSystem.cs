@@ -403,7 +403,14 @@ namespace VintageVisuals
                     // that had in fact applied perfectly. A status line that is
                     // wrong in the normal case is worse than none: it sent this
                     // project looking for a patch failure that never happened.
-                    if (last) ShaderPatcher.LogSummary();
+                    if (last)
+                    {
+                        ShaderPatcher.LogSummary();
+
+                        // The summary says WHICH groups are inert; the census
+                        // says why, and stays silent when nothing is.
+                        ShaderPatcher.LogCensus();
+                    }
                 }, attempt * ApplyRetryIntervalMs);
             }
         }

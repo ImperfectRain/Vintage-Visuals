@@ -58,7 +58,10 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | ASCII guard on shipped GLSL | L4 | load-time refusal + smoke scan |
 | `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
 | `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
-| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 12 mutations, 12 caught, 0 missed |
+| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 15 mutations, 15 caught, 0 missed |
+| `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
+| `[x]` | A patch group applies once however often the source returns | L2 | `// VintageVisuals:<group>` sentinel |
+| `[~]` | **Chunk, topsoil and final shaders unpatched at runtime** | — | REGRESSION, cause not established. Only `entityanimated.fsh` and `particlescube.fsh` reached the patcher; see [D40](DECISIONS.md) |
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |

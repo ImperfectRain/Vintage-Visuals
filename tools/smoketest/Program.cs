@@ -105,6 +105,44 @@ void main(void) {
         int uniformLine = result.Split('\n').ToList().FindIndex(l => l.Contains("vv_enabled"));
         Check("injection after #version", uniformLine > versionLine);
 
+        Console.WriteLine("A group is applied once, however many times the source comes back");
+        // Hooking every LoadShader overload means one program can reach the
+        // postfix through more than one route. Applying a group twice is not a
+        // doubled effect - it is a duplicate function definition and a shader
+        // that will not compile, so it costs the world render rather than the
+        // feature.
+        string twice = patcher.Patch("final.fsh", result);
+        Check("re-patching already-patched source changes nothing", twice == result,
+              (twice.Length - result.Length) + " chars added");
+
+        int gradeDefs = Regex.Matches(twice, @"vec4\s+vvApplyColorGrade\s*\(vec4").Count;
+        Check("exactly one vvApplyColorGrade definition after two passes", gradeDefs == 1, gradeDefs.ToString());
+
+        int mainsTwice = Regex.Matches(twice, @"(?<![A-Za-z0-9_])void\s+main\s*\(\s*void\s*\)").Count;
+        Check("still exactly one main() after two passes", mainsTwice == 1, mainsTwice.ToString());
+
+        Check("the sentinel names its group", result.Contains("// VintageVisuals:colorgrade"));
+
+        Console.WriteLine("The census says whether a target ever reached the patcher");
+        var censusLog = new CollectingLogger();
+        var censusPatcher = new ShaderPatcher(censusLog);
+        censusPatcher.SetPatches(LoadRealPatches());
+
+        censusPatcher.Patch("gui.fsh", Vanilla);
+        censusPatcher.LogCensus();
+        Check("a target the hook never delivered is named",
+              censusLog.Lines.Any(l => l.Contains("NEVER reached the patcher") && l.Contains("final.fsh")),
+              string.Join(" | ", censusLog.Lines));
+        Check("the names that DID arrive are listed, so a wrong filename is visible",
+              censusLog.Lines.Any(l => l.Contains("did deliver") && l.Contains("gui.fsh")),
+              string.Join(" | ", censusLog.Lines));
+
+        censusPatcher.Patch("final.fsh", Vanilla);
+        censusLog.Lines.Clear();
+        censusPatcher.LogCensus();
+        Check("the census stays silent once every target has arrived",
+              censusLog.Lines.Count == 0, string.Join(" | ", censusLog.Lines));
+
         Console.WriteLine("Non-target shaders are untouched");
         Check("chunkopaque.fsh unchanged", patcher.Patch("chunkopaque.fsh", Vanilla) == Vanilla);
 

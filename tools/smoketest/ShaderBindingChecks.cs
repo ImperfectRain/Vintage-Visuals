@@ -80,6 +80,30 @@ namespace VintageVisuals.SmokeTest
         {
             string binder = Path.Combine(repo, "src/Atmosphere/AtmosphereShaderBinder.cs");
 
+            // The shader source hook, and the coin toss that used to decide
+            // which half of the game it saw.
+            //
+            // ShaderRegistry can expose more than one LoadShader(.., EnumShaderType)
+            // overload, GetMethods makes no ordering promise, and the finder took
+            // FirstOrDefault - so which loading route got hooked was a property of
+            // how the game was compiled. Shaders travelling the other route are
+            // never patched, and the log cannot tell that apart from a patch that
+            // does not match: the group just reports "loaded but not applied".
+            string interceptor = Path.Combine(repo, "src/Common/ShaderSourceInterceptor.cs");
+            string hook = File.Exists(interceptor) ? File.ReadAllText(interceptor) : "";
+
+            check("the shader source interceptor exists", hook.Length > 0, interceptor);
+
+            check("the loader lookup keeps every overload it finds",
+                  Regex.IsMatch(hook, @"Name == LoadShaderMethodName") &&
+                  !Regex.IsMatch(hook, @"FirstOrDefault\(m =>"),
+                  "the LoadShader lookup still collapses to a single arbitrary overload");
+
+            check("every loader overload is hooked, not an arbitrary one",
+                  Regex.IsMatch(hook, @"foreach\s*\([^)]*\bin\s+targets\s*\)\s*_harmony\.Patch") &&
+                  !hook.Contains("targets[0]"),
+                  "install does not patch each candidate in turn");
+
             check("the atmosphere binder exists", File.Exists(binder), binder);
             if (!File.Exists(binder)) return;
 
