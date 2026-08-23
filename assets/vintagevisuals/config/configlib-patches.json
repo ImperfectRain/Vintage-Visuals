@@ -949,6 +949,18 @@
           "max": 1.0,
           "step": 0.05
         }
+      },
+      "compare_wipe": {
+        "ingui": "Compare with vanilla",
+        "comment": "Splits the screen: vanilla on the left, Vintage Visuals on the right. 0 off, 0.5 down the middle, 1 renders everything as vanilla. It is not a second render - every effect already has an 'off' path and this takes it on one side, so it costs almost nothing. Colour grading, tonemapping and ground haze cannot be split: they act on the whole finished frame. Everything the world shaders do - materials, canopy shade, light through leaves, wetness, atmosphere - does split.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 89,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
       }
     }
   }

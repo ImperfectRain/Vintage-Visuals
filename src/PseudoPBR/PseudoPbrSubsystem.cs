@@ -146,7 +146,7 @@ namespace VintageVisuals.PseudoPBR
             // would keep binding a texture id the engine has already destroyed.
             _binder.SceneCapture = _mod?.Reflections?.Capture;
 
-            _binder.SetState(active, config);
+            _binder.SetState(active, config, _mod.ConfigManager.Config.CompareWipe);
         }
 
         /// <summary>

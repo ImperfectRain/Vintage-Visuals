@@ -59,6 +59,7 @@ namespace VintageVisuals.Atmosphere
         public const string DensityUniform = "vv_atmosDensity";
         public const string AltitudeUniform = "vv_atmosAltitude";
         public const string DebugUniform = "vv_atmosDebug";
+        public const string CompareWipeUniform = "vv_atmosCompareWipe";
 
         /// <summary>
         /// Every program the atmosphere group patches.
@@ -237,6 +238,12 @@ namespace VintageVisuals.Atmosphere
             program.Uniform(DensityUniform, inputs.BaseDensity);
             program.Uniform(AltitudeUniform, inputs.Altitude);
             program.Uniform(DebugUniform, inputs.DebugView);
+
+            // In frame pixels, matching the pseudopbr group. Its own uniform
+            // rather than a shared one: a uniform crossing patch groups would
+            // couple their rollbacks.
+            program.Uniform(CompareWipeUniform,
+                _mod.ConfigManager.Config.CompareWipe * _capi.Render.FrameWidth);
 
             // Unbind before returning, on every path that bound. Without this
             // the next iteration of the caller's loop throws.

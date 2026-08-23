@@ -114,6 +114,49 @@ namespace VintageVisuals.Reflections
         /// optional visual feature and it has no business taking the client
         /// down with it.
         /// </summary>
+        /// <summary>
+        /// Rebuilds the capture's own shader program after the game has
+        /// reloaded shaders.
+        ///
+        /// This is NOT a nicety. A registered program is disposed and recreated
+        /// by the game on every shader reload, and this mod FORCES one at
+        /// startup so its patches reach the already-compiled programs. The
+        /// capture's own program was disposed by that reload, the next frame
+        /// threw "Can't use a disposed shader!", and Fail() switched reflections
+        /// off for the whole session - so the feature could never work at all,
+        /// on any machine, and the log said so every time.
+        ///
+        /// A disposed program after a reload is a RECOVERABLE state, not a
+        /// fault. Recompiling is what the game expects a registered program's
+        /// owner to do.
+        /// </summary>
+        public void OnShadersReloaded()
+        {
+            if (_failed) return;
+
+            try
+            {
+                if (!Compile())
+                {
+                    Fail("the scene capture shader did not recompile after a shader reload");
+                }
+            }
+            catch (Exception e)
+            {
+                Fail("the scene capture shader could not be rebuilt: " + e.Message);
+            }
+        }
+
+        /// <summary>Registers and compiles the program. Shared by first setup and rebuild.</summary>
+        private bool Compile()
+        {
+            _program = _capi.Shader.NewShaderProgram();
+            _program.AssetDomain = "vintagevisuals";
+            _capi.Shader.RegisterFileShaderProgram("vvscenecapture", _program);
+
+            return _program.Compile();
+        }
+
         public bool TryInitialise()
         {
             if (_failed) return false;

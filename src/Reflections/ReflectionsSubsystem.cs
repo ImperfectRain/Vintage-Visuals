@@ -31,6 +31,7 @@ namespace VintageVisuals.Reflections
 
         private SceneCaptureRenderer _capture;
         private bool _registered;
+        private bool _hookedReload;
         private bool _reported;
 
         public string Name => SubsystemName;
@@ -80,6 +81,17 @@ namespace VintageVisuals.Reflections
             _registered = true;
             _capture = capture;
 
+            // A registered program is disposed and recreated by the game on
+            // every shader reload, and this mod forces one at startup. Without
+            // this the capture's program is dead by its first frame and the
+            // feature switches itself off permanently - which is exactly what
+            // it did, on the first machine that ever ran it.
+            if (!_hookedReload)
+            {
+                _hookedReload = true;
+                _capi.Event.ReloadShader += OnShadersReloaded;
+            }
+
             if (!_reported)
             {
                 _reported = true;
@@ -87,6 +99,19 @@ namespace VintageVisuals.Reflections
                   + "frame at quarter resolution, with depth packed into its alpha. Rays that "
                   + "leave the screen fall back to the analytic environment.");
             }
+        }
+
+        /// <summary>
+        /// Rebuilds the capture's shader after the game reloaded shaders.
+        ///
+        /// Returns true because the event is a chain of handlers deciding
+        /// whether the reload succeeded, and this mod's optional capture is in
+        /// no position to veto it for everyone else.
+        /// </summary>
+        private bool OnShadersReloaded()
+        {
+            if (_capture != null) _capture.OnShadersReloaded();
+            return true;
         }
 
         private void Stop()

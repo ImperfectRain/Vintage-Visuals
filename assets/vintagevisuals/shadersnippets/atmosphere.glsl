@@ -96,6 +96,12 @@ uniform float vv_atmosAltitude;    // 0 sea level, 1 thin air
 // Which diagnostic to draw instead of shading, 0 for none. See vvAtmosDebug.
 uniform float vv_atmosDebug;
 
+// The comparison wipe, in frame pixels. 0 disables it, which is what an unset
+// uniform reads as. See pseudopbr.glsl for what it can and cannot split; this
+// group declares its own copy because a uniform shared across patch groups
+// would couple their rollbacks.
+uniform float vv_atmosCompareWipe;
+
 // --- Constants ---------------------------------------------------------------
 
 const float VV_ATMOS_PI = 3.14159265;
@@ -544,6 +550,13 @@ vec4 vvAtmosDebug(int mode, vec4 pixel, float fogWeight, vec3 fogColor, vec3 cam
 // mix(pixel, fogColor, fogWeight) - vanilla, exactly.
 vec4 vvAtmosphere(vec4 rgbaPixel, float fogWeight, vec3 fogColor, vec3 cameraRelativePos)
 {
+    // The wipe, before the debug views: a diagnostic drawn over half a frame is
+    // harder to read than one drawn over all of it.
+    if (vv_atmosCompareWipe > 0.0 && gl_FragCoord.x < vv_atmosCompareWipe)
+    {
+        return vec4(mix(rgbaPixel.rgb, fogColor, clamp(fogWeight, 0.0, 1.0)), rgbaPixel.a);
+    }
+
     int debug = int(vv_atmosDebug + 0.5);
     if (debug > 0) return vvAtmosDebug(debug, rgbaPixel, fogWeight, fogColor, cameraRelativePos);
 

@@ -48,6 +48,7 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public const string SecondValidUniform = "vv_material2Valid";
         public const string EnabledUniform = "vv_pbrEnabled";
+        public const string CompareWipeUniform = "vv_compareWipe";
         public const string NormalStrengthUniform = "vv_pbrNormalStrength";
         public const string SpecularStrengthUniform = "vv_pbrSpecularStrength";
         public const string DebugViewUniform = "vv_pbrDebugView";
@@ -217,11 +218,22 @@ namespace VintageVisuals.PseudoPBR
         /// ended up frozen between slider movements: Apply() runs on config
         /// change, and a config change is not a clock.
         /// </summary>
-        public void SetState(bool enabled, PseudoPbrConfig look)
+        public void SetState(bool enabled, PseudoPbrConfig look, float compareWipe)
         {
             _enabled = enabled;
             _look = look;
+            _compareWipe = compareWipe;
         }
+
+        /// <summary>
+        /// Where the comparison wipe falls, as a fraction of frame width. 0 off.
+        ///
+        /// Held here rather than read from the root config because this binder
+        /// deliberately sees only its own section - the one exception being a
+        /// setting that is not a look at all but a diagnostic over the whole
+        /// frame.
+        /// </summary>
+        private float _compareWipe;
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
@@ -397,6 +409,11 @@ namespace VintageVisuals.PseudoPBR
             BindSceneCapture(program);
 
             SetIfPresent(program, EnabledUniform, 1f);
+
+            // In frame PIXELS rather than a fraction, so the shader compares
+            // against gl_FragCoord.x directly instead of every fragment
+            // recomputing the width.
+            SetIfPresent(program, CompareWipeUniform, _compareWipe * _capi.Render.FrameWidth);
             SetIfPresent(program, NormalStrengthUniform, _look.NormalStrength);
             SetIfPresent(program, SpecularStrengthUniform, _look.SpecularStrength);
             SetIfPresent(program, DebugViewUniform, _look.DebugView);

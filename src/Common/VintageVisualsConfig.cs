@@ -34,6 +34,28 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool WriteSceneReport { get; set; } = false;
 
+        /// <summary>
+        /// Splits the screen: vanilla on the left, this mod on the right.
+        ///
+        /// 0 is off. 0.5 puts the seam down the middle. 1 renders the whole
+        /// frame as vanilla, which is a useful thing to be able to do without
+        /// unticking anything.
+        ///
+        /// NOT a second render. Every function this mod injects already has a
+        /// "behave like vanilla" exit, because that is what the zero case of
+        /// every strength has always had to mean; the wipe takes that exit on
+        /// one side. So it costs one comparison per fragment and cannot drift
+        /// from what "off" actually looks like - there is no separate vanilla
+        /// path to get wrong.
+        ///
+        /// WHAT IT CANNOT SPLIT. Colour grading and tonemapping are a separate
+        /// pass over the finished frame. Height haze goes through the game's own
+        /// ambient stack, which has one value for the whole frame. The scene
+        /// capture is one texture. Everything a patched shading program does -
+        /// material, canopy, transmission, wetness, atmosphere - does split.
+        /// </summary>
+        public float CompareWipe { get; set; } = 0f;
+
         public ColorGradeConfig ColorGrade { get; set; } = new ColorGradeConfig();
 
         public AdaptiveExposureConfig AdaptiveExposure { get; set; } = new AdaptiveExposureConfig();
@@ -59,6 +81,7 @@ namespace VintageVisuals.Common
         public List<string> ClampToValidRanges()
         {
             var corrections = new List<string>();
+            CompareWipe = ColorGradeConfig.Clamp(CompareWipe, 0f, 1f, "CompareWipe", corrections);
             ColorGrade.ClampToValidRanges(corrections);
             AdaptiveExposure.ClampToValidRanges(corrections);
             AdaptiveGrade.ClampToValidRanges(corrections);

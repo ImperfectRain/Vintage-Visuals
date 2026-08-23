@@ -63,6 +63,46 @@ uniform float vv_material2Valid;
 // same branch as a deliberate disable: vanilla shading, vanilla output.
 uniform float vv_pbrEnabled;
 
+// ---------------------------------------------------------------------------
+// The comparison wipe
+//
+// Where on the screen this mod stops drawing, as a fraction of the frame width.
+// 0 disables the wipe entirely, which is also what an unset uniform reads as.
+//
+// WHY THIS IS A WIPE AND NOT A SECOND RENDER. A true before/after would draw
+// the world twice, which costs a whole frame and is not worth it. It does not
+// need to: every function this mod injects already has a "behave like vanilla"
+// early exit, because that is what the zero case of every strength has always
+// had to mean. The wipe just forces that exit on one side of the screen.
+//
+// So this is not a new rendering path with its own bugs to have. It is the
+// EXISTING vanilla path, taken deliberately, and if the two sides ever look
+// identical with features on then the features are not reaching the frame -
+// which is a diagnosis rather than a disappointment.
+//
+// WHAT IT CANNOT SPLIT, and this matters when reading the result:
+//
+//   - Colour grading and tonemapping run as a separate pass over the finished
+//     frame, so they apply to both sides equally.
+//   - Height haze goes through the game's own ambient stack, which has one
+//     value for the whole frame.
+//   - The scene capture is one texture for the whole frame.
+//
+// Everything a patched shading program does - material, canopy, transmission,
+// wetness, atmosphere in the four programs that carry it - does split.
+uniform float vv_compareWipe;
+
+// True on the side of the screen that should render as vanilla.
+//
+// Left is vanilla and right is the mod, because the eye reads left to right and
+// "before, then after" is the order the comparison is being made in.
+bool vvCompareVanillaSide()
+{
+    if (vv_compareWipe <= 0.0) return false;
+
+    return gl_FragCoord.x < vv_compareWipe;
+}
+
 // Global multipliers on top of the per-material values baked into the atlas.
 uniform float vv_pbrNormalStrength;
 uniform float vv_pbrSpecularStrength;
@@ -2332,6 +2372,10 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                 vec3 environment, vec3 blockLightColor)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
+
+    // The comparison wipe, taken at the same exit the disabled case uses. There
+    // is deliberately no separate "vanilla" code path to get wrong.
+    if (vvCompareVanillaSide()) return litColor;
 
     vec4 material = vvSampleMaterial(materialUv);
 

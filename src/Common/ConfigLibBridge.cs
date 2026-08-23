@@ -319,6 +319,9 @@ namespace VintageVisuals.Common
                 case "weather_cloudheight":
                     weather.CloudHeight = tree.GetFloat("value", weather.CloudHeight);
                     break;
+                case "compare_wipe":
+                    _mod.ConfigManager.Config.CompareWipe = tree.GetFloat("value", _mod.ConfigManager.Config.CompareWipe);
+                    break;
                 case "atmosphere_enabled":
                     atmosphere.Enabled = tree.GetBool("value", atmosphere.Enabled);
                     break;

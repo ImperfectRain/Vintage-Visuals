@@ -65,6 +65,7 @@ namespace VintageVisuals.SmokeTest
                   string.Join("; ", unpaired));
 
             CheckLoopingBindersUnbind(repo, check);
+            CheckCompareWipeReusesTheVanillaExit(repo, check);
         }
 
         /// <summary>
@@ -114,6 +115,52 @@ namespace VintageVisuals.SmokeTest
             check("no early exit leaves a program bound",
                   earlyReturns.Count == 0,
                   earlyReturns.Count + " return(s) after Use() without an unbind");
+        }
+
+        /// <summary>
+        /// The comparison wipe must take the EXISTING vanilla exit, not a path
+        /// of its own.
+        ///
+        /// A second "render it like vanilla" branch is a second thing to be
+        /// wrong, and it would be wrong in the worst possible way: silently, in
+        /// the one tool whose entire job is to show what the mod changed. If the
+        /// wipe drew something subtly different from what "off" draws, every
+        /// comparison made with it would be a lie.
+        ///
+        /// Every injected function already has that exit, because the zero case
+        /// of every strength has always had to mean vanilla. The wipe is only
+        /// allowed to reach it early.
+        /// </summary>
+        private static void CheckCompareWipeReusesTheVanillaExit(string repo, Action<string, bool, string> check)
+        {
+            string pbr = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pseudopbr.glsl"));
+            string atmos = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/atmosphere.glsl"));
+
+            check("the wipe takes pseudopbr's own vanilla exit",
+                  Regex.IsMatch(pbr, @"if \(vvCompareVanillaSide\(\)\) return litColor;"),
+                  "it must return exactly what the disabled case returns");
+
+            check("the wipe sits beside the disabled exit, not elsewhere",
+                  pbr.IndexOf("if (vvCompareVanillaSide()) return litColor;", StringComparison.Ordinal) -
+                  pbr.IndexOf("if (vv_pbrEnabled < 0.5) return litColor;", StringComparison.Ordinal) < 300,
+                  "a wipe applied later would have partially shaded the pixel first");
+
+            check("the atmosphere wipe reproduces vanilla's own fog mix",
+                  atmos.Contains("mix(rgbaPixel.rgb, fogColor, clamp(fogWeight, 0.0, 1.0))"),
+                  "vanilla's applyFog is mix(pixel, fogColor, fogWeight) and the wipe must be exactly that");
+
+            // Zero has to disable it, like every other value in this mod, and
+            // an unset uniform reads as zero.
+            check("a wipe of zero is off",
+                  pbr.Contains("if (vv_compareWipe <= 0.0) return false;"),
+                  "an unset uniform reads as 0 and must mean 'no wipe'");
+
+            check("each patch group declares its own wipe uniform",
+                  pbr.Contains("uniform float vv_compareWipe;") &&
+                  atmos.Contains("uniform float vv_atmosCompareWipe;"),
+                  "a uniform shared across patch groups couples their rollbacks");
         }
 
         /// <summary>Removes comments so prose about Use() and Stop() is not counted as code.</summary>
