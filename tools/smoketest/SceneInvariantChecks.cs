@@ -70,6 +70,8 @@ namespace VintageVisuals.SmokeTest
             I8_NoFactorAppliedTwice(check);
             I9_GpuResourcesSurviveAReload(repo, check);
             I10_DebugViewsAreDistinct(check);
+            I11_ADiagnosticKeepsItsStatesApart(check);
+            I12_ARateConstantIsTheRateUsed(check);
         }
 
         // -------------------------------------------------------------------
@@ -817,6 +819,183 @@ namespace VintageVisuals.SmokeTest
                 check("I9 " + f.Name + " can recover from a failure it latched", reset,
                       "sets a failure latch with no path that clears it");
             }
+        }
+
+
+        // -------------------------------------------------------------------
+        // I11  A DIAGNOSTIC MUST NOT COLLAPSE DISTINCT STATES
+        //
+        // This project has now lost three rounds of investigation to exactly
+        // one mistake, in three different subsystems. "loaded but not applied"
+        // meant both "the hook never saw this shader" and "no patch matched its
+        // name". "OK" meant six different degrees of delivered. And reflection
+        // debug view 39 paints a miss red whether the ray pointed behind the
+        // camera, started off frame, walked off the edge without crossing
+        // anything, or crossed the right surface and was rejected for being too
+        // far behind it. The last two are opposites - one says the geometry is
+        // never found, the other says it is found and thrown away - and they
+        // were the same colour.
+        //
+        // So a code that enumerates outcomes must have distinct values, and the
+        // view that renders them must give each a distinguishable colour. Both
+        // halves matter: distinct codes rendered identically are still one red.
+        // -------------------------------------------------------------------
+        static void I11_ADiagnosticKeepsItsStatesApart(Action<string, bool, string> check)
+        {
+            var names = new[]
+            {
+                "VV_SSR_NO_CAPTURE", "VV_SSR_FACING", "VV_SSR_ORIGIN_OFF",
+                "VV_SSR_FAR_OFF", "VV_SSR_NO_CROSSING", "VV_SSR_TOO_THICK", "VV_SSR_HIT",
+            };
+
+            var codes = new Dictionary<string, double>();
+            foreach (string n in names)
+            {
+                try { codes[n] = Define(_pbr, n); }
+                catch (Exception ex) { check("I11 " + n + " is defined", false, ex.Message); return; }
+            }
+
+            check("I11 every march outcome has its own code",
+                  codes.Values.Distinct().Count() == names.Length,
+                  string.Join(", ", codes.Select(c => c.Key + "=" + c.Value)));
+
+            // And the view that renders them. Extracted from the shipped GLSL
+            // rather than assumed: a view that returns the same colour for two
+            // codes is the defect this invariant exists for, and it is one
+            // copy-paste away at any time.
+            string body;
+            try { body = StripComments(FunctionBody(_pbr, "vec4 vvDebugView(")); }
+            catch (Exception ex) { check("I11 debug views are readable", false, ex.Message); return; }
+
+            int at = body.IndexOf("mode == 48", StringComparison.Ordinal);
+            check("I11 the outcome view exists", at >= 0, "no mode == 48 in vvDebugView");
+            if (at < 0) return;
+
+            string view48 = body.Substring(at, Math.Min(1400, body.Length - at));
+
+            var colours = new List<string>();
+            foreach (Match m in Regex.Matches(view48, @"why == (VV_SSR_\w+)\s*\)\s*return\s+vec4\(([^;]+)\);"))
+                colours.Add(Regex.Replace(m.Groups[2].Value, @"\s+", ""));
+
+            check("I11 the outcome view renders the codes it is given",
+                  colours.Count >= names.Length - 1, colours.Count + " mapped, " + names.Length + " codes");
+
+            check("I11 no two outcomes are painted the same colour",
+                  colours.Count == colours.Distinct().Count(),
+                  string.Join(" | ", colours));
+
+            // Hit and thickness-rejection are the pair that was one colour.
+            // They are the whole reason the view was added, so they get their
+            // own check rather than relying on the sweep above.
+            var byCode = new Dictionary<string, string>();
+            foreach (Match m in Regex.Matches(view48, @"why == (VV_SSR_\w+)\s*\)\s*return\s+vec4\(([^;]+)\);"))
+                byCode[m.Groups[1].Value] = Regex.Replace(m.Groups[2].Value, @"\s+", "");
+
+            check("I11 a rejected crossing does not look like a miss",
+                  byCode.ContainsKey("VV_SSR_TOO_THICK") && byCode.ContainsKey("VV_SSR_NO_CROSSING") &&
+                  byCode["VV_SSR_TOO_THICK"] != byCode["VV_SSR_NO_CROSSING"],
+                  "found the surface and threw it away is drawn as never found it");
+        }
+
+        // -------------------------------------------------------------------
+        // I12  A CONSTANT THAT NAMES A RATE MUST BE THE RATE USED
+        //
+        // VV_SSR_STRIDE says "capture texels to advance per step" and its
+        // comment explains at length why a uniform screen-space rate is what
+        // makes a reflection foreshorten instead of smear. VV_SSR_STEPS then
+        // caps the count at 24. On a short ray those agree. On a long grazing
+        // ray - which is the ordinary case on a flat reflective floor, and the
+        // only case that carries a reflected tree - the cap binds and the ray
+        // is walked ten times coarser than the constant claims.
+        //
+        // That is not a defect this invariant fixes; it is a budget, and
+        // changing it needs a measurement nobody has taken. What the invariant
+        // requires is that the divergence be MEASURABLE: the march records both
+        // the rate asked for and the rate taken, and debug view 49 reports
+        // saturation truthfully. The constants' own comment says raising the
+        // thickness tolerance to make distant reflections appear would be
+        // hiding a coarse march - so something has to be able to say whether
+        // the march is coarse.
+        // -------------------------------------------------------------------
+        static void I12_ARateConstantIsTheRateUsed(Action<string, bool, string> check)
+        {
+            string wantedExpr, stepsExpr, overExpr, usedExpr;
+            double stride, maxSteps;
+            try
+            {
+                string march = FunctionBody(_pbr, "VvSceneHit vvSceneReflection(");
+                wantedExpr = Rhs(Statement(march, "float wanted ="));
+                stepsExpr = Rhs(Statement(march, "int steps ="));
+
+                string views = FunctionBody(_pbr, "vec4 vvDebugView(");
+                overExpr = Rhs(Statement(views, "float over ="));
+                usedExpr = Rhs(Statement(views, "float used ="));
+
+                stride = Const(_pbr, "VV_SSR_STRIDE");
+                maxSteps = double.Parse(Regex.Match(StripComments(_pbr),
+                    @"const int VV_SSR_STEPS = (\d+);").Groups[1].Value);
+            }
+            catch (Exception ex) { check("I12 the march rate is readable", false, ex.Message); return; }
+
+            // `steps` is an int cast in GLSL; the evaluator has no ints, so the
+            // truncation is applied here and the expression itself still comes
+            // from the shipped source.
+            double Steps(double travelTexels)
+            {
+                var syms = Syms("travel", travelTexels, "VV_SSR_STRIDE", stride, "VV_SSR_STEPS", maxSteps);
+                syms["wanted"] = new Val(Scalar(wantedExpr.Replace("max(travel.x, travel.y)", "travel"), syms));
+                return Math.Floor(Scalar(stepsExpr.Replace("int(", "(").Replace("float(VV_SSR_STEPS)", "VV_SSR_STEPS"), syms));
+            }
+
+            double Wanted(double travelTexels)
+                => Scalar(wantedExpr.Replace("max(travel.x, travel.y)", "travel"),
+                          Syms("travel", travelTexels, "VV_SSR_STRIDE", stride));
+
+            // A short ray: the budget is slack and the stride is honoured
+            // exactly, which is the case the constant describes.
+            double shortTravel = 20.0;
+            double shortStride = shortTravel / Steps(shortTravel);
+            check("I12 a short ray is walked at the stride the constant names",
+                  Math.Abs(shortStride - stride) < 1e-6,
+                  shortStride + " texels per step, constant says " + stride);
+
+            // A long grazing ray: the budget binds. Recorded, not asserted away.
+            double longTravel = 500.0;
+            double longStride = longTravel / Steps(longTravel);
+            check("I12 a long ray saturates the step budget",
+                  Steps(longTravel) >= maxSteps - 1e-6,
+                  Steps(longTravel) + " steps for " + longTravel + " texels");
+
+            check("I12 the saturated stride is knowable, and it is not the constant",
+                  longStride > stride * 2.0,
+                  "grazing rays walk " + longStride.ToString("0.0") + " texels per step, not " + stride);
+
+            // The whole point: view 49 must SAY so.
+            double Over(double travelTexels)
+            {
+                var syms = Syms("VV_SSR_STEPS", maxSteps);
+                syms["m49"] = new Val(0.0);
+                string e = overExpr.Replace("m49.wanted", "wanted").Replace("float(VV_SSR_STEPS)", "VV_SSR_STEPS");
+                syms["wanted"] = new Val(Wanted(travelTexels));
+                return Scalar(e, syms);
+            }
+
+            double Used(double travelTexels)
+            {
+                var syms = Syms("VV_SSR_STEPS", maxSteps, "steps", Steps(travelTexels));
+                string e = usedExpr.Replace("m49.steps", "steps").Replace("float(VV_SSR_STEPS)", "VV_SSR_STEPS");
+                return Scalar(e, syms);
+            }
+
+            check("I12 the diagnostic is quiet when the stride is honoured",
+                  Math.Abs(Over(shortTravel)) < 1e-9, Over(shortTravel).ToString());
+
+            check("I12 the diagnostic reports a saturated budget",
+                  Over(longTravel) > 0.5, Over(longTravel).ToString());
+
+            check("I12 budget usage is reported as a fraction, not a count",
+                  Used(longTravel) <= 1.0 + 1e-9 && Used(shortTravel) < 1.0,
+                  "long " + Used(longTravel) + ", short " + Used(shortTravel));
         }
 
         // -------------------------------------------------------------------

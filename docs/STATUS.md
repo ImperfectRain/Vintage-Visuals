@@ -58,7 +58,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | ASCII guard on shipped GLSL | L4 | load-time refusal + smoke scan |
 | `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
 | `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
-| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 17 mutations, 17 caught, 0 missed |
+| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 21 mutations, 21 caught, 0 missed |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |
 | `[-]` | Hooking every `LoadShader` overload | — | shipped as a total regression and reverted; [D41](DECISIONS.md) |
@@ -130,7 +130,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[x]` | Per-layer debug views (0–43) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 pixel reflection, 38-43 the scene bridge. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
+| `[x]` | Per-layer debug views (0–50) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-50 the reflection march. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |

@@ -285,8 +285,12 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | The patcher writing its own text into shipped GLSL (`D41`) | `D41` | `Program.cs` bookkeeping check | x |
 | The delivery table hiding a target that never arrived | `D41` | `Program.cs` delivery check | x |
 | The hook writing back source the patcher never saw | six-states audit | `ShaderBindingChecks` | x |
+| A rejected reflection crossing painted as a miss (`D42`) | source audit | I11 | x |
+| Two march outcomes sharing a code | source audit | I11 | x |
+| The step-budget diagnostic never reporting saturation (`D42`) | source audit | I12 | x |
+| The march sampling coarser than `VV_SSR_STRIDE` names | source audit | I12 | x |
 
-**17 mutations, 17 caught, 0 missed** at `HEAD`.
+**21 mutations, 21 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

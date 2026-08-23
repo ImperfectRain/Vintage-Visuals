@@ -1917,7 +1917,25 @@ const float VV_SSR_THICKNESS = 0.5;
 // Fading them out is cheaper and far more honest than sampling something wrong.
 const float VV_SSR_FACING_FADE = 0.25;
 
-// Result of a scene lookup: the colour, and whether to believe it.
+// Why a march ended the way it did.
+//
+// ONE RED IS FOUR DIFFERENT FAULTS. Debug view 39 reports a miss as a single
+// colour, and a miss can mean the ray pointed back at the camera, that its
+// origin was off the captured frame, that it walked off the edge without ever
+// crossing anything, or that it crossed the right surface and was then rejected
+// for being too far behind it. Those have nothing in common but the outcome,
+// and three rounds of investigation in this project have now been spent on a
+// diagnostic that collapsed distinct states into one word.
+#define VV_SSR_NO_CAPTURE   0.0
+#define VV_SSR_FACING       1.0
+#define VV_SSR_ORIGIN_OFF   2.0
+#define VV_SSR_FAR_OFF      3.0
+#define VV_SSR_NO_CROSSING  4.0
+#define VV_SSR_TOO_THICK    5.0
+#define VV_SSR_HIT          6.0
+
+// Result of a scene lookup: the colour, whether to believe it, and how it got
+// there.
 struct VvSceneHit
 {
     vec3 color;
@@ -1927,6 +1945,14 @@ struct VvSceneHit
     // view 43 can show it: a sign error in the camera reprojection is invisible
     // in a colour and obvious in a coordinate field.
     vec2 uv;
+
+    // MEASUREMENT, not behaviour. Nothing downstream reads these; they exist so
+    // one run can answer which of the march's stages is losing the image
+    // instead of a screenshot being argued about.
+    float reason;     // one of the VV_SSR_* codes above
+    float steps;      // steps actually walked
+    float wanted;     // steps the stride ASKED for, before the budget cap
+    float thickness;  // how far behind the surface the refined crossing landed
 };
 
 // One point on the reflected ray, expressed in the captured frame.
@@ -1976,6 +2002,10 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     miss.color = vec3(0.0);
     miss.valid = 0.0;
     miss.uv = vec2(0.0);
+    miss.reason = VV_SSR_NO_CAPTURE;
+    miss.steps = 0.0;
+    miss.wanted = 0.0;
+    miss.thickness = 0.0;
 
     if (vv_reflectValid < 0.5) return miss;
 
@@ -1987,6 +2017,8 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     if (len < 1e-4) return miss;
     r /= len;
 
+    miss.reason = VV_SSR_FACING;
+
     // A ray pointing back at the viewer reflects what is behind the camera, and
     // the capture never contained it.
     float facing = clamp(dot(r, v), 0.0, 1.0);
@@ -1995,7 +2027,10 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     VvRayPoint a = vvProjectRay(origin);
     VvRayPoint b = vvProjectRay(origin + r * VV_SSR_RANGE);
 
+    miss.reason = VV_SSR_ORIGIN_OFF;
     if (a.onScreen < 0.5) return miss;
+
+    miss.reason = VV_SSR_FAR_OFF;
 
     // The far end can fall behind the capture camera, where projection is
     // meaningless. Pull it back to just in front rather than discarding the
@@ -2023,6 +2058,20 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
     float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE);
     int steps = int(clamp(wanted, 4.0, float(VV_SSR_STEPS)));
 
+    // THE BUDGET CAP IS NOT THE STRIDE, and until now nothing said when the two
+    // parted company. VV_SSR_STRIDE asks for one sample every two capture
+    // texels; VV_SSR_STEPS caps the count at 24. A ray that crosses 500 texels
+    // - which is an ordinary grazing ray on a flat floor, the kind that carries
+    // the reflected trees - asks for 250 steps, gets 24, and walks 21 texels at
+    // a time. Ten times coarser than the constant says, on exactly the rays the
+    // effect exists for.
+    //
+    // The constants' own comment says raising the thickness tolerance to make
+    // distant reflections appear would be hiding a coarse march. Nothing
+    // measured whether the march was coarse. These two numbers do.
+    miss.steps = float(steps);
+    miss.wanted = wanted;
+
     // 1/w is what interpolates linearly across the screen, not w. Interpolating
     // depth directly would bend the ray in world space and put every hit at the
     // wrong distance.
@@ -2041,6 +2090,8 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
 
         vec2 uv = mix(a.uv, b.uv, f);
         if (any(greaterThan(abs(uv - 0.5), vec2(0.5)))) break;
+
+        miss.reason = VV_SSR_NO_CROSSING;
 
         float rayDepth = 1.0 / mix(invA, invB, f);
         float sceneDepth = texture(vv_reflectScene, uv).a * vv_reflectFar;
@@ -2073,6 +2124,10 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
                 VvSceneHit hit;
                 hit.color = resolved.rgb;
                 hit.uv = hitUv;
+                hit.reason = VV_SSR_HIT;
+                hit.steps = float(steps);
+                hit.wanted = wanted;
+                hit.thickness = thickness;
 
                 // Faded near the grazing limit so the reflection thins out
                 // instead of ending at a hard line.
@@ -2081,6 +2136,9 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
                 return hit;
             }
 
+            miss.reason = VV_SSR_TOO_THICK;
+            miss.thickness = thickness;
+            miss.uv = hitUv;
             return miss;
         }
 
@@ -3133,6 +3191,91 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     if (mode == 42)
     {
         return vec4(abs(vv_reflectCameraDelta) * 4.0, color.a);
+    }
+
+    // ---- The march itself, views 48-50 -----------------------------------
+    //
+    // 38-43 diagnose the BRIDGE: is there a capture, is it the right image, is
+    // it projected to the right place. These three diagnose what the ray then
+    // does with it, which is the stage nothing could see. Read them only once
+    // view 39 shows green somewhere - if the bridge is dead these say nothing
+    // useful.
+
+    // 48: why each march ended, as a category rather than a brightness.
+    //
+    //   green    hit - this texel reflects real captured geometry
+    //   yellow   crossed the right surface and was REJECTED as too thick
+    //   red      walked to the edge of the frame without crossing anything
+    //   orange   the far end of the ray was unusable
+    //   dark red the ray's own origin projected off the captured frame
+    //   magenta  the ray points back at the camera, which is never in frame
+    //   blue     no capture at all
+    //
+    // Yellow and red are the two that matter and they mean opposite things.
+    // Yellow says the geometry is being FOUND and thrown away, which is a
+    // tolerance problem. Red says it is never found, which is a march problem.
+    // View 39 called both of them red.
+    if (mode == 48)
+    {
+        vec3 n48 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        float why = vvSceneReflection(n48, materialUv, cameraRelativePos).reason;
+
+        if (why == VV_SSR_HIT)         return vec4(0.1, 0.9, 0.1, color.a);
+        if (why == VV_SSR_TOO_THICK)   return vec4(0.9, 0.9, 0.1, color.a);
+        if (why == VV_SSR_NO_CROSSING) return vec4(0.9, 0.1, 0.1, color.a);
+        if (why == VV_SSR_FAR_OFF)     return vec4(0.9, 0.5, 0.1, color.a);
+        if (why == VV_SSR_ORIGIN_OFF)  return vec4(0.4, 0.05, 0.05, color.a);
+        if (why == VV_SSR_FACING)      return vec4(0.8, 0.1, 0.8, color.a);
+        return vec4(0.1, 0.1, 0.9, color.a);
+    }
+
+    // 49: whether the stride survived the step budget.
+    //
+    //   green   how much of the 24-step budget this ray used
+    //   red     how far PAST the budget the stride asked to go
+    //   blue    the stride actually walked, in capture texels, over 32
+    //
+    // Red is the finding this view exists for. VV_SSR_STRIDE asks for a sample
+    // every two capture texels and VV_SSR_STEPS caps the count, so a long
+    // grazing ray - the kind that carries a reflected tree - can be walked ten
+    // times coarser than the constant claims. Anywhere red is bright, the
+    // reflection there is being sampled at a stride nobody chose, and the
+    // thickness tolerance is being asked to absorb it.
+    if (mode == 49)
+    {
+        vec3 n49 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        VvSceneHit m49 = vvSceneReflection(n49, materialUv, cameraRelativePos);
+
+        float used = m49.steps / float(VV_SSR_STEPS);
+        float over = clamp(m49.wanted / float(VV_SSR_STEPS) - 1.0, 0.0, 1.0);
+        float walked = m49.steps > 0.5
+            ? (m49.wanted * VV_SSR_STRIDE / m49.steps) / 32.0
+            : 0.0;
+
+        return vec4(over, clamp(used, 0.0, 1.0), clamp(walked, 0.0, 1.0), color.a);
+    }
+
+    // 50: how far behind the surface the refined crossing landed, against the
+    // tolerance that judges it.
+    //
+    //   green   accepted, brightening as it approaches the limit
+    //   red     rejected, brightening with how far past the limit it fell
+    //   black   no crossing was reached, so there is nothing to measure
+    //
+    // A frame that is mostly dim green is a march whose refinement is
+    // comfortable. A frame with a bright red band at the grazing end is the
+    // documented failure the constants warn about: the tolerance is absorbing a
+    // coarse march, and raising it would hide that rather than fix it.
+    if (mode == 50)
+    {
+        vec3 n50 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        VvSceneHit m50 = vvSceneReflection(n50, materialUv, cameraRelativePos);
+
+        float ratio = abs(m50.thickness) / max(1e-4, VV_SSR_THICKNESS);
+
+        if (m50.reason == VV_SSR_HIT)       return vec4(0.0, clamp(ratio, 0.0, 1.0), 0.0, color.a);
+        if (m50.reason == VV_SSR_TOO_THICK) return vec4(clamp(ratio - 1.0, 0.0, 1.0), 0.0, 0.0, color.a);
+        return vec4(0.0, 0.0, 0.0, color.a);
     }
 
     // ---- Flora taxonomy, views 44-46 -------------------------------------

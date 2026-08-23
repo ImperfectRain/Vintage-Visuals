@@ -1648,3 +1648,66 @@ final shaders are being delivered, which that log said they were not. Either the
 earlier reading was of a transient startup state, or it persists and something
 else is carrying the visuals. `LogDelivery()` answers it in one line per target
 and has not been read yet.
+
+---
+
+## D42. A budget that overrides a rate must say when it does
+
+**The reported problem**: reflective materials receive strong light and read as
+environmental colouring rather than as a reflection of the world. Trees, walls
+and sky are not recognizable in them.
+
+**No runtime access this pass**, so nothing here is a visual claim. What a source
+audit can establish, it did.
+
+**Finding one: the stride constant is not the stride.** The march computes
+
+```glsl
+float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE);
+int steps = int(clamp(wanted, 4.0, float(VV_SSR_STEPS)));
+```
+
+`VV_SSR_STRIDE` is 2 capture texels and carries a long comment explaining that a
+uniform screen-space rate is what makes a reflection foreshorten instead of
+smear — it was written after a reported artefact where a trunk smeared across the
+whole floor. `VV_SSR_STEPS` is 24. For a short ray the two agree exactly. For a
+500-texel traverse — an ordinary grazing ray on a flat floor, and the only kind
+that carries a reflected tree — `wanted` is 250, `steps` is 24, and the ray is
+walked at about 21 texels per step. The overshoot the stride exists to prevent
+returns in full on exactly the rays the feature exists for, and a march that
+steps over a ten-texel trunk registers whatever it lands on instead.
+
+This is consistent with the report - broad reflective response with no
+recognizable structure - but consistency is not proof, and the fix is a
+measurement, not a larger number.
+
+**Finding two: one red was four faults.** Debug view 39 reports every miss as
+red. A miss means the ray pointed back at the camera, or its origin projected off
+the captured frame, or it walked off the edge without crossing anything, or it
+crossed the right surface and was rejected for landing further behind it than
+`VV_SSR_THICKNESS` allows. The last two are opposites. "Never found" wants a finer
+march; "found and thrown away" wants a tolerance argument. They were the same
+colour, so the brief's own A-to-I diagnosis could not be carried out from the
+views that existed.
+
+That is the third time this project has lost a round to a diagnostic collapsing
+distinct states - after `loaded but not applied` and after `OK` - which is why it
+now has an invariant of its own rather than a fix of its own.
+
+**Chosen.** Instrument, do not tune. `VvSceneHit` carries the outcome code, the
+steps taken, the steps the stride asked for, and the residual thickness at the
+crossing. Nothing downstream reads them; the control flow is unchanged, and every
+existing return goes to the same place with the same value. Three views expose
+them: 48 the outcome as a category, 49 whether the stride survived the budget, 50
+the crossing residual against its tolerance.
+
+**Explicitly not done.** No constant was changed. Not the range, not the step
+count, not the stride, not the thickness, not the facing fade, not the capture
+resolution, and no term in the ambient-specular integration. The brief's central
+question - reconstruction quality or contribution quality - is answerable in one
+run with these views and is not answerable from source, and answering it wrongly
+would mean tuning a downstream variable to compensate for an upstream failure.
+
+**Status.** STRUCTURALLY CORRECT - VISUALLY UNVALIDATED. Two new invariants,
+I11 and I12, four new mutations, all caught. `verifypatches` compiles the new
+views in all 48 combinations.

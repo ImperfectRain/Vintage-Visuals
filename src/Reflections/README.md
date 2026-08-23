@@ -88,6 +88,47 @@ Off by default (`Reflections.SceneReflections`) for that reason.
 
 **L2 — implemented, compiles, tested statically, not visually validated.**
 
+### What the march does that nothing measured
+
+Two findings from a source audit, both about measurement rather than tuning, and
+both now visible in game rather than argued about:
+
+**The stride constant is not the stride on the rays that matter.**
+`VV_SSR_STRIDE` asks for one sample every two capture texels and explains at
+length why a uniform screen-space rate is what makes a reflection foreshorten
+instead of smear. `VV_SSR_STEPS` then caps the count at 24. On a short ray those
+agree exactly. On a long grazing ray — the ordinary case on a flat reflective
+floor, and the only case that carries a reflected tree — a 500-texel traverse
+asks for 250 steps, gets 24, and walks about 21 texels at a time. Ten times
+coarser than the constant claims, on precisely the rays the effect exists for.
+`VV_SSR_THICKNESS`'s own comment says that if it ever has to be raised to make
+distant reflections appear, the stride or the refinement is too coarse and the
+tolerance would be hiding it. Nothing measured whether the march was coarse.
+**Debug view 49 now does**, and until it has been read, no step count should be
+changed.
+
+**One red was four faults.** View 39 paints a miss red whether the ray pointed
+back at the camera, started off the captured frame, walked off the edge without
+crossing anything, or crossed the right surface and was rejected as too thick.
+The last two are opposites: one says the geometry is never found, the other says
+it is found and thrown away, and they want opposite fixes. **View 48 separates
+them**, and view 50 shows how far behind the surface each refined crossing
+landed against the tolerance judging it.
+
+Neither finding has been acted on. Both are stated here so the next run measures
+instead of guessing.
+
+### Reading the march views
+
+Only meaningful once view 39 shows green somewhere; if the bridge is dead these
+say nothing.
+
+| View | Shows | What to look for |
+|---|---|---|
+| 48 | why each ray ended | yellow (found and rejected) versus red (never found) — opposite faults |
+| 49 | stride against budget | bright red is a ray walked coarser than `VV_SSR_STRIDE` names |
+| 50 | crossing residual | a bright red band at the grazing end is the tolerance absorbing a coarse march |
+
 The bridge is confirmed alive in game: debug view 41 shows the captured world,
 and view 39 reports hits. Whether the resulting reflection reads correctly is
 unverified. See `docs/CHECKLIST.md` for the specific scenes still outstanding.
