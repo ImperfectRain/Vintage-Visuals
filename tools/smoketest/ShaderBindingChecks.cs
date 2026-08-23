@@ -142,10 +142,38 @@ namespace VintageVisuals.SmokeTest
                   Regex.IsMatch(pbr, @"if \(vvCompareVanillaSide\(\)\) return litColor;"),
                   "it must return exactly what the disabled case returns");
 
-            check("the wipe sits beside the disabled exit, not elsewhere",
-                  pbr.IndexOf("if (vvCompareVanillaSide()) return litColor;", StringComparison.Ordinal) -
-                  pbr.IndexOf("if (vv_pbrEnabled < 0.5) return litColor;", StringComparison.Ordinal) < 300,
-                  "a wipe applied later would have partially shaded the pixel first");
+            // The wipe must be taken BEFORE any shading, or the "vanilla" side
+            // would be a partially shaded pixel rather than vanilla's. What
+            // matters is that nothing shades in between, not the literal
+            // character distance - so this checks the span for shading calls
+            // instead of measuring it.
+            int disabled = pbr.IndexOf("if (vv_pbrEnabled < 0.5) return litColor;", StringComparison.Ordinal);
+            int wipe = pbr.IndexOf("if (vvCompareVanillaSide()) return litColor;", StringComparison.Ordinal);
+
+            check("the wipe is taken after the disabled exit",
+                  disabled >= 0 && wipe > disabled,
+                  "both early exits must be at the top of vvApplyPbr");
+
+            if (disabled < 0 || wipe < 0) return;
+
+            string between = pbr.Substring(disabled, wipe - disabled);
+
+            check("nothing shades the pixel before the wipe is taken",
+                  !between.Contains("vvSampleMaterial") &&
+                  !between.Contains("vvSurfaceNormal") &&
+                  !between.Contains("vvApplyEnvironmentLayers") &&
+                  !between.Contains("result"),
+                  "the vanilla side must be vanilla, not a half-shaded pixel");
+
+            // The seam marker lives in that same early block. It is what stops
+            // the wipe being mistaken for a rendering defect - which it was.
+            check("the seam is marked, so the wipe announces itself",
+                  pbr.Contains("if (vvCompareSeam()) return vec4(vec3(0.5), litColor.a);"),
+                  "an unmarked wipe is indistinguishable from a renderer boundary");
+
+            check("the seam marker is also taken before any shading",
+                  pbr.IndexOf("vvCompareSeam()) return", StringComparison.Ordinal) < wipe,
+                  "the marker must not be shaded either");
 
             check("the atmosphere wipe reproduces vanilla's own fog mix",
                   atmos.Contains("mix(rgbaPixel.rgb, fogColor, clamp(fogWeight, 0.0, 1.0))"),

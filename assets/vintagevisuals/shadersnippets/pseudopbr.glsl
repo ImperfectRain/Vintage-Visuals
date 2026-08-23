@@ -103,6 +103,22 @@ bool vvCompareVanillaSide()
     return gl_FragCoord.x < vv_compareWipe;
 }
 
+// Width of the marker drawn at the seam, in pixels.
+//
+// The wipe needs to announce itself. Without a marker it is a vertical line
+// across the frame where lighting, atmosphere and foliage response all change
+// at once - which is indistinguishable from a renderer defect, and was reported
+// as one. A deliberate divider reads as deliberate.
+#define VV_COMPARE_SEAM 2.0
+
+// True on the seam itself.
+bool vvCompareSeam()
+{
+    if (vv_compareWipe <= 0.0) return false;
+
+    return abs(gl_FragCoord.x - vv_compareWipe) < VV_COMPARE_SEAM;
+}
+
 // Global multipliers on top of the per-material values baked into the atlas.
 uniform float vv_pbrNormalStrength;
 uniform float vv_pbrSpecularStrength;
@@ -2428,6 +2444,11 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                 vec3 environment, vec3 blockLightColor)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
+
+    // The seam, drawn before either side, so the divider is unmistakably a
+    // divider rather than a rendering boundary. Mid grey: visible against sky
+    // and against forest floor without reading as a light or a shadow.
+    if (vvCompareSeam()) return vec4(vec3(0.5), litColor.a);
 
     // The comparison wipe, taken at the same exit the disabled case uses. There
     // is deliberately no separate "vanilla" code path to get wrong.

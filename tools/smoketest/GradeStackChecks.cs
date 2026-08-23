@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Scene;
@@ -26,6 +28,8 @@ namespace VintageVisuals.SmokeTest
 
         public static void Run(Action<string, bool, string> check)
         {
+            CheckAutomaticLiftBringsItsShoulder(check);
+
             Action<string, bool> ok = (name, condition) => check(name, condition, "");
 
             GradeSample basis = new GradeSample(1.1f, 0.95f, 1.05f, 0.1f, 1f, 1f, 1f);
@@ -250,6 +254,77 @@ namespace VintageVisuals.SmokeTest
         private static bool IsFinite(float v)
         {
             return !float.IsNaN(v) && !float.IsInfinity(v);
+        }
+    
+        /// <summary>
+        /// An automatic exposure lift must bring its own highlight shoulder.
+        ///
+        /// Eye adaptation multiplies the whole frame by up to DarkGain - 1.6 by
+        /// default - and vv_tonemapStrength, the curve that would roll the
+        /// result off, defaults to 0. So the shipped combination GUARANTEED
+        /// clipping: anything vanilla output above 1/1.6 = 0.625 was pushed past
+        /// white and flattened. Around a low sun that is a wide band of sky, and
+        /// it was reported from the game as severe highlight clipping.
+        ///
+        /// colorgrade.glsl's own header already says exposure and the shoulder
+        /// belong together. They shipped as independent settings whose defaults
+        /// contradict each other.
+        ///
+        /// The distinction that fixes it without removing the control:
+        /// vv_exposure is the PLAYER'S choice and they may clip with it.
+        /// Adaptation is the RENDERER'S choice - nobody asked for it - so the
+        /// renderer owes the highlights that pay for it.
+        /// </summary>
+        private static void CheckAutomaticLiftBringsItsShoulder(Action<string, bool, string> check)
+        {
+            string grade = File.ReadAllText(Path.Combine(Repo,
+                "assets/vintagevisuals/shadersnippets/colorgrade.glsl"));
+
+            check("the automatic lift is measured against unity",
+                  grade.Contains("float autoLift = clamp(adaptation - 1.0, 0.0, 1.0);"),
+                  "only the part of adaptation ABOVE 1 is an unrequested brightening");
+
+            check("the shoulder is at least the automatic lift",
+                  grade.Contains("float shoulder = max(clamp(vv_tonemapStrength, 0.0, 1.0), autoLift);"),
+                  "a lift with no rolloff clips by construction");
+
+            check("the tonemap blend uses that shoulder",
+                  grade.Contains("graded = mix(graded, vvACESFitted(graded), shoulder);"),
+                  "computing it and blending by something else changes nothing");
+
+            // The invariant that keeps the player's control intact: with no
+            // adaptation, behaviour is bit-identical to before.
+            var wrong = new System.Collections.Generic.List<string>();
+
+            foreach (float adaptation in new[] { 0.5f, 1f, 1.2f, 1.6f, 2f })
+            {
+                foreach (float tonemap in new[] { 0f, 0.5f, 1f })
+                {
+                    float autoLift = Math.Min(1f, Math.Max(0f, adaptation - 1f));
+                    float shoulder = Math.Max(Math.Min(1f, Math.Max(0f, tonemap)), autoLift);
+
+                    // Never below what the player asked for.
+                    if (shoulder < tonemap - 1e-6f)
+                    {
+                        wrong.Add("adaptation " + adaptation + " reduced the player's tonemap");
+                    }
+
+                    // At or below unity the player's setting is untouched.
+                    if (adaptation <= 1f && Math.Abs(shoulder - tonemap) > 1e-6f)
+                    {
+                        wrong.Add("adaptation " + adaptation + " changed the shoulder with no lift");
+                    }
+
+                    // A large lift must produce a real shoulder.
+                    if (adaptation >= 1.5f && shoulder < 0.4f)
+                    {
+                        wrong.Add("adaptation " + adaptation + " lifts hard with shoulder " + shoulder);
+                    }
+                }
+            }
+
+            check("the shoulder never takes away what the player asked for",
+                  wrong.Count == 0, string.Join("; ", wrong.Distinct()));
         }
     }
 }

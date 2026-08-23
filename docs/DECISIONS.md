@@ -1316,3 +1316,81 @@ it has no notion of whether two predicates can hold together in a real scene.
 
 **Status.** Fixed, runtime-unverified. The scene is a forest floor under broken
 canopy, and it is the scene that has failed three times now.
+
+---
+
+## D36. An automatic exposure lift must bring its own shoulder
+
+**Reported from the game**: "severe highlight clipping around the sun."
+
+`colorgrade.glsl` does
+
+```glsl
+graded *= vv_exposure * adaptation;
+...
+graded = mix(graded, vvACESFitted(graded), vv_tonemapStrength);
+```
+
+Eye adaptation multiplies the whole frame by up to `DarkGain`, which defaults to
+**1.6**. `vv_tonemapStrength` - the curve that would roll the result off -
+defaults to **0**.
+
+So the shipped default combination **guaranteed clipping**. Anything vanilla put
+above `1 / 1.6 = 0.625` was pushed past white and flattened. Around a low sun that
+is a wide band of sky, and in a dark forest adaptation sits near its maximum
+precisely when the player is looking out at a bright one.
+
+**This file's own header already said so**: *"exposure -> white balance ->
+tonemap ... the curve's shoulder rolls off highlights that exposure was..."*. The
+design knew the two belong together and then shipped them as independent settings
+whose defaults contradict each other.
+
+**The distinction that fixes it without removing the control.** `vv_exposure` is
+the PLAYER'S choice; they may clip with it if they want to. Adaptation is the
+RENDERER'S choice - nobody asked for it, it happened because the scene got dark -
+so the renderer owes the highlights that pay for it.
+
+```glsl
+float autoLift = clamp(adaptation - 1.0, 0.0, 1.0);
+float shoulder = max(clamp(vv_tonemapStrength, 0.0, 1.0), autoLift);
+```
+
+At adaptation 1 this is exactly `vv_tonemapStrength`, so a bright scene, or a
+player who dialled the tonemap to zero deliberately, gets precisely what they got
+before. **Zero still means vanilla.** The shoulder can only ever rise, never fall
+below what the player asked for, and a check drives that across the whole grid of
+adaptation and tonemap settings.
+
+**Not a tuning change.** No constant moved. `DarkGain` is still 1.6 and
+`TonemapStrength` still defaults to 0; what changed is that an unrequested
+brightening can no longer be applied without the curve that absorbs it.
+
+**Status.** Fixed, runtime-unverified.
+
+---
+
+## D37. The comparison wipe had to announce itself
+
+**Reported from the game as a defect**: "a highly visible vertical lighting and
+atmosphere discontinuity through the scene."
+
+It was `CompareWipe: 0.5` - the comparison tool from D-none/the wipe commit,
+still switched on. `gl_FragCoord.x < 0.5 * FrameWidth` returns vanilla, so
+lighting, atmosphere, brightness and foliage response all change abruptly across a
+vertical line. That is the tool's definition, working exactly as built, and the
+seam in the reported screenshot sits at half the frame width.
+
+**The tool was indistinguishable from a bug**, and it cost a full diagnostic round
+- several other observations in the same report were made while comparing against
+a half-vanilla frame, and are unreliable for that reason.
+
+**Chosen.** Draw a 2px mid-grey marker at the seam. A deliberate divider reads as
+deliberate; an unmarked one reads as a renderer boundary. Mid grey because it must
+be visible against both bright sky and dark forest floor without being mistaken
+for a light or a shadow.
+
+**The wider point.** A diagnostic that can be mistaken for the fault it is meant
+to diagnose is worse than no diagnostic. This one inverted a whole round of
+investigation, and the marker costs one comparison per fragment.
+
+**Status.** Fixed, runtime-unverified.

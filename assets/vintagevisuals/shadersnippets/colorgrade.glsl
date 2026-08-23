@@ -116,9 +116,35 @@ vec4 vvApplyColorGrade(vec4 color)
     // black the screen out with no way for the player to tell why.
     graded *= (vv_tint.r + vv_tint.g + vv_tint.b) > 0.001 ? vv_tint : vec3(1.0);
 
+    // AN AUTOMATIC LIFT MUST BRING ITS OWN SHOULDER.
+    //
+    // Eye adaptation multiplies the whole frame by up to DarkGain - 1.6 by
+    // default - and the tonemap that would roll the result off defaults to 0.
+    // So the shipped combination guaranteed clipping: anything vanilla output
+    // above 1/1.6 = 0.625 was pushed past white and flattened. Around a low sun
+    // that is a wide area of sky, and it came back from the game as "severe
+    // highlight clipping around the sun".
+    //
+    // The header of this file already says exposure and the shoulder belong
+    // together. They were shipped as independent settings whose defaults
+    // contradict each other.
+    //
+    // The distinction that fixes it without taking the control away: vv_exposure
+    // is the PLAYER'S choice and they may clip with it if they want to.
+    // Adaptation is the RENDERER'S choice - nobody asked for it, it happened
+    // because the scene got dark - so the renderer owes the highlights that pay
+    // for it. The shoulder therefore comes up in proportion to how far the
+    // automatic lift went past 1.
+    //
+    // At adaptation 1 this is exactly vv_tonemapStrength, so a bright scene and
+    // a player who dialled the tonemap to zero still get precisely what they
+    // got before. Zero still means vanilla.
+    float autoLift = clamp(adaptation - 1.0, 0.0, 1.0);
+    float shoulder = max(clamp(vv_tonemapStrength, 0.0, 1.0), autoLift);
+
     // Blend rather than branch: the tonemap can be dialled back to compare
     // against vanilla output without recompiling the shader.
-    graded = mix(graded, vvACESFitted(graded), vv_tonemapStrength);
+    graded = mix(graded, vvACESFitted(graded), shoulder);
 
     graded = (graded - VV_CONTRAST_PIVOT) * vv_contrast + VV_CONTRAST_PIVOT;
 
