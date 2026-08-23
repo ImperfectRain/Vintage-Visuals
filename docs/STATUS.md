@@ -198,7 +198,10 @@ five features below turned out to be that kind of value.
 | `[~]` | 11 Dapple interaction | **L2, foundation** | **ARCHITECTURE GAP.** Dapple is pseudopbr's, cloud shadows are weather's, and a function shared across patch groups couples their rollbacks |
 | `[x]` | Thirteen debug views | **L2** | Built to separate wrong data from wrong normalisation from wrong shader from wrong tuning |
 
-**Nothing in section 6 has been seen in a world.** Every feature defaults to 0,
+**The atmosphere binder crashed the client on first run in a world** and has been
+fixed — `Use()` binds, and a binder that loops over four programs must unbind
+between them. See DECISIONS D31. Nothing else in section 6 has been seen in a
+world. Every feature defaults to 0,
 so an unmodified install is untouched.
 
 ## 7. Water and reflections

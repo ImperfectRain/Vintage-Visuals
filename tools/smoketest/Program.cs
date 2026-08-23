@@ -223,6 +223,8 @@ void main(void) {
 
         Console.WriteLine();
         Console.WriteLine("Documentation still describes the code");
+        ShaderBindingChecks.Run(Repo, Check);
+
         FloraTaxonomyChecks.Run(Repo, Check);
 
         AtmosphereChecks.Run(Repo, Check);

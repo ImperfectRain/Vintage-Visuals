@@ -1050,3 +1050,60 @@ the real violation.
 
 **Status.** Active, L2. Runtime-unverified: the scene is a low sun through a
 forest opening, first clear and then overcast.
+
+---
+
+## D31. Use() binds, so a binder that loops must unbind between programs
+
+**This one shipped and crashed a real client**, on the first attempt to run the
+mod in a world:
+
+```
+System.InvalidOperationException: Already a different shader (chunkopaque) in use!
+  at VintageVisuals.Atmosphere.AtmosphereShaderBinder.Upload(...)
+```
+
+**Cause.** `IShaderProgram.Use()` does not merely select a program for the next
+uniform write - it BINDS it, and throws if a different one is already bound.
+`AtmosphereShaderBinder` uploads to four programs in a loop, bound the first and
+never unbound it, so the second iteration threw.
+
+Every other binder in this mod pairs `Use()` with `Stop()`. This one did not, and
+it is the only one that iterates more than two programs, which is why the mistake
+was survivable in every other file and fatal here.
+
+**Why the existing guard did not help.** `OnRenderFrame` already checks
+`CurrentActiveShader != null` and skips the frame - the documented protection
+against this exact exception. It is the right guard for the case it was written
+for, which is *someone else* holding a program at this render stage. By the
+second loop iteration the offending bind was the binder's own, and the guard had
+already been passed.
+
+**Why nothing caught it.** 794 static checks, 34 shader checks, all 48 prefix
+combinations, and a green mutation suite. The defect is in no shader and in no
+value: it is a lifecycle that only exists at runtime. The repository's own
+CLAUDE.md documents that `Use()` throws, and the code still shipped without the
+pairing, which is the strongest available argument that prose warnings do not
+substitute for checks.
+
+**Chosen.** Unbind inside the per-program helper, and add
+`tools/smoketest/ShaderBindingChecks.cs`, which asserts:
+
+- every `Use()` in `src/` is paired with a `Stop()`, comments stripped first
+  because this repository discusses both at length;
+- the atmosphere binder's per-program helper binds and unbinds **within itself** -
+  a `Stop()` after the loop pairs correctly and still crashes;
+- the unbind follows the bind;
+- no early `return` sits between them, which leaks a bound program by another
+  route.
+
+All three failure shapes were confirmed to fail the checks.
+
+**The wider lesson, recorded because it will recur.** This mod's static suite is
+strong on shader semantics and had nothing at all to say about render-thread
+lifecycles. Anything that binds, allocates, or holds GL state belongs in that
+second category, and the honest conclusion from this crash is that L2 evidence
+was worth less than the volume of it suggested.
+
+**Status.** Fixed. The fix itself is **runtime-unverified** - it needs the world
+that crashed to load and stay up.

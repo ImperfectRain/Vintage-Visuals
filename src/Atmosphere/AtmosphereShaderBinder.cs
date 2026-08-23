@@ -188,6 +188,16 @@ namespace VintageVisuals.Atmosphere
             if (program == null) return false;
             if (!program.HasUniform(AerialUniform)) return false;
 
+            // Use() BINDS the program, and it throws if a different one is
+            // already bound. This binder uploads to four programs in a loop, so
+            // leaving the first one bound made the second call throw
+            // "Already a different shader (chunkopaque) in use!" and took the
+            // client down with it - the guard at the top of OnRenderFrame does
+            // not help, because by then the offending bind is this binder's own.
+            //
+            // Every other binder in this mod pairs Use() with Stop() for exactly
+            // this reason. This one did not, and it is the only one that
+            // iterates more than two programs.
             program.Use();
 
             // Every value uploads every frame, including the zeroes. A skipped
@@ -227,6 +237,10 @@ namespace VintageVisuals.Atmosphere
             program.Uniform(DensityUniform, inputs.BaseDensity);
             program.Uniform(AltitudeUniform, inputs.Altitude);
             program.Uniform(DebugUniform, inputs.DebugView);
+
+            // Unbind before returning, on every path that bound. Without this
+            // the next iteration of the caller's loop throws.
+            program.Stop();
 
             return true;
         }

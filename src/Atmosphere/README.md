@@ -443,6 +443,30 @@ the game's own `BlendedFogDensity`, logging a warning if they disagree. Fog
 density rather than flat fog density, because it is the field with a non-zero
 value in a default world and therefore the one where a wrong fold shows.
 
+## Use() binds, and this binder loops
+
+`IShaderProgram.Use()` **binds** the program and **throws** if a different one is
+already bound — and the client does not recover.
+
+This binder uploads to four programs in a loop. It bound the first and never
+unbound it, so the second iteration threw
+`Already a different shader (chunkopaque) in use!` and took the client down on
+world load.
+
+The guard at the top of `OnRenderFrame` did not help. It exists for the case
+where *someone else* holds a program; by the second iteration the offending bind
+was this binder's own.
+
+Nothing static caught it. 794 checks passed, all 48 prefix combinations compiled,
+every mutation test was green — because the defect is in no shader and no value.
+It is a lifecycle that only exists at runtime, in the one binder that iterates
+more than two programs.
+
+`tools/smoketest/ShaderBindingChecks.cs` now guards it, and guards the two
+near-misses as well: a `Stop()` placed *after* the loop pairs correctly and still
+crashes, and an early `return` between `Use()` and `Stop()` leaks a bound program
+by another route.
+
 ## Failure behaviour
 
 | Failure | Result |
