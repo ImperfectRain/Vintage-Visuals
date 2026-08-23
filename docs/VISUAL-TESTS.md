@@ -131,6 +131,66 @@ The one that needs the worst-case cell, because it exists for exactly that:
 - [ ] a hostile mob approaching in heavy rain is visible before it is in range
 - [ ] no exposure flash on a lightning strike that costs navigation
 
+## Flora scene matrix
+
+Ten scenes, none of them run. Every row below is **unverified** - the
+classification is checked against the game's own shader by `tools/smoketest`,
+which proves the mod and vanilla agree about what a plant is, and proves nothing
+about what it looks like.
+
+Set `PseudoPBR.DebugView` to 44 first in every scene. If the flat colours do not
+follow the plants, nothing further down is worth judging.
+
+| # | Scene | What to look for | Result |
+|---|---|---|---|
+| 1 | Open meadow, noon | Grass tips brighter than roots, not a flat glow. Restrained - midday is the case that reads as neon when the transmission is too strong | – |
+| 1b | Open meadow, sunrise and sunset | Backlit grass visibly transmitting; front-lit grass not | – |
+| 1c | Open meadow, overcast | Transmission nearly gone. There is no directional sun to come through | – |
+| 2 | Dense forest, noon | Canopy shade with sparse bright openings. View 46: red canopy, green undergrowth | – |
+| 2b | Dense forest, sunset | Warm upper canopy, cool shaded interior | – |
+| 2c | Dense forest, rain | Darker, wetter, subdued flecks. Leaves darker AND sharper-highlighted, not merely darker | – |
+| 2d | **Dense forest, after rain** | The flagship. Foliage still wet, ground still wet, sun returning, wet leaves catching sharp highlights | – |
+| 3 | Forest edge | Larger mixed areas rather than a hard line. The transition is where a bad canopy measure shows | – |
+| 4 | Forest floor | **The regression this pass fixed.** Sunflecks must fall on the tall grass and the soil alike. If the grass is evenly lit while the soil is dappled, the understory test is not reaching it | – |
+| 5 | Flower meadow, backlit | Petals transmit; colours stay saturated and do not wash toward yellow-green | – |
+| 6 | Crops, sunlight and wind | Distinct from wild grass. Lighting pattern moves because the crop moves | – |
+| 7 | Night forest, torchlit | **Canopy must not extinguish torchlight.** Leaves near a torch lit; no transmission from a sun that is not there | – |
+| 8 | Snow and frost | Silhouette and material identity preserved, not a blue tint | – |
+| 9 | Distance: near, medium, far | No shimmer or crawl on distant foliage. Atmosphere, not a foliage-specific fog | – |
+| 10 | Modded / resource-pack flora | Renders safely. Anything with a wind mode is classified; anything unrecognised gets the conservative middle | – |
+
+### Fruit
+
+A hanging pear, backlit, at sunset. It must **not** glow green. This is the
+single clearest one-object check that the taxonomy is live: before it, fruit
+carried a wind mode, was called foliage, and was tinted toward yellow-green on
+the way out.
+
+### The three benchmarks
+
+**A - sunrise through forest.** Warm low sun, foliage backlit, canopy blocking
+direct light, real gaps making flecks, floor receiving irregular warm light,
+distant trees losing contrast. Should read as *sunlight interacting with a
+forest*, not as a yellow filter over green blocks.
+
+**B - rain to clearing to sunset.** Rain: dark, wet, subdued. Stops: still wet,
+air clearing. Sun breaks: transmission rises, wet leaves catch sharp highlights,
+canopy gaps brighten, wet floor reflects. Sunset: warm upper foliage, cool
+shaded interior.
+
+**C - torchlit forest at night.** Silhouettes dimensional, nearby leaves lit by
+the torch, canopy not extinguishing block light, no phantom sun transmission.
+
+### Temporal checks, all unverified
+
+Stationary camera; walking; rotating; wind alone; wind plus movement. Watch for
+crawling flecks, shimmer at distance, popping as shadow cascades switch, and
+flashes as the sun crosses the horizon.
+
+The dapple field is derived from vanilla's shadow map and carries no clock or
+noise of its own, so it should move only because the leaves move. Anything that
+moves while the world is still is a defect, not a setting.
+
 ## Reporting a result
 
 In `STATUS.md`, a feature moves to **L4** only with the scenes it was seen in.

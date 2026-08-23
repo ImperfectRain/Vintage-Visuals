@@ -810,3 +810,83 @@ should be made deliberately rather than by an agent who did not know the rule
 existed.
 
 **Status.** Active. Foundation only, recorded in STATUS section 6.
+
+---
+
+## D27. The flora taxonomy is vanilla's wind modes, not a block list
+
+**Context.** Every vegetation feature in this mod - transmission, wetness
+pooling, dapple, shafts - keyed on `vvIsFoliage()`, which returned "does this
+fragment carry any wind mode at all". One bit. A grass blade, an oak leaf, a
+hanging pear and a strand of seaweed were the same material to the renderer.
+
+**What was already there.** Vintage Story classifies its own vegetation per
+vertex. `renderFlags` bits 25-28 carry a wind mode and vanilla's own
+`applyVertexWarping` names each one in its own comments: `Leaves`, `Fruit`,
+`WaterPlant for Seaweed`, `Weak Wind No Bend (for foliage with non bending
+stems)`, `Weak Wind, Inverse Bend (for vines)`. Eleven plant classes, plus two
+liquid modes that are not plants at all.
+
+Bits 29-31 carry wind data, a bend multiplier that for every bending mode is the
+vertex's height up the plant - a free base-to-tip thickness gradient.
+
+**Options considered.**
+
+1. A block-ID list. Rejected: wrong for every mod that adds a plant, and it
+   would need maintaining against every game update.
+2. Inferring from the texture - green dominance, alpha coverage, luminance.
+   Rejected, and it is wrong in both directions: an autumn canopy is not green
+   and a painted green wall is not a plant. A check now fails the build if a
+   colour test appears in the shader.
+3. Reading the classification the game already computed.
+
+**Chosen.** Option 3. It costs one shift and one mask, needs no list, and is
+correct for content this mod has never seen, because a mod whose plant moves in
+the wind has to set the same flag to get the animation.
+
+**What it fixed, in order of visibility.**
+
+**The forest floor.** `vvCanopyDapple` rejected every plant, to keep sunflecks
+off the canopy that casts them. That excluded the whole understory as well, so a
+forest floor's tall grass and flowers stayed evenly lit while the soil between
+them was dappled - and the two read as different places standing in one wood.
+Only the canopy is exempt now.
+
+**Backlit fruit.** A pear carries a wind mode, so it was foliage: it transmitted
+like a leaf and was tinted toward yellow-green on the way out. It is thick,
+opaque and has no chlorophyll to filter with.
+
+**Uniform transmission.** A grass blade is one cell layer; a canopy is many
+leaves deep. They now differ, and the tip-to-root gradient means a backlit meadow
+glows at the tips rather than uniformly.
+
+**Uniform wetness.** How much rain STAYS on a plant is a fact about its shape. A
+cupped flower holds what a grass blade sheds; aquatic flora cannot get wetter.
+
+**Two exclusions worth stating.** Vines are not understory - they hang from the
+occluder, so they are part of it rather than under it. Aquatic flora is not
+either: the water above it already attenuates the sun and vanilla handles that.
+
+**The failure mode.** An unrecognised wind mode - a future vanilla addition, or a
+mod using one this taxonomy has not seen - gets a conservative middle thinness
+and is still treated as a plant. Zero would look like painted cardboard and
+grass-level would glow; the middle is wrong by a little in both directions rather
+than badly in one.
+
+**Why the mode numbers are tested rather than trusted.** They belong to the game.
+A version that renumbered them would silently turn every grass blade into a pear,
+and nothing else in the repository would notice, so `FloraTaxonomyChecks`
+transcribes them from the dumped shader and compares.
+
+**These bits are overloaded.** In `chunkliquid`, `LiquidWaterModeBitMask` is the
+same `0xF << 25` and `LiquidExposedToSkyBitMask` overlaps the wind data. The
+taxonomy is only meaningful in the block programs, which are the only two this
+patch group touches.
+
+**Wind is not implemented and must not be.** Vanilla animates the geometry, the
+shadow map follows the geometry, and the canopy measurement reads the shadow map.
+Sunflecks already move because the leaves move - no clock, no noise field, no
+animation on this mod's side. Adding one would replace an authoritative motion
+with an invented one.
+
+**Status.** Active, L2. `pseudopbr.glsl`, `tools/smoketest/FloraTaxonomyChecks.cs`.

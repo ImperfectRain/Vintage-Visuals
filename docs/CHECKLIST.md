@@ -82,9 +82,23 @@ from the source texture.
 | Entity PBR | x | x | x | x | x | – | – | x | x |
 | Particle PBR | x | x | x | x | x | – | – | – | x |
 | Foliage transmission | x | x | x | x | x | – | – | x | x |
+| Flora taxonomy (11 classes, vanilla wind modes) | x | x | x | x | – | x | – | – | x |
+| Per-plant transmission and pooling | x | x | x | x | – | – | – | – | x |
+| Understory receives canopy dapple | x | x | x | x | – | – | – | – | x |
 | Block-light specular | x | x | x | x | x | – | – | x | x |
 | Sun dapple | x | x | x | x | x | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
+
+---
+
+Flora edge cases exercised, statically: the eleven wind modes checked against the
+game's own shader constants; the two liquid modes excluded; an unrecognised mode
+landing on a conservative middle rather than zero or maximum; canopy and
+understory proven disjoint; fruit proven the least translucent tissue.
+
+**No flora scene has been rendered.** `docs/VISUAL-TESTS.md` carries the matrix
+and every row in it is unmarked. The single clearest one-object check is a
+backlit pear at sunset: it must not glow green.
 
 ---
 

@@ -111,7 +111,9 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | | Feature | Level | Notes |
 |---|---|---|---|
 | `[x]` | Surface relief in `chunkopaque.fsh` | L4 | |
-| `[~]` | **Foliage translucency** | L2 | light through leaves, grass and crops; foliage identified from vanilla's own wind-mode bits |
+| `[~]` | **Foliage translucency** | L2 | light through leaves, grass and crops, per plant. See the flora taxonomy below |
+| `[x]` | **Flora taxonomy from vanilla's wind modes** | L2 | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. No block IDs, correct for modded flora for free |
+| `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
 | `[~]` | Surface relief in `chunktopsoil.fsh` (forest floor) | L2 | anchors confirmed against the real shader |
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |

@@ -782,13 +782,16 @@ foliage with the same opaque diffuse it uses for stone - its own wind
 deformation moves leaves without touching how they are shaded - so this is a gap
 rather than a re-tint.
 
-Which fragments count as foliage comes from **vanilla's own answer**: the
-wind-mode bits it already sets on anything that bends, which in practice is
-exactly the set of things thin enough to transmit light. `chunkopaque.vsh` uses
-the same test for its own `isLeaves`, so there is no second guess to disagree
-with the first.
+Which fragments count as foliage - and **which plant they are** - comes from
+vanilla's own answer. See "The flora taxonomy" below.
 
-Two details carry it:
+Three details carry it:
+
+- **Thinness per plant.** A grass blade is one cell layer and a canopy is many
+  leaves deep, so they transmit differently. Multiplied by the tip-to-root
+  gradient vanilla's wind data provides, so a grass tip glows and its root does
+  not - which is what a backlit meadow actually looks like and what a flat
+  per-block value can never produce.
 
 - **Distortion in the bent light direction.** Without it the effect is a
   mirror-sharp hotspot that reads as a bug; with it, the soft wrap real foliage
@@ -796,7 +799,83 @@ Two details carry it:
 - **A yellow-green tint on the transmitted colour.** Light that came through a
   leaf was filtered by chlorophyll on the way out and leaves warmer and more
   saturated than light reflected off the same leaf. Skipping this is what makes
-  cheap foliage translucency read as grey haze.
+  cheap foliage translucency read as grey haze. Withheld from fruit, which is
+  the one member of the taxonomy with no chlorophyll to filter with - a backlit
+  pear used to read as an unripe leaf.
+
+## The flora taxonomy
+
+**Vintage Story classifies its own vegetation, per vertex, and hands the answer
+to every shading program.** `renderFlags` bits 25-28 carry a wind mode, and
+vanilla's own `applyVertexWarping` names each one.
+
+| Mode | Vanilla's own comment | Class | Thinness |
+|---|---|---|---|
+| 1 | Weak Wind | herbs, flowers | 0.95 |
+| 2 | Normal wind | grass, tall grass | 1.00 |
+| 3 | Leaves | tree canopy | 0.65 |
+| 4 | Bend (for small stems) | crops | 0.85 |
+| 5 | Tall Bend (thick/tall stems) | reeds, saplings | 0.80 |
+| 6 | Water | **not flora** | - |
+| 7 | Extra Weak Wind | small stiff flora | 0.55 |
+| 8 | Fruit | fruit | 0.08 |
+| 9 | Weak Wind No Bend | bushes | 0.60 |
+| 10 | Weak Wind, Inverse Bend (for vines) | vines | 0.70 |
+| 11 | WaterPlant | seaweed, aquatic | 0.85 |
+| 12 | LiquidWarp | **not flora** | - |
+| 13 | Weak Wind + reduced AlphaTest | thin cutout flora | 0.95 |
+
+No block-ID list, no texture heuristic, no colour test. It is correct for modded
+content for free, because a mod whose plant moves in the wind has to set the same
+flag. An unrecognised mode gets a conservative 0.55 and is still treated as a
+plant - wrong by a little in both directions rather than badly in one.
+
+**Bits 29-31 are wind data**, which vanilla uses as a bend multiplier. For every
+bending mode it is the vertex's height up the plant, so it doubles as a free
+base-to-tip thickness gradient.
+
+**These bits are overloaded.** In `chunkliquid`, `LiquidWaterModeBitMask` is the
+same `0xF << 25` and `LiquidExposedToSkyBitMask` overlaps the wind data. The
+taxonomy is only meaningful in the block programs.
+
+### What it changed
+
+This used to be **one bit**: `vvIsFoliage()` returned "any wind mode at all", so
+a grass blade, an oak leaf, a hanging pear and a strand of seaweed were the same
+material.
+
+| Was | Now |
+|---|---|
+| Everything transmitted identically | Per-plant thinness, times height up the plant |
+| A backlit pear glowed green | Fruit transmits faintly and keeps its own colour |
+| Everything pooled rain identically | A cupped flower holds what a grass blade sheds; aquatic flora cannot get wetter |
+| **The whole understory was excluded from dapple** | Only the canopy is exempt |
+| Any plant could start a light shaft | Only the canopy, which is the thing with gaps in it |
+
+The fourth is the one that shows most. `vvCanopyDapple` rejected every plant, to
+keep sunflecks off the canopy that casts them - and that excluded the understory
+too, so a forest floor's tall grass and flowers stayed evenly lit while the soil
+between them was dappled, and the two read as different places.
+
+Vines stay out of the understory because they hang from the occluder rather than
+under it. Aquatic flora stays out because the water above it already attenuates
+the sun and vanilla handles that.
+
+### Debug views
+
+| | Draws |
+|---|---|
+| 44 | The class, one flat hue per plant. Black is "not a plant" |
+| 45 | Red thinness, green height up the plant. Flat green 0.5 means the wind-data height is not reaching the shader |
+| 46 | Green understory (takes dapple), red canopy (must not), blue neither |
+
+### Wind, which this does not implement
+
+Vanilla animates the geometry; the shadow map follows the geometry; the canopy
+measurement reads the shadow map. So **sunflecks move because the leaves move**,
+with no animation, no clock and no noise field on this mod's side. That is the
+whole wind story, and adding one would replace an authoritative motion with an
+invented one.
 
 Shadowed leaves do not glow - there is no sun behind them to come through - and
 wetness is deliberately absent, because a wet leaf transmits no differently, it
