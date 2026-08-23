@@ -1,0 +1,22 @@
+# One row per defect this suite claims to prevent. Tab separated:
+#
+#   label <TAB> file <TAB> literal to replace <TAB> replacement <TAB> check that must fail
+#
+# Every row that names a commit is a defect that SHIPPED and was found by
+# looking at the game rather than by running this suite. The row exists to prove
+# the suite would catch it now. A row whose check does not fail is a check that
+# is decorative, and the harness reports that as a failure of the harness.
+#
+# Literals are matched exactly and must be unique in the file.
+a67886b sunset suppression	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	return smoothstep(0.0, VV_SUN_PRESENCE_DAWN, clamp(vv_sceneDayLight, 0.0, 1.0));	return clamp(vv_sceneDayLight, 0.0, 1.0);	I1
+140d3fb inverted transmission	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	vec3 through = normalize(l + n * distortion);	vec3 through = normalize(-l + n * distortion);	I2
+bf97881 dapple cancelled by its own gate	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos));	float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos)) * shadowBrightness;	I3
+canopy dims torchlight	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float canopy = clamp(shaded, 0.0, 0.85) * (1.0 - local);	float canopy = clamp(shaded, 0.0, 0.85);	I4
+green shade grows into a light loss	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	const float VV_DAPPLE_GREEN = 0.055;	const float VV_DAPPLE_GREEN = 0.5;	I4
+84f7926 metal loses diffuse with no payback	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	result *= mix(1.0, 1.0 - metalness * metalPayback, vv_pbrSpecularStrength);	result *= mix(1.0, 1.0 - metalness, vv_pbrSpecularStrength);	I5
+8c0d4ce automatic lift with no shoulder	assets/vintagevisuals/shadersnippets/colorgrade.glsl	float shoulder = max(clamp(vv_tonemapStrength, 0.0, 1.0), autoLift);	float shoulder = clamp(vv_tonemapStrength, 0.0, 1.0);	I6
+a shaft strength of zero stops being off	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	if (vv_pbrShafts < 0.001) return 0.0;	if (vv_pbrShafts < -1.0) return 0.0;	I7
+fog applied twice in one chain	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness)	result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness) * energy * specularOcclusion * energy	I8
+dc54d25 reflections dispose themselves on reload	src/Reflections/ReflectionsSubsystem.cs	_capi.Event.ReloadShader += OnShadersReloaded;	_capi.Event.RegisterCallback(_ => { }, 0);	I9
+two debug views answer the same question	assets/vintagevisuals/shadersnippets/atmosphere.glsl	if (mode == 6) return vec4(vec3(vvAtmosHeightFactor()), pixel.a);	if (mode == 6) return vec4(vec3(t), pixel.a);	I10
+5a796d6 binder never unbinds	src/Atmosphere/AtmosphereShaderBinder.cs	program.Stop();	// program.Stop();	Use()

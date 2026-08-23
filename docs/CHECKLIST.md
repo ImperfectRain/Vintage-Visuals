@@ -27,6 +27,12 @@ Column meanings:
 | Vis | visually validated against a named scene |
 | Doc | STATUS, ARCHITECTURE and this file agree with the code |
 
+**`Tst` is the weakest column here and this file used to overstate it.** Seven
+defects have been found in this mod by looking at the game and none by the
+checks, which were green throughout. A tick under `Tst` therefore says only that
+something beyond existence is checked. Whether the check would FAIL if the thing
+broke is a separate question with its own table, at the end of this file.
+
 ---
 
 ## Core — `src/Common/`, `src/Common/Patching/`, `src/Common/Scene/`
@@ -242,3 +248,42 @@ and that blocks further grading work.
 the documentation is an argument from operation count, not a measurement. That is
 the single largest gap in the evidence, and it is why the Perf column is empty
 everywhere.
+
+
+---
+
+## Mutation coverage
+
+**A check is evidence only when it has been seen to fail.** Each row below is a
+defect reintroduced by exact substitution in `tools/mutate/mutations.tsv`; the
+harness runs `tools/smoketest` against the broken tree and requires the named
+check to fail. Rows naming a commit are defects that SHIPPED and were found by
+looking at the game rather than by the suite.
+
+Run it on a clean tree:
+
+```sh
+VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
+```
+
+| Defect | Found by | Guarded by | Caught |
+|---|---|---|---|
+| Binder never unbinds between programs (`5a796d6`) | a client crash log | `ShaderBindingChecks` | x |
+| Reflections dispose themselves on reload (`dc54d25`) | reading the log after weeks | I9 | x |
+| Sunset suppression (`a67886b`) | screenshots at golden hour | I1 | x |
+| Metal loses diffuse with no payback (`84f7926`) | "that dirt patch was a gold block" | I5 | x |
+| Foliage transmission inverted (`140d3fb`) | debug view 13, photographed twice | I2 | x |
+| Dapple cancelled by its own gate (`bf97881`) | "no visible sunspots" | I3 | x |
+| Automatic lift with no shoulder (`8c0d4ce`) | clipping around the sun | I6 | x |
+| Canopy dims torchlight | class already bitten once | I4 | x |
+| Green shade grows into a light loss | found BY I4 on its first run | I4 | x |
+| A strength of zero stops meaning off | `CLAUDE.md`'s oldest rule | I7 | x |
+| The same factor applied twice in one chain | atmosphere contract rule 7 | I8 | x |
+| Two debug views answering one question | "7-11 all show the same image" | I10 | x |
+
+**12 mutations, 12 caught, 0 missed** at `HEAD`.
+
+**What this table does not say.** Every invariant above is arithmetic over source.
+None of them can tell you an effect is visible, and all of them pass on a mod
+whose every strength defaults to zero. `Vis` remains the only column that means
+someone looked.

@@ -1394,3 +1394,107 @@ to diagnose is worse than no diagnostic. This one inverted a whole round of
 investigation, and the marker costs one comparison per fragment.
 
 **Status.** Fixed, runtime-unverified.
+
+---
+
+## D38. Checks that ask about one thing cannot find defects that live between two
+
+**The count that forced this.** Seven defects have been found in this mod by
+looking at the game: the binder crash, reflections disabling themselves every
+session, sunset suppression, the dark gold block, inverted foliage transmission,
+canopy dapple cancelling itself, and highlight clipping around the sun. The
+static suite found **none** of them, and it was green - 837 checks - the whole
+time they shipped.
+
+That is not a gap in coverage. It is a gap in KIND.
+
+Every check in the suite before this one asks a question about a single thing: is
+this uniform uploaded, does this anchor still match, is this constant quoted
+correctly, does this file exist, is this text ASCII. Every one of the seven
+defects was a question about two things multiplied together:
+
+| Defect | Line A | Line B |
+|---|---|---|
+| Sunset suppression | a gate meaning "not at night" | implemented as a linear dimmer |
+| Dark gold | metalness removes the diffuse | the ambient slider funds a fifth of it back |
+| Inverted transmission | a bent ray built from `-l` | a viewer dot product that then reduces to `dot(v, l)` |
+| Dapple cancelled | evidence requires the fragment SHADOWED | application multiplied by it being LIT |
+| Highlight clipping | adaptation lifts by up to 1.6x | the tonemap that would roll it off defaults to 0 |
+
+Each line, read alone, is correct - which is exactly what made them survive
+review. The product is where the defect is, and no amount of reading either line
+finds it.
+
+**Chosen.** A check category that runs ARITHMETIC on compositions:
+`tools/smoketest/SceneInvariantChecks.cs`, ten invariants I1-I10, each naming the
+defect it exists to prevent and the commit that fixed it. An invariant with no
+defect behind it is not added - it would be one more green line making the suite
+look like evidence it is not.
+
+**The expressions are pulled out of the shipped `.glsl` at test time**, by
+`GlslEval`, rather than retyped into C#. A transcription is a second
+implementation of the thing under test, and two implementations disagreeing is
+the entire bug class here. Only the leaf calls that read textures and shadow maps
+are stubbed; every operator, constant and factor in between is literally the one
+that ships, so a factor someone adds later is in the check whether or not anyone
+updates the check.
+
+**What it cannot do**, stated because a check that overclaims is worse than none:
+it cannot say an effect is VISIBLE. Every invariant here passes on a mod with
+every strength defaulted to zero. Visibility stays a runtime question.
+
+**Rejected: porting the shading model to C# and comparing.** That is
+`PbrParityChecks`, it is the right tool for an algorithm with a reference
+implementation, and it is the wrong one here - there is no reference for "the
+canopy term composed with the local-light exemption", only the shipped source.
+
+**Status.** Ten invariants, all passing, all mutation-proven. Found one live
+disagreement on its first run: see D39.
+
+---
+
+## D39. A check is evidence only when it has been seen to fail
+
+**The problem with the number 837.** A suite that has been green throughout the
+period in which seven defects shipped has demonstrated that it passes. It has
+demonstrated nothing about whether it would fail. Those are different claims and
+only the second is worth anything, and the count of checks - which is what gets
+reported - measures the first.
+
+**Chosen.** `tools/mutate/mutation-test.sh` and `tools/mutate/mutations.tsv`.
+Each row reintroduces a real historical defect by exact literal substitution,
+runs `tools/smoketest`, and requires a failure whose name matches the invariant
+that claims to guard it. The mutation is then reverted with `git checkout --`, so
+the harness refuses to run on a dirty tree.
+
+Twelve rows today - the seven runtime defects plus five that are the next
+instance of a class that has already bitten once - and twelve caught.
+
+**What it changes about how this project reports itself.** "N checks pass" is
+retired as a statement of confidence. The statement that means something is "this
+defect, reintroduced, is caught", and it is the one the audit and the checklist
+now carry. `docs/CHECKLIST.md` grew a mutation-coverage table for exactly this:
+a row there names a defect, the mutation that reintroduces it, and the check that
+catches it.
+
+**Rejected: extending the L0-L4 ladder to L6** as the runtime-evidence brief
+proposed. The complaint behind it is real and precise - L2 with 837 green checks
+and L2 with nothing look identical - but the fix does not want a new level. A
+level says how far something has been PROVEN to work, and mutation coverage says
+how well its failure is GUARDED; they are orthogonal, and folding one into the
+other would renumber 1300 lines of STATUS to say something a column says better.
+Adding a third numbering scheme to a project whose stated rule is "do not add a
+third account of a disagreement" would have been the wrong shape.
+
+**Found on the first run, and this is the point of the exercise.** I4's
+arithmetic contradicted a comment in `pseudopbr.glsl`: the green shade tint
+claimed to "move colour between channels rather than adding or removing any",
+and its weights (-1.0, +0.6, -0.7) sum to -1.1 per unit of tint. It removes a
+little under 2% of luminance at the capped canopy. The comment was corrected
+rather than the weights rebalanced - 2% is far below visible, no forest has been
+looked at since the dapple gate was fixed, and retuning the colour of unobserved
+shade is guessing - and the invariant now bounds the cost so it cannot grow into
+a real light loss outside `VisualBudget` without a check failing.
+
+**Status.** 12 mutations, 12 caught, 0 missed. Run it with
+`VINTAGE_STORY=... bash tools/mutate/mutation-test.sh` on a clean tree.

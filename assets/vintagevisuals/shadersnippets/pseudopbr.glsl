@@ -2753,8 +2753,17 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
         // under trees.
         //
         // On the shaded fraction only, because a fleck is sunlight that missed
-        // every leaf on the way down and has no business being tinted. It moves
-        // colour between channels rather than adding or removing any.
+        // every leaf on the way down and has no business being tinted.
+        //
+        // NOT luminance-neutral, and this comment used to claim it was. The
+        // channel weights below are -1.0, +0.6 and -0.7, which sum to -1.1 per
+        // unit of tint rather than to zero, so the tint takes a little light as
+        // well as moving colour. At the capped canopy that is under 2% - far
+        // below anything visible, and deliberately left alone rather than
+        // rebalanced, because no forest has been looked at since the dapple gate
+        // was fixed and retuning the colour of unobserved shade is guessing.
+        // An interaction invariant bounds it so it cannot grow into a real light
+        // loss outside VisualBudget without a check failing.
         // On the canopy-attenuated fraction, not the raw one, for the same
         // reason: torchlight did not come through a leaf, so it did not pick up
         // a leaf's colour on the way.

@@ -30,11 +30,19 @@ Copy or symlink `bin/Debug/Mods/vintagevisuals/` into your VintagestoryData
 ```sh
 dotnet run --project tools/smoketest     # patch engine checks, no game needed
 dotnet run --project tools/verifypatches # patches vs the game's OWN shaders
+bash tools/mutate/mutation-test.sh       # breaks the mod on purpose; the suite must notice
 ```
 
 That drives the compiled patch engine against the real patch YAML: parsing,
 anchor matching, and group rollback. It cannot tell you whether the anchors
 match *your* game's shaders, or whether anything renders — see "Verification".
+
+The mutation harness is the one that says whether any of it is evidence. Seven
+defects have shipped here and every one was found by looking at the game, while
+the suite stayed green — so "N checks pass" measures nothing. Each row of
+`tools/mutate/mutations.tsv` reintroduces a real defect and requires the guarding
+check to FAIL. It reverts with `git checkout --`, so it refuses a dirty tree.
+**Add a mutation whenever you add a check.**
 
 The offline PBR tool is a separate Python program, not part of the build:
 
@@ -188,6 +196,15 @@ hierarchy, the budgets, and what this project deliberately does not build.
   ONCE per tick in `EnvironmentTracker` — never per subsystem, because they tick
   at different rates and whoever ran first would exhaust the budget. Use the
   granted value, not the config value.
+- **A check that asks about one line cannot find a defect that lives between
+  two.** Every defect this mod has shipped was a composition: a gate implemented
+  as a dimmer, an effect multiplied by the complement of its own trigger, a
+  diffuse term removed with nothing paying it back, an exposure lift with no
+  shoulder under it. Each line was defensible alone, which is why review passed
+  them. New shading logic gets an INTERACTION invariant in
+  `tools/smoketest/SceneInvariantChecks.cs` - arithmetic over the composition,
+  evaluated from the shipped GLSL by `GlslEval` rather than retyped - and a
+  mutation in `tools/mutate/mutations.tsv` proving it fails.
 - **Debug views are numbered per shader, in that shader's own terms.** One
   global list stops making sense as soon as two subsystems want the same number,
   and the crowding was already visible at 13.
@@ -456,6 +473,7 @@ A feature is not complete until every line is true:
 [ ] Build succeeds
 [ ] tools/smoketest passes, including the documentation checks
 [ ] tools/verifypatches passes for anything touching GLSL
+[ ] tools/mutate passes, and any new check has a mutation proving it fails
 [ ] Existing tests still pass
 [ ] Runtime behaviour verified, or explicitly recorded as not verified
 [ ] Edge cases checked, or listed as unchecked

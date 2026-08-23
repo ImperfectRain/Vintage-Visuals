@@ -229,6 +229,8 @@ void main(void) {
 
         AtmosphereChecks.Run(Repo, Check);
 
+        SceneInvariantChecks.Run(Repo, Check);
+
         DocumentationChecks.Run(Repo, Check);
 
         Console.WriteLine();
