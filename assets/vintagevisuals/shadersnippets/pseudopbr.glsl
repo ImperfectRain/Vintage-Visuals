@@ -2167,7 +2167,23 @@ float vvTranslucency(vec3 n, vec3 l, vec3 v)
     const float distortion = 0.35;
     const float power = 3.0;
 
-    vec3 through = normalize(-l + n * distortion);
+    // THE SIGN HERE WAS INVERTED AND IT INVERTED THE WHOLE EFFECT.
+    //
+    // l points TO the sun and v points TO the viewer, so a backlit leaf - the
+    // only case this exists for - has l roughly opposite to v. Building the
+    // bent ray from -l made dot(v, -through) reduce to dot(v, l), which is -1
+    // exactly then, clamped away to nothing. And +1 when the sun is BEHIND the
+    // camera, where a leaf is front-lit and has nothing to transmit.
+    //
+    // So the effect fired on front-lit foliage, where it is meaningless, and
+    // switched off on backlit foliage, where it is the entire point. Found by
+    // photographing debug view 13 twice from one spot: facing away from a low
+    // sun the canopy glowed, facing into it the canopy went black.
+    //
+    // The correct form bends the light direction ITSELF through the surface -
+    // l + n * distortion - and then asks how directly the viewer is looking
+    // back down that ray.
+    vec3 through = normalize(l + n * distortion);
 
     return pow(max(0.0, dot(v, -through)), power);
 }

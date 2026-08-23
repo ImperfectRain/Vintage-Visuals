@@ -45,6 +45,7 @@ namespace VintageVisuals.SmokeTest
             CheckOpticalRoleIsNotTheTaxonomy(check);
             CheckDappleAsksTheOpticalQuestion(check);
             CheckTransmissionNeedsABeam(check);
+            CheckTransmissionPeaksWhenBacklit(check);
             CheckShaftsStartAtTheCanopyOnly(check);
             CheckPoolingIsPerPlant(check);
             CheckUnknownFloraIsSafe(check);
@@ -398,6 +399,86 @@ namespace VintageVisuals.SmokeTest
             check("transmission is not scaled by wetness",
                   !body.Contains("wetness"),
                   "a wet leaf transmits no differently, it only reflects more");
+        }
+
+        /// <summary>
+        /// Transmission must PEAK when the leaf is backlit.
+        ///
+        /// This is the entire definition of the effect, and it shipped
+        /// inverted. The bent ray was built from -l instead of l, which made
+        /// the response reduce to dot(v, l): minus one exactly when the sun is
+        /// behind the leaf - clamped away to nothing - and plus one when the sun
+        /// is behind the CAMERA, where a leaf is front-lit and has nothing to
+        /// transmit.
+        ///
+        /// So the effect fired where it is meaningless and switched off where it
+        /// is the whole point, and a sunset forest looked flat.
+        ///
+        /// Nothing static caught it. It is a sign, in a formula that is
+        /// dimensionally fine either way, and every check asked whether the
+        /// effect existed rather than which direction it pointed. It was found
+        /// by photographing one debug view twice from one spot.
+        ///
+        /// So this drives the actual arithmetic rather than reading the source:
+        /// the ORDERING backlit &gt; side-lit &gt; front-lit is the invariant,
+        /// and no retuning of distortion or power may reverse it.
+        /// </summary>
+        private static void CheckTransmissionPeaksWhenBacklit(Action<string, bool, string> check)
+        {
+            // A leaf facing the camera. l points to the sun, v to the viewer.
+            var n = new[] { 0f, 0f, 1f };
+            var v = new[] { 0f, 0f, 1f };
+
+            float backlit = Translucency(n, new[] { 0f, 0f, -1f }, v);   // sun behind the leaf
+            float side    = Translucency(n, new[] { 1f, 0f, 0f },  v);   // sun to one side
+            float front   = Translucency(n, new[] { 0f, 0f, 1f },  v);   // sun behind the camera
+
+            check("a backlit leaf transmits",
+                  backlit > 0.01f,
+                  "backlit reads " + backlit.ToString("0.####") + " - the effect exists for this case alone");
+
+            check("backlighting beats side lighting",
+                  backlit > side,
+                  "backlit " + backlit.ToString("0.####") + " vs side " + side.ToString("0.####"));
+
+            check("side lighting beats front lighting",
+                  side >= front,
+                  "side " + side.ToString("0.####") + " vs front " + front.ToString("0.####"));
+
+            check("a front-lit leaf transmits nothing",
+                  front < 0.01f,
+                  "front reads " + front.ToString("0.####") + " - there is nothing behind it to come through");
+
+            // The specific inversion, named, so reintroducing it fails loudly
+            // rather than as a subtle ordering change.
+            check("the bent ray is built from the light direction, not its negation",
+                  _pbr.Contains("normalize(l + n * distortion)"),
+                  "building it from -l inverts the effect");
+        }
+
+        /// <summary>
+        /// vvTranslucency, transcribed. Deliberately a transcription rather than
+        /// a call: the point is to check what the GLSL computes, so it has to be
+        /// written out independently and compared against the shader's source by
+        /// the last check above.
+        /// </summary>
+        private static float Translucency(float[] n, float[] l, float[] v)
+        {
+            const float distortion = 0.35f;
+            const float power = 3f;
+
+            var through = new float[3];
+            for (int i = 0; i < 3; i++) through[i] = l[i] + n[i] * distortion;
+
+            float len = (float)Math.Sqrt(through[0] * through[0] +
+                                         through[1] * through[1] +
+                                         through[2] * through[2]);
+            if (len < 1e-6f) return 0f;
+
+            float dot = 0f;
+            for (int i = 0; i < 3; i++) dot += v[i] * (-through[i] / len);
+
+            return (float)Math.Pow(Math.Max(0f, dot), power);
         }
 
         /// <summary>

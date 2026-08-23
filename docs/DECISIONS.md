@@ -1205,3 +1205,52 @@ remains unresolved and runtime-bound.
 
 **Status.** Fixed, runtime-unverified. The scene is a gold block in daylight with
 sky reflection below 1.
+
+---
+
+## D34. Foliage transmission was inverted, and only a screenshot could tell
+
+**The single largest visual defect found so far**, and the reason a sunset forest
+looked flat.
+
+`vvTranslucency` built the bent light ray from **`-l`** instead of `l`:
+
+```glsl
+vec3 through = normalize(-l + n * distortion);   // wrong
+return pow(max(0.0, dot(v, -through)), power);
+```
+
+`l` points **to** the sun and `v` points **to** the viewer, so `dot(v, -through)`
+reduces to roughly `dot(v, l)`. That is:
+
+| Case | `dot(v, l)` | Result | Should be |
+|---|---|---|---|
+| Backlit - sun behind the leaf | -1 | clamped to **0** | **maximum** |
+| Front-lit - sun behind the camera | +1 | **maximum** | ~zero |
+
+So the effect fired on front-lit foliage, where a leaf has nothing to transmit,
+and switched itself off on backlit foliage, which is the only case it exists for.
+
+**How it was found.** Debug view 13, photographed twice from one position at a low
+sun: facing **away** the canopy glowed; facing **into** the sun the canopy went
+black. Two screenshots, six blocks apart, and the diagnosis was unambiguous.
+
+**Why nothing static caught it.** It is a sign, in a formula that is
+dimensionally correct either way. Every existing check asked whether transmission
+*existed*, whether it stopped at night, whether it collapsed under overcast,
+whether it varied per plant - all true, all of it, with the effect pointing the
+wrong way. None asked which direction it pointed, because from inside the code
+there was nothing to suggest it pointed anywhere in particular.
+
+**The correct form** bends the light direction itself through the surface,
+`l + n * distortion`, and asks how directly the viewer is looking back down that
+ray - the standard fast-subsurface approximation.
+
+**The check now drives the arithmetic**, transcribed independently, and pins the
+ORDERING backlit > side-lit > front-lit. That ordering is the definition of the
+effect and no retuning of distortion or power may reverse it. A separate check
+pins the shader's own sign, so the two together catch both a reintroduced
+inversion and a drift in the transcription.
+
+**Status.** Fixed, runtime-unverified. The scene that proves it is the one that
+exposed it: debug view 13, low sun, facing into it.

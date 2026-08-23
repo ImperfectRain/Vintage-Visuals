@@ -111,7 +111,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | | Feature | Level | Notes |
 |---|---|---|---|
 | `[x]` | Surface relief in `chunkopaque.fsh` | L4 | |
-| `[~]` | **Foliage translucency** | L2 | light through leaves, grass and crops, per plant. See the flora taxonomy below |
+| `[~]` | **Foliage translucency** | L2 | **Shipped INVERTED until found in game** - fired on front-lit leaves, off on backlit. See DECISIONS D34 |
 | `[x]` | **Flora taxonomy from vanilla's wind modes** | **L4** | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. **Seen in a world**: debug view 44 shows leaves, grass, herbs and reeds as distinct flat colours, with soil and stone black. First runtime-validated flora feature |
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
 | `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |
