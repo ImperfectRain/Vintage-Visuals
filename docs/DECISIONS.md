@@ -1791,3 +1791,65 @@ called strength.
 
 **Status.** STRUCTURALLY CORRECT - VISUALLY UNVALIDATED, unchanged. I13 added,
 three mutations, 24 of 24 caught.
+
+---
+
+## D44. The atmosphere was not disappointing, it was switched off
+
+**Reported from the game**: "still a little disappointed in the vegetation and
+atmosphere effects."
+
+**Atmosphere shipped `Enabled = true` with all eleven of its effects at 0.0.**
+
+It registered two renderers, held a slot in the game's ambient stack, uploaded
+twenty-two uniforms, gated a patch group, and changed nothing whatsoever. The log
+reported the patch group applied, which was true. The player saw no atmosphere,
+which was also true. Nothing anywhere connected the two, so the conclusion drawn
+from the screen was that the atmospheric work was weak - when in fact none of it
+had ever run.
+
+`PseudoPBR.Enabled` was `false` for a documented and good reason: it is the only
+subsystem that patches the shader drawing the world, its two failures were a
+sepia screen and missing terrain, and the comment said "flip it once someone has
+looked". Someone has now looked, across several sessions, with debug views
+photographed and a gold block identified through it. The condition the default
+named has been met.
+
+**Chosen.** Ten of the eleven atmospheric effects get non-zero defaults, and
+`PseudoPBR.Enabled` becomes true. `CloudEdgeScattering` and `DappleInteraction`
+stay at zero because both are documented FOUNDATION ONLY - shipping them on would
+be shipping something that does not do what its name says.
+
+**The numbers are chosen, not measured**, and this record exists partly so that
+is not forgotten. They are conservative, they sit inside the ranges each feature
+documents for itself, and the first job of the next session is to find the ones
+that are wrong. What they are not is arbitrary in the way zero was arbitrary: any
+value produces evidence and zero produces none.
+
+**Deliberately unchanged: the three vegetation strengths.** `SunDapple` 0.35,
+`FoliageTranslucency` 0.7 and `SunShafts` 0.45 were all tuned against
+implementations that were later found broken - the dapple cancelled itself
+against its own gate, transmission fired only when front-lit, and all three were
+suppressed at sunset by a gate implemented as a dimmer. So the numbers carry no
+information about the fixed code, and there is a real argument for raising them.
+
+They are staying put anyway, because the fixes have never been seen. Change the
+number and the fix at once and the next screenshot cannot say which one it is
+showing. Atmosphere had nothing to confound - it was at zero. Vegetation has four
+unmeasured fixes in flight, and they get measured first.
+
+**The guard, which matters more than the numbers.** I14 requires that a subsystem
+enabled by default is not inert by default, read from the subsystem's own
+activity predicate rather than from a heuristic. The obvious heuristic - "at least
+one float is non-zero" - passes on the exact configuration that shipped:
+`WeatherTint` was 0.6 and `GodrayQuality` was 1.0, both non-zero, neither
+contributing anything alone. A tint for an extinction of zero and a quality for a
+feature of zero. `AtmosphereConfig.WantsShader` already answered the question
+correctly and nothing was reading it.
+
+`AtmosphereSubsystem` also says so at runtime now, at warning level, naming it as
+a configuration state rather than a failure - because a player who reads
+"enabled" and sees nothing deserves the line that connects them.
+
+**Status.** L2. The defaults have not been seen in a game. 935 checks, 25 of 25
+mutations caught.

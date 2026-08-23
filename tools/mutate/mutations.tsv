@@ -32,3 +32,4 @@ the march stops sampling at the named stride	assets/vintagevisuals/shadersnippet
 the depth report compares against a stale tolerance	src/Reflections/SceneCaptureRenderer.cs	private const float ReflectionThicknessBlocks = 0.5f;	private const float ReflectionThicknessBlocks = 0.9f;	tolerance that ships
 the capture's depth is assumed finer than one byte	src/Reflections/SceneCaptureRenderer.cs	private const float DepthChannelLevels = 255f;	private const float DepthChannelLevels = 65535f;	one byte
 the depth-precision view never reports coarse data	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	        float coarse = clamp(quantum / max(1e-5, VV_SSR_THICKNESS) - 1.0, 0.0, 1.0);	        float coarse = 0.0;	finer than its data
+a subsystem is enabled by default and does nothing	src/Common/VintageVisualsConfig.cs	                return Enabled &&	                return false &&	does something

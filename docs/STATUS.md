@@ -58,7 +58,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | ASCII guard on shipped GLSL | L4 | load-time refusal + smoke scan |
 | `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
 | `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
-| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 24 mutations, 24 caught, 0 missed |
+| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 25 mutations, 25 caught, 0 missed |
+| `[~]` | **Shipped defaults turn the mod on** | L2 | ten atmospheric effects and PseudoPBR now default on; the numbers are chosen, not measured. See [D44](DECISIONS.md) |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |
 | `[-]` | Hooking every `LoadShader` overload | — | shipped as a total regression and reverted; [D41](DECISIONS.md) |

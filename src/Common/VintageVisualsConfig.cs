@@ -250,7 +250,7 @@ namespace VintageVisuals.Common
         /// strength here is zero the group is skipped and vanilla's own
         /// applyFog is what compiles.
         /// </summary>
-        public float AerialPerspective { get; set; } = 0.0f;
+        public float AerialPerspective { get; set; } = 0.5f;
 
         /// <summary>
         /// The horizon becoming more atmospheric than the ground under your
@@ -260,7 +260,7 @@ namespace VintageVisuals.Common
         /// hardcoded sky palette here. See DECISIONS D21 for why the game's
         /// sky texture cannot supply this to every shading program.
         /// </summary>
-        public float HorizonScattering { get; set; } = 0.0f;
+        public float HorizonScattering { get; set; } = 0.4f;
 
         /// <summary>
         /// Broad sky scattering plus forward scattering toward the sun.
@@ -269,7 +269,7 @@ namespace VintageVisuals.Common
         /// game already reddens near the horizon per player position. Nothing
         /// here says "sunset is orange".
         /// </summary>
-        public float SunScattering { get; set; } = 0.0f;
+        public float SunScattering { get; set; } = 0.5f;
 
         /// <summary>
         /// Air thinning with altitude, so a mountain top sees further than a
@@ -282,7 +282,7 @@ namespace VintageVisuals.Common
         /// vertical density profile, so this is an approximation - see
         /// src/Atmosphere/README.md.
         /// </summary>
-        public float HeightAttenuation { get; set; } = 0.0f;
+        public float HeightAttenuation { get; set; } = 0.3f;
 
         /// <summary>
         /// Haze that pools near the ground, as a fraction of the tuned look.
@@ -293,7 +293,7 @@ namespace VintageVisuals.Common
         /// takes. Independent of the shader features - it keeps working with
         /// the patch group rolled back.
         /// </summary>
-        public float HeightHaze { get; set; } = 0.0f;
+        public float HeightHaze { get; set; } = 0.4f;
 
         /// <summary>
         /// Rain and snow thickening the air.
@@ -304,7 +304,7 @@ namespace VintageVisuals.Common
         /// two questions, and a storm can reasonably want more of one than the
         /// other.
         /// </summary>
-        public float WeatherExtinction { get; set; } = 0.0f;
+        public float WeatherExtinction { get; set; } = 0.5f;
 
         /// <summary>How much rain drains the colour out of the air it thickens.</summary>
         public float WeatherTint { get; set; } = 0.6f;
@@ -319,7 +319,7 @@ namespace VintageVisuals.Common
         /// into one multiplier is how a subsystem ends up attenuating the same
         /// overcast day twice.
         /// </summary>
-        public float CloudAtmosphere { get; set; } = 0.0f;
+        public float CloudAtmosphere { get; set; } = 0.4f;
 
         /// <summary>
         /// Sun breaking through broken cloud.
@@ -342,7 +342,7 @@ namespace VintageVisuals.Common
         ///
         /// Zero writes exactly what vanilla wrote.
         /// </summary>
-        public float Godrays { get; set; } = 0.0f;
+        public float Godrays { get; set; } = 0.4f;
 
         /// <summary>
         /// Godray quality. 0 low, 1 medium, 2 high.
@@ -361,7 +361,7 @@ namespace VintageVisuals.Common
         /// What falling rain and snow do to the air, as opposed to how much
         /// they thicken it. See <see cref="WeatherExtinction"/>.
         /// </summary>
-        public float PrecipitationScattering { get; set; } = 0.0f;
+        public float PrecipitationScattering { get; set; } = 0.5f;
 
         /// <summary>
         /// Moonlight in the air on a clear night.
@@ -370,7 +370,7 @@ namespace VintageVisuals.Common
         /// MoonLightStrength and phase, and capped hard. A night this makes
         /// brighter is a bug, not a stronger setting.
         /// </summary>
-        public float MoonScattering { get; set; } = 0.0f;
+        public float MoonScattering { get; set; } = 0.5f;
 
         /// <summary>
         /// How the atmosphere responds to dappled sunlight and cloud shadows.
@@ -642,16 +642,26 @@ namespace VintageVisuals.Common
         /// runtime — and stops chunkopaque.fsh being patched at all, so the
         /// world renders from vanilla source.
         ///
-        /// Defaults to FALSE, unlike every other feature in this mod. Not
-        /// because the code is believed wrong, but because of what it costs
-        /// when it is: this is the only subsystem that patches the shader
-        /// drawing the world, and its two failures so far were a sepia screen
-        /// and missing terrain, neither of which a player could diagnose. The
-        /// other subsystems degrade to "no effect"; this one degrades to "no
-        /// world". Until it has been seen working on a real GPU, opting in is
-        /// the right default. Flip it once someone has looked.
+        /// This defaulted to FALSE for most of the mod's life, and the reason
+        /// was never that the code was believed wrong. It is the only subsystem
+        /// that patches the shader drawing the world, and its two failures so
+        /// far were a sepia screen and missing terrain - neither diagnosable by
+        /// a player. The others degrade to "no effect"; this one degraded to
+        /// "no world". The default said: opt in until someone has looked.
+        ///
+        /// Someone has now looked, repeatedly. It has been run on a real GPU
+        /// across several sessions, its debug views have been photographed, a
+        /// gold block was identified through it, and the material atlas, the
+        /// second atlas and the reflection bridge have all been seen alive. The
+        /// condition the old default named has been met, so it is met: this now
+        /// defaults to true.
+        ///
+        /// The failure mode it was guarding has not gone away, and the guard
+        /// that actually handles it is elsewhere and unchanged - a patch that
+        /// fails takes its own group down, logs CRITICAL, and leaves the world
+        /// rendering from vanilla source.
         /// </summary>
-        public bool Enabled { get; set; } = false;
+        public bool Enabled { get; set; } = true;
 
         /// <summary>
         /// How much emitting surfaces read as HOT rather than merely bright.

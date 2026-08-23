@@ -73,6 +73,7 @@ namespace VintageVisuals.SmokeTest
             I11_ADiagnosticKeepsItsStatesApart(check);
             I12_ARateConstantIsTheRateUsed(check);
             I13_AToleranceIsNotFinerThanItsData(repo, check);
+            I14_EnabledMustNotMeanInert(check);
         }
 
         // -------------------------------------------------------------------
@@ -1084,6 +1085,82 @@ namespace VintageVisuals.SmokeTest
             check("I13 the crossover sits where the two constants put it",
                   Math.Abs(Coarse(crossover * 0.99)) < 1e-9 && Coarse(crossover * 4.0) > 0.0,
                   "crossover at zFar " + crossover);
+        }
+
+
+        // -------------------------------------------------------------------
+        // I14  A SUBSYSTEM ENABLED BY DEFAULT MUST NOT BE INERT BY DEFAULT
+        //
+        // Atmosphere shipped with Enabled = true and ALL ELEVEN of its effects
+        // at 0.0. It registered two renderers, held a slot in the game's
+        // ambient stack, uploaded twenty-two uniforms, gated a patch group, and
+        // changed nothing whatsoever. The log said the patch group applied,
+        // which was true. The player saw no atmosphere, which was also true.
+        // Nothing anywhere connected the two, and the conclusion drawn from the
+        // screen was that the atmospheric work was disappointing.
+        //
+        // "Off means off" is enforced in several places in this project. This is
+        // its converse and had no guard: a subsystem reporting itself ON while
+        // contributing nothing is the worse lie of the two, because it invites
+        // the player to blame an implementation for a number.
+        //
+        // NOTE WHY THE OBVIOUS TEST WOULD HAVE FAILED. "At least one float is
+        // non-zero" passes on the exact configuration that shipped: WeatherTint
+        // was 0.6 and GodrayQuality was 1.0. Both are non-zero, neither
+        // contributes anything on its own - a tint for an extinction of zero,
+        // and a quality for a feature of zero. The only honest test is the
+        // subsystem's OWN activity predicate, which it already had and which
+        // nothing was reading.
+        // -------------------------------------------------------------------
+        static void I14_EnabledMustNotMeanInert(Action<string, bool, string> check)
+        {
+            object config;
+            try { config = Activator.CreateInstance(typeof(VintageVisuals.Common.VintageVisualsConfig)); }
+            catch (Exception ex) { check("I14 the shipped config can be built", false, ex.Message); return; }
+
+            int examined = 0;
+
+            foreach (var prop in config.GetType().GetProperties())
+            {
+                object section;
+                try { section = prop.GetValue(config); }
+                catch { continue; }
+                if (section == null || section.GetType().Namespace == null) continue;
+                if (!section.GetType().Namespace.StartsWith("VintageVisuals", StringComparison.Ordinal)) continue;
+
+                var enabled = section.GetType().GetProperty("Enabled");
+                if (enabled == null || enabled.PropertyType != typeof(bool)) continue;
+                if (!(bool)enabled.GetValue(section)) continue;
+
+                // The subsystem's own answer to "would I do anything", if it has
+                // one. A computed bool with no setter is exactly that shape.
+                foreach (var predicate in section.GetType().GetProperties())
+                {
+                    if (predicate.PropertyType != typeof(bool)) continue;
+                    if (predicate.Name == "Enabled") continue;
+                    if (predicate.CanWrite) continue;
+
+                    examined++;
+                    bool active;
+                    try { active = (bool)predicate.GetValue(section); }
+                    catch (Exception ex)
+                    {
+                        check("I14 " + prop.Name + "." + predicate.Name + " is readable", false, ex.Message);
+                        continue;
+                    }
+
+                    check("I14 " + prop.Name + " is enabled by default and does something",
+                          active,
+                          prop.Name + ".Enabled is true but " + predicate.Name +
+                          " is false under shipped defaults - every effect is at zero");
+                }
+            }
+
+            // A sweep that examined nothing is a sweep that proves nothing, and
+            // this one depends on a naming shape rather than on an interface.
+            check("I14 the sweep found an activity predicate to read",
+                  examined > 0,
+                  "no config section exposes a computed bool saying whether it would do anything");
         }
 
         // -------------------------------------------------------------------

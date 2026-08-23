@@ -292,8 +292,9 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | The depth report comparing against a stale tolerance (`D43`) | external audit, verified | I13 | x |
 | The capture's depth assumed finer than one byte (`D43`) | external audit, verified | I13 | x |
 | The depth-precision view never reporting coarse data | `D43` | I13 | x |
+| A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**24 mutations, 24 caught, 0 missed** at `HEAD`.
+**25 mutations, 25 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

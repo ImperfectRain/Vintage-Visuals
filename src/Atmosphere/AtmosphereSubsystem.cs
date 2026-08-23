@@ -70,6 +70,41 @@ namespace VintageVisuals.Atmosphere
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-atmosphere-uniforms");
 
             _registered = true;
+
+            ReportIfInert(mod);
+        }
+
+        /// <summary>
+        /// Says so when the subsystem is switched on and every one of its
+        /// effects is at zero.
+        ///
+        /// THIS SHIPPED FOR MONTHS AND NOTHING SAID A WORD. Atmosphere defaulted
+        /// to Enabled = true with all eleven strengths at 0.0, so it registered
+        /// two renderers, held a slot in the game's ambient stack, uploaded
+        /// twenty-two uniforms and changed nothing whatsoever. The log said the
+        /// patch group applied, which was true, and the player saw no
+        /// atmosphere, which was also true, and there was no line anywhere
+        /// connecting the two.
+        ///
+        /// "Off means off" is a rule this project already enforces in several
+        /// places. This is its converse and it had no guard at all: a subsystem
+        /// reporting itself ON while contributing nothing is a worse lie than
+        /// one reporting itself off, because it invites the player to blame the
+        /// implementation for a number.
+        /// </summary>
+        private static void ReportIfInert(VintageVisualsModSystem mod)
+        {
+            AtmosphereConfig config = mod.ConfigManager == null ? null : mod.ConfigManager.Config.Atmosphere;
+            if (config == null || !config.Enabled) return;
+
+            if (config.WantsShader || config.HeightHaze > 0f) return;
+
+            mod.Capi.Logger.Warning(
+                "[VintageVisuals] atmosphere: enabled, and every one of its effects is at zero - " +
+                "it will have NO visible effect at all. This is a configuration state, not a " +
+                "failure: nothing is broken and no patch has failed. Raise any of the strengths " +
+                "in the config or the F7 panel, or switch the subsystem off so it stops " +
+                "registering renderers it has no work for.");
         }
 
         public void Apply()
