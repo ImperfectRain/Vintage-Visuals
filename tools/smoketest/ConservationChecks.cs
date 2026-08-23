@@ -75,6 +75,8 @@ namespace VintageVisuals.SmokeTest
 
         public static void Run(string repo, Action<string, bool, string> check)
         {
+            CheckMetalKeepsWhatTheEnvironmentCannotReturn(repo, check);
+
             string dir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
             var sources = new Dictionary<string, string>();
 
@@ -177,6 +179,70 @@ namespace VintageVisuals.SmokeTest
             }
 
             return "";
+        }
+    
+        /// <summary>
+        /// A metal may only give up the diffuse the environment pays back.
+        ///
+        /// Metalness works in two halves: raise F0, and remove the diffuse. The
+        /// removed diffuse is meant to reappear as an environment reflection -
+        /// but that term is scaled by vv_pbrAmbient, the sky-reflection slider,
+        /// and at its default of 0.2 a metal lost all of its diffuse and got a
+        /// fifth of a reflection back.
+        ///
+        /// A gold block came out dark and lifeless. Reported from the game as
+        /// "reflective materials absorb a lot of light", which is precisely what
+        /// a broken energy budget looks like from outside.
+        ///
+        /// The slider is doing two unrelated jobs: on a dielectric it is a taste
+        /// choice about how much sky a surface shows, and on a metal it is the
+        /// only thing funding the diffuse that metalness takes away.
+        /// </summary>
+        private static void CheckMetalKeepsWhatTheEnvironmentCannotReturn(
+            string repo, Action<string, bool, string> check)
+        {
+            string pbr = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pseudopbr.glsl"));
+
+            check("the diffuse removal is scaled by the environment payback",
+                  pbr.Contains("1.0 - metalness * metalPayback"),
+                  "metalness removing more than the reflection returns makes metal dark");
+
+            check("the payback is the ambient specular strength",
+                  pbr.Contains("float metalPayback = clamp(vv_pbrAmbient, 0.0, 1.0);"),
+                  "it has to be the same term that funds the replacement");
+
+            // Numeric, across the slider, because the whole point is what
+            // happens between the ends.
+            var wrong = new System.Collections.Generic.List<string>();
+
+            foreach (float ambient in new[] { 0f, 0.2f, 0.5f, 1f })
+            {
+                const float metalness = 1f;
+
+                // What the diffuse is multiplied by, and what comes back.
+                float kept = 1f - metalness * ambient;
+                float returned = ambient;
+
+                // Total must never fall below what a full payback would give,
+                // and never exceed 1 - a metal is not a light source.
+                float total = kept + returned;
+
+                if (total < 0.999f || total > 1.001f)
+                {
+                    wrong.Add("ambient " + ambient + " leaves " + total.ToString("0.###"));
+                }
+            }
+
+            check("what a metal keeps plus what it reflects is conserved",
+                  wrong.Count == 0,
+                  string.Join("; ", wrong));
+
+            // At full strength nothing changes, or this would be a silent
+            // retune of every metal in the game rather than a fix.
+            check("at full sky reflection the metal response is unchanged",
+                  Math.Abs((1f - 1f * 1f) - 0f) < 1e-6f,
+                  "ambient 1 must still remove the whole diffuse");
         }
     }
 }

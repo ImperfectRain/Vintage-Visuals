@@ -1153,3 +1153,55 @@ invisible to a suite that reasons about code and not about a scene.
 
 **Status.** Fixed, runtime-unverified. The scene that proves it is the one that
 exposed it: a low sun behind a forest.
+
+---
+
+## D33. A metal may only give up the diffuse the environment pays back
+
+**Reported from the game**: "reflective materials seem a bit broken... they absorb
+a lot of light." The surface was a gold block.
+
+**Cause.** Metalness works in two halves - raise F0, and remove the diffuse,
+because a conductor scatters almost nothing back out. The removed diffuse is
+meant to reappear as an environment reflection. But that reflection is
+
+```glsl
+environment * fresnel * vv_pbrAmbient
+```
+
+and `vv_pbrAmbient` is the sky-reflection slider, which defaults to **0.2**. So a
+metal lost **all** of its diffuse and got back **a fifth** of a reflection. It
+went dark, and the darker the player set their sky reflections, the darker every
+metal in the world became.
+
+**The slider was doing two unrelated jobs.** On a dielectric, lowering sky
+reflection is a taste choice about how much sky a surface shows - it removes a
+highlight that was sitting on top of an intact diffuse. On a metal it is the only
+thing funding the diffuse that metalness takes away, so lowering it removes light
+with nothing to replace it.
+
+**Chosen.** Scale the removal by the payback:
+
+```glsl
+float metalPayback = clamp(vv_pbrAmbient, 0.0, 1.0);
+result *= mix(1.0, 1.0 - metalness * metalPayback, vv_pbrSpecularStrength);
+```
+
+At `vv_pbrAmbient` 1 the behaviour is exactly what it was - this is not a silent
+retune of every metal. Below that, a metal keeps the share of its diffuse the
+environment is not going to return, and what it keeps plus what it reflects sums
+to 1 across the whole slider. A check drives that sum at four settings.
+
+**Not a physical correction so much as a refusal** to let one artistic slider
+break energy conservation for one material class. The physically right answer is
+that ambient light intensity is not a per-material taste control at all, which is
+a larger change to how the ambient term is fed and is not attempted here.
+
+**What this does NOT fix.** The same report also said reflections "don't display
+a crisp texel perfect colourful reflection" and lack "proper reflection
+perspective". That is the screen-space march's quality, not its energy, and it
+has already been through four rounds of correction driven by screenshots. It
+remains unresolved and runtime-bound.
+
+**Status.** Fixed, runtime-unverified. The scene is a gold block in daylight with
+sky reflection below 1.

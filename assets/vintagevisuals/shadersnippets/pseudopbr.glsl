@@ -2566,7 +2566,29 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // is zero and this is exactly 1, so the line costs nothing and changes
     // nothing. Scaled by the specular slider for the same reason the line above
     // it is - a player who turns the effect off gets their old image back.
-    result *= mix(1.0, 1.0 - metalness, vv_pbrSpecularStrength);
+    //
+    // ENERGY: A METAL MAY ONLY GIVE UP THE DIFFUSE THE ENVIRONMENT PAYS BACK.
+    //
+    // This line removes the diffuse; the ambient specular below restores it as a
+    // reflection. But that term is multiplied by vv_pbrAmbient - the sky
+    // reflection slider - and at its default of 0.2 a metal was losing all of
+    // its diffuse and getting a fifth of a reflection back. A gold block came
+    // out dark and lifeless, which is exactly what "it absorbs a lot of light"
+    // looks like.
+    //
+    // The slider is doing two unrelated jobs. On a dielectric, lowering sky
+    // reflection is a taste choice about how much sky a surface shows. On a
+    // metal, it is the ONLY thing paying for the diffuse this line takes away,
+    // so lowering it removes light with nothing to replace it.
+    //
+    // So the removal is scaled by the payback. At vv_pbrAmbient 1 the behaviour
+    // is exactly what it was; below that, a metal keeps the share of its diffuse
+    // that the environment is not going to return. It is not a physical
+    // correction so much as a refusal to let one slider break energy
+    // conservation for one material class.
+    float metalPayback = clamp(vv_pbrAmbient, 0.0, 1.0);
+
+    result *= mix(1.0, 1.0 - metalness * metalPayback, vv_pbrSpecularStrength);
 
     // Occlusion in the grooves.
     //
