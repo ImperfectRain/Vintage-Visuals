@@ -55,6 +55,8 @@ namespace VintageVisuals.SmokeTest
             CheckAtmosphereDoesNotTouchMaterials(repo, check);
             CheckEnergyBudgetsAgree(repo, check);
             CheckNormalisationIsPinned(check);
+            CheckTemporalContinuity(repo, check);
+            CheckEveryFeatureReachesThePanel(repo, check);
         }
 
         /// <summary>
@@ -962,6 +964,172 @@ namespace VintageVisuals.SmokeTest
             check("vanilla's fog density passes through unnormalised",
                   Math.Abs(sea.BaseDensity - AtmosphereState.VanillaFogDensity) < 1e-6f,
                   sea.BaseDensity.ToString());
+        }
+
+        /// <summary>
+        /// The atmosphere must not jump as the world moves through it.
+        ///
+        /// Nothing here samples the screen, uses noise, or accumulates across
+        /// frames, so the usual crawling and shimmer cannot occur by
+        /// construction. What CAN occur is a discontinuity in the arithmetic -
+        /// a term that switches rather than ramps - and the two places it would
+        /// are both moments the player is guaranteed to be looking at:
+        ///
+        ///   - the sun crossing the horizon, every dawn and every dusk;
+        ///   - weather starting and stopping.
+        ///
+        /// A hard step at either reads as the world flickering. So the
+        /// continuity is checked as continuity: the derivation is swept through
+        /// each transition and the largest single-step change is compared
+        /// against the step size. A ramp stays proportional; a switch does not.
+        /// </summary>
+        private static void CheckTemporalContinuity(string repo, Action<string, bool, string> check)
+        {
+            AtmosphereConfig config = AllOn();
+
+            // The sun setting, sampled finely through the horizon.
+            float worstSun = 0f;
+            float previous = -1f;
+            for (int i = 0; i <= 400; i++)
+            {
+                float elevation = -0.1f + i * 0.001f;
+                AtmosphereInputs now = AtmosphereInputs.Derive(WithSunElevation(elevation), config, SceneGrants.Full);
+
+                if (previous >= 0f) worstSun = Math.Max(worstSun, Math.Abs(now.SunElevation - previous));
+                previous = now.SunElevation;
+            }
+
+            check("sun elevation moves continuously through the horizon",
+                  worstSun < 0.01f,
+                  "largest single step " + worstSun.ToString("0.####") + " for an input step of 0.001");
+
+            // Weather arriving and clearing.
+            float worstWeather = 0f;
+            float previousExtinction = -1f;
+            for (int i = 0; i <= 200; i++)
+            {
+                float rain = i * 0.005f;
+                AtmosphereInputs now = AtmosphereInputs.Derive(WithRain(rain), config, SceneGrants.Full);
+
+                if (previousExtinction >= 0f)
+                {
+                    worstWeather = Math.Max(worstWeather, Math.Abs(now.Rain - previousExtinction));
+                }
+                previousExtinction = now.Rain;
+            }
+
+            check("weather arrives continuously rather than switching on",
+                  worstWeather < 0.01f,
+                  "largest single step " + worstWeather.ToString("0.####") + " for an input step of 0.005");
+
+            // Cloud cover, where the broken-cloud term is a curve rather than a
+            // pass-through and so is the one most likely to hide a kink.
+            float worstBroken = 0f;
+            float previousBroken = -1f;
+            for (int i = 0; i <= 200; i++)
+            {
+                AtmosphereInputs now = AtmosphereInputs.Derive(WithCover(i * 0.005f), config, SceneGrants.Full);
+                if (previousBroken >= 0f) worstBroken = Math.Max(worstBroken, Math.Abs(now.BrokenCloud - previousBroken));
+                previousBroken = now.BrokenCloud;
+            }
+
+            check("broken cloud varies continuously with cover",
+                  worstBroken < 0.03f,
+                  "largest single step " + worstBroken.ToString("0.####"));
+
+            string glsl = Atmosphere(repo);
+
+            // The below-horizon guard is a RAMP, not a step. A step() on
+            // elevation would pop the whole scattering term on at sunrise.
+            check("the horizon guard ramps rather than steps",
+                  glsl.Contains("clamp(elevation * 8.0, 0.0, 1.0)") && !Regex.IsMatch(glsl, @"step\s*\(\s*0\.0\s*,\s*vv_atmos"),
+                  "found a hard step where a ramp is needed");
+
+            // Nothing temporal, and nothing screen-space. Both would be a new
+            // class of instability and both need a decision, not a commit.
+            check("the atmosphere accumulates nothing across frames",
+                  !glsl.Contains("previousFrame") && !glsl.Contains("vv_atmosPrev"),
+                  "found temporal accumulation - that needs justifying first");
+
+            check("the atmosphere samples no texture",
+                  !glsl.Contains("texture("),
+                  "found a texture read - this pass adds no sampler and no bandwidth");
+        }
+
+        /// <summary>
+        /// Every feature must be reachable from the in-game panel, not only
+        /// from the config file.
+        ///
+        /// The brief's requirement is that all eleven are independently
+        /// controllable, and a setting that exists only in JSON fails that for
+        /// every player who never opens it. This is also the file with the
+        /// silent failure mode: two settings sharing a weight blanks the WHOLE
+        /// ConfigLib panel rather than one row, and nothing reports it.
+        /// </summary>
+        private static void CheckEveryFeatureReachesThePanel(string repo, Action<string, bool, string> check)
+        {
+            string config = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/config/configlib-patches.json"));
+            string bridge = File.ReadAllText(
+                Path.Combine(repo, "src/Common/ConfigLibBridge.cs"));
+
+            var properties = new[]
+            {
+                "AerialPerspective", "HorizonScattering", "SunScattering", "HeightAttenuation",
+                "HeightHaze", "WeatherExtinction", "WeatherTint", "CloudAtmosphere",
+                "CloudEdgeScattering", "Godrays", "GodrayQuality", "PrecipitationScattering",
+                "MoonScattering", "DappleInteraction", "AirDebugView",
+            };
+
+            var missing = properties.Where(p => !bridge.Contains("atmosphere." + p + " =")).ToList();
+
+            check("every atmosphere setting is wired into the ConfigLib bridge",
+                  missing.Count == 0, string.Join(", ", missing));
+
+            var unsettable = properties
+                .Select(p => Regex.Match(bridge, "case \"(atmosphere_\\w+)\":\\s*atmosphere\\." + p + "\\s*="))
+                .Where(m => !m.Success)
+                .ToList();
+
+            check("every wired setting has a case label to reach it",
+                  unsettable.Count == 0, unsettable.Count + " properties have no case");
+
+            // And the label has to exist in the panel definition, or the case
+            // is unreachable code that looks like a working setting.
+            var orphaned = Regex.Matches(bridge, "case \"(atmosphere_\\w+)\":")
+                .Cast<Match>()
+                .Select(m => m.Groups[1].Value)
+                .Where(name => !config.Contains("\"" + name + "\""))
+                .ToList();
+
+            check("no atmosphere case handles a setting the panel does not define",
+                  orphaned.Count == 0, string.Join(", ", orphaned));
+        }
+
+        private static AtmosphereState WithSunElevation(float elevation)
+        {
+            AtmosphereState s = Stormy();
+            return new AtmosphereState(
+                s.FogColor, s.FogDensity, s.FogMin, s.FogBrightness,
+                s.FlatFogDensity, s.FlatFogYPos,
+                s.SunColor, new Vec3f(0.6f, elevation, 0.76f), s.DayLight,
+                s.MoonDirection, s.MoonLight,
+                s.Rain, s.Snow, s.CloudCover,
+                s.Temperature, s.Humidity,
+                s.AmbientColor, s.HeightAboveSeaLevel, s.ViewDistance, s.SkyExposure);
+        }
+
+        private static AtmosphereState WithRain(float rain)
+        {
+            AtmosphereState s = Stormy();
+            return new AtmosphereState(
+                s.FogColor, s.FogDensity, s.FogMin, s.FogBrightness,
+                s.FlatFogDensity, s.FlatFogYPos,
+                s.SunColor, s.SunDirection, s.DayLight,
+                s.MoonDirection, s.MoonLight,
+                rain, s.Snow, s.CloudCover,
+                s.Temperature, s.Humidity,
+                s.AmbientColor, s.HeightAboveSeaLevel, s.ViewDistance, s.SkyExposure);
         }
 
         /// <summary>Every feature on, so that switching one off is the only variable.</summary>

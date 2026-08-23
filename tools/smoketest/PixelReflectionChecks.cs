@@ -603,13 +603,25 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
-        /// It must not be described as something it is not.
+        /// It must not be described as something it is not - and the honest
+        /// description CHANGED when the scene capture landed.
         ///
-        /// chunkopaque.fsh is a forward opaque pass with no scene colour bound
-        /// to it, so this cannot reflect a tree, a building or the player. The
-        /// player-facing text has to say so, because "pixel reflections" invites
-        /// exactly the wrong expectation and the disappointment lands as a bug
-        /// report rather than as a known limit.
+        /// This check used to require the words "NOT A MIRROR" alongside a
+        /// claim that the reflection could not show a tree, a building or the
+        /// player. That was true of a forward opaque pass with no scene colour
+        /// bound to it, and it stopped being true the moment src/Reflections/
+        /// started carrying the previous frame across a frame boundary. The
+        /// check went on passing, because it was pinning the words rather than
+        /// the claim - which is the same defect it exists to catch, in the test
+        /// suite instead of the documentation.
+        ///
+        /// What has to stay honest now is different and narrower:
+        ///
+        ///   - it is still not a mirror, because the result is quantised to one
+        ///     colour per texture pixel BY DESIGN;
+        ///   - what it can actually see depends on a DIFFERENT setting, in a
+        ///     different section, which the player has to be told about or the
+        ///     reflection will look broken to anyone who left it off.
         /// </summary>
         private static void CheckHonestLabelling(string repo, Action<string, bool, string> check)
         {
@@ -621,13 +633,43 @@ namespace VintageVisuals.SmokeTest
             check("the reflection setting exists", setting.Success, "");
             if (!setting.Success) return;
 
-            check("the setting tells the player it is not a mirror",
-                setting.Value.IndexOf("NOT A MIRROR", StringComparison.OrdinalIgnoreCase) >= 0,
-                "describing an environment lookup as a scene reflection is the failure mode here");
+            string text = setting.Value;
 
-            check("the shader says where the limitation comes from",
+            check("the setting still tells the player it is not a mirror",
+                text.IndexOf("not a mirror", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("rather than becoming a mirror", StringComparison.OrdinalIgnoreCase) >= 0,
+                "describing a per-texel lookup as a smooth reflection is the failure mode here");
+
+            check("the setting says one colour per texture pixel is the point",
+                text.IndexOf("one colour per texture pixel", StringComparison.OrdinalIgnoreCase) >= 0,
+                "the quantisation is the design, not a limitation, and the text has to say so");
+
+            // The half a player is most likely to be confused by. Scene
+            // reflections are OFF by default and live in another config
+            // section, so a player who turns this up and sees only sky has no
+            // way to discover why unless this text says.
+            check("the setting names the scene-reflection dependency",
+                text.IndexOf("scene reflection", StringComparison.OrdinalIgnoreCase) >= 0,
+                "a player who left scene reflections off must be told why they see only sky");
+
+            check("the setting no longer claims world geometry is impossible",
+                text.IndexOf("cannot reflect a tree", StringComparison.OrdinalIgnoreCase) < 0,
+                "that was true before src/Reflections/ existed and is not now");
+
+            check("the shader says why the frame has to be carried across a boundary",
                 _pbr.Contains("FORWARD OPAQUE"),
                 "the reason has to sit next to the code, not only in a commit message");
+
+            check("the shader documents both what it can see and its fallback",
+                _pbr.Contains("vvReflectionFallback") && _pbr.Contains("SceneReflections"),
+                "the two paths and which setting picks between them belong next to the code");
+
+            // The G-buffer is the trap a future reader falls into: it looks
+            // like the obvious depth source and it does not exist for a player
+            // with SSAO off.
+            check("the shader records why depth does not come from gPosition",
+                _pbr.Contains("SSAOLEVEL > 0"),
+                "the conditional G-buffer is the reason, and it has to be written down");
         }
     }
 }

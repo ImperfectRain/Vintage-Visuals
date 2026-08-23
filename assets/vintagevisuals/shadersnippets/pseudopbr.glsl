@@ -1298,30 +1298,38 @@ float vvSurfaceBrightness(float vanillaBrightness, vec3 faceNormal, vec2 materia
 //
 // WHAT THIS IS, AND WHAT IT IS NOT. Read this before assuming it is a mirror.
 //
-// This resolves the reflection direction per material texel and looks up a
-// small analytic ENVIRONMENT image with it. It is not a scene reflection: it
-// cannot show a tree, a building or the player, because the data to do so does
-// not exist in this shader. That is a fact about Vintage Story's renderer, not
-// a shortcut, and it was established by reading it:
+// This resolves the reflection direction per material texel and looks up what
+// that direction sees. It is NOT A MIRROR, and it never will be: the result is
+// quantised to exactly one colour per texture pixel, which is the whole design
+// rather than a limitation. A smooth reflection on a pixel-art surface is the
+// wrong image for this game.
 //
-//   chunkopaque.fsh is a FORWARD OPAQUE pass. There is no scene colour texture
-//   bound to it - the frame it would sample is the one it is still drawing.
+// WHAT IT CAN SEE depends on whether the scene capture is running.
 //
-//   The game does keep a G-buffer: chunkopaque writes outGPosition
-//   (camera-space position) and outGNormal at locations 2 and 3, and
-//   ssao.fsh reads them as gPosition/gNormal with a projection matrix. The
-//   scene colour exists too, as primaryScene in final.fsh. So every ingredient
-//   for a cheap screen-space reflection is present - but only in POST-PROCESS
-//   passes, and the material UV that defines the pixel grid exists only here.
-//   Bridging the two is a real design, and it is written up in STATUS.md
-//   rather than half-built here.
+//   WITH Reflections.SceneReflections on, vvSceneReflection marches the
+//   PREVIOUS frame, captured at AfterPostProcessing and carried across a frame
+//   boundary by src/Reflections/. It can show a tree, a building or the player,
+//   one frame late.
 //
-//   The G-buffer is also conditional: locations 2 and 3 are inside
-//   `#if SSAOLEVEL > 0`, so a player with SSAO off has no position buffer at
-//   all. Any future scene reflection has to degrade to this one.
+//   WITHOUT it, and wherever a ray leaves the screen, hits nothing or points at
+//   the camera, vvReflectionFallback supplies an analytic sky, horizon band and
+//   dimmed ground. That is what shipped before the bridge existed and it is
+//   still the floor.
 //
-// So what follows is the fallback of section 25, doing the job honestly rather
-// than being labelled as something it is not.
+// WHY THE FRAME HAS TO BE CARRIED, rather than sampled here. chunkopaque.fsh is
+// a FORWARD OPAQUE pass: the frame it would sample is the one it is still
+// drawing. The post-process pass can see the finished scene but has no idea
+// which material texel anything is. Neither pass can produce a pixel-art mirror
+// alone, so the image crosses a FRAME boundary instead of a pass boundary. See
+// src/Reflections/README.md.
+//
+// DEPTH COMES FROM THE DEPTH ATTACHMENT, never from gPosition. The game does
+// keep a G-buffer - chunkopaque writes outGPosition and outGNormal at locations
+// 2 and 3, and ssao.fsh reads them - but those locations are inside
+// `#if SSAOLEVEL > 0`, so a player with SSAO off has no position buffer at all.
+// A depth buffer always exists. The capture packs linear view depth into alpha
+// for exactly this reason, which is also why it needs one new sampler here
+// rather than two.
 //
 // ONE COLOUR PER TEXEL IS GUARANTEED BY CONSTRUCTION, not by rounding at the
 // end. The normal is already per-texel through vvSnapToTexel, but the VIEW

@@ -328,6 +328,42 @@ namespace VintageVisuals.Common
                 case "atmosphere_aerial":
                     atmosphere.AerialPerspective = tree.GetFloat("value", atmosphere.AerialPerspective);
                     break;
+                case "atmosphere_horizon":
+                    atmosphere.HorizonScattering = tree.GetFloat("value", atmosphere.HorizonScattering);
+                    break;
+                case "atmosphere_sunscatter":
+                    atmosphere.SunScattering = tree.GetFloat("value", atmosphere.SunScattering);
+                    break;
+                case "atmosphere_heightattenuation":
+                    atmosphere.HeightAttenuation = tree.GetFloat("value", atmosphere.HeightAttenuation);
+                    break;
+                case "atmosphere_weatherextinction":
+                    atmosphere.WeatherExtinction = tree.GetFloat("value", atmosphere.WeatherExtinction);
+                    break;
+                case "atmosphere_weathertint":
+                    atmosphere.WeatherTint = tree.GetFloat("value", atmosphere.WeatherTint);
+                    break;
+                case "atmosphere_cloudatmosphere":
+                    atmosphere.CloudAtmosphere = tree.GetFloat("value", atmosphere.CloudAtmosphere);
+                    break;
+                case "atmosphere_cloudedge":
+                    atmosphere.CloudEdgeScattering = tree.GetFloat("value", atmosphere.CloudEdgeScattering);
+                    break;
+                case "atmosphere_godrays":
+                    atmosphere.Godrays = tree.GetFloat("value", atmosphere.Godrays);
+                    break;
+                case "atmosphere_godrayquality":
+                    atmosphere.GodrayQuality = tree.GetFloat("value", atmosphere.GodrayQuality);
+                    break;
+                case "atmosphere_precipitation":
+                    atmosphere.PrecipitationScattering = tree.GetFloat("value", atmosphere.PrecipitationScattering);
+                    break;
+                case "atmosphere_moon":
+                    atmosphere.MoonScattering = tree.GetFloat("value", atmosphere.MoonScattering);
+                    break;
+                case "atmosphere_dapple":
+                    atmosphere.DappleInteraction = tree.GetFloat("value", atmosphere.DappleInteraction);
+                    break;
                 case "atmosphere_debugview":
                     atmosphere.AirDebugView = tree.GetFloat("value", atmosphere.AirDebugView);
                     break;

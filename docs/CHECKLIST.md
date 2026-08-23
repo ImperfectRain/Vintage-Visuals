@@ -127,6 +127,8 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 | 10 Moon scattering | x | x | x | x | – | – | – | – | x |
 | 11 Dapple interaction | x | – | x | x | – | – | – | – | x |
 | Thirteen debug views | x | x | x | x | – | – | – | – | x |
+| ConfigLib exposure (15 settings) | x | x | x | x | – | – | – | – | x |
+| Temporal continuity | x | x | x | x | – | – | – | – | x |
 
 Not yet validated, and each is a separate question:
 
@@ -144,6 +146,8 @@ Not yet validated, and each is a separate question:
 - [ ] a mountain top sees further than the valley below it
 - [ ] a moonlit night is not brighter than vanilla's, only differently shaped
 - [ ] each of the thirteen debug views shows what it claims
+- [ ] the F7 panel renders at all — a duplicate weight blanks the whole thing, and only the game says
+- [ ] dragging a strength through zero reloads shaders without a visible stall
 
 **The test matrix that has NOT been run.** Time: noon, morning, sunset, night,
 moonlit night. Weather: clear, overcast, rain, heavy rain, snow, and every

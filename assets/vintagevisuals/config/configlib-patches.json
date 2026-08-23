@@ -760,7 +760,7 @@
       },
       "pbr_pixelreflect": {
         "ingui": "Pixel reflections",
-        "comment": "Reflective surfaces resolve what they face per texture pixel and show a discrete, low-resolution impression of the sky and horizon around them, aimed by the normal map. IT IS NOT A MIRROR: the game's scene colour is not available to the shader that draws the world, so this cannot reflect a tree, a building or you - it reflects the sky, a horizon band, and a dimmed fallback below. Exactly one colour per texture pixel, locked to the surface. Where it shows is decided by the existing specular and metalness, so wood and soil stay matte and wet stone lifts on its own. 0 is vanilla.",
+        "comment": "Reflective surfaces resolve what they face per texture pixel and show a discrete, low-resolution impression of their surroundings. With scene reflections enabled under Reflections, that includes actual world geometry, carried across one frame; without it, an analytic sky, horizon band and dimmed ground. Exactly one colour per texture pixel, locked to the surface, so it stays pixel-art rather than becoming a mirror. Where it shows is decided by the existing specular and metalness, so wood and soil stay matte and wet stone lifts on its own. 0 is vanilla.",
         "default": 0.6,
         "clientSide": true,
         "weight": 71,
@@ -804,6 +804,150 @@
           "min": 0.0,
           "max": 13.0,
           "step": 1.0
+        }
+      },
+      "atmosphere_horizon": {
+        "ingui": "Horizon haze",
+        "comment": "The horizon becomes more atmospheric than the ground at your feet, because you are looking through more air to reach it. Warms toward whatever colour the game has given the sun, and only while the sun is low - there is no fixed sky palette here. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 77,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_sunscatter": {
+        "ingui": "Sunlit air",
+        "comment": "Air looking toward the sun brightens and takes its colour; air looking away stays cool. Vanilla's fog is the same grey in every direction, and this difference is most of what makes distance read as distance. Strongest with a low sun. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 78,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_heightattenuation": {
+        "ingui": "Thin air at altitude",
+        "comment": "A mountain top sees further than the valley below it. Restrained: Vintage Story does not model how air density changes with height, so this is an approximation standing in for one. Not the same as ground haze, which puts a layer on the ground rather than thinning what is above it. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 79,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_weatherextinction": {
+        "ingui": "Weather visibility",
+        "comment": "Rain and snow thicken the air, so distant things fade sooner. Snow closes the world down harder than rain does. This is how much the air TAKES; what the thickened air itself looks like is the precipitation setting below. Now reaches animals and particles, not only terrain. 0 is vanilla.",
+        "default": 0.35,
+        "clientSide": true,
+        "weight": 80,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_weathertint": {
+        "ingui": "Weather colour drain",
+        "comment": "How much rain drains the colour out of the air it thickens. Shifts the game's own fog colour toward grey rather than replacing it - rain does not repaint the sky, it drains it.",
+        "default": 0.6,
+        "clientSide": true,
+        "weight": 81,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_cloudatmosphere": {
+        "ingui": "Cloud softening",
+        "comment": "Cloud cover diffuses the directional atmosphere, so an overcast day is flat and even rather than aimed at a sun you cannot see. Reads the same cloud state the cloud shadows do and does not simulate clouds of its own. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 82,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_cloudedge": {
+        "ingui": "Sun through broken cloud",
+        "comment": "A sky that is neither clear nor solid scatters more light. FOUNDATION ONLY: the game's cloud data says how much cloud is above a place, never where one cloud ends, so this responds to broken cover rather than to an actual cloud edge. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 83,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_godrays": {
+        "ingui": "Godray contribution",
+        "comment": "How much this mod feeds Vintage Story's own crepuscular ray pass. FOUNDATION ONLY: the buffer channel that pass reads is already written by this mod's sunbeam code, and two systems cannot write one line. The setting and its debug view work; nothing reaches the frame yet. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 84,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_godrayquality": {
+        "ingui": "Godray quality",
+        "comment": "0 low, 1 medium, 2 high. Scales how much of the frame is offered to the godray pass. It can never switch godrays on: at contribution 0 nothing is contributed whatever this says. The pass's own sample count belongs to Vintage Story's graphics settings, not to this mod.",
+        "default": 1.0,
+        "clientSide": true,
+        "weight": 85,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 1.0
+        }
+      },
+      "atmosphere_precipitation": {
+        "ingui": "Rain and snow in the air",
+        "comment": "What falling weather does to the air itself, as opposed to how much it thickens it. Rain scatters hard toward the sun; snow scatters in every direction, so a blizzard glows and a downpour only brightens where the sun is. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 86,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_moon": {
+        "ingui": "Moonlit air",
+        "comment": "Air facing the moon on a clear night. Driven by the game's own moon phase and light, and capped hard - a night this makes brighter is a bug, not a stronger setting. Contributes nothing by day. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 87,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        }
+      },
+      "atmosphere_dapple": {
+        "ingui": "Dappled light in air",
+        "comment": "FOUNDATION ONLY, and it will stay that way until a structural decision is made. Dappled sunlight and cloud shadows belong to other patch groups, and a shader function shared between groups means one failing takes the others down. The setting arrives; nothing reads it. 0 is vanilla.",
+        "default": 0.0,
+        "clientSide": true,
+        "weight": 88,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
         }
       }
     }

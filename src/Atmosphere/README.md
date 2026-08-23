@@ -335,6 +335,51 @@ Weather owns that role: on the rainy still night both want, the rain is the thin
 the player can see a cause for, so it claims first and ground haze takes what is
 left, damped.
 
+## Temporal stability
+
+Nothing here samples the screen, uses noise, or accumulates across frames, so
+crawling and shimmer cannot occur by construction. Checks fail the build if a
+texture read or a temporal term appears, because either would be a new class of
+instability that needs a decision rather than a commit.
+
+What *can* go wrong is a discontinuity in the arithmetic - a term that switches
+where it should ramp - and the two places it would are both moments the player is
+guaranteed to be watching: the sun crossing the horizon, and weather starting or
+stopping. Both are swept numerically in `AtmosphereChecks`, comparing the largest
+single-step change against the step size. A ramp stays proportional; a switch does
+not.
+
+The below-horizon guard is a ramp over roughly seven degrees for exactly this
+reason. A `step()` there would pop the whole scattering term on at sunrise.
+
+**One hitch is real and expected.** Dragging any shader-side strength through zero
+crosses `WantsShader`, which adds or removes the patch group and reloads shaders.
+That is the documented cost of gating the patch rather than muting a uniform, and
+it matches how `PseudoPBR.Enabled` already behaves.
+
+**Not tested:** everything above is source-level. No transition has been watched
+in a world.
+
+## Configuration
+
+All fifteen settings appear in the F7 panel under Atmosphere, and every one is a
+plain strength where 0 means vanilla. There is no separate enabled flag per
+feature: zero is already the vanilla value, it is what an unset GLSL uniform reads
+as, and a second flag would be a second way to say the same thing that could
+disagree.
+
+`configlib-patches.json` is unvalidated data with a silent failure mode - two
+settings sharing a `weight` blanks the **whole** panel rather than one row, and
+nothing reports it. Three checks guard the file: weights are unique, every
+property is wired into `ConfigLibBridge`, and no case handles a setting the panel
+does not define.
+
+**Godray quality is the one tier here, and it scales contribution rather than
+cost.** The sample count belongs to vanilla's own pass and the player's graphics
+settings, not to this mod, so a claim to make that pass cheaper would be a lie. It
+can never switch godrays on: at contribution 0 nothing is contributed whatever the
+quality says.
+
 ## Data provenance
 
 Every atmospheric input, where it comes from, and what happens to it. Nothing in
