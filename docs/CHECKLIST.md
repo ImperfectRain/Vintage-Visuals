@@ -280,11 +280,13 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | A strength of zero stops meaning off | `CLAUDE.md`'s oldest rule | I7 | x |
 | The same factor applied twice in one chain | atmosphere contract rule 7 | I8 | x |
 | Two debug views answering one question | "7-11 all show the same image" | I10 | x |
-| A group applied twice (duplicate definition, dead world render) | reasoning about the overload fix | `Program.cs` re-patch check | x |
 | The census hiding a target that never arrived | `D40` | `Program.cs` census check | x |
-| The hook binding to one arbitrary loader overload (`D40`) | "effects no longer functional" | `ShaderBindingChecks` | x |
+| One bad overload losing every hook (`D41`) | "none of the visuals are working" | `ShaderBindingChecks` | x |
+| The patcher writing its own text into shipped GLSL (`D41`) | `D41` | `Program.cs` bookkeeping check | x |
+| The delivery table hiding a target that never arrived | `D41` | `Program.cs` delivery check | x |
+| The hook writing back source the patcher never saw | six-states audit | `ShaderBindingChecks` | x |
 
-**15 mutations, 15 caught, 0 missed** at `HEAD`.
+**17 mutations, 17 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

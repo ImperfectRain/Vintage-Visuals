@@ -292,12 +292,19 @@ hierarchy, the budgets, and what this project deliberately does not build.
   shader yet`, and they have opposite fixes; the message has now cost two
   debugging rounds. `ShaderPatcher.LogCensus()` prints every filename the hook
   delivered and every target that never arrived, and stays silent when nothing is
-  missing. Read it before suspecting an anchor. Relatedly, the interceptor hooks
-  EVERY `LoadShader(.., EnumShaderType)` overload - `GetMethods` has no ordering
-  guarantee, so `FirstOrDefault` was choosing a loading route at random - and a
-  group applies once per file because it leaves a `// VintageVisuals:<group>`
-  sentinel. Applying a group twice is a duplicate definition and a dead world
-  render, not a doubled effect.
+  missing, and `LogDelivery()` prints one line per target keeping the six states
+  apart - seen, matched, applied, written back, compiled, used. Read both before
+  suspecting an anchor.
+- **The source hook installs exactly ONE Harmony patch.** `Install()` wraps its
+  patching in a single try and sets `_installed` only after it returns, so a
+  throw on any target loses every hook including ones that already applied.
+  Patching the whole list of `LoadShader(.., EnumShaderType)` candidates turned
+  "one unusable overload" into "no shader patching at all" and shipped as a
+  total regression. The candidates are still enumerated and named in the log,
+  because whether a second loading route exists is a real open question - but
+  answering it by hooking them all is what broke. `GetMethods` ordering is a
+  known weakness here and is deliberately unchanged while the delivery failure
+  is unresolved.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is

@@ -408,8 +408,10 @@ namespace VintageVisuals
                         ShaderPatcher.LogSummary();
 
                         // The summary says WHICH groups are inert; the census
-                        // says why, and stays silent when nothing is.
+                        // says why, and stays silent when nothing is; the
+                        // delivery table says how far each target actually got.
                         ShaderPatcher.LogCensus();
+                        ShaderPatcher.LogDelivery();
                     }
                 }, attempt * ApplyRetryIntervalMs);
             }

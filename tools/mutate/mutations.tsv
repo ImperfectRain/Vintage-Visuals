@@ -20,6 +20,8 @@ fog applied twice in one chain	assets/vintagevisuals/shadersnippets/pseudopbr.gl
 dc54d25 reflections dispose themselves on reload	src/Reflections/ReflectionsSubsystem.cs	_capi.Event.ReloadShader += OnShadersReloaded;	_capi.Event.RegisterCallback(_ => { }, 0);	I9
 two debug views answer the same question	assets/vintagevisuals/shadersnippets/atmosphere.glsl	if (mode == 6) return vec4(vec3(vvAtmosHeightFactor()), pixel.a);	if (mode == 6) return vec4(vec3(t), pixel.a);	I10
 5a796d6 binder never unbinds	src/Atmosphere/AtmosphereShaderBinder.cs	program.Stop();	// program.Stop();	Use()
-a group applied twice compiles to a duplicate	src/Common/Patching/ShaderPatcher.cs	if (code.IndexOf(SentinelFor(group.Name), StringComparison.Ordinal) >= 0) continue;	if (false) continue;	re-patching
 the census hides a target that never arrived	src/Common/Patching/ShaderPatcher.cs	if (missing.Count == 0) return;	if (missing.Count >= 0) return;	never delivered
-the hook binds to one arbitrary loader overload	src/Common/ShaderSourceInterceptor.cs	foreach (MethodInfo target in targets) _harmony.Patch(target, postfix: postfix);	_harmony.Patch(targets[0], postfix: postfix);	overload is hooked
+one bad overload loses every hook (bd988bd)	src/Common/ShaderSourceInterceptor.cs	_harmony.Patch(chosen, postfix: postfix);	foreach (MethodInfo target in targets) _harmony.Patch(target, postfix: postfix);	list of candidates
+the patcher writes its own text into shipped GLSL	src/Common/Patching/ShaderPatcher.cs	                    code = staged;	                    code = staged + "\n// VintageVisuals:" + group.Name + "\n";	no mod bookkeeping
+the delivery table hides a target that never arrived	src/Common/Patching/ShaderPatcher.cs	: NEVER reached the hook. Nothing was tried; no patch of its group 	: fine. 	never reached the hook
+the hook writes back source the patcher never saw	src/Common/ShaderSourceInterceptor.cs	string patched = patcher.Patch(filename, original);	string patched = patcher.Patch(filename, original + " ");	hands the patcher

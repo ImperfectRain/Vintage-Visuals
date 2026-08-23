@@ -64,6 +64,56 @@ namespace VintageVisuals.Common.Patching
         /// <summary>Filenames the hook saw but whose source was null or empty.</summary>
         private readonly HashSet<string> _emptySource = new HashSet<string>();
 
+        /// <summary>
+        /// What happened to one target file on its way from the game's loader
+        /// to the GLSL compiler.
+        ///
+        /// SIX STATES, NOT ONE. A shader can be seen but unpatched, patched but
+        /// not written back, written back but not compiled, compiled but not
+        /// used, or used with its group disabled. The summary collapsed all of
+        /// them into "OK" or "loaded but not applied", which is why two rounds
+        /// of investigation asked the wrong question. These fields keep them
+        /// apart, and the log prints one line per target - eight lines, not a
+        /// shader dump.
+        /// </summary>
+        private sealed class Delivery
+        {
+            public string Program;
+            public string ShaderType;
+            public int OriginalLength;
+            public int PatchedLength;
+            public bool Assigned;
+            public int Applicable;
+            public int Applied;
+        }
+
+        private readonly Dictionary<string, Delivery> _delivery =
+            new Dictionary<string, Delivery>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Called by the source hook once it knows whether it wrote the patched
+        /// source back. Everything before the write-back is visible from inside
+        /// this class; the write-back itself is not.
+        /// </summary>
+        public void RecordDelivery(string filename, string program, string shaderType,
+                                   int originalLength, int patchedLength, bool assigned)
+        {
+            if (string.IsNullOrEmpty(filename)) return;
+
+            Delivery d;
+            if (!_delivery.TryGetValue(filename, out d))
+            {
+                d = new Delivery();
+                _delivery[filename] = d;
+            }
+
+            d.Program = program;
+            d.ShaderType = shaderType;
+            d.OriginalLength = originalLength;
+            d.PatchedLength = patchedLength;
+            d.Assigned = assigned;
+        }
+
         public void SetPatches(IEnumerable<ShaderPatch> patches)
         {
             _groups.Clear();
@@ -121,27 +171,21 @@ namespace VintageVisuals.Common.Patching
             {
                 if (group.Failed) continue;
 
-                // ALREADY PATCHED SOURCE MUST NOT BE PATCHED AGAIN.
-                //
-                // Applying a group twice is not a doubled effect, it is a
-                // duplicate function definition and a shader that will not
-                // compile - so it costs the world render rather than the
-                // feature. That is not hypothetical: the game exposes more than
-                // one route into shader loading, this mod's dumps have arrived
-                // with its own injections already in them, and any future
-                // re-entry through a second route would land here with patched
-                // source in hand.
-                //
-                // A sentinel line is cheaper than trying to detect the anchors
-                // a second time, survives being handed back through any route,
-                // and shows up in a dump where it tells a reader exactly which
-                // groups reached the file.
-                if (code.IndexOf(SentinelFor(group.Name), StringComparison.Ordinal) >= 0) continue;
-
                 List<ShaderPatch> applicable = group.Patches.Where(p => p.AppliesTo(filename)).ToList();
                 if (applicable.Count == 0) continue;
 
-                if (!string.IsNullOrEmpty(filename)) _seen[filename] = _seen[filename] + applicable.Count;
+                if (!string.IsNullOrEmpty(filename))
+                {
+                    _seen[filename] = _seen[filename] + applicable.Count;
+
+                    Delivery counted;
+                    if (!_delivery.TryGetValue(filename, out counted))
+                    {
+                        counted = new Delivery();
+                        _delivery[filename] = counted;
+                    }
+                    counted.Applicable += applicable.Count;
+                }
 
                 try
                 {
@@ -150,8 +194,11 @@ namespace VintageVisuals.Common.Patching
                     string staged = code;
                     foreach (ShaderPatch patch in applicable) staged = patch.Apply(filename, staged);
 
-                    code = staged + "\n" + SentinelFor(group.Name) + "\n";
+                    code = staged;
                     if (!group.PatchedFiles.Contains(filename)) group.PatchedFiles.Add(filename);
+
+                    Delivery applied;
+                    if (_delivery.TryGetValue(filename, out applied)) applied.Applied += applicable.Count;
 
                     HashSet<string> everApplied;
                     if (!_everApplied.TryGetValue(group.Name, out everApplied))
@@ -184,14 +231,6 @@ namespace VintageVisuals.Common.Patching
 
             return code;
         }
-
-        /// <summary>
-        /// The line a successfully applied group leaves at the end of the file.
-        ///
-        /// A GLSL line comment, so it is inert to every compiler, and after the
-        /// last line so it can never displace <c>#version</c>.
-        /// </summary>
-        internal static string SentinelFor(string groupName) => "// VintageVisuals:" + groupName;
 
         /// <summary>
         /// What the hook actually delivered, and what it never did.
@@ -235,6 +274,52 @@ namespace VintageVisuals.Common.Patching
                                 " file(s) arrived with empty source and were skipped: " +
                                 string.Join(", ", _emptySource.OrderBy(k => k)) +
                                 ". A target here is loaded by a path that fills its code in later.");
+            }
+        }
+
+        /// <summary>
+        /// One line per TARGET FILE describing how far it got.
+        ///
+        /// The six states a shader passes through are answered here as far as
+        /// this side of the boundary can see them: did the source arrive, did a
+        /// group match, did the group apply, did the patched text get written
+        /// back. Compilation and whether the program is actually used are the
+        /// game's side and are stated as unknown rather than guessed at.
+        ///
+        /// Always logged, unlike the census, because it is bounded by the
+        /// number of patch targets - eight lines today - and because a delivery
+        /// question has now cost three rounds of investigation.
+        /// </summary>
+        public void LogDelivery()
+        {
+            var targets = _groups.SelectMany(g => g.Patches)
+                                 .Select(p => p.Filename)
+                                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                                 .ToList();
+
+            if (targets.Count == 0) return;
+
+            _logger.Notification("[VintageVisuals] shader delivery, one line per patch target:");
+
+            foreach (string target in targets)
+            {
+                Delivery d;
+                if (!_delivery.TryGetValue(target, out d) || d.Program == null)
+                {
+                    _logger.Notification("[VintageVisuals]   " + target +
+                                         ": NEVER reached the hook. Nothing was tried; no patch of its group " +
+                                         "has failed, because none was attempted.");
+                    continue;
+                }
+
+                _logger.Notification("[VintageVisuals]   " + target +
+                                     ": program=" + d.Program +
+                                     " type=" + d.ShaderType +
+                                     " source=" + d.OriginalLength + " -> " + d.PatchedLength +
+                                     " applicable=" + d.Applicable +
+                                     " applied=" + d.Applied +
+                                     " writtenBack=" + (d.Assigned ? "yes" : "no"));
             }
         }
 

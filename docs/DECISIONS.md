@@ -1571,3 +1571,72 @@ this mod's own contaminated shader dumps.
 **Status.** Census and idempotence: implemented, L2, mutation-proven. Root cause:
 NOT established. The next log decides whether the overload change fixed it or
 merely ruled a cause out.
+
+---
+
+## D41. Hooking every loader overload was a regression, not a fix
+
+**Supersedes the second half of [D40](#d40-loaded-but-not-applied-named-a-symptom-shared-by-two-opposite-causes).** D40's census stands; its overload change is reverted.
+
+**Reported from the game**: after `bd988bd`, none of the mod's visuals work. Before
+it, two shaders were being patched and the rest were not. So the change made to
+diagnose a partial delivery failure produced a total one.
+
+**The mechanism, from the code alone.** `Install()` wraps its patching in a single
+`try` and sets `_installed = true` only after the loop finishes:
+
+```csharp
+foreach (MethodInfo target in targets) _harmony.Patch(target, postfix: postfix);
+_installed = true;
+```
+
+A throw on ANY element - an abstract declaration, an open generic, anything
+Harmony declines - aborts the whole block. The hook that was working is lost
+along with the ones that were not, `_installed` stays false, and every subsystem
+that depends on shader patching goes inert. One `Patch` call cannot fail
+partially; N of them share a fate, and the fate of the set is the worst fate in
+it.
+
+That is a structural certainty and it does not need a log to establish. Whether
+it is what fired is a separate question, and the answer is not needed to act:
+D40 said in its own text that the overload change was a hypothesis with the root
+cause NOT established, it made the observed behaviour worse, and reverting
+returns to the last state the user saw working at all.
+
+**Chosen.** Hook exactly one method, selected exactly as the last known good
+build selected it - same predicate, same `GetMethods` order, so the method that
+gets hooked is unchanged rather than merely similar. Swapping the selection rule
+while diagnosing a delivery failure would change two things at once.
+
+**The candidates are still enumerated and logged.** Whether `ShaderRegistry`
+exposes a second loading route is a real open question and one line answers it:
+the install now names every candidate it found and says which one it hooked.
+Listing them costs nothing. Patching them cost everything.
+
+**The sentinel goes too.** `// VintageVisuals:<group>` existed only to make
+multi-hook delivery idempotent. With one hook there is no second delivery, and
+it was writing this mod's bookkeeping into every shader it touched to guard
+against a problem that no longer exists. Its group names are also prefixes of
+each other - `pseudopbr` inside `pseudopbrtopsoil` - which is a collision waiting
+for the first file both groups target.
+
+**What replaces both, and this is the part worth keeping.** `LogDelivery()`
+prints one line per patch target and keeps apart the six states that "OK" and
+"loaded but not applied" were collapsing:
+
+```
+chunkopaque.fsh: program=ShaderProgram type=FragmentShader source=48213 -> 51002 applicable=14 applied=14 writtenBack=yes
+final.fsh:       NEVER reached the hook. Nothing was tried; no patch of its group has failed, because none was attempted.
+```
+
+Seen, matched, applied, written back - measured. Compiled and actually used are
+the game's side of the boundary and are not claimed.
+
+**The rule this leaves behind.** Prefer one authoritative interception point to
+several speculative ones. When the authoritative path is not known, say so and
+measure - do not widen the net and hope. Widening the net is what took a mod that
+half worked and made it not work at all.
+
+**Status.** Reverted and instrumented. L2: builds, 916 checks, 17 mutations all
+caught, `verifypatches` unchanged. The root cause of the ORIGINAL partial failure
+is still not established - that is what the next log is for.

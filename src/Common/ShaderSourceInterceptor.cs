@@ -96,12 +96,35 @@ namespace VintageVisuals.Common
                 var postfix = new HarmonyMethod(
                     AccessTools.Method(typeof(ShaderSourceInterceptor), nameof(LoadShaderPostfix)));
 
-                foreach (MethodInfo target in targets) _harmony.Patch(target, postfix: postfix);
+                // ONE hook, and the same one as before the census work.
+                //
+                // Hooking every candidate was a hypothesis about why some
+                // shaders were never delivered, and it made things strictly
+                // worse: this loop patched N methods, and a throw on ANY of
+                // them - an abstract declaration, a generic definition, a
+                // method Harmony will not touch - left `_installed` false and
+                // lost the one hook that was working. Two shaders were being
+                // patched before it and none after.
+                //
+                // The candidates are still enumerated, because the question the
+                // hypothesis was trying to answer is real and one log line
+                // settles it. They are LISTED, not patched.
+                MethodInfo chosen = targets[0];
+                _harmony.Patch(chosen, postfix: postfix);
                 _installed = true;
 
                 _instanceLogger.Notification("[VintageVisuals] shader source interceptor installed on " +
-                                             targets.Count + " " + LoadShaderMethodName + " overload(s): " +
-                                             string.Join(", ", targets.Select(Describe)));
+                                             Describe(chosen) + ".");
+
+                if (targets.Count > 1)
+                {
+                    _instanceLogger.Notification("[VintageVisuals] " + targets.Count + " " + LoadShaderMethodName +
+                        " overload(s) exist and only the one above is hooked: " +
+                        string.Join(" | ", targets.Select(Describe)) +
+                        ". If a shader is never delivered, this list says whether a second loading route " +
+                        "could explain it - but hooking more than one is not the fix on its own.");
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -135,19 +158,15 @@ namespace VintageVisuals.Common
         /// Finds LoadShader by shape rather than exact signature: its first
         /// parameter is an internal type this assembly deliberately cannot name.
         ///
-        /// EVERY overload, not the first one reflection happens to return.
+        /// Returns every candidate so the install can SAY how many there are.
+        /// Only the first is hooked - see Install for why hooking all of them
+        /// was a regression rather than a fix.
         ///
-        /// This used to take FirstOrDefault, which is a coin toss dressed as a
-        /// lookup: GetMethods makes no ordering guarantee, so which overload got
-        /// hooked was a property of how the game's assembly was compiled rather
-        /// than of anything this mod decided. Hook one of two loading routes and
-        /// the shaders that travel the other are silently never patched, which
-        /// is indistinguishable in the log from a patch that does not match -
-        /// the group just reports "loaded but not applied to any shader yet".
-        ///
-        /// Hooking all of them is safe because applying a group is idempotent:
-        /// ShaderPatcher leaves a sentinel and refuses source that already
-        /// carries it, so a shader reaching this postfix twice is patched once.
+        /// The ordering is GetMethods', which guarantees nothing. That is a
+        /// known weakness and it is deliberately unchanged: the last state in
+        /// which this mod was observed patching anything used exactly this
+        /// selection, and swapping the rule while diagnosing a delivery failure
+        /// would change two things at once.
         /// </summary>
         private static List<MethodInfo> FindLoadShaderMethods(Type registryType)
         {
@@ -201,10 +220,17 @@ namespace VintageVisuals.Common
                 // mod that wanted to change two of them. Writing only on a real
                 // change keeps this mod's footprint to the files it actually
                 // edits, which is what it always claimed to have.
-                if (!string.Equals(original, patched, StringComparison.Ordinal))
+                bool assigned = !string.Equals(original, patched, StringComparison.Ordinal);
+                if (assigned)
                 {
                     shader.Code = patched;
                 }
+
+                // The one fact the patcher cannot see for itself: whether the
+                // patched text was actually handed back to the object the game
+                // is about to compile.
+                patcher.RecordDelivery(filename, __0.GetType().Name, __1.ToString(),
+                                       original.Length, patched == null ? 0 : patched.Length, assigned);
 
                 if (_dumpShaders) DumpShader(filename, shader, logger);
             }

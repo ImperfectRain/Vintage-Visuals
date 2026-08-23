@@ -105,23 +105,13 @@ void main(void) {
         int uniformLine = result.Split('\n').ToList().FindIndex(l => l.Contains("vv_enabled"));
         Check("injection after #version", uniformLine > versionLine);
 
-        Console.WriteLine("A group is applied once, however many times the source comes back");
-        // Hooking every LoadShader overload means one program can reach the
-        // postfix through more than one route. Applying a group twice is not a
-        // doubled effect - it is a duplicate function definition and a shader
-        // that will not compile, so it costs the world render rather than the
-        // feature.
-        string twice = patcher.Patch("final.fsh", result);
-        Check("re-patching already-patched source changes nothing", twice == result,
-              (twice.Length - result.Length) + " chars added");
-
-        int gradeDefs = Regex.Matches(twice, @"vec4\s+vvApplyColorGrade\s*\(vec4").Count;
-        Check("exactly one vvApplyColorGrade definition after two passes", gradeDefs == 1, gradeDefs.ToString());
-
-        int mainsTwice = Regex.Matches(twice, @"(?<![A-Za-z0-9_])void\s+main\s*\(\s*void\s*\)").Count;
-        Check("still exactly one main() after two passes", mainsTwice == 1, mainsTwice.ToString());
-
-        Check("the sentinel names its group", result.Contains("// VintageVisuals:colorgrade"));
+        Console.WriteLine("The patched source is the vanilla source plus the patch, and nothing else");
+        // The mod once appended a marker line of its own to every patched file.
+        // It bought nothing that a single hook does not already give, and it put
+        // this mod's text into shaders it had no reason to touch, so a shader
+        // now leaves the patcher carrying its patches and no bookkeeping.
+        Check("no mod bookkeeping is left in the shader", !result.Contains("// VintageVisuals:"),
+              "the patcher is writing a marker into shipped GLSL");
 
         Console.WriteLine("The census says whether a target ever reached the patcher");
         var censusLog = new CollectingLogger();
@@ -137,7 +127,27 @@ void main(void) {
               censusLog.Lines.Any(l => l.Contains("did deliver") && l.Contains("gui.fsh")),
               string.Join(" | ", censusLog.Lines));
 
+        Console.WriteLine("The delivery table keeps the six states apart");
+        censusLog.Lines.Clear();
+        censusPatcher.LogDelivery();
+        Check("a target that never reached the hook says so",
+              censusLog.Lines.Any(l => l.Contains("final.fsh") && l.Contains("NEVER reached the hook")),
+              string.Join(" | ", censusLog.Lines));
+
         censusPatcher.Patch("final.fsh", Vanilla);
+        censusPatcher.RecordDelivery("final.fsh", "ShaderProgram", "FragmentShader",
+                                     Vanilla.Length, Vanilla.Length + 100, true);
+        censusLog.Lines.Clear();
+        censusPatcher.LogDelivery();
+
+        string finalRow = censusLog.Lines.FirstOrDefault(l => l.Contains("final.fsh")) ?? "";
+        Check("a delivered target reports what happened to it",
+              finalRow.Contains("applicable=4") && finalRow.Contains("applied=4")
+              && finalRow.Contains("writtenBack=yes"),
+              finalRow);
+        Check("delivery separates 'a patch matched' from 'the source was written back'",
+              finalRow.Contains("applicable=") && finalRow.Contains("writtenBack="), finalRow);
+
         censusLog.Lines.Clear();
         censusPatcher.LogCensus();
         Check("the census stays silent once every target has arrived",

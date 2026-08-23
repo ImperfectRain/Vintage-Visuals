@@ -94,15 +94,37 @@ namespace VintageVisuals.SmokeTest
 
             check("the shader source interceptor exists", hook.Length > 0, interceptor);
 
-            check("the loader lookup keeps every overload it finds",
-                  Regex.IsMatch(hook, @"Name == LoadShaderMethodName") &&
-                  !Regex.IsMatch(hook, @"FirstOrDefault\(m =>"),
-                  "the LoadShader lookup still collapses to a single arbitrary overload");
+            // ONE Harmony patch call, because N of them share a fate.
+            //
+            // Install wraps its patching in a single try, sets _installed only
+            // after it returns, and a throw on ANY target loses every hook
+            // including ones that already applied. Patching a list of
+            // candidates therefore turned "one unusable overload" into "no
+            // shader patching at all", which is the regression this check
+            // exists to keep out.
+            int patchCalls = Regex.Matches(hook, @"_harmony\.Patch\(").Count;
+            check("the source hook installs exactly one Harmony patch",
+                  patchCalls == 1, patchCalls + " _harmony.Patch calls");
 
-            check("every loader overload is hooked, not an arbitrary one",
-                  Regex.IsMatch(hook, @"foreach\s*\([^)]*\bin\s+targets\s*\)\s*_harmony\.Patch") &&
-                  !hook.Contains("targets[0]"),
-                  "install does not patch each candidate in turn");
+            check("the source hook does not patch a list of candidates",
+                  !Regex.IsMatch(hook, @"foreach\s*\([^)]*\bin\s+targets\s*\)\s*_harmony\.Patch"),
+                  "install patches every candidate in turn; one bad overload loses them all");
+
+            // The candidates are still counted and named, because whether a
+            // second loading route exists is the open question and one log line
+            // answers it.
+            check("the overloads that exist are still reported",
+                  hook.Contains("targets.Count > 1") && hook.Contains("Describe"),
+                  "install no longer says how many LoadShader overloads it found");
+
+            check("the hook hands the patcher the source it was given",
+                  Regex.IsMatch(hook, @"string original = shader\.Code;") &&
+                  Regex.IsMatch(hook, @"patcher\.Patch\(filename, original\)"),
+                  "the source passed to ShaderPatcher is not the source the hook received");
+
+            check("a successful patch reaches the Code setter",
+                  Regex.IsMatch(hook, @"if \(assigned\)\s*\{\s*shader\.Code = patched;"),
+                  "the patched source is not written back under a recorded condition");
 
             check("the atmosphere binder exists", File.Exists(binder), binder);
             if (!File.Exists(binder)) return;
