@@ -1107,3 +1107,49 @@ was worth less than the volume of it suggested.
 
 **Status.** Fixed. The fix itself is **runtime-unverified** - it needs the world
 that crashed to load and stay up.
+
+---
+
+## D32. A gate is not a dimmer: the sunset suppression
+
+**Found by looking at the game**, in a screenshot of a sunset forest that
+looked like a midday forest with an orange sky.
+
+`vv_sceneDayLight` is documented in `scene.glsl` as **"0 midnight, 1 noon"**. It
+falls steadily through the afternoon and is well under half at sunset. Three
+effects multiplied by it directly:
+
+- foliage transmission,
+- canopy dapple,
+- light shafts.
+
+All three **peak at a low sun**. Backlighting needs the sun behind the leaves;
+shafts need a shallow angle through the air; a canopy at a low sun throws long,
+structured shade. Every one of them was being suppressed hardest at the exact
+moment it should have been strongest, and left at full strength at noon, when a
+high sun makes all three least interesting.
+
+**The factor was never meant to be a scale.** What it was there to say is *not at
+night*. That is a gate, and implementing a gate as a linear multiply is the
+defect. `vvSunPresence()` is a smoothstep that reaches full strength while the
+sun is still comfortably up and closes as it sets.
+
+**The direct lobe deliberately keeps the linear scale.** A dimmer sun really does
+make a dimmer highlight; that one is physics rather than a gate, and converting
+it would have made midnight as bright as noon. A check pins the distinction from
+both sides: the three gated effects must not scale linearly, and the direct lobe
+must.
+
+**Why no test caught it.** Every check asked whether the effects *stop at night*,
+and they did. None asked whether they *survive sunset*, because nothing in the
+suite knew that sunset was the case that mattered. The invariant now pinned is
+the threshold's range: open through golden hour, closed before dark. If it crept
+upward the defect would return gradually and look like tuning.
+
+**The wider lesson.** This is the second defect in a row that no amount of static
+analysis would have found and one screenshot did. The first was a shader
+lifecycle; this one is a curve being used for the wrong purpose. Both were
+invisible to a suite that reasons about code and not about a scene.
+
+**Status.** Fixed, runtime-unverified. The scene that proves it is the one that
+exposed it: a low sun behind a forest.

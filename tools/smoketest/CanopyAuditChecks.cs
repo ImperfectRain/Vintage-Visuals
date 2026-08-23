@@ -39,6 +39,7 @@ namespace VintageVisuals.SmokeTest
             CheckDebugViewsAreReachable(repo, pbr, check);
             CheckDappleTouchesSunlightOnly(pbr, check);
             CheckShaftNeedsABeam(pbr, check);
+            CheckSunGateIsAGate(pbr, check);
             CheckGateIsGeometric(pbr, check);
             CheckStructureCountsOccluders(pbr, check);
             CheckNoInventedPattern(pbr, check);
@@ -259,6 +260,65 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
+        /// The sun gate must be a gate.
+        ///
+        /// vv_sceneDayLight is documented in scene.glsl as "0 midnight, 1 noon",
+        /// so it falls steadily through the afternoon and is well under half at
+        /// sunset. Three effects multiplied by it directly - light through
+        /// leaves, canopy dapple, and light shafts - and all three PEAK at a low
+        /// sun. They were suppressed hardest at the moment they should be
+        /// strongest, which is why a sunset forest looked like a midday forest
+        /// with an orange sky.
+        ///
+        /// What the factor was there to say is "not at night". That is a gate,
+        /// and implementing a gate as a linear scale is the defect.
+        ///
+        /// The direct lobe deliberately keeps the linear scale: a dimmer sun
+        /// really does make a dimmer highlight. That one is physics.
+        /// </summary>
+        private static void CheckSunGateIsAGate(string pbr, Action<string, bool, string> check)
+        {
+            Match gate = Regex.Match(pbr,
+                @"float vvSunPresence\(\)\s*\{(.*?)\n\}", RegexOptions.Singleline);
+
+            check("a sun-presence gate exists", gate.Success, "vvSunPresence");
+            if (!gate.Success) return;
+
+            check("the gate reads the shared daylight value",
+                gate.Groups[1].Value.Contains("vv_sceneDayLight"),
+                "it must be the same daylight every other system uses");
+
+            check("the gate ramps rather than scaling linearly",
+                gate.Groups[1].Value.Contains("smoothstep"),
+                "a linear scale is the defect this replaced");
+
+            Match dawn = Regex.Match(pbr, @"#define VV_SUN_PRESENCE_DAWN ([\d.]+)");
+            check("the gate declares where it closes", dawn.Success, "VV_SUN_PRESENCE_DAWN");
+            if (!dawn.Success) return;
+
+            float threshold = float.Parse(dawn.Groups[1].Value,
+                System.Globalization.CultureInfo.InvariantCulture);
+
+            // Open for the whole lit day, including the hour either side of
+            // sunset. If this crept up, the original defect would return
+            // gradually and look like tuning.
+            check("the gate is open through golden hour",
+                threshold > 0f && threshold <= 0.3f,
+                "closes at " + threshold + "; above ~0.3 it starts eating sunset again");
+
+            // And it must still close. An always-open gate means moonlit leaves
+            // transmitting a sun that is not there.
+            check("the gate still closes at night",
+                threshold > 0.02f,
+                "a gate that never closes lets foliage glow at midnight");
+
+            // The direct lobe must NOT have been converted along with them.
+            check("the direct lobe still scales linearly with daylight",
+                Regex.IsMatch(pbr, @"visibility = clamp\(shadowBrightness[\s\S]{0,240}?clamp\(vv_sceneDayLight"),
+                "a dimmer sun makes a dimmer highlight - that one is physics, not a gate");
+        }
+
+        /// <summary>
         /// A shaft needs a beam, and must collapse without one.
         ///
         /// A shaft is sunlight scattering in the air along ONE direction. Under
@@ -303,8 +363,16 @@ namespace VintageVisuals.SmokeTest
             // A shaft is SUNLIGHT scattering. A torch under a tree must not make
             // one, and neither must the moon.
             check("shafts are driven by daylight, not by any light",
-                body.Contains("vv_sceneDayLight"),
+                body.Contains("vvSunPresence()"),
                 "a torch under a canopy must not cast a sunbeam");
+
+            // A GATE, not a dimmer. vv_sceneDayLight is "0 midnight, 1 noon",
+            // so multiplying by it directly suppressed shafts hardest at dawn
+            // and dusk - the only hours they are worth having - and left them
+            // at noon, which is precisely backwards.
+            check("shafts are gated by the sun, not dimmed by it",
+                !Regex.IsMatch(body, @"\*\s*clamp\(vv_sceneDayLight"),
+                "a low sun is when shafts matter; scaling by daylight removes them there");
 
             check("shafts stop at night",
                 Regex.IsMatch(body, @"if \(sun < 0\.01\) return 0\.0;"),

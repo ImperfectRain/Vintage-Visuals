@@ -384,8 +384,16 @@ namespace VintageVisuals.SmokeTest
                   "a leaf with no sun behind it has nothing to transmit");
 
             check("transmission still stops at night",
-                  body.Contains("vv_sceneDayLight"),
+                  body.Contains("vvSunPresence()"),
                   "there is no sun to come through after dark");
+
+            // The term that made a sunset forest look like a midday one.
+            // Transmission peaks when the sun is low and behind the leaves;
+            // scaling by "0 midnight, 1 noon" suppressed it at that exact
+            // moment. A gate, not a dimmer.
+            check("transmission is gated by the sun, not dimmed by it",
+                  !Regex.IsMatch(body, @"\*\s*clamp\(vv_sceneDayLight"),
+                  "backlighting peaks at a low sun and daylight scaling removes it there");
 
             check("transmission is not scaled by wetness",
                   !body.Contains("wetness"),

@@ -1424,6 +1424,37 @@ float vvLocalLightShare()
 #endif
 }
 
+// Is there a sun at all, 0 no, 1 yes.
+//
+// A GATE, NOT A DIMMER, and the distinction is the whole point.
+//
+// vv_sceneDayLight is defined as "0 midnight, 1 noon", so it falls steadily
+// through the afternoon and is well under half at sunset. Three effects were
+// multiplying by it directly - light through leaves, canopy dapple, and light
+// shafts - and all three are effects that PEAK at a low sun. They were being
+// suppressed hardest at the exact moment they should be strongest, which is why
+// a sunset forest looked like a midday forest with an orange sky.
+//
+// What the daylight factor was actually there to say is "not at night". That is
+// a gate, and implementing a gate as a linear scale is the bug. This reaches
+// full strength while the sun is still comfortably up and falls to nothing as it
+// sets, so the effects survive golden hour and still vanish after dark.
+//
+// The DIRECT LOBE deliberately keeps the linear scale. A dimmer sun really does
+// make a dimmer highlight - that one is physics, not a gate, and changing it
+// would make midnight as bright as noon.
+// Where the sun stops counting as present.
+//
+// Low: the gate should be open for essentially the whole lit day, including the
+// hour either side of sunset that this mod exists to make worth looking at. Its
+// only job is to close before the sky is actually dark.
+#define VV_SUN_PRESENCE_DAWN 0.18
+
+float vvSunPresence()
+{
+    return smoothstep(0.0, VV_SUN_PRESENCE_DAWN, clamp(vv_sceneDayLight, 0.0, 1.0));
+}
+
 // How much light the canopy takes away here, 0..1.
 //
 // Returns a SUBTRACTION, never an addition, and the caller only ever multiplies
@@ -1469,9 +1500,10 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     float under = vvCanopyEvidence();
     if (under < 0.001) return 0.0;
 
-    // No sun, no flecks. Also kills it at night, where a dappled moon would be
-    // an effect nobody has ever seen.
-    float sun = clamp(vv_sceneDayLight, 0.0, 1.0);
+    // No sun, no flecks - but a GATE rather than a dimmer. A canopy shadow at
+    // sunset is still a canopy shadow, and scaling it by daylight faded the
+    // forest floor out at the hour it reads best. See vvSunPresence.
+    float sun = vvSunPresence();
     if (sun < 0.01) return 0.0;
 
     // THE FLECKS ARE ALREADY IN THE FRAME. Nothing below invents a pattern.
@@ -1543,7 +1575,10 @@ float vvCanopyShaft(vec3 cameraRelativePos)
 {
     if (vv_pbrShafts < 0.001) return 0.0;
 
-    float sun = clamp(vv_sceneDayLight, 0.0, 1.0);
+    // A gate, not a dimmer. Shafts are a low-sun phenomenon above all others,
+    // and scaling them by daylight took them away at dawn and dusk and left
+    // them at noon, which is precisely backwards. See vvSunPresence.
+    float sun = vvSunPresence();
     if (sun < 0.01) return 0.0;
 
     vec3 toSun = normalize(lightPosition);
@@ -2192,7 +2227,12 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
          * thinness
          * vv_pbrFoliage
          * clamp(shadowBrightness, 0.0, 1.0)
-         * clamp(vv_sceneDayLight, 0.0, 1.0)
+
+         // A GATE, not a dimmer. This is the term that made a sunset forest
+         // look like a midday one: transmission peaks when the sun is low and
+         // behind the leaves, and multiplying it by "0 midnight, 1 noon"
+         // suppressed it hardest at exactly that moment. See vvSunPresence.
+         * vvSunPresence()
          * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 }
 
