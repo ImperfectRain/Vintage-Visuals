@@ -316,14 +316,194 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 // touching how they are shaded.
 // ---------------------------------------------------------------------------
 
-// Vanilla sets a wind mode on anything that bends in the wind, which in
-// practice is exactly the set of things thin enough to transmit light: leaves,
-// grass, crops, flowers. chunkopaque.vsh uses this same test for its own
-// `bool isLeaves`, so this borrows the game's answer rather than inventing a
-// second one that could disagree with it.
+// ---------------------------------------------------------------------------
+// Flora taxonomy, read from vanilla's own vertex data
+//
+// Vintage Story already classifies its vegetation, precisely, per vertex, and
+// hands the answer to every shading program. `renderFlags` bits 25-28 carry a
+// WIND MODE, and vanilla's own switch in applyVertexWarping names each one:
+//
+//    1  Weak Wind                      small ground flora, flowers
+//    2  Normal wind                    grass, tall grass
+//    3  Leaves                         tree canopy
+//    4  Bend (for small stems)         crops
+//    5  Tall Bend (thick/tall stems)   reeds, tall crops, saplings
+//    6  Water                          NOT flora - the liquid surface
+//    7  Extra Weak Wind                small stiff flora
+//    8  Fruit                          fruit hanging on a plant
+//    9  Weak Wind No Bend              foliage with non-bending stems: bushes
+//   10  Weak Wind, Inverse Bend        vines
+//   11  WaterPlant                     seaweed and other aquatic flora
+//   12  LiquidWarp                     NOT flora - warped liquid
+//   13  Weak Wind + reduced AlphaTest  thin cutout flora
+//
+// That is the classification section 4 of every vegetation brief asks for, and
+// it costs nothing to read: no block-ID list, no texture heuristic, no colour
+// test, and it is correct for modded content for free because a mod that wants
+// its plant to move in the wind has to set the same flag.
+//
+// This used to be ONE BIT. vvIsFoliage() returned "any wind mode at all", so a
+// grass blade, an oak leaf, a hanging pear and a strand of seaweed were the
+// same material to this renderer - which is why they all transmitted light
+// identically, all pooled rain identically, and why a pear glowed green when
+// backlit.
+//
+// Bits 29-31 carry WIND DATA, which vanilla uses as a bend multiplier. For
+// every bending mode it is the vertex's height up the plant, so it doubles as
+// a free base-to-tip gradient: a grass tip is thinner and more translucent
+// than the sheath at its root, and vanilla has already told us which is which.
+//
+// CAUTION for anyone extending this to another program: these bits are
+// OVERLOADED. In chunkliquid, `LiquidWaterModeBitMask` is the same 0xF << 25
+// and `LiquidExposedToSkyBitMask` overlaps the wind data. The taxonomy below
+// is only meaningful in the programs that shade blocks - chunkopaque and
+// chunktopsoil - which are the only two this group patches.
+// ---------------------------------------------------------------------------
+
+#define VV_FLORA_NONE      0
+#define VV_FLORA_HERB      1   // small ground flora and flowers
+#define VV_FLORA_GRASS     2   // grass and tall grass
+#define VV_FLORA_LEAVES    3   // tree canopy
+#define VV_FLORA_CROP      4   // crops on small stems
+#define VV_FLORA_REED      5   // reeds, tall crops, saplings
+#define VV_FLORA_STIFF     7   // small stiff flora
+#define VV_FLORA_FRUIT     8   // fruit: NOT leaf tissue
+#define VV_FLORA_BUSH      9   // shrubs, non-bending stems
+#define VV_FLORA_VINE     10   // vines
+#define VV_FLORA_AQUATIC  11   // seaweed and aquatic plants
+#define VV_FLORA_THIN     13   // thin cutout flora
+
+// Which of vanilla's wind modes this fragment belongs to, or VV_FLORA_NONE.
+//
+// Modes 6 and 12 are liquid rather than plant and are mapped out here, once,
+// so that nothing downstream has to remember they exist.
+int vvFloraClass()
+{
+    if ((renderFlags & WindModeBitMask) == 0) return VV_FLORA_NONE;
+
+    int mode = (renderFlags >> WindModePosition) & 0xF;
+
+    if (mode == 6 || mode == 12) return VV_FLORA_NONE;
+
+    return mode;
+}
+
+// Anything that is a plant. The old vvIsFoliage, kept because a dozen call
+// sites legitimately want "is this vegetation at all" and should not each
+// re-derive it.
 bool vvIsFoliage()
 {
-    return (renderFlags & WindModeBitMask) != 0;
+    return vvFloraClass() != VV_FLORA_NONE;
+}
+
+// True only for tree canopy: the tissue that CASTS a forest's shade.
+//
+// The distinction matters more than it looks. A sunfleck is light that got past
+// the leaves and landed on something below, so leaves must not receive dapple -
+// but grass on a forest floor is exactly what should. Testing "is foliage"
+// there excluded the undergrowth along with the canopy, which is why a forest
+// floor's tall grass stayed evenly lit while the soil beside it was dappled.
+bool vvIsCanopy()
+{
+    return vvFloraClass() == VV_FLORA_LEAVES;
+}
+
+// Plants that grow BENEATH a canopy and should receive its broken light.
+//
+// Everything rooted in the ground except the canopy itself. Vines are excluded
+// deliberately: they hang from the thing casting the shade, so they are part of
+// the occluder rather than under it. Aquatic flora is excluded because the
+// water above it already attenuates the sun and vanilla handles that.
+bool vvIsUnderstory()
+{
+    int flora = vvFloraClass();
+
+    return flora == VV_FLORA_HERB || flora == VV_FLORA_GRASS ||
+           flora == VV_FLORA_CROP || flora == VV_FLORA_REED  ||
+           flora == VV_FLORA_STIFF || flora == VV_FLORA_BUSH ||
+           flora == VV_FLORA_THIN;
+}
+
+// How far up its own plant this fragment sits, 0 at the root and 1 at the tip.
+//
+// Vanilla's wind data, normalised. It is a bend multiplier there and a
+// thickness gradient here, and the two are the same fact: the part of a plant
+// that bends furthest is the part with least tissue holding it up.
+//
+// Returns 0.5 for the modes that do not use wind data as a height, so nothing
+// downstream has to branch on which ones those are - a flat middle reads as
+// "no gradient available" rather than as "this is all root".
+float vvFloraHeight()
+{
+    int flora = vvFloraClass();
+
+    if (flora == VV_FLORA_NONE || flora == VV_FLORA_FRUIT) return 0.5;
+
+    return clamp(float((renderFlags >> WindDataPosition) & 0x7) / 7.0, 0.0, 1.0);
+}
+
+// How readily light passes THROUGH this tissue, 0 opaque to 1 near-transparent.
+//
+// The single number the whole flora response hangs on, and every value below is
+// an ordering rather than a measurement: a grass blade is one cell layer and a
+// pear is a solid ball of fruit, and no amount of tuning should ever put them
+// the same way round.
+//
+// Multiplied by the height gradient where vanilla gives one, so a grass tip
+// glows and its root does not - which is what a backlit meadow actually looks
+// like and what a flat per-block value can never produce.
+float vvFloraThinness()
+{
+    int flora = vvFloraClass();
+
+    if (flora == VV_FLORA_NONE) return 0.0;
+
+    // Fruit is not leaf tissue. It is the one member of this taxonomy that is
+    // thick, opaque and NOT green, and giving it the leaf treatment made
+    // hanging pears glow green from behind.
+    if (flora == VV_FLORA_FRUIT) return 0.08;
+
+    float base;
+
+    if      (flora == VV_FLORA_GRASS)   base = 1.00;  // one cell layer
+    else if (flora == VV_FLORA_HERB)    base = 0.95;  // petals, thinner than leaves
+    else if (flora == VV_FLORA_THIN)    base = 0.95;  // vanilla itself calls these thin
+    else if (flora == VV_FLORA_CROP)    base = 0.85;
+    else if (flora == VV_FLORA_REED)    base = 0.80;
+    else if (flora == VV_FLORA_LEAVES)  base = 0.65;  // a canopy is many leaves deep
+    else if (flora == VV_FLORA_BUSH)    base = 0.60;  // denser again, and layered
+    else if (flora == VV_FLORA_VINE)    base = 0.70;
+    else if (flora == VV_FLORA_AQUATIC) base = 0.85;
+    else                                base = 0.55;  // unknown mode: conservative
+
+    // Tip-to-root gradient, and only where the plant has one. Held back from
+    // full range so a root is dimmer rather than dark.
+    return base * mix(0.55, 1.0, vvFloraHeight());
+}
+
+// How much a plant HOLDS rain rather than shedding it.
+//
+// Not the same question as how wet it gets. A cupped flower and a flat leaf in
+// the same shower end up differently wet, and the difference is the shape of
+// the plant rather than the weather.
+float vvFloraPooling()
+{
+    int flora = vvFloraClass();
+
+    if (flora == VV_FLORA_NONE) return 1.0;
+
+    // Already in water. Wetness is not a state it can gain.
+    if (flora == VV_FLORA_AQUATIC) return 0.0;
+
+    // Fruit has a waxy skin and sheds almost everything, but what stays beads
+    // and catches light hard - which is handled by roughness, not by amount.
+    if (flora == VV_FLORA_FRUIT) return 0.55;
+
+    // A flower's cup holds water; a blade of grass runs it straight off.
+    if (flora == VV_FLORA_HERB) return 0.95;
+    if (flora == VV_FLORA_GRASS) return 0.70;
+
+    return 0.85;
 }
 
 
@@ -353,7 +533,13 @@ float vvWetness(vec3 faceNormal)
     // Foliage does not pool water the way a flat stone does - a leaf sheds it -
     // but it does get thoroughly wet, so the up-facing test is relaxed rather
     // than removed.
-    float pooling = vvIsFoliage() ? mix(0.45, 1.0, facing) : facing * facing;
+    // A plant is not a flat surface, so how much rain STAYS on it is a fact
+    // about its shape rather than about which way this face points. A cupped
+    // flower holds water a grass blade runs straight off, and both used to get
+    // the same number. See vvFloraPooling.
+    float pooling = vvIsFoliage()
+        ? mix(0.45, 1.0, facing) * vvFloraPooling()
+        : facing * facing;
 
     return clamp(vv_sceneWetness * pooling * exposure, 0.0, 1.0);
 }
@@ -1149,7 +1335,15 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // a leaf block it is not dapple at all, and putting it there lit up every
     // tree in the world from the outside, which is the opposite of the effect:
     // the tree should be casting this, not wearing it.
-    if (vvIsFoliage()) return 0.0;
+    //
+    // UNDERGROWTH IS BELOW, NOT ABOVE. This used to test "is this foliage",
+    // which excluded the whole understory along with the canopy - so a forest
+    // floor's tall grass and flowers stayed evenly lit while the soil between
+    // them was dappled, and the two read as different places. Only the canopy
+    // is exempt now; grass, herbs, crops and bushes take the broken light like
+    // anything else standing under a tree.
+    if (vvIsCanopy()) return 0.0;
+    if (vvIsFoliage() && !vvIsUnderstory()) return 0.0;
 
     // GEOMETRIC, not photometric. See vvCanopyEvidence: this asks whether the
     // thing blocking the sun here is broken at leaf scale, which is a fact
@@ -1262,7 +1456,12 @@ float vvCanopyShaft(vec3 cameraRelativePos)
 
     // Leaves lit from behind. Vanilla already draws the transmission; this says
     // that the same fragments are where beams start.
-    if (vvIsFoliage()) return strength * VV_SHAFT_LEAF;
+    //
+    // The CANOPY, not every plant. A beam is sunlight coming through a gap in
+    // something overhead; a grass blade at ankle height has no gap above it to
+    // be the start of one, and treating it as a source put beams in the lawn.
+    if (vvIsCanopy()) return strength * VV_SHAFT_LEAF;
+    if (vvIsFoliage()) return 0.0;
 
     // A beam starts at a REAL gap, not an invented one.
     //
@@ -1810,9 +2009,24 @@ float vvTranslucency(vec3 n, vec3 l, vec3 v)
 // that tint is what makes cheap foliage translucency read as grey haze.
 vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrightness)
 {
-    if (vv_pbrFoliage < 0.001 || !vvIsFoliage()) return vec3(0.0);
+    if (vv_pbrFoliage < 0.001) return vec3(0.0);
 
-    vec3 tint = albedo * vec3(1.06, 1.12, 0.72);
+    // WHICH plant, not merely whether. A grass blade is one cell layer and a
+    // pear is a solid ball of fruit; before this they transmitted identically,
+    // because the classification was a single bit. See vvFloraThinness.
+    float thinness = vvFloraThinness();
+    if (thinness < 0.001) return vec3(0.0);
+
+    // Chlorophyll filters what passes through, which is why transmitted light
+    // leaves a leaf warmer and more saturated than light reflected off it.
+    //
+    // The tint is applied in PROPORTION to how green the tissue actually is,
+    // rather than to everything that bends in the wind. Fruit is the case that
+    // forced this: a hanging pear is plant tissue, it does transmit a little,
+    // and pushing it toward yellow-green made it read as an unripe leaf. Its
+    // own albedo carries the colour it should transmit.
+    float chlorophyll = (vvFloraClass() == VV_FLORA_FRUIT) ? 0.0 : 1.0;
+    vec3 tint = albedo * mix(vec3(1.0), vec3(1.06, 1.12, 0.72), chlorophyll);
 
     // Shadowed leaves do not glow - there is no sun behind them to come
     // through - and daylight scales it for the same reason. Wetness is
@@ -1820,6 +2034,7 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
     // reflects more, and that half is already handled.
     return tint
          * vvTranslucency(n, l, v)
+         * thinness
          * vv_pbrFoliage
          * clamp(shadowBrightness, 0.0, 1.0)
          * clamp(vv_sceneDayLight, 0.0, 1.0);
@@ -2595,6 +2810,73 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     if (mode == 42)
     {
         return vec4(abs(vv_reflectCameraDelta) * 4.0, color.a);
+    }
+
+    // ---- Flora taxonomy, views 44-46 -------------------------------------
+    //
+    // These answer the question the old single-bit classification made
+    // unaskable: WHICH plant is this, and does the renderer agree with vanilla
+    // about it? Read them standing in a mixed scene - a tree over a meadow with
+    // crops nearby - where every band should be a different flat colour and the
+    // boundaries should follow the plants rather than the texture.
+
+    // 44: the class itself, one hue per wind mode.
+    //
+    // Flat colour per plant type, so a wrong classification shows as a patch of
+    // the wrong colour rather than as a subtle shading difference. Black is
+    // "not a plant", which should cover stone, soil, wood and water.
+    //
+    //   red      leaves            green    grass
+    //   magenta  herbs/flowers     yellow   crops
+    //   cyan     reeds             orange   fruit
+    //   blue     bush              purple   vine
+    //   teal     aquatic           grey     thin/stiff/unknown
+    if (mode == 44)
+    {
+        int flora = vvFloraClass();
+
+        if (flora == VV_FLORA_NONE)    return vec4(vec3(0.0), color.a);
+        if (flora == VV_FLORA_LEAVES)  return vec4(1.0, 0.1, 0.1, color.a);
+        if (flora == VV_FLORA_GRASS)   return vec4(0.1, 1.0, 0.1, color.a);
+        if (flora == VV_FLORA_HERB)    return vec4(1.0, 0.1, 1.0, color.a);
+        if (flora == VV_FLORA_CROP)    return vec4(1.0, 1.0, 0.1, color.a);
+        if (flora == VV_FLORA_REED)    return vec4(0.1, 1.0, 1.0, color.a);
+        if (flora == VV_FLORA_FRUIT)   return vec4(1.0, 0.5, 0.0, color.a);
+        if (flora == VV_FLORA_BUSH)    return vec4(0.1, 0.1, 1.0, color.a);
+        if (flora == VV_FLORA_VINE)    return vec4(0.5, 0.0, 1.0, color.a);
+        if (flora == VV_FLORA_AQUATIC) return vec4(0.0, 0.6, 0.6, color.a);
+
+        return vec4(vec3(0.45), color.a);
+    }
+
+    // 45: how readily this tissue passes light, and where it sits on its plant.
+    //
+    // Red is thinness, green is the base-to-tip gradient vanilla's wind data
+    // gives. A meadow should be bright red at the tips fading down the blades;
+    // a canopy should be a duller, flatter red; a pear should be nearly black
+    // in red. If green is flat 0.5 everywhere, the wind-data height is not
+    // reaching the shader and the tip gradient is doing nothing.
+    if (mode == 45)
+    {
+        return vec4(vvFloraThinness(), vvFloraHeight(), 0.0, color.a);
+    }
+
+    // 46: which plants take the canopy's broken light.
+    //
+    // Green is understory - grass, herbs, crops, bushes - which SHOULD be
+    // dappled. Red is the canopy itself, which must not be. Blue is a plant
+    // that is neither: vines hanging from the occluder, and aquatic flora under
+    // water the game already darkens.
+    //
+    // The bug this exists to catch: testing "is foliage" here excluded the
+    // whole understory along with the canopy, so a forest floor's grass stayed
+    // evenly lit while the soil between it was dappled.
+    if (mode == 46)
+    {
+        if (!vvIsFoliage()) return vec4(vec3(0.0), color.a);
+        if (vvIsCanopy()) return vec4(1.0, 0.0, 0.0, color.a);
+        if (vvIsUnderstory()) return vec4(0.0, 1.0, 0.0, color.a);
+        return vec4(0.0, 0.0, 1.0, color.a);
     }
 
     // ---- Canopy audit instrument, views 25-28 ----------------------------

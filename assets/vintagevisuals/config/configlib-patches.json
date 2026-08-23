@@ -724,13 +724,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 are the pixel reflection: 32 reflection direction, 33 the material texel grid, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness. 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture. 43 is the capture coordinate (red U, green V) - the view that exposes a wrong camera reprojection.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 are the pixel reflection: 32 reflection direction, 33 the material texel grid, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness. 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture. 43 is the capture coordinate (red U, green V) - the view that exposes a wrong camera reprojection. 44 flora class by colour, 45 tissue thinness and height up the plant, 46 which plants take canopy dapple.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 43.0,
+          "max": 46.0,
           "step": 1.0
         }
       },
