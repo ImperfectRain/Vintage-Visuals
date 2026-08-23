@@ -47,7 +47,7 @@
       "pbr_enabled": {
         "ingui": "Surface relief (PBR)",
         "comment": "Derived normal maps give stone, wood and gravel real surface relief. Off by default: this is the only setting that patches the shader drawing the world.",
-        "default": false,
+        "default": true,
         "clientSide": true,
         "weight": 20
       },
@@ -773,7 +773,7 @@
       "atmosphere_heighthaze": {
         "ingui": "Ground haze",
         "comment": "Haze that pools in low ground on still, humid mornings and burns off as the day warms. Rendered by the game's own height fog, so it fills valleys, reaches the sky and the water, and thins as you climb out of it. Strongest in rainforest and after rain; wind disperses it; there is none underground. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.4,
         "clientSide": true,
         "weight": 74,
         "range": {
@@ -785,7 +785,7 @@
       "atmosphere_aerial": {
         "ingui": "Sunlit haze",
         "comment": "Distant haze picks up the sun's colour when you look toward it and stays cool when you look away, instead of being the same grey in every direction. Strongest with a low sun and a long view. This is the one atmospheric effect the game does not already have. 0 is vanilla, and 0 removes the shader code rather than muting it, so it needs a moment to reload shaders when you cross it.",
-        "default": 0.0,
+        "default": 0.5,
         "clientSide": true,
         "weight": 75,
         "range": {
@@ -809,7 +809,7 @@
       "atmosphere_horizon": {
         "ingui": "Horizon haze",
         "comment": "The horizon becomes more atmospheric than the ground at your feet, because you are looking through more air to reach it. Warms toward whatever colour the game has given the sun, and only while the sun is low - there is no fixed sky palette here. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.4,
         "clientSide": true,
         "weight": 77,
         "range": {
@@ -821,7 +821,7 @@
       "atmosphere_sunscatter": {
         "ingui": "Sunlit air",
         "comment": "Air looking toward the sun brightens and takes its colour; air looking away stays cool. Vanilla's fog is the same grey in every direction, and this difference is most of what makes distance read as distance. Strongest with a low sun. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.5,
         "clientSide": true,
         "weight": 78,
         "range": {
@@ -833,7 +833,7 @@
       "atmosphere_heightattenuation": {
         "ingui": "Thin air at altitude",
         "comment": "A mountain top sees further than the valley below it. Restrained: Vintage Story does not model how air density changes with height, so this is an approximation standing in for one. Not the same as ground haze, which puts a layer on the ground rather than thinning what is above it. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.3,
         "clientSide": true,
         "weight": 79,
         "range": {
@@ -845,7 +845,7 @@
       "atmosphere_weatherextinction": {
         "ingui": "Weather visibility",
         "comment": "Rain and snow thicken the air, so distant things fade sooner. Snow closes the world down harder than rain does. This is how much the air TAKES; what the thickened air itself looks like is the precipitation setting below. Now reaches animals and particles, not only terrain. 0 is vanilla.",
-        "default": 0.35,
+        "default": 0.5,
         "clientSide": true,
         "weight": 80,
         "range": {
@@ -869,7 +869,7 @@
       "atmosphere_cloudatmosphere": {
         "ingui": "Cloud softening",
         "comment": "Cloud cover diffuses the directional atmosphere, so an overcast day is flat and even rather than aimed at a sun you cannot see. Reads the same cloud state the cloud shadows do and does not simulate clouds of its own. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.4,
         "clientSide": true,
         "weight": 82,
         "range": {
@@ -893,7 +893,7 @@
       "atmosphere_godrays": {
         "ingui": "Godray contribution",
         "comment": "How much this mod feeds Vintage Story's own crepuscular ray pass. FOUNDATION ONLY: the buffer channel that pass reads is already written by this mod's sunbeam code, and two systems cannot write one line. The setting and its debug view work; nothing reaches the frame yet. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.4,
         "clientSide": true,
         "weight": 84,
         "range": {
@@ -917,7 +917,7 @@
       "atmosphere_precipitation": {
         "ingui": "Rain and snow in the air",
         "comment": "What falling weather does to the air itself, as opposed to how much it thickens it. Rain scatters hard toward the sun; snow scatters in every direction, so a blizzard glows and a downpour only brightens where the sun is. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.5,
         "clientSide": true,
         "weight": 86,
         "range": {
@@ -929,7 +929,7 @@
       "atmosphere_moon": {
         "ingui": "Moonlit air",
         "comment": "Air facing the moon on a clear night. Driven by the game's own moon phase and light, and capped hard - a night this makes brighter is a bug, not a stronger setting. Contributes nothing by day. 0 is vanilla.",
-        "default": 0.0,
+        "default": 0.5,
         "clientSide": true,
         "weight": 87,
         "range": {

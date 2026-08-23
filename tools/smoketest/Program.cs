@@ -279,6 +279,8 @@ void main(void) {
 
         SceneInvariantChecks.Run(Repo, Check);
 
+        UiChecks.Run(Repo, Check);
+
         DocumentationChecks.Run(Repo, Check);
 
         Console.WriteLine();

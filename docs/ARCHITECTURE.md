@@ -367,6 +367,29 @@ information ladder applies throughout: prefer what the game already computed.
 | Broken cloud | the same blended cloud density the shadows read | `4c(1-c)` | `vv_atmosBrokenCloud` | cloud-edge scattering |
 | Camera height above sea level, far plane | `DefaultShaderUniforms` | none | vanilla `playerToSealevelOffset`, `zFar` | `AtmosphereState` |
 
+### Configuration, which has three writers and one owner
+
+The renderer never asks who moved a value. `ConfigManager` owns the one
+`VintageVisualsConfig` instance and raises one `ConfigChanged` event; every writer
+mutates that object and calls `NotifyChanged()`.
+
+```
+User ──┬── Visual Tuning Studio (src/Ui/)  ──┐
+       ├── ConfigLib bridge                 ─┤
+       └── ModConfig JSON + Ctrl+V reload   ─┴──> ConfigManager ──> ConfigChanged ──> subsystems
+```
+
+| Writer | Reaches the config by | Owns |
+|---|---|---|
+| Visual Tuning Studio | `ConfigAccess` over a dotted property path | presentation only: labels, ranges, tabs, descriptions |
+| `ConfigLibBridge` | the game's event bus, no ConfigLib types referenced | nothing; it is a relay |
+| JSON + hotkey | `LoadModConfig` / `StoreModConfig` | the file on disk |
+
+`src/Ui/` is a configuration client and holds no rendering state: no GL call, no
+uniform upload, no shader reload. Patch-gating changes are detected on the
+config-changed path by `VintageVisualsModSystem`, which schedules the reload — the
+UI only ever writes a value and notifies.
+
 **Not plumbed, and authoritative if it were:** the rain map
 (`IBlockAccessor.GetRainMapHeightAt`, `IMapChunk.RainHeightMap`) is what the game
 itself uses to place splash particles and extinguish torches. Wetness currently

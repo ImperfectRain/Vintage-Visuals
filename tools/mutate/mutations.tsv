@@ -33,3 +33,9 @@ the depth report compares against a stale tolerance	src/Reflections/SceneCapture
 the capture's depth is assumed finer than one byte	src/Reflections/SceneCaptureRenderer.cs	private const float DepthChannelLevels = 255f;	private const float DepthChannelLevels = 65535f;	one byte
 the depth-precision view never reports coarse data	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	        float coarse = clamp(quantum / max(1e-5, VV_SSR_THICKNESS) - 1.0, 0.0, 1.0);	        float coarse = 0.0;	finer than its data
 a subsystem is enabled by default and does nothing	src/Common/VintageVisualsConfig.cs	                return Enabled &&	                return false &&	does something
+a studio slider points at the wrong property	src/Ui/VisualSettingRegistry.cs	"pbr_normalstrength", "PseudoPBR.NormalStrength"	"pbr_normalstrength", "PseudoPBR.SpecularStrength"	edit the same property
+a studio slider offers a range the config would clamp	src/Ui/VisualSettingRegistry.cs	W, "Rain and wetness", 0f, 1f, 0.05f);	W, "Rain and wetness", 0f, 9f, 0.05f);	silently correct
+a friendly debug name points at no shader arm	src/Ui/DebugViewRegistry.cs	Pbr(13, "Foliage transmission"	Pbr(99, "Foliage transmission"	does not implement
+a shader diagnostic becomes unreachable by name	src/Ui/DebugViewRegistry.cs	Pbr(29, "Canopy gate"	Pbr(129, "Canopy gate"	can be reached by name
+the two panels disagree about a default	src/Common/VintageVisualsConfig.cs	public float AerialPerspective { get; set; } = 0.5f;	public float AerialPerspective { get; set; } = 0.7f;	describe a shared setting the same way
+the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"weather_frost", "Weather.FrostStrength"	"weather_frost_x", "Weather.FrostStrength"	exposes everything
