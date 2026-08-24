@@ -736,6 +736,11 @@ Everything needed turned out to be public API, which is why the previous pass's
 | Own target | `IRenderAPI.CreateFrameBuffer(FramebufferAttrs)` |
 | Capture transform | `CurrentProjectionMatrix` x `CameraMatrixOriginf` |
 
+When `PseudoPBR.DebugView` is non-zero, capture updates pause and the diagnostic
+views inspect the last normal rendered frame. Otherwise view 41 captures its own
+terrain replacement on the next frame and turns "capture itself" into recursive
+black terrain with normal sky.
+
 **Depth comes from the depth attachment, never from `gPosition`.** That is what
 resolves the SSAO problem: `outGPosition` is written inside `#if SSAOLEVEL > 0`
 and does not exist for a player with SSAO off, while a depth buffer always does.

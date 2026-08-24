@@ -137,6 +137,7 @@ namespace VintageVisuals.Reflections
 
         private readonly ICoreClientAPI _capi;
         private readonly Action<string> _log;
+        private readonly Func<bool> _capturePaused;
 
         private IShaderProgram _program;
         private FrameBufferRef _target;
@@ -148,6 +149,7 @@ namespace VintageVisuals.Reflections
         private bool _failed;
         private bool _hasCapture;
         private int _skips;
+        private bool _reportedDebugFreeze;
 
         /// <summary>The view-projection the capture was drawn with.</summary>
         public float[] CaptureViewProjection { get; } = new float[16];
@@ -173,10 +175,11 @@ namespace VintageVisuals.Reflections
         public double RenderOrder => 1.0;
         public int RenderRange => 0;
 
-        public SceneCaptureRenderer(ICoreClientAPI capi, Action<string> log)
+        public SceneCaptureRenderer(ICoreClientAPI capi, Action<string> log, Func<bool> capturePaused)
         {
             _capi = capi;
             _log = log;
+            _capturePaused = capturePaused;
         }
 
         /// <summary>
@@ -359,6 +362,24 @@ namespace VintageVisuals.Reflections
 
             try
             {
+                if (CapturePaused())
+                {
+                    if (!_reportedDebugFreeze)
+                    {
+                        _reportedDebugFreeze = true;
+                        _log("reflections: scene capture frozen while PseudoPBR debug view is active - "
+                           + "reflection diagnostics inspect the last normal rendered frame instead of "
+                           + "capturing their own replacement output.");
+                    }
+
+                    if (!_hasCapture)
+                    {
+                        Skip("scene capture is waiting for a normal frame because PseudoPBR debug view is active");
+                    }
+
+                    return;
+                }
+
                 if (!EnsureTarget()) return;
 
                 FrameBufferRef primary = FrameBuffer(EnumFrameBuffer.Primary);
@@ -439,6 +460,18 @@ namespace VintageVisuals.Reflections
 
             if (buffer == null || buffer.Disposed) return null;
             return buffer;
+        }
+
+        private bool CapturePaused()
+        {
+            try
+            {
+                return _capturePaused != null && _capturePaused();
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private CaptureSource ChooseCaptureSource(FrameBufferRef current, FrameBufferRef primary)

@@ -82,6 +82,13 @@ falls back to Primary depth. The first successful capture logs current, primary,
 chosen colour, chosen depth, target, viewport and every public framebuffer entry
 so a bad View 41 screenshot has IDs to compare instead of another guess.
 
+**PBR debug views freeze the capture.** View 41 is drawn by replacing terrain
+with the capture texture. If the capture keeps updating while that view is
+active, the next frame captures the diagnostic output instead of the world:
+terrain feeds back toward black while sky remains normal because the sky pass is
+not replaced by PBR debug. The capture therefore pauses whenever
+`PseudoPBR.DebugView` is non-zero and diagnostics inspect the last normal frame.
+
 ## Cost
 
 | | |
@@ -205,9 +212,10 @@ say nothing.
 
 The bridge is not considered visually proven until debug view 41 shows the
 terrain image clearly. The latest runtime evidence showed sky in the capture but
-black terrain, which means capture RGB is the first blocker to clear before
-reflection geometry can be judged. See `docs/CHECKLIST.md` for the specific
-scenes still outstanding.
+black terrain while view 41 was active; that is consistent with recursive
+diagnostic capture, so diagnostics now freeze on the last normal frame before
+they inspect the bridge. See `docs/CHECKLIST.md` for the specific scenes still
+outstanding.
 
 **Water is not supported.** `chunkliquid.fsh` is in no patch group. It should
 wait until the reflection geometry is validated on terrain, or a wrong reflection

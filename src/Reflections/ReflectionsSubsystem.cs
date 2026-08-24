@@ -68,7 +68,7 @@ namespace VintageVisuals.Reflections
         {
             if (_capture != null) return;
 
-            var capture = new SceneCaptureRenderer(_capi, Log);
+            var capture = new SceneCaptureRenderer(_capi, Log, IsPbrDebugViewActive);
 
             if (!capture.TryInitialise())
             {
@@ -131,6 +131,11 @@ namespace VintageVisuals.Reflections
         private void Log(string message)
         {
             _capi?.Logger?.Notification("[VintageVisuals] " + message);
+        }
+
+        private bool IsPbrDebugViewActive()
+        {
+            return _mod?.ConfigManager?.Config?.PseudoPBR?.DebugView > 0.5f;
         }
 
         public void Dispose()

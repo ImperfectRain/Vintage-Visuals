@@ -269,6 +269,21 @@ namespace VintageVisuals.SmokeTest
                 capture.Contains("DescribeFrameBuffers()"),
                 "the next runtime screenshot needs IDs, dimensions and stage state, not another guess");
 
+            int pauseCheck = capture.IndexOf("if (CapturePaused())", StringComparison.Ordinal);
+            int ensureTarget = capture.IndexOf("if (!EnsureTarget()) return;", StringComparison.Ordinal);
+
+            check("reflection diagnostics do not capture their own replacement frame",
+                pauseCheck >= 0 &&
+                ensureTarget >= 0 &&
+                pauseCheck < ensureTarget &&
+                capture.Contains("scene capture frozen while PseudoPBR debug view is active"),
+                "debug view 41 replaces terrain with the capture; capturing that frame feeds the debug output back into itself");
+
+            check("PBR debug mode is the capture freeze switch",
+                File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"))
+                    .Contains("Config?.PseudoPBR?.DebugView > 0.5f"),
+                "any PBR debug view changes terrain output, so the capture must inspect the last normal frame");
+
             check("depth comes from the depth attachment, not from gPosition",
                 capture.Contains("DepthTextureId") && !capture.Contains("gPosition"),
                 "gPosition lives inside #if SSAOLEVEL > 0 and vanishes when SSAO is off");
