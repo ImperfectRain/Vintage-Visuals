@@ -160,7 +160,7 @@ uniform sampler2D vv_reflectScene;
 uniform mat4 vv_reflectViewProj;     // the transform that capture was drawn with
 uniform vec3 vv_reflectCameraDelta;  // THIS frame's camera position minus the capture's
 uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
-uniform float vv_reflectFar;         // far plane the packed depth was normalised by
+uniform float vv_reflectFar;         // far plane of the captured projection
 uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
@@ -1790,6 +1790,12 @@ float vvMaterialTexelsPerPixel(vec2 materialUv)
     return max(length(dFdx(texelCoord)), length(dFdy(texelCoord)));
 }
 
+float vvHalfFloatQuantum(float value)
+{
+    value = clamp(value, 1e-6, max(1.0, vv_reflectFar));
+    return exp2(floor(log2(value)) - 10.0);
+}
+
 float vvMaterialTexelResolvability(vec2 materialUv)
 {
     float footprint = vvMaterialTexelsPerPixel(materialUv);
@@ -2153,7 +2159,7 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
         miss.reason = VV_SSR_NO_CROSSING;
 
         float rayDepth = 1.0 / mix(invA, invB, f);
-        float sceneDepth = texture(vv_reflectScene, uv).a * vv_reflectFar;
+        float sceneDepth = texture(vv_reflectScene, uv).a;
 
         float delta = rayDepth - sceneDepth;
 
@@ -2168,7 +2174,7 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
                 vec2 midUv = mix(a.uv, b.uv, mid);
                 float midDepth = 1.0 / mix(invA, invB, mid);
 
-                if (midDepth - texture(vv_reflectScene, midUv).a * vv_reflectFar < 0.0) lo = mid;
+                if (midDepth - texture(vv_reflectScene, midUv).a < 0.0) lo = mid;
                 else                                                                    hi = mid;
             }
 
@@ -2176,7 +2182,7 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
             vec4 resolved = texture(vv_reflectScene, hitUv);
 
             // Did the ray stop AT the surface, or sail past something thin?
-            float thickness = 1.0 / mix(invA, invB, hi) - resolved.a * vv_reflectFar;
+            float thickness = 1.0 / mix(invA, invB, hi) - resolved.a;
 
             if (thickness < VV_SSR_THICKNESS)
             {
@@ -3339,33 +3345,31 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
 
     // 51: is the hit decision being made on geometry, or on rounding?
     //
-    // The capture packs linear depth into the alpha of an RGBA8 target as
-    // linear/zFar, so the finest depth difference it can represent anywhere is
-    // vv_reflectFar/255 blocks. The march then asks whether a refined crossing
-    // landed within VV_SSR_THICKNESS - half a block - of the surface. At the
-    // far planes Vintage Story actually uses those two numbers are not in the
-    // same league.
+    // The capture stores linear view depth directly in the alpha of an RGBA16F
+    // target. Half-float precision changes with magnitude, so this view reports
+    // the quantum at the sampled scene depth instead of a single zFar-wide
+    // number.
     //
-    //   red     constant across the frame: how far the depth quantum exceeds
-    //           the tolerance. Any red at all means the tolerance is finer than
-    //           the data everywhere, and accept/reject is rounding, not geometry
+    //   red     per texel: how far the local half-float depth quantum exceeds
+    //           the tolerance. Red means accept/reject there is rounding, not
+    //           geometry
     //   green   per texel: this crossing's residual measured in QUANTA rather
     //           than in blocks. Below one quantum the number is noise
     //   blue     this crossing was rejected as too thick
     //
-    // Bisection cannot rescue this. Five passes refine the ray parameter
-    // against the same quantised sample, so they converge precisely onto a
-    // number that was rounded before the shader ever saw it.
+    // Bisection cannot rescue quantisation. Five passes refine the ray
+    // parameter against the same sample, so they converge precisely onto the
+    // value the capture made available.
     if (mode == 51)
     {
         vec3 n51 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
         VvSceneHit m51 = vvSceneReflection(n51, materialUv, cameraRelativePos);
 
-        float quantum = max(1e-5, vv_reflectFar / 255.0);
+        bool measured = m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK;
+        float sampleDepth = measured ? texture(vv_reflectScene, clamp(m51.uv, 0.0, 1.0)).a : vv_reflectFar;
+        float quantum = max(1e-5, vvHalfFloatQuantum(sampleDepth));
         float coarse = clamp(quantum / max(1e-5, VV_SSR_THICKNESS) - 1.0, 0.0, 1.0);
-        float inQuanta = (m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK)
-            ? clamp(abs(m51.thickness) / quantum, 0.0, 1.0)
-            : 0.0;
+        float inQuanta = measured ? clamp(abs(m51.thickness) / quantum, 0.0, 1.0) : 0.0;
 
         return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
     }

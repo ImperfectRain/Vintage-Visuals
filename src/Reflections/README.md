@@ -46,7 +46,7 @@ The consuming code is `vvSceneReflection` in
 | Channel | Content |
 |---|---|
 | RGB | The composed scene source selected at `AfterPostProcessing` |
-| A | Linear view depth, normalised by the far plane |
+| A | Linear view depth, in blocks |
 
 Packing depth into alpha is why the terrain shader needs **one** new sampler
 rather than two. Adding a sampler to `chunkopaque.fsh` has twice cost this
@@ -93,7 +93,7 @@ not replaced by PBR debug. The capture therefore pauses whenever
 
 | | |
 |---|---|
-| Render target | One RGBA8 at half the frame in each axis, so a quarter of the pixels |
+| Render target | One RGBA16F at half the frame in each axis, so a quarter of the pixels |
 | When | Every frame the feature is on, whether or not anything reflective is visible |
 | Extra passes | One fullscreen copy |
 | Measured | **No.** Nothing here has been profiled |
@@ -134,45 +134,18 @@ landed against the tolerance judging it.
 Neither finding has been acted on. Both are stated here so the next run measures
 instead of guessing.
 
-### The depth is one byte, and the tolerance is half a block
+### The depth is half float, and the tolerance is half a block
 
-The capture packs linear view depth into the **alpha of an RGBA8 target** as
-`linear / zFar`. The finest depth difference it can express anywhere in the world
-is therefore `zFar / 255` blocks:
+The capture originally packed linear view depth into the alpha of an RGBA8 target
+as `linear / zFar`, which made the finest representable difference `zFar / 255`
+blocks everywhere. At ordinary Vintage Story far planes, that was coarser than
+`VV_SSR_THICKNESS` and forced the hit decision into quantisation noise.
 
-| `zFar` | one alpha step |
-|---|---|
-| 128 | 0.50 blocks |
-| 256 | 1.00 block |
-| 512 | 2.01 blocks |
-| 1024 | 4.02 blocks |
-
-The march then decides whether a refined crossing landed within
-`VV_SSR_THICKNESS` — **half a block** — of the surface it hit. Those cross over
-at `zFar = 128`, and Vintage Story's far plane follows the player's view
-distance, which is routinely several hundred blocks.
-
-Above the crossover the accept/reject decision is being made **inside the
-quantisation noise**: correct hits are discarded and wrong ones kept, in a
-pattern that follows depth rather than anything in the scene. It produces both
-halves of the reported symptom at once — reflections that respond to the world
-without resolving it.
-
-**Neither more steps nor more refinement can fix this.** `VV_SSR_REFINE`'s
-comment reasons about the ray interval shrinking to a few texels, which is true
-and beside the point: five passes converge the ray parameter against the *same
-quantised sample*. The precision was lost in the capture, not in the search.
-
-`SceneCaptureRenderer` now reports the measured quantum against the tolerance
-once per session, at warning level when the tolerance is the finer of the two, so
-this stops being arithmetic on paper. **Read that line before changing any march
-constant** — raising `VV_SSR_THICKNESS` to make reflections appear would be doing
-exactly what its own comment forbids.
-
-If the report fires, the fix is in the capture format rather than the march: an
-`Rgba16f` target keeps the entire bridge conceptually identical and costs memory
-and bandwidth, which is a measurable trade rather than a guess. That has **not**
-been done, because it should be decided against a measured `zFar`.
+The target is now `Rgba16f`, and `vvscenecapture.fsh` writes linear depth
+directly to alpha. The terrain shader reads `texture(vv_reflectScene, uv).a`
+directly; there is no `/ zFar` then `* zFar` round trip. Half-float precision is
+local rather than global, so debug view 51 reports the local quantum at the
+sampled scene depth against the half-block tolerance.
 
 ### Two smaller findings, confirmed and not acted on
 

@@ -1004,27 +1004,13 @@ namespace VintageVisuals.SmokeTest
         // -------------------------------------------------------------------
         // I13  A TOLERANCE MUST NOT BE FINER THAN THE DATA IT JUDGES
         //
-        // The scene capture packs linear view depth into the ALPHA OF AN RGBA8
-        // target as linear/zFar, so the finest depth difference it can express
-        // anywhere in the world is zFar/255 blocks. The reflection march then
-        // decides whether a refined crossing landed within VV_SSR_THICKNESS -
-        // half a block - of the surface it hit.
+        // The scene capture stores linear view depth directly in the alpha of an
+        // RGBA16F target. This replaces the old `linear/zFar` RGBA8 path, whose
+        // best possible precision was zFar/255 blocks everywhere.
         //
-        // Those cross over at zFar = 128, and Vintage Story's far plane follows
-        // the player's view distance, which is routinely several hundred blocks.
-        // Above the crossover the accept/reject decision is being made inside
-        // the quantisation noise: correct hits are discarded and wrong ones are
-        // kept, in a pattern that follows depth rather than anything in the
-        // scene. Five bisection passes cannot help, because they refine the ray
-        // parameter against the same quantised sample - the precision was lost
-        // in the capture, not in the search.
-        //
-        // This invariant does NOT assert the tolerance is adequate; it is not,
-        // at any ordinary view distance, and asserting otherwise would be a
-        // green line stating the opposite of the arithmetic. It asserts that
-        // the mismatch is MEASURED - that the two numbers are compared, that
-        // the comparison is honest at both ends, and that the C# side is not
-        // comparing against a stale copy of a constant it does not own.
+        // Half-float precision is local: near geometry has finer steps than far
+        // geometry. This invariant pins the new representation and the
+        // diagnostic that reports the local quantum against VV_SSR_THICKNESS.
         // -------------------------------------------------------------------
         static void I13_AToleranceIsNotFinerThanItsData(string repo, Action<string, bool, string> check)
         {
@@ -1032,8 +1018,6 @@ namespace VintageVisuals.SmokeTest
             try { tolerance = Const(_pbr, "VV_SSR_THICKNESS"); }
             catch (Exception ex) { check("I13 the hit tolerance is readable", false, ex.Message); return; }
 
-            // The reporter lives in C# because zFar does, and a copied constant
-            // drifts. Pin it.
             string capture;
             try { capture = File.ReadAllText(Path.Combine(repo, "src/Reflections/SceneCaptureRenderer.cs")); }
             catch (Exception ex) { check("I13 the capture renderer is readable", false, ex.Message); return; }
@@ -1043,14 +1027,23 @@ namespace VintageVisuals.SmokeTest
                   pinned.Success && Math.Abs(double.Parse(pinned.Groups[1].Value) - tolerance) < 1e-9,
                   pinned.Success ? pinned.Groups[1].Value + " vs GLSL " + tolerance : "no pinned constant");
 
-            var levels = Regex.Match(capture, @"DepthChannelLevels\s*=\s*([0-9.]+)f");
-            check("I13 the depth channel is treated as one byte",
-                  levels.Success && Math.Abs(double.Parse(levels.Groups[1].Value) - 255.0) < 1e-9,
-                  levels.Success ? levels.Groups[1].Value : "no channel-depth constant");
+            check("I13 the capture is half float rather than RGBA8 depth",
+                  Regex.IsMatch(capture, @"PixelInternalFormat\s*=\s*EnumTextureInternalFormat\.Rgba16f"),
+                  "RGBA8 alpha makes the depth quantum zFar/255 blocks");
 
-            check("I13 the capture really is eight bits per channel",
-                  Regex.IsMatch(capture, @"PixelInternalFormat\s*=\s*EnumTextureInternalFormat\.Rgba8"),
-                  "the report's arithmetic assumes Rgba8 and the target is no longer Rgba8");
+            check("I13 the C# report uses half-float precision, not byte levels",
+                  capture.Contains("HalfFloatQuantumAt") &&
+                  capture.Contains("HalfFloatMantissaSteps = 1024f") &&
+                  !capture.Contains("DepthChannelLevels"),
+                  "the report must describe the representation that ships");
+
+            string captureShader = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaders/vvscenecapture.fsh"));
+            string captureShaderCode = Regex.Replace(captureShader, @"//[^\n]*", "");
+
+            check("I13 the capture shader writes linear depth without zFar packing",
+                  Regex.IsMatch(captureShaderCode, @"outColor\s*=\s*vec4\(scene,\s*max\(0\.0,\s*linear\)\s*\)")
+                  && !captureShaderCode.Contains("linear / max(1.0, zFar)", StringComparison.Ordinal),
+                  "normalised alpha preserves the old zFar-dependent quantisation");
 
             // And the view that shows it, evaluated from the shipped GLSL.
             string coarseExpr;
@@ -1061,30 +1054,36 @@ namespace VintageVisuals.SmokeTest
             }
             catch (Exception ex) { check("I13 the depth-precision view is readable", false, ex.Message); return; }
 
-            double Coarse(double zFar)
+            string pbrCode = Regex.Replace(_pbr, @"//[^\n]*", "");
+
+            check("I13 the terrain shader reads captured linear depth directly",
+                  Regex.IsMatch(pbrCode, @"float sceneDepth = texture\(vv_reflectScene, uv\)\.a;") &&
+                  !Regex.IsMatch(pbrCode, @"texture\(vv_reflectScene[^;]+\.a\s*\*\s*vv_reflectFar"),
+                  "multiplying alpha by vv_reflectFar reintroduces the old normalised-depth contract");
+
+            check("I13 the depth-precision view uses local half-float quantum",
+                  pbrCode.Contains("float vvHalfFloatQuantum(float value)") &&
+                  pbrCode.Contains("exp2(floor(log2(value)) - 10.0)") &&
+                  pbrCode.Contains("bool measured = m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK;") &&
+                  pbrCode.Contains("float quantum = max(1e-5, vvHalfFloatQuantum(sampleDepth));"),
+                  "view 51 must report precision at the sampled depth, not zFar/255");
+
+            double Coarse(double quantum)
             {
-                var syms = Syms("vv_reflectFar", zFar, "VV_SSR_THICKNESS", tolerance);
-                syms["quantum"] = new Val(Math.Max(1e-5, zFar / 255.0));
+                var syms = Syms("VV_SSR_THICKNESS", tolerance, "quantum", quantum);
                 return Scalar(coarseExpr, syms);
             }
 
-            // Below the crossover the data is finer than the tolerance and the
-            // diagnostic must stay silent, or it would cry wolf on every scene.
-            double belowCrossover = tolerance * 255.0 * 0.5;
-            check("I13 the depth-precision view is quiet when the data is fine enough",
-                  Math.Abs(Coarse(belowCrossover)) < 1e-9,
-                  "zFar " + belowCrossover + " -> " + Coarse(belowCrossover));
+            check("I13 the depth-precision view is quiet when the local quantum is fine enough",
+                  Math.Abs(Coarse(tolerance * 0.5)) < 1e-9,
+                  "quantum " + (tolerance * 0.5) + " -> " + Coarse(tolerance * 0.5));
 
-            // And above it, it must say so - this is the case that ships.
             check("I13 the depth-precision view reports a tolerance finer than its data",
-                  Coarse(512.0) > 0.5, "zFar 512 -> " + Coarse(512.0));
+                  Coarse(tolerance * 2.0) > 0.5, "quantum " + (tolerance * 2.0) + " -> " + Coarse(tolerance * 2.0));
 
-            // The crossover itself, stated as arithmetic rather than as prose,
-            // so a change to either number moves it here too.
-            double crossover = tolerance * 255.0;
-            check("I13 the crossover sits where the two constants put it",
-                  Math.Abs(Coarse(crossover * 0.99)) < 1e-9 && Coarse(crossover * 4.0) > 0.0,
-                  "crossover at zFar " + crossover);
+            check("I13 the crossover sits at the hit tolerance",
+                  Math.Abs(Coarse(tolerance * 0.99)) < 1e-9 && Coarse(tolerance * 1.01) > 0.0,
+                  "crossover at quantum " + tolerance);
         }
 
 

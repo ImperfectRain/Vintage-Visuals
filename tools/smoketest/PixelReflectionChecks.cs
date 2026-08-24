@@ -298,6 +298,20 @@ namespace VintageVisuals.SmokeTest
                 Regex.IsMatch(capture, @"CaptureScale = 0\.\d+f"),
                 "a full-resolution capture is detail the destination texel cannot express");
 
+            check("the capture target keeps depth in half-float alpha",
+                Regex.IsMatch(capture, @"PixelInternalFormat\s*=\s*EnumTextureInternalFormat\.Rgba16f"),
+                "RGBA8 alpha turns depth precision into zFar/255 blocks");
+
+            string captureShader = File.ReadAllText(
+                Path.Combine(repo, "assets/vintagevisuals/shaders/vvscenecapture.fsh"));
+
+            string captureShaderCode = Regex.Replace(captureShader, @"//[^\n]*", "");
+
+            check("the capture writes linear depth directly",
+                Regex.IsMatch(captureShaderCode, @"outColor\s*=\s*vec4\(scene,\s*max\(0\.0,\s*linear\)\s*\)")
+                    && !captureShaderCode.Contains("linear / max(1.0, zFar)", StringComparison.Ordinal),
+                "normalising by zFar before writing alpha throws away the precision RGBA16F was added for");
+
             check("an off-screen ray cannot wrap to the far side of the frame",
                 capture.Contains("EnumTextureWrap.ClampToEdge"),
                 "Repeat here paints unrelated geometry onto surfaces");
@@ -369,6 +383,13 @@ namespace VintageVisuals.SmokeTest
             check("a hit is bounded by a surface thickness",
                 _code.Contains("VV_SSR_THICKNESS"),
                 "without it the ray sails past thin geometry into whatever is behind");
+
+            check("the march reads captured linear depth directly",
+                Regex.IsMatch(body, @"float sceneDepth = texture\(vv_reflectScene, uv\)\.a;")
+                    && Regex.IsMatch(body, @"midDepth - texture\(vv_reflectScene, midUv\)\.a < 0\.0")
+                    && Regex.IsMatch(body, @"float thickness = 1\.0 / mix\(invA, invB, hi\) - resolved\.a;")
+                    && !Regex.IsMatch(body, @"texture\(vv_reflectScene[^;]+\.a\s*\*\s*vv_reflectFar"),
+                "the old path decoded alpha as linear/zFar and multiplied precision loss back into blocks");
 
             check("a miss returns no confidence rather than a colour",
                 Regex.IsMatch(_code, @"miss\.valid = 0\.0;"), "");

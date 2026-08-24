@@ -428,7 +428,7 @@ appears often.
 |---|---|---|---|---|
 | Material atlas build | 2 pages, 4096x2048 each, cached to disk | no, once at load | no | texture count |
 | Atlas upload | 2 textures resident | no | no | — |
-| Scene capture | 1 RGBA8 at half frame per axis; one fullscreen copy | yes, while enabled | produces it | resolution |
+| Scene capture | 1 RGBA16F at half frame per axis; one fullscreen copy | yes, while enabled | produces it | resolution |
 | Reflection march | up to 24 texture taps plus 5 bisection taps, only on rays that cross | per reflective fragment | yes, reads it | reflective pixel count |
 | Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
 | Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |

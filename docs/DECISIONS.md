@@ -1726,25 +1726,17 @@ An external audit of the reflection path was put to the code rather than taken a
 its word. Most of it holds; one item needed correcting; one is an addition the
 audit did not reach.
 
-**Confirmed, and it outranks everything else in this subsystem.** The capture
-target is `Rgba8` and `vvscenecapture.fsh` writes
-`clamp(linear / max(1.0, zFar), 0.0, 1.0)` into alpha, so depth is **one byte**
-and the finest difference expressible anywhere is `zFar / 255` blocks. The march
-judges a crossing against `VV_SSR_THICKNESS`, half a block. They cross over at
-`zFar = 128`; Vintage Story's far plane follows view distance and is routinely
-several hundred. At `zFar = 512` the quantum is 2.01 blocks - four times the
-tolerance - so a hit is accepted or rejected by rounding rather than by geometry,
-which discards correct hits and keeps wrong ones in a pattern that follows depth
-and nothing in the scene. That is both halves of the reported symptom at once:
-surfaces that respond to the world without resolving it.
+**Confirmed and fixed.** The capture target was `Rgba8` and
+`vvscenecapture.fsh` wrote
+`clamp(linear / max(1.0, zFar), 0.0, 1.0)` into alpha, so depth was **one byte**
+and the finest difference expressible anywhere was `zFar / 255` blocks. The
+target is now `Rgba16f`, the capture writes linear depth directly to alpha, and
+the terrain shader reads that alpha directly. Debug view 51 now reports the local
+half-float quantum at the sampled depth instead of the old zFar-wide byte step.
 
-**The addition the audit did not reach: refinement cannot rescue it either.** The
-audit noted that more steps would not fix the depth problem. Nor will more
-bisection, and `VV_SSR_REFINE`'s own comment invites the mistake - it reasons
-about the ray interval shrinking to a few texels, which is true and irrelevant.
-Five passes converge the ray parameter against the *same quantised sample*. The
-precision was lost in the capture, not in the search, so every knob in the march
-is downstream of it.
+**The addition the audit did not reach still matters: refinement cannot rescue
+quantisation.** More bisection converges the ray parameter against the same
+sample. The fix belonged in the capture format, not in `VV_SSR_REFINE`.
 
 **Confirmed: roughness does not coarsen the scene reflection.**
 `vvPixelReflection` picks `cells` from roughness, quantises the direction, and

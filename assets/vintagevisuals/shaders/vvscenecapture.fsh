@@ -2,12 +2,12 @@
 
 // Scene capture: the reflection system's source image.
 //
-// One low-resolution RGBA texture holding the frame the reflection will read:
-// RGB is the composed scene colour, ALPHA is linear view depth normalised to
-// the far plane. Packing depth into the alpha channel is the whole reason this
-// pass exists - it means the terrain shader needs ONE new sampler rather than
-// two, and a sampler added to chunkopaque.fsh has twice cost this project the
-// entire world render.
+// One low-resolution RGBA16F texture holding the frame the reflection will
+// read: RGB is the composed scene colour, ALPHA is linear view depth in blocks.
+// Packing depth into the alpha channel is the whole reason this pass exists -
+// it means the terrain shader needs ONE new sampler rather than two, and a
+// sampler added to chunkopaque.fsh has twice cost this project the entire world
+// render.
 //
 // Depth comes from the framebuffer's own DEPTH ATTACHMENT, not from the
 // gPosition G-buffer. That is deliberate: gPosition is written inside
@@ -37,9 +37,7 @@ void main()
     float d = texture(sceneDepth, uv).r * 2.0 - 1.0;
     float linear = (2.0 * zNear * zFar) / (zFar + zNear - d * (zFar - zNear));
 
-    // Normalised so the whole range fits an 8-bit alpha channel if the capture
-    // target happens to be 8-bit. Precision at distance is poor and that is
-    // acceptable: the validity test this feeds is a coarse "is this the surface
-    // I aimed at" question, not a depth comparison that has to be exact.
-    outColor = vec4(scene, clamp(linear / max(1.0, zFar), 0.0, 1.0));
+    // Stored directly. The target is RGBA16F, so normalising by zFar and then
+    // multiplying by zFar in the terrain shader would only throw precision away.
+    outColor = vec4(scene, max(0.0, linear));
 }

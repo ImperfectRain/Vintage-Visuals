@@ -721,8 +721,8 @@ the scene but has no idea which texel a fragment belongs to.
 
 **The scene is carried across a FRAME instead of across a pass.** At
 `AfterPostProcessing`, `SceneCaptureRenderer` copies the best texture-backed
-framebuffer available at that stage into a half-resolution RGBA target - RGB the
-scene, **alpha linear view depth**. The next frame's terrain pass samples it.
+framebuffer available at that stage into a half-resolution RGBA16F target - RGB
+the scene, **alpha linear view depth in blocks**. The next frame's terrain pass samples it.
 Both the image and the grid are then in one place, which is what makes a
 pixel-art mirror possible at all.
 
