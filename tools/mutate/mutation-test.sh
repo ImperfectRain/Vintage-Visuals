@@ -59,7 +59,8 @@ assert s.count(old) == 1
 open(path, 'w').write(s.replace(old, new, 1))
 PY
 
-    dotnet run --project tools/smoketest >"$log" 2>&1
+    dotnet run --no-restore --project tools/smoketest \
+        --property:ResolveAssemblyReferencesFindRelatedSatellites=false >"$log" 2>&1
     status=$?
     caught=$(grep '^  FAIL' "$log" | grep -c -- "$expect" || true)
     total=$(grep -c '^  FAIL' "$log" || true)

@@ -188,6 +188,14 @@ namespace VintageVisuals.SmokeTest
                   notifications == 0,
                   "snapshot raised " + notifications + " notifications");
 
+            string controllerSource = File.ReadAllText(Path.Combine(repo, "src/Ui/VisualTuningStudioController.cs"));
+            var snapshotMethod = Regex.Match(controllerSource,
+                @"public IReadOnlyDictionary<string, string> Snapshot\([^)]*\)\s*\{(?<body>.*?)\n        \}",
+                RegexOptions.Singleline);
+            check("display refresh does not mutate subsystems",
+                  snapshotMethod.Success && !snapshotMethod.Groups["body"].Value.Contains("_notifyChanged", StringComparison.Ordinal),
+                  snapshotMethod.Success ? "Snapshot calls notify" : "Snapshot method not found");
+
             notifications = 0;
             DebugView entityWetness = DebugViewRegistry.For(DebugViewRegistry.EntityPath).First(v => v.Value == 2);
             bool debugChanged = controller.SetDebugView(entityWetness);
