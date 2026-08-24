@@ -97,8 +97,31 @@ at a real property, a friendly name pointing at a real shader arm, a range that
 survives the config's own clamp. Whether the panel is a good tool is a runtime
 question and stays one.
 
+## UX shape
+
+The studio is tuned for scan-first editing, not permanent documentation density.
+Subsystems live in a fixed vertical navigation rail. Setting pages use one-line
+rows with stable columns:
+
+```
+modified  label  info  value  control  reset
+```
+
+Descriptions are still present, but one interaction deeper through the row's info
+affordance. The setting name and current value remain visible at all times.
+Rows are clipped inside a native scroll region with mouse-wheel handling and a
+draggable vertical scrollbar; the navigation rail and footer stay fixed.
+
+The Overview page is a set of navigable subsystem rows rather than a list of
+repeated Open buttons. The Debug page is a tool surface: choose a debug system,
+then a named debug view, with an active-view banner and a single Return to Normal
+Rendering action. The underlying per-shader debug numbers do not change.
+
 ## Status
 
-**L2 — native dialog implemented and statically verified. It has not been opened
-in a running game.** The next gate is an in-game UX pass before presets,
+**L2 — native dialog UX redesigned and statically verified.** Runtime screenshots
+showed the first pass worked but was too dense; this pass replaces permanent
+descriptions and pagination with compact rows, tooltips, vertical navigation and
+native scrolling. It has not been re-opened in a running game from this
+environment, so the next gate remains screenshot/user review before presets,
 import/export or persistence are built.

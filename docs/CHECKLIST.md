@@ -44,6 +44,7 @@ broke is a separate question with its own table, at the end of this file.
 | Config + live reload | x | x | x | x | x | – | – | x | x |
 | ConfigLib bridge | x | x | x | x | x | – | – | x | x |
 | Visual Tuning Studio native dialog | x | x | x | x | – | – | – | – | x |
+| Visual Tuning Studio UX redesign | x | x | x | x | – | – | – | – | x |
 | Environment state / tracker | x | x | x | x | x | – | – | n/a | x |
 | Visual budget arbitration | x | x | x | x | x | – | – | – | x |
 

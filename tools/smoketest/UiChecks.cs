@@ -295,11 +295,49 @@ namespace VintageVisuals.SmokeTest
                   "dialog shell must be native Vintage Story UI");
 
             check("every displayed control maps to its registry entry",
-                  dialog.Contains("VisibleSettings(tab, _advanced)") &&
-                  dialog.Contains("AddSettingRow(setting") &&
+                  dialog.Contains("VisibleSettings(tab") &&
+                  dialog.Contains("RowsFor(SettingTab tab)") &&
+                  dialog.Contains("AddSettingRow(row.Setting") &&
                   dialog.Contains("setting.Kind == SettingKind.Toggle") &&
                   dialog.Contains("setting.Kind == SettingKind.Dropdown"),
                   "rows must be registry-driven");
+
+            check("the studio uses vertical navigation",
+                  dialog.Contains("AddVerticalTabs") &&
+                  !dialog.Contains("\"[\" + pair.Value + \"]\""),
+                  "selected tabs must use native tab state, not bracket text");
+
+            check("settings use native continuous scrolling",
+                  dialog.Contains("BeginClip(") &&
+                  dialog.Contains("AddVerticalScrollbar") &&
+                  dialog.Contains("SetHeights") &&
+                  dialog.Contains("OnMouseWheel") &&
+                  !dialog.Contains("OnScrollUpClicked") &&
+                  !dialog.Contains("OnScrollDownClicked"),
+                  "settings body must scroll, not paginate");
+
+            check("setting explanations are progressive disclosure",
+                  dialog.Contains("AddHoverText(Tooltip(setting)") &&
+                  !dialog.Contains("AddStaticText(setting.Description"),
+                  "descriptions belong in hover/focus help, not permanent rows");
+
+            check("modified settings have a compact reset affordance",
+                  dialog.Contains("↺") &&
+                  !dialog.Contains("\"Reset\", () => ResetSetting(setting)"),
+                  "per-row reset should be compact");
+
+            check("overview rows navigate without repeated Open buttons",
+                  dialog.Contains("AddOverviewRow") &&
+                  !dialog.Contains("\"Open\""),
+                  "overview rows should be the navigation target");
+
+            check("debug workflow selects system and named view",
+                  dialog.Contains("\"Debug System\"") &&
+                  dialog.Contains("\"Debug View\"") &&
+                  dialog.Contains("CurrentDebugViews()") &&
+                  dialog.Contains("\"DEBUG VIEW ACTIVE\"") &&
+                  dialog.Contains("Return to Normal Rendering"),
+                  "debug tab should not require numeric IDs");
 
             check("native UI mutation calls ConfigManager.NotifyChanged",
                   mod.Contains("new VisualTuningStudioController") &&
