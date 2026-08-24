@@ -250,9 +250,24 @@ namespace VintageVisuals.SmokeTest
                 Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
 
             // --- the capture end -------------------------------------------
-            check("the capture reads the engine's primary framebuffer",
-                capture.Contains("EnumFrameBuffer.Primary") && capture.Contains("ColorTextureIds"),
-                "without the real scene texture there is nothing to reflect");
+            check("the capture chooses a colour source at the render stage",
+                capture.Contains("ChooseCaptureSource") &&
+                capture.Contains("CurrentFrameBuffer") &&
+                capture.Contains("source.Color.ColorTextureIds[0]"),
+                "debug view 41 showed Primary could be a live buffer without being the composed terrain image");
+
+            check("the primary framebuffer is a fallback, not an unquestioned colour source",
+                capture.Contains("FrameBuffer(EnumFrameBuffer.Primary)") &&
+                Regex.IsMatch(capture, @"HasColorTexture\(current\).*?HasColorTexture\(primary\)",
+                              RegexOptions.Singleline),
+                "without a fallback the capture cannot survive stages where CurrentFrameBuffer is not texture-backed");
+
+            check("the capture reports its framebuffer source once",
+                capture.Contains("ReportCaptureSource") &&
+                capture.Contains("chosenColor=") &&
+                capture.Contains("chosenDepth=") &&
+                capture.Contains("DescribeFrameBuffers()"),
+                "the next runtime screenshot needs IDs, dimensions and stage state, not another guess");
 
             check("depth comes from the depth attachment, not from gPosition",
                 capture.Contains("DepthTextureId") && !capture.Contains("gPosition"),

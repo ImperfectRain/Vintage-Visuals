@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -75,6 +77,7 @@ namespace VintageVisuals.Reflections
         private const float DepthChannelLevels = 255f;
 
         private bool _reportedDepthResolution;
+        private bool _reportedCaptureSource;
 
         /// <summary>
         /// Says, once, whether the capture can answer the question the march
@@ -358,14 +361,25 @@ namespace VintageVisuals.Reflections
             {
                 if (!EnsureTarget()) return;
 
-                FrameBufferRef primary = PrimaryBuffer();
-                if (primary == null)
+                FrameBufferRef primary = FrameBuffer(EnumFrameBuffer.Primary);
+                FrameBufferRef current = _capi.Render.CurrentFrameBuffer;
+                CaptureSource source = ChooseCaptureSource(current, primary);
+
+                if (source.Color == null)
                 {
-                    Skip("the primary framebuffer is not available");
+                    Skip("no framebuffer with a colour texture is available for scene capture");
                     return;
                 }
 
-                FrameBufferRef previous = _capi.Render.CurrentFrameBuffer;
+                if (source.Depth == null)
+                {
+                    Skip("no framebuffer with a depth texture is available for scene capture");
+                    return;
+                }
+
+                ReportCaptureSource(source, current, primary);
+
+                FrameBufferRef previous = current;
 
                 _capi.Render.CurrentFrameBuffer = _target;
                 _capi.Render.GlViewport(0, 0, _width, _height);
@@ -373,8 +387,8 @@ namespace VintageVisuals.Reflections
                 _capi.Render.GlToggleBlend(false);
 
                 _program.Use();
-                _program.BindTexture2D("sceneColor", primary.ColorTextureIds[0], 0);
-                _program.BindTexture2D("sceneDepth", primary.DepthTextureId, 1);
+                _program.BindTexture2D("sceneColor", source.Color.ColorTextureIds[0], 0);
+                _program.BindTexture2D("sceneDepth", source.Depth.DepthTextureId, 1);
                 _program.Uniform("zNear", _capi.Render.ShaderUniforms.ZNear);
                 _program.Uniform("zFar", _capi.Render.ShaderUniforms.ZFar);
 
@@ -414,20 +428,107 @@ namespace VintageVisuals.Reflections
             if (camera != null) CapturePosition = new Vec3d(camera.X, camera.Y, camera.Z);
         }
 
-        private FrameBufferRef PrimaryBuffer()
+        private FrameBufferRef FrameBuffer(EnumFrameBuffer kind)
         {
             var buffers = _capi.Render.FrameBuffers;
-            int index = (int)EnumFrameBuffer.Primary;
+            int index = (int)kind;
 
             if (buffers == null || index < 0 || index >= buffers.Count) return null;
 
-            FrameBufferRef primary = buffers[index];
+            FrameBufferRef buffer = buffers[index];
 
-            if (primary == null || primary.Disposed) return null;
-            if (primary.ColorTextureIds == null || primary.ColorTextureIds.Length == 0) return null;
-            if (primary.DepthTextureId == 0) return null;
+            if (buffer == null || buffer.Disposed) return null;
+            return buffer;
+        }
 
-            return primary;
+        private CaptureSource ChooseCaptureSource(FrameBufferRef current, FrameBufferRef primary)
+        {
+            FrameBufferRef color = HasColorTexture(current) ? current : null;
+
+            if (color == null && HasColorTexture(primary)) color = primary;
+
+            FrameBufferRef depth = HasDepthTexture(color) ? color : null;
+
+            if (depth == null && HasDepthTexture(primary)) depth = primary;
+
+            return new CaptureSource(color, depth);
+        }
+
+        private static bool HasColorTexture(FrameBufferRef buffer)
+        {
+            return buffer != null
+                && !buffer.Disposed
+                && buffer.ColorTextureIds != null
+                && buffer.ColorTextureIds.Length > 0
+                && buffer.ColorTextureIds[0] != 0;
+        }
+
+        private static bool HasDepthTexture(FrameBufferRef buffer)
+        {
+            return buffer != null && !buffer.Disposed && buffer.DepthTextureId != 0;
+        }
+
+        private void ReportCaptureSource(CaptureSource source, FrameBufferRef current, FrameBufferRef primary)
+        {
+            if (_reportedCaptureSource) return;
+            _reportedCaptureSource = true;
+
+            _log("reflections: scene capture source at AfterPostProcessing"
+               + " order " + RenderOrder.ToString("0.00")
+               + " current=" + DescribeBuffer(current)
+               + " primary=" + DescribeBuffer(primary)
+               + " chosenColor=" + DescribeBuffer(source.Color)
+               + " chosenDepth=" + DescribeBuffer(source.Depth)
+               + " target=" + DescribeBuffer(_target)
+               + " viewport=" + _capi.Render.FrameWidth + "x" + _capi.Render.FrameHeight
+               + " -> " + _width + "x" + _height
+               + " all=" + DescribeFrameBuffers());
+        }
+
+        private string DescribeFrameBuffers()
+        {
+            var buffers = _capi.Render.FrameBuffers;
+            if (buffers == null) return "none";
+
+            var parts = new List<string>();
+
+            for (int i = 0; i < buffers.Count; i++)
+            {
+                string name = Enum.IsDefined(typeof(EnumFrameBuffer), i)
+                    ? ((EnumFrameBuffer)i).ToString()
+                    : i.ToString();
+
+                parts.Add(name + "=" + DescribeBuffer(buffers[i]));
+            }
+
+            return string.Join("; ", parts);
+        }
+
+        private static string DescribeBuffer(FrameBufferRef buffer)
+        {
+            if (buffer == null) return "null";
+            if (buffer.Disposed) return "disposed";
+
+            string colors = buffer.ColorTextureIds == null
+                ? "none"
+                : string.Join(",", buffer.ColorTextureIds.Select(id => id.ToString()));
+
+            return "fbo " + buffer.FboId
+                 + " " + buffer.Width + "x" + buffer.Height
+                 + " color[" + colors + "]"
+                 + " depth " + buffer.DepthTextureId;
+        }
+
+        private sealed class CaptureSource
+        {
+            public readonly FrameBufferRef Color;
+            public readonly FrameBufferRef Depth;
+
+            public CaptureSource(FrameBufferRef color, FrameBufferRef depth)
+            {
+                Color = color;
+                Depth = depth;
+            }
         }
 
         /// <summary>

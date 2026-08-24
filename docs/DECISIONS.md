@@ -178,9 +178,12 @@ but has no idea which texture texel a fragment belongs to.
    being written by that very pass; reading it is undefined.
 3. Capture the composed frame and read it back next frame.
 
-**Chosen.** Option 3. `SceneCaptureRenderer` copies the primary framebuffer at
-`AfterPostProcessing` into a half-resolution RGBA target: RGB the scene, alpha
-the linear view depth.
+**Chosen.** Option 3. `SceneCaptureRenderer` copies the composed framebuffer
+available at `AfterPostProcessing` into a half-resolution RGBA target: RGB the
+scene, alpha the linear view depth. It tries `IRenderAPI.CurrentFrameBuffer`
+first and falls back to `EnumFrameBuffer.Primary`, because a runtime capture
+showed that a public Primary texture can be present without containing the
+terrain colour image needed by reflections.
 
 **Why.** It puts the image and the material grid in the same pass, which is what
 makes a pixel-art mirror possible at all. Everything needed is public API —

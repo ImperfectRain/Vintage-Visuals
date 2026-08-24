@@ -220,7 +220,7 @@ and DECISIONS D8-D13.
 
 | | Feature | Level | Notes |
 |---|---|---|---|
-| `[x]` | Scene capture (previous frame, half res, depth in alpha) | **L2** | `SceneCaptureRenderer`. Confirmed alive in game via debug view 41; the reflection it feeds is not validated |
+| `[~]` | Scene capture (previous frame, half res, depth in alpha) | **L2** | `SceneCaptureRenderer`. Source selection and diagnostics are in place, but debug view 41 must still prove the capture contains terrain RGB correctly in game |
 | `[x]` | Screen-space march, crossing detection, bisection | **L2** | Uniform sampling in the image. Two earlier world-space marches produced rings and smears - D11 |
 | `[x]` | Texel-quantised reflection | **L2** | Ray starts at the texel centre, so one colour per texel is structural - D10 |
 | `[x]` | Analytic sky/horizon/ground fallback | **L2** | Used where the ray leaves the screen, hits nothing, or points at the camera |
@@ -720,18 +720,19 @@ the frame it would sample is the one it is still drawing. The post pass can see
 the scene but has no idea which texel a fragment belongs to.
 
 **The scene is carried across a FRAME instead of across a pass.** At
-`AfterPostProcessing`, `SceneCaptureRenderer` copies the composed frame into a
-half-resolution RGBA target - RGB the scene, **alpha linear view depth**. The
-next frame's terrain pass samples it. Both the image and the grid are then in one
-place, which is what makes a pixel-art mirror possible at all.
+`AfterPostProcessing`, `SceneCaptureRenderer` copies the best texture-backed
+framebuffer available at that stage into a half-resolution RGBA target - RGB the
+scene, **alpha linear view depth**. The next frame's terrain pass samples it.
+Both the image and the grid are then in one place, which is what makes a
+pixel-art mirror possible at all.
 
 Everything needed turned out to be public API, which is why the previous pass's
 "engine-internal texture IDs" blocker was wrong:
 
 | Need | API |
 |---|---|
-| Scene colour | `IRenderAPI.FrameBuffers[(int)EnumFrameBuffer.Primary].ColorTextureIds[0]` |
-| Depth | the same `FrameBufferRef.DepthTextureId` |
+| Scene colour | `IRenderAPI.CurrentFrameBuffer.ColorTextureIds[0]`, falling back to `FrameBuffers[(int)EnumFrameBuffer.Primary]` |
+| Depth | the chosen colour framebuffer's depth, falling back to Primary depth |
 | Own target | `IRenderAPI.CreateFrameBuffer(FramebufferAttrs)` |
 | Capture transform | `CurrentProjectionMatrix` x `CameraMatrixOriginf` |
 

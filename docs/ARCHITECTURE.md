@@ -320,7 +320,7 @@ boundary instead of a pass boundary.
 ```
 frame N                                   frame N+1
 -------                                   ---------
-primary framebuffer (colour + depth)
+render-stage framebuffer (colour + depth)
         |
    AfterPostProcessing
         |
@@ -358,7 +358,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Wind | `GetWindSpeedAt` | tracked, clocked | `vv_sceneBreeze` | foliage response |
 | Cloud placement | game's cloud renderer tiles | `CloudTileReader`, Beer-Lambert | uniform array | cloud shadows |
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
-| Framebuffer colour + depth | `IRenderAPI.FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
+| Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |

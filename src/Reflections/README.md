@@ -21,7 +21,7 @@ frame N                          frame N+1
 -------                          ---------
 world renders                    terrain pass shades
       |                                |
-primary framebuffer                    | samples
+render-stage framebuffer               | samples
       |                                v
 AfterPostProcessing  ---> capture ---> reflection ray
                          (half res,         |
@@ -45,7 +45,7 @@ The consuming code is `vvSceneReflection` in
 
 | Channel | Content |
 |---|---|
-| RGB | The composed scene, as it was at `AfterPostProcessing` |
+| RGB | The composed scene source selected at `AfterPostProcessing` |
 | A | Linear view depth, normalised by the far plane |
 
 Packing depth into alpha is why the terrain shader needs **one** new sampler
@@ -72,6 +72,15 @@ the captured frame should have been.
 — disables the feature and logs. The shader's `vv_reflectValid` uniform is 0 in
 all of those cases, and 0 means the analytic fallback, which is what shipped
 before this subsystem existed.
+
+**The colour source is selected at the render stage.** The first source tried is
+`IRenderAPI.CurrentFrameBuffer`, because the framebuffer bound during
+`AfterPostProcessing` is the one most likely to be the composed image at that
+point in the pipeline. If it has no colour texture, the capture falls back to
+`EnumFrameBuffer.Primary`. Depth follows the colour source when possible and
+falls back to Primary depth. The first successful capture logs current, primary,
+chosen colour, chosen depth, target, viewport and every public framebuffer entry
+so a bad View 41 screenshot has IDs to compare instead of another guess.
 
 ## Cost
 
@@ -194,9 +203,11 @@ say nothing.
 | 49 | stride against budget | bright red is a ray walked coarser than `VV_SSR_STRIDE` names |
 | 50 | crossing residual | a bright red band at the grazing end is the tolerance absorbing a coarse march |
 
-The bridge is confirmed alive in game: debug view 41 shows the captured world,
-and view 39 reports hits. Whether the resulting reflection reads correctly is
-unverified. See `docs/CHECKLIST.md` for the specific scenes still outstanding.
+The bridge is not considered visually proven until debug view 41 shows the
+terrain image clearly. The latest runtime evidence showed sky in the capture but
+black terrain, which means capture RGB is the first blocker to clear before
+reflection geometry can be judged. See `docs/CHECKLIST.md` for the specific
+scenes still outstanding.
 
 **Water is not supported.** `chunkliquid.fsh` is in no patch group. It should
 wait until the reflection geometry is validated on terrain, or a wrong reflection
