@@ -313,6 +313,36 @@ namespace VintageVisuals.SmokeTest
                   !dialog.Contains("\"[\" + pair.Value + \"]\""),
                   "selected tabs must use native tab state, not bracket text");
 
+            check("the studio layout is driven by one grid",
+                  dialog.Contains("SidebarWidth") &&
+                  dialog.Contains("SidebarPadding") &&
+                  dialog.Contains("ContentLeft") &&
+                  dialog.Contains("LabelWidth") &&
+                  dialog.Contains("InfoX") &&
+                  dialog.Contains("ValueX") &&
+                  dialog.Contains("ControlX") &&
+                  dialog.Contains("ResetX"),
+                  "layout coordinates should derive from shared columns");
+
+            check("sidebar contains only real navigation",
+                  !dialog.Contains("\"Presets\"") &&
+                  !dialog.Contains("\"Coming later\""),
+                  "do not advertise unfinished tabs");
+
+            check("the page header has no redundant close button",
+                  !dialog.Contains(".AddButton(\"Close\""),
+                  "the title-bar close affordance is enough");
+
+            check("page title and setting labels share the content axis",
+                  dialog.Contains("AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft") &&
+                  dialog.Contains("AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft"),
+                  "title, headings and rows should not use separate left edges");
+
+            check("toggle rows avoid duplicate state text",
+                  dialog.Contains("if (setting.Kind != SettingKind.Toggle)") &&
+                  dialog.Contains("AddToggle(setting, y)"),
+                  "toggle rows should not also print an On/Off value column");
+
             check("settings scrolling is disabled for crash isolation",
                   dialog.Contains("BeginClip(") &&
                   !dialog.Contains("AddVerticalScrollbar") &&

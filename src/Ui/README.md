@@ -125,6 +125,12 @@ the stable shaded background and compact layout, but temporarily removes hover
 elements, native scrollbar/wheel handling, per-tab scroll restoration and the
 Advanced switch. Live setting edits no longer rebuild the whole composer, and
 structural rebuilds are deferred through the client callback queue with composer
-generation guards and `[VV UI #]` lifecycle logging. It has not been re-opened in
-a running game from this environment, so presets, import/export and persistence
+generation guards and `[VV UI #]` lifecycle logging.
+
+The current layout is also constrained by a single grid: sidebar width/padding,
+content left edge, label/info/value/control/reset columns and footer placement
+are centralized in `VisualTuningStudioDialog`. The page title, section headings
+and setting labels share one content axis; unfinished Presets text and the
+redundant secondary Close button are removed. It has not been re-opened in a
+running game from this environment, so presets, import/export and persistence
 remain blocked.

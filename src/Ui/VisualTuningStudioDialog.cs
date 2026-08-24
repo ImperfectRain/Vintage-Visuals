@@ -19,13 +19,28 @@ namespace VintageVisuals.Ui
 
         private const double DialogWidth = 860;
         private const double DialogHeight = 610;
-        private const double NavWidth = 150;
-        private const double ContentX = 168;
-        private const double ContentWidth = 650;
-        private const double BodyY = 94;
-        private const double BodyHeight = 440;
+        private const double DialogPadding = 10;
+        private const double SidebarWidth = 178;
+        private const double SidebarPadding = 14;
+        private const double ContentGap = 26;
+        private const double ContentLeft = DialogPadding + SidebarWidth + ContentGap;
+        private const double ContentRightPadding = 30;
+        private const double ContentWidth = DialogWidth - ContentLeft - ContentRightPadding - 10;
+        private const double HeaderY = 44;
+        private const double BodyY = 88;
+        private const double FooterY = 548;
+        private const double BodyHeight = FooterY - BodyY - 18;
         private const double RowHeight = 44;
         private const double HeaderHeight = 26;
+        private const double LabelWidth = 190;
+        private const double InfoWidth = 28;
+        private const double ValueWidth = 86;
+        private const double ControlWidth = 226;
+        private const double ResetWidth = 30;
+        private const double InfoX = ContentLeft + LabelWidth + 8;
+        private const double ValueX = InfoX + InfoWidth + 10;
+        private const double ControlX = ValueX + ValueWidth + 14;
+        private const double ResetX = ControlX + ControlWidth + 14;
 
         private readonly VisualTuningStudioController _controller;
 
@@ -139,14 +154,12 @@ namespace VintageVisuals.Ui
                 .AddShadedDialogBG(bgBounds)
                 .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
                 .BeginChildElements(bgBounds)
-                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentX, 44, 380, 26))
-                    .AddButton("Close", () => Guard(generation, "Close", OnCloseClicked), ElementBounds.Fixed(760, 42, 64, 26),
-                        CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "close")
-                    .AddInset(ElementBounds.Fixed(10, 42, NavWidth, 528), 2)
-                    .AddInset(ElementBounds.Fixed(ContentX - 8, BodyY - 8, ContentWidth + 26, BodyHeight + 16), 2)
-                    .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, 552, 190, 24))
-                    .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentX + 198, 556, 180, 20))
-                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(724, 548, 96, 28),
+                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
+                    .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
+                    .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
+                    .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, 552, 190, 24))
+                    .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 198, 556, 180, 20))
+                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
                         CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
             AddTabs(generation);
@@ -170,15 +183,14 @@ namespace VintageVisuals.Ui
         {
             foreach (GuiTab tab in _tabs) tab.Active = tab.DataInt == (int)_tab;
 
-            SingleComposer.AddVerticalTabs(_tabs, ElementBounds.Fixed(18, 58, 130, 332),
+            double tabX = DialogPadding + SidebarPadding;
+            double tabWidth = SidebarWidth - 2 * SidebarPadding;
+            SingleComposer.AddVerticalTabs(_tabs, ElementBounds.Fixed(tabX, 58, tabWidth, 332),
                 (index, tab) => Guard(generation, "SelectTab", () =>
                 {
                     SelectTab((SettingTab)tab.DataInt);
                     return true;
                 }), "studio-tabs");
-
-            SingleComposer.AddStaticText("Presets", CairoFont.WhiteDetailText(), ElementBounds.Fixed(28, 424, 90, 20));
-            SingleComposer.AddStaticText("Coming later", CairoFont.WhiteDetailText(), ElementBounds.Fixed(28, 446, 100, 20));
         }
 
         private string PageTitle()
@@ -223,7 +235,7 @@ namespace VintageVisuals.Ui
         private void AddOverview()
         {
             double y = BodyY + 6;
-            SingleComposer.AddStaticText("Systems", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y, 180, 22));
+            SingleComposer.AddStaticText("Systems", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 180, 22));
             y += 34;
 
             AddOverviewRow("COLOR & EXPOSURE", "ColorGrade.Enabled", SettingTab.Color,
@@ -258,7 +270,7 @@ namespace VintageVisuals.Ui
                 if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
                 SelectTab(target);
                 return true;
-            }, ElementBounds.Fixed(ContentX, y, ContentWidth - 28, 46), CairoFont.WhiteSmallText(),
+            }, ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 46), CairoFont.WhiteSmallText(),
                 EnumButtonStyle.Normal, "overview-" + target);
         }
 
@@ -297,7 +309,7 @@ namespace VintageVisuals.Ui
         {
             _currentBodyHeight = bodyHeight;
 
-            ElementBounds clipBounds = ElementBounds.Fixed(ContentX, bodyY, ContentWidth, bodyHeight);
+            ElementBounds clipBounds = ElementBounds.Fixed(ContentLeft, bodyY, ContentWidth, bodyHeight);
             _currentContentHeight = MeasureRows(rows);
             _currentScroll = 0;
 
@@ -326,8 +338,8 @@ namespace VintageVisuals.Ui
             if (y < bodyY - HeaderHeight || y > bodyY + bodyHeight) return;
 
             SingleComposer
-                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y + 4, 210, 20))
-                .AddInset(ElementBounds.Fixed(ContentX + 150, y + 13, ContentWidth - 180, 1), 1, 0.45f);
+                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y + 4, 210, 20))
+                .AddInset(ElementBounds.Fixed(ContentLeft + 150, y + 13, ContentWidth - 180, 1), 1, 0.45f);
         }
 
         private void AddSettingRow(VisualSetting setting, double y, double bodyY, double bodyHeight)
@@ -339,14 +351,18 @@ namespace VintageVisuals.Ui
             string resetText = modified ? "↺" : " ";
 
             SingleComposer
-                .AddStaticText(marker, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentX, y + 12, 14, 20))
-                .AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX + 18, y + 10, 178, 22))
-                .AddButton("ⓘ", () => true, ElementBounds.Fixed(ContentX + 196, y + 7, 24, 24),
+                .AddStaticText(marker, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft - 14, y + 12, 12, 20))
+                .AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y + 10, LabelWidth, 22))
+                .AddButton("ⓘ", () => true, ElementBounds.Fixed(InfoX, y + 7, InfoWidth, 24),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "info-" + setting.Code)
-                .AddStaticText(_controller.DisplayValue(setting), CairoFont.WhiteSmallText(),
-                    ElementBounds.Fixed(ContentX + 226, y + 10, 96, 22))
-                .AddButton(resetText, () => ResetSetting(setting), ElementBounds.Fixed(ContentX + 602, y + 7, 28, 24),
+                .AddButton(resetText, () => ResetSetting(setting), ElementBounds.Fixed(ResetX, y + 7, ResetWidth, 24),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "reset-" + setting.Code);
+
+            if (setting.Kind != SettingKind.Toggle)
+            {
+                SingleComposer.AddStaticText(_controller.DisplayValue(setting), CairoFont.WhiteSmallText(),
+                    ElementBounds.Fixed(ValueX, y + 10, ValueWidth, 22));
+            }
 
             if (setting.Kind == SettingKind.Toggle) AddToggle(setting, y);
             else if (setting.Kind == SettingKind.Dropdown) AddDropdown(setting, y);
@@ -384,7 +400,7 @@ namespace VintageVisuals.Ui
             bool on = _controller.Value(setting) >= 0.5f;
             int generation = _composerGeneration;
             SingleComposer.AddStaticText(on ? "ON" : "OFF", CairoFont.WhiteSmallText(),
-                ElementBounds.Fixed(ContentX + 336, y + 10, 42, 22));
+                ElementBounds.Fixed(ControlX, y + 10, 42, 22));
 
             SingleComposer.AddSwitch(value =>
             {
@@ -393,7 +409,7 @@ namespace VintageVisuals.Ui
                 _ignoreNextConfigRefresh = true;
                 _controller.Set(setting, value ? 1f : 0f);
                 Log("EXIT ToggleChanged " + setting.Code);
-            }, ElementBounds.Fixed(ContentX + 386, y + 7, 58, 28), "switch-" + setting.Code);
+            }, ElementBounds.Fixed(ControlX + 50, y + 7, 58, 28), "switch-" + setting.Code);
 
             GuiElementSwitch sw = SingleComposer.GetSwitch("switch-" + setting.Code);
             if (sw != null) sw.On = on;
@@ -415,7 +431,7 @@ namespace VintageVisuals.Ui
                 _controller.Set(setting, target);
                 Log("EXIT SliderChanged " + setting.Code);
                 return true;
-            }, ElementBounds.Fixed(ContentX + 336, y + 8, 248, 24), "slider-" + setting.Code);
+            }, ElementBounds.Fixed(ControlX, y + 8, ControlWidth, 24), "slider-" + setting.Code);
 
             GuiElementSlider slider = SingleComposer.GetSlider("slider-" + setting.Code);
             if (slider != null)
@@ -441,7 +457,7 @@ namespace VintageVisuals.Ui
                     _controller.SetString(setting, code);
                     Log("EXIT DropdownChanged " + setting.Code);
                 },
-                ElementBounds.Fixed(ContentX + 336, y + 8, 210, 24), "dropdown-" + setting.Code);
+                ElementBounds.Fixed(ControlX, y + 8, Math.Min(ControlWidth, 220), 24), "dropdown-" + setting.Code);
         }
 
         private bool ResetSetting(VisualSetting setting)
@@ -460,7 +476,7 @@ namespace VintageVisuals.Ui
             SyncDebugSystemToActiveView();
 
             SingleComposer
-                .AddStaticText("Debug System", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y, 150, 22))
+                .AddStaticText("Debug System", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 150, 22))
                 .AddDropDown(_debugSystems.Select(s => s.Label).ToArray(), _debugSystems.Select(s => s.Label).ToArray(),
                     _debugSystemIndex,
                     (code, selected) =>
@@ -468,7 +484,7 @@ namespace VintageVisuals.Ui
                         if (!IsCurrentGeneration(generation, "DebugSystemChanged")) return;
                         OnDebugSystemChanged(code, selected);
                     },
-                    ElementBounds.Fixed(ContentX + 160, y - 2, 220, 26), "debug-system");
+                    ElementBounds.Fixed(ControlX - 118, y - 2, 220, 26), "debug-system");
 
             y += 42;
             List<DebugView> views = CurrentDebugViews().ToList();
@@ -476,7 +492,7 @@ namespace VintageVisuals.Ui
             int selected = Math.Max(0, views.FindIndex(v => v.Value == current.Value));
 
             SingleComposer
-                .AddStaticText("Debug View", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y, 150, 22))
+                .AddStaticText("Debug View", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 150, 22))
                 .AddDropDown(views.Select(v => v.Value.ToString()).ToArray(), views.Select(v => v.Label).ToArray(),
                     selected,
                     (code, selectedValue) =>
@@ -484,8 +500,8 @@ namespace VintageVisuals.Ui
                         if (!IsCurrentGeneration(generation, "DebugViewChanged")) return;
                         OnDebugViewChanged(code, selectedValue);
                     },
-                    ElementBounds.Fixed(ContentX + 160, y - 2, 360, 26), "debug-view")
-                .AddButton("ⓘ", () => true, ElementBounds.Fixed(ContentX + 532, y - 2, 24, 24),
+                    ElementBounds.Fixed(ControlX - 118, y - 2, 360, 26), "debug-view")
+                .AddButton("ⓘ", () => true, ElementBounds.Fixed(ResetX, y - 2, 24, 24),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "debug-info");
 
             y += 46;
@@ -512,11 +528,11 @@ namespace VintageVisuals.Ui
         private void AddDebugBanner(DebugView current, double y)
         {
             SingleComposer
-                .AddInset(ElementBounds.Fixed(ContentX, y, ContentWidth - 28, 62), 2, 0.6f)
-                .AddStaticText("DEBUG VIEW ACTIVE", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX + 14, y + 8, 180, 22))
-                .AddStaticText(current.Label, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentX + 14, y + 31, 330, 20))
+                .AddInset(ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 62), 2, 0.6f)
+                .AddStaticText("DEBUG VIEW ACTIVE", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 14, y + 8, 180, 22))
+                .AddStaticText(current.Label, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 31, 330, 20))
                 .AddButton("Return to Normal Rendering", () => Guard(_composerGeneration, "ReturnToNormal", OnReturnToNormalClicked),
-                    ElementBounds.Fixed(ContentX + 390, y + 16, 210, 28), CairoFont.WhiteSmallText(),
+                    ElementBounds.Fixed(ControlX + 74, y + 16, 210, 28), CairoFont.WhiteSmallText(),
                     EnumButtonStyle.Normal, "normal-rendering");
         }
 
