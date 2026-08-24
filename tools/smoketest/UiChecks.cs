@@ -308,15 +308,19 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("setting.Kind == SettingKind.Dropdown"),
                   "rows must be registry-driven");
 
-            check("the studio uses vertical navigation",
-                  dialog.Contains("AddVerticalTabs") &&
+            check("the studio uses full-width vertical navigation",
+                  dialog.Contains("foreach (GuiTab tab in _tabs)") &&
+                  dialog.Contains(".AddButton(tab.Name") &&
+                  dialog.Contains("ActiveButtonTextColor") &&
+                  !dialog.Contains("AddVerticalTabs") &&
                   !dialog.Contains("\"[\" + pair.Value + \"]\""),
-                  "selected tabs must use native tab state, not bracket text");
+                  "native vertical tabs cannot stretch to fill the sidebar column");
 
             check("the studio layout is driven by one grid",
                   dialog.Contains("SidebarWidth") &&
                   dialog.Contains("SidebarPadding") &&
                   dialog.Contains("ContentLeft") &&
+                  dialog.Contains("RowLeft") &&
                   dialog.Contains("LabelWidth") &&
                   dialog.Contains("InfoX") &&
                   dialog.Contains("ValueX") &&
@@ -335,8 +339,16 @@ namespace VintageVisuals.SmokeTest
 
             check("page title and setting labels share the content axis",
                   dialog.Contains("AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft") &&
-                  dialog.Contains("AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft"),
-                  "title, headings and rows should not use separate left edges");
+                  dialog.Contains("ElementBounds.Fixed(RowLeft + 18"),
+                  "clipped rows should use local coordinates under the content axis");
+
+            check("clipped settings rows do not double-apply the content offset",
+                  dialog.Contains("BeginClip(clipBounds)") &&
+                  dialog.Contains("double y = -_currentScroll") &&
+                  dialog.Contains("AddSection(row.Section, y, bodyHeight)") &&
+                  dialog.Contains("AddSettingRow(row.Setting, y, bodyHeight)") &&
+                  !dialog.Contains("AddSettingRow(row.Setting, y, bodyY, bodyHeight)"),
+                  "BeginClip children are positioned inside the clip, not in dialog coordinates");
 
             check("toggle rows avoid duplicate state text",
                   dialog.Contains("if (setting.Kind != SettingKind.Toggle)") &&
