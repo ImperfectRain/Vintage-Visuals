@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 
@@ -25,10 +26,8 @@ namespace VintageVisuals.Ui
         private const double BodyHeight = 440;
         private const double RowHeight = 44;
         private const double HeaderHeight = 26;
-        private const string ScrollbarKey = "settings-scrollbar";
 
         private readonly VisualTuningStudioController _controller;
-        private readonly Dictionary<SettingTab, double> _scrollByTab = new Dictionary<SettingTab, double>();
 
         private readonly GuiTab[] _tabs =
         {
@@ -59,38 +58,74 @@ namespace VintageVisuals.Ui
         private double _currentScroll;
         private double _currentContentHeight;
         private double _currentBodyHeight = BodyHeight;
+        private int _eventSequence;
+        private int _composerGeneration;
+        private bool _isComposing;
+        private bool _recomposePending;
+        private bool _ignoreNextConfigRefresh;
 
         public VisualTuningStudioDialog(ICoreClientAPI capi, VisualTuningStudioController controller)
             : base(capi)
         {
             _controller = controller;
+            _advanced = false;
             ComposeDialog();
         }
 
         public override string ToggleKeyCombinationCode { get { return HotkeyCode; } }
         public override EnumDialogType DialogType { get { return EnumDialogType.Dialog; } }
 
-        public void RefreshFromConfig()
+        public override void OnGuiOpened()
         {
-            if (!IsOpened()) return;
-            ComposeDialog();
+            Log("ENTER OnGuiOpened");
+            base.OnGuiOpened();
+            Log("EXIT OnGuiOpened");
         }
 
-        public override void OnMouseWheel(MouseWheelEventArgs args)
+        public override void OnGuiClosed()
         {
-            base.OnMouseWheel(args);
+            Log("ENTER OnGuiClosed");
+            base.OnGuiClosed();
+            Log("EXIT OnGuiClosed");
+        }
 
-            if (_tab == SettingTab.Overview) return;
+        public void RefreshFromConfig()
+        {
+            Log("ENTER RefreshFromConfig");
+            if (!IsOpened()) return;
 
-            double delta = args.deltaPrecise != 0 ? args.deltaPrecise : args.delta;
-            if (Math.Abs(delta) <= 0.001) return;
+            if (_ignoreNextConfigRefresh)
+            {
+                _ignoreNextConfigRefresh = false;
+                Log("EXIT RefreshFromConfig skipped internal mutation");
+                return;
+            }
 
-            ScrollTo(CurrentScroll() - delta * 34);
-            args.SetHandled();
+            ScheduleCompose("external config refresh");
+            Log("EXIT RefreshFromConfig scheduled");
+        }
+
+        public override void Dispose()
+        {
+            Log("ENTER Dispose");
+            base.Dispose();
+            Log("EXIT Dispose");
         }
 
         private void ComposeDialog()
         {
+            if (_isComposing)
+            {
+                _recomposePending = true;
+                Log("ComposeDialog nested request deferred");
+                return;
+            }
+
+            _isComposing = true;
+            _composerGeneration++;
+            int generation = _composerGeneration;
+            Log("ENTER ComposeDialog generation " + generation);
+
             ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
                 .WithAlignment(EnumDialogArea.CenterMiddle)
                 .WithFixedSize(DialogWidth, DialogHeight);
@@ -98,45 +133,49 @@ namespace VintageVisuals.Ui
             ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
             bgBounds.BothSizing = ElementSizing.FitToChildren;
 
-            _currentScroll = CurrentScroll();
+            _currentScroll = 0;
 
             SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
                 .AddShadedDialogBG(bgBounds)
                 .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
                 .BeginChildElements(bgBounds)
                     .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentX, 44, 380, 26))
-                    .AddButton("Close", OnCloseClicked, ElementBounds.Fixed(760, 42, 64, 26),
+                    .AddButton("Close", () => Guard(generation, "Close", OnCloseClicked), ElementBounds.Fixed(760, 42, 64, 26),
                         CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "close")
                     .AddInset(ElementBounds.Fixed(10, 42, NavWidth, 528), 2)
                     .AddInset(ElementBounds.Fixed(ContentX - 8, BodyY - 8, ContentWidth + 26, BodyHeight + 16), 2)
-                    .AddStaticText("Advanced Settings", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, 552, 150, 24))
-                    .AddSwitch(value =>
-                    {
-                        _advanced = value;
-                        ComposeDialog();
-                    }, ElementBounds.Fixed(ContentX + 150, 548, 58, 28), "advanced")
-                    .AddButton("Reset Tab", OnResetTabClicked, ElementBounds.Fixed(724, 548, 96, 28),
+                    .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, 552, 190, 24))
+                    .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentX + 198, 556, 180, 20))
+                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(724, 548, 96, 28),
                         CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
-            GuiElementSwitch adv = SingleComposer.GetSwitch("advanced");
-            if (adv != null) adv.On = _advanced;
-
-            AddTabs();
+            AddTabs(generation);
 
             if (_tab == SettingTab.Overview) AddOverview();
             else if (_tab == SettingTab.Debug) AddDebug();
             else AddSettingsTab(_tab);
 
             SingleComposer.EndChildElements().Compose();
-            ConfigureScrollbar();
+            _isComposing = false;
+            Log("EXIT ComposeDialog generation " + generation);
+
+            if (_recomposePending)
+            {
+                _recomposePending = false;
+                ScheduleCompose("pending after compose");
+            }
         }
 
-        private void AddTabs()
+        private void AddTabs(int generation)
         {
             foreach (GuiTab tab in _tabs) tab.Active = tab.DataInt == (int)_tab;
 
             SingleComposer.AddVerticalTabs(_tabs, ElementBounds.Fixed(18, 58, 130, 332),
-                (index, tab) => SelectTab((SettingTab)tab.DataInt), "studio-tabs");
+                (index, tab) => Guard(generation, "SelectTab", () =>
+                {
+                    SelectTab((SettingTab)tab.DataInt);
+                    return true;
+                }), "studio-tabs");
 
             SingleComposer.AddStaticText("Presets", CairoFont.WhiteDetailText(), ElementBounds.Fixed(28, 424, 90, 20));
             SingleComposer.AddStaticText("Coming later", CairoFont.WhiteDetailText(), ElementBounds.Fixed(28, 446, 100, 20));
@@ -150,27 +189,35 @@ namespace VintageVisuals.Ui
 
         private void SelectTab(SettingTab tab)
         {
-            SaveScroll();
+            Log("ENTER SelectTab " + tab);
             _tab = tab;
-            ComposeDialog();
+            ScheduleCompose("tab change");
+            Log("EXIT SelectTab " + tab);
         }
 
         private bool OnResetTabClicked()
         {
+            Log("ENTER ResetTab");
+            _ignoreNextConfigRefresh = true;
             _controller.ResetTab(_tab, _advanced);
-            ComposeDialog();
+            ScheduleCompose("reset tab");
+            Log("EXIT ResetTab");
             return true;
         }
 
         private bool OnCloseClicked()
         {
+            Log("ENTER Close");
             TryClose();
+            Log("EXIT Close");
             return true;
         }
 
         private void OnTitleBarClose()
         {
+            Log("ENTER TitleBarClose");
             TryClose();
+            Log("EXIT TitleBarClose");
         }
 
         private void AddOverview()
@@ -204,9 +251,11 @@ namespace VintageVisuals.Ui
             bool on = ConfigAccess.Get(_controller.Config, path) >= 0.5f;
             string status = (on ? "● On" : "○ Off") + "   >";
             string text = label.PadRight(28) + status + "\n" + summary;
+            int generation = _composerGeneration;
 
             SingleComposer.AddButton(text, () =>
             {
+                if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
                 SelectTab(target);
                 return true;
             }, ElementBounds.Fixed(ContentX, y, ContentWidth - 28, 46), CairoFont.WhiteSmallText(),
@@ -249,11 +298,8 @@ namespace VintageVisuals.Ui
             _currentBodyHeight = bodyHeight;
 
             ElementBounds clipBounds = ElementBounds.Fixed(ContentX, bodyY, ContentWidth, bodyHeight);
-            ElementBounds scrollbarBounds = ElementBounds.Fixed(ContentX + ContentWidth + 6, bodyY, 16, bodyHeight);
-
             _currentContentHeight = MeasureRows(rows);
-            _currentScroll = ClampScroll(_currentScroll);
-            SaveScroll();
+            _currentScroll = 0;
 
             SingleComposer.BeginClip(clipBounds);
 
@@ -273,11 +319,6 @@ namespace VintageVisuals.Ui
             }
 
             SingleComposer.EndClip();
-
-            if (_currentContentHeight > BodyHeight)
-            {
-                SingleComposer.AddVerticalScrollbar(OnScrollbarChanged, scrollbarBounds, ScrollbarKey);
-            }
         }
 
         private void AddSection(string label, double y, double bodyY, double bodyHeight)
@@ -302,14 +343,10 @@ namespace VintageVisuals.Ui
                 .AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX + 18, y + 10, 178, 22))
                 .AddButton("ⓘ", () => true, ElementBounds.Fixed(ContentX + 196, y + 7, 24, 24),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "info-" + setting.Code)
-                .AddHoverText(Tooltip(setting), CairoFont.WhiteDetailText(), 320,
-                    ElementBounds.Fixed(ContentX + 196, y + 7, 24, 24), "tip-" + setting.Code)
                 .AddStaticText(_controller.DisplayValue(setting), CairoFont.WhiteSmallText(),
                     ElementBounds.Fixed(ContentX + 226, y + 10, 96, 22))
                 .AddButton(resetText, () => ResetSetting(setting), ElementBounds.Fixed(ContentX + 602, y + 7, 28, 24),
-                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "reset-" + setting.Code)
-                .AddHoverText("Reset to default (" + DefaultValue(setting) + ")", CairoFont.WhiteDetailText(), 220,
-                    ElementBounds.Fixed(ContentX + 602, y + 7, 28, 24), "reset-tip-" + setting.Code);
+                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "reset-" + setting.Code);
 
             if (setting.Kind == SettingKind.Toggle) AddToggle(setting, y);
             else if (setting.Kind == SettingKind.Dropdown) AddDropdown(setting, y);
@@ -345,12 +382,17 @@ namespace VintageVisuals.Ui
         private void AddToggle(VisualSetting setting, double y)
         {
             bool on = _controller.Value(setting) >= 0.5f;
+            int generation = _composerGeneration;
             SingleComposer.AddStaticText(on ? "ON" : "OFF", CairoFont.WhiteSmallText(),
                 ElementBounds.Fixed(ContentX + 336, y + 10, 42, 22));
 
             SingleComposer.AddSwitch(value =>
             {
-                if (_controller.Set(setting, value ? 1f : 0f)) ComposeDialog();
+                if (!IsCurrentGeneration(generation, "ToggleChanged " + setting.Code)) return;
+                Log("ENTER ToggleChanged " + setting.Code);
+                _ignoreNextConfigRefresh = true;
+                _controller.Set(setting, value ? 1f : 0f);
+                Log("EXIT ToggleChanged " + setting.Code);
             }, ElementBounds.Fixed(ContentX + 386, y + 7, 58, 28), "switch-" + setting.Code);
 
             GuiElementSwitch sw = SingleComposer.GetSwitch("switch-" + setting.Code);
@@ -359,14 +401,19 @@ namespace VintageVisuals.Ui
 
         private void AddSlider(VisualSetting setting, double y)
         {
+            int generation = _composerGeneration;
             int steps = Math.Max(1, (int)Math.Round((setting.Max - setting.Min) / setting.Step));
             int value = (int)Math.Round((_controller.Value(setting) - setting.Min) / setting.Step);
             value = Math.Max(0, Math.Min(steps, value));
 
             SingleComposer.AddSlider(newValue =>
             {
+                if (!IsCurrentGeneration(generation, "SliderChanged " + setting.Code)) return false;
+                Log("ENTER SliderChanged " + setting.Code);
                 float target = setting.Min + newValue * setting.Step;
-                if (_controller.Set(setting, target)) ComposeDialog();
+                _ignoreNextConfigRefresh = true;
+                _controller.Set(setting, target);
+                Log("EXIT SliderChanged " + setting.Code);
                 return true;
             }, ElementBounds.Fixed(ContentX + 336, y + 8, 248, 24), "slider-" + setting.Code);
 
@@ -379,6 +426,7 @@ namespace VintageVisuals.Ui
 
         private void AddDropdown(VisualSetting setting, double y)
         {
+            int generation = _composerGeneration;
             string current = _controller.StringValue(setting);
             int selected = Array.FindIndex(setting.Choices, c => string.Equals(c, current, StringComparison.Ordinal));
             if (selected < 0) selected = 0;
@@ -387,26 +435,40 @@ namespace VintageVisuals.Ui
                 (code, selectedValue) =>
                 {
                     if (!selectedValue) return;
-                    if (_controller.SetString(setting, code)) ComposeDialog();
+                    if (!IsCurrentGeneration(generation, "DropdownChanged " + setting.Code)) return;
+                    Log("ENTER DropdownChanged " + setting.Code);
+                    _ignoreNextConfigRefresh = true;
+                    _controller.SetString(setting, code);
+                    Log("EXIT DropdownChanged " + setting.Code);
                 },
                 ElementBounds.Fixed(ContentX + 336, y + 8, 210, 24), "dropdown-" + setting.Code);
         }
 
         private bool ResetSetting(VisualSetting setting)
         {
-            if (_controller.Reset(setting)) ComposeDialog();
+            Log("ENTER ResetSetting " + setting.Code);
+            _ignoreNextConfigRefresh = true;
+            if (_controller.Reset(setting)) ScheduleCompose("reset setting");
+            Log("EXIT ResetSetting " + setting.Code);
             return true;
         }
 
         private void AddDebug()
         {
             double y = BodyY + 4;
+            int generation = _composerGeneration;
             SyncDebugSystemToActiveView();
 
             SingleComposer
                 .AddStaticText("Debug System", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y, 150, 22))
                 .AddDropDown(_debugSystems.Select(s => s.Label).ToArray(), _debugSystems.Select(s => s.Label).ToArray(),
-                    _debugSystemIndex, OnDebugSystemChanged, ElementBounds.Fixed(ContentX + 160, y - 2, 220, 26), "debug-system");
+                    _debugSystemIndex,
+                    (code, selected) =>
+                    {
+                        if (!IsCurrentGeneration(generation, "DebugSystemChanged")) return;
+                        OnDebugSystemChanged(code, selected);
+                    },
+                    ElementBounds.Fixed(ContentX + 160, y - 2, 220, 26), "debug-system");
 
             y += 42;
             List<DebugView> views = CurrentDebugViews().ToList();
@@ -416,11 +478,15 @@ namespace VintageVisuals.Ui
             SingleComposer
                 .AddStaticText("Debug View", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX, y, 150, 22))
                 .AddDropDown(views.Select(v => v.Value.ToString()).ToArray(), views.Select(v => v.Label).ToArray(),
-                    selected, OnDebugViewChanged, ElementBounds.Fixed(ContentX + 160, y - 2, 360, 26), "debug-view")
+                    selected,
+                    (code, selectedValue) =>
+                    {
+                        if (!IsCurrentGeneration(generation, "DebugViewChanged")) return;
+                        OnDebugViewChanged(code, selectedValue);
+                    },
+                    ElementBounds.Fixed(ContentX + 160, y - 2, 360, 26), "debug-view")
                 .AddButton("ⓘ", () => true, ElementBounds.Fixed(ContentX + 532, y - 2, 24, 24),
-                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "debug-info")
-                .AddHoverText(DebugTooltip(current), CairoFont.WhiteDetailText(), 340,
-                    ElementBounds.Fixed(ContentX + 532, y - 2, 24, 24), "debug-tip");
+                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "debug-info");
 
             y += 46;
             if (current.Value != 0)
@@ -449,7 +515,7 @@ namespace VintageVisuals.Ui
                 .AddInset(ElementBounds.Fixed(ContentX, y, ContentWidth - 28, 62), 2, 0.6f)
                 .AddStaticText("DEBUG VIEW ACTIVE", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentX + 14, y + 8, 180, 22))
                 .AddStaticText(current.Label, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentX + 14, y + 31, 330, 20))
-                .AddButton("Return to Normal Rendering", OnReturnToNormalClicked,
+                .AddButton("Return to Normal Rendering", () => Guard(_composerGeneration, "ReturnToNormal", OnReturnToNormalClicked),
                     ElementBounds.Fixed(ContentX + 390, y + 16, 210, 28), CairoFont.WhiteSmallText(),
                     EnumButtonStyle.Normal, "normal-rendering");
         }
@@ -457,19 +523,24 @@ namespace VintageVisuals.Ui
         private void OnDebugSystemChanged(string code, bool selected)
         {
             if (!selected) return;
+            Log("ENTER DebugSystemChanged");
             int index = Array.FindIndex(_debugSystems, s => s.Label == code);
             if (index < 0) return;
 
             _debugSystemIndex = index;
             _debugOwnerPath = _debugSystems[index].OwnerPath;
-            ComposeDialog();
+            ScheduleCompose("debug system");
+            Log("EXIT DebugSystemChanged");
         }
 
         private void OnDebugViewChanged(string code, bool selected)
         {
             if (!selected) return;
+            Log("ENTER DebugViewChanged");
             DebugView view = CurrentDebugViews().FirstOrDefault(v => v.Value.ToString() == code);
-            if (_controller.SetDebugView(view)) ComposeDialog();
+            _ignoreNextConfigRefresh = true;
+            _controller.SetDebugView(view);
+            Log("EXIT DebugViewChanged");
         }
 
         private IEnumerable<DebugView> CurrentDebugViews()
@@ -507,8 +578,11 @@ namespace VintageVisuals.Ui
 
         private bool OnReturnToNormalClicked()
         {
+            Log("ENTER ReturnToNormal");
+            _ignoreNextConfigRefresh = true;
             _controller.ReturnToNormalRendering();
-            ComposeDialog();
+            ScheduleCompose("return to normal");
+            Log("EXIT ReturnToNormal");
             return true;
         }
 
@@ -517,43 +591,57 @@ namespace VintageVisuals.Ui
             return rows.Sum(row => row.IsSection ? HeaderHeight : RowHeight);
         }
 
-        private void OnScrollbarChanged(float value)
+        private bool Guard(int generation, string name, System.Func<bool> action)
         {
-            _currentScroll = ClampScroll(value);
-            SaveScroll();
-            ComposeDialog();
+            if (!IsCurrentGeneration(generation, name)) return false;
+
+            Log("ENTER " + name);
+            bool result = action();
+            Log("EXIT " + name);
+            return result;
         }
 
-        private void ScrollTo(double value)
+        private bool IsCurrentGeneration(int generation, string callback)
         {
-            _currentScroll = ClampScroll(value);
-            SaveScroll();
-            ComposeDialog();
+            if (generation == _composerGeneration) return true;
+
+            Log("STALE CALLBACK " + callback + " callbackGeneration=" + generation);
+            return false;
         }
 
-        private double CurrentScroll()
+        private void ScheduleCompose(string reason)
         {
-            double value;
-            return _scrollByTab.TryGetValue(_tab, out value) ? value : 0;
+            Log("ScheduleCompose " + reason);
+            if (_recomposePending) return;
+
+            _recomposePending = true;
+            capi.Event.RegisterCallback(_ =>
+            {
+                Log("ENTER DeferredCompose " + reason);
+                if (!IsOpened())
+                {
+                    _recomposePending = false;
+                    Log("EXIT DeferredCompose skipped closed");
+                    return;
+                }
+
+                _recomposePending = false;
+                ComposeDialog();
+                Log("EXIT DeferredCompose " + reason);
+            }, 0);
         }
 
-        private void SaveScroll()
+        private void Log(string message)
         {
-            _scrollByTab[_tab] = _currentScroll;
-        }
-
-        private double ClampScroll(double value)
-        {
-            return Math.Max(0, Math.Min(Math.Max(0, _currentContentHeight - _currentBodyHeight), value));
-        }
-
-        private void ConfigureScrollbar()
-        {
-            GuiElementScrollbar scrollbar = SingleComposer.GetScrollbar(ScrollbarKey);
-            if (scrollbar == null) return;
-
-            scrollbar.SetHeights((float)_currentBodyHeight, (float)Math.Max(_currentBodyHeight, _currentContentHeight));
-            scrollbar.SetScrollbarPosition((int)Math.Round(_currentScroll));
+            int sequence = Interlocked.Increment(ref _eventSequence);
+            capi.Logger.Notification("[VV UI #" + sequence + "] " + message +
+                " tab=" + _tab +
+                " composerGen=" + _composerGeneration +
+                " thread=" + Thread.CurrentThread.ManagedThreadId +
+                " composerNull=" + (SingleComposer == null) +
+                " opened=" + IsOpened() +
+                " composing=" + _isComposing +
+                " pending=" + _recomposePending);
         }
 
         private sealed class DebugSystem

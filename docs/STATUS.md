@@ -59,7 +59,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
 | `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
 | `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 25 mutations, 25 caught, 0 missed |
-| `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | UX redesign is under regression isolation: a331611's explicit non-premultiplied/custom translucent background was removed and the proven shaded dialog composition path restored; compile/static checked, needs in-game alpha/composition test before further GUI changes |
+| `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | hard-crash isolation build: standard shaded background retained; hover elements, scrollbar/wheel, per-tab scroll and Advanced switch temporarily removed; live edits no longer synchronously recompose; deferred composer rebuilds, generation guards and `[VV UI #]` logging added; needs in-game stress test |
 | `[~]` | **Shipped defaults turn the mod on** | L2 | ten atmospheric effects and PseudoPBR now default on; the numbers are chosen, not measured. See [D44](DECISIONS.md) |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |

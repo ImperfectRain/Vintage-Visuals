@@ -119,9 +119,12 @@ Rendering action. The underlying per-shader debug numbers do not change.
 
 ## Status
 
-**L2 — native dialog UX redesign under regression isolation.** Runtime screenshots
-showed the first UX pass rendered corrupted after it changed both layout and GUI
-composition. The dialog now deliberately uses the same standard shaded background
-path as the last runtime-verified GUI while keeping the compact layout for the
-next in-game alpha test. It has not been re-opened in a running game from this
-environment, so presets, import/export and persistence remain blocked.
+**L2 — native dialog hard-crash isolation build.** The alpha/composition fix
+improved the corrupted screenshot but did not stop the crash. This build keeps
+the stable shaded background and compact layout, but temporarily removes hover
+elements, native scrollbar/wheel handling, per-tab scroll restoration and the
+Advanced switch. Live setting edits no longer rebuild the whole composer, and
+structural rebuilds are deferred through the client callback queue with composer
+generation guards and `[VV UI #]` lifecycle logging. It has not been re-opened in
+a running game from this environment, so presets, import/export and persistence
+remain blocked.

@@ -466,7 +466,9 @@ namespace VintageVisuals
 
         private void RefreshTuningStudio()
         {
+            Mod.Logger.Notification("[VV UI] ENTER ConfigChanged RefreshTuningStudio");
             if (_tuningStudioDialog != null) _tuningStudioDialog.RefreshFromConfig();
+            Mod.Logger.Notification("[VV UI] EXIT ConfigChanged RefreshTuningStudio");
         }
 
         /// <summary>

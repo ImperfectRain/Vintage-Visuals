@@ -313,19 +313,19 @@ namespace VintageVisuals.SmokeTest
                   !dialog.Contains("\"[\" + pair.Value + \"]\""),
                   "selected tabs must use native tab state, not bracket text");
 
-            check("settings use native continuous scrolling",
+            check("settings scrolling is disabled for crash isolation",
                   dialog.Contains("BeginClip(") &&
-                  dialog.Contains("AddVerticalScrollbar") &&
-                  dialog.Contains("SetHeights") &&
-                  dialog.Contains("OnMouseWheel") &&
+                  !dialog.Contains("AddVerticalScrollbar") &&
+                  !dialog.Contains("SetHeights") &&
+                  !dialog.Contains("OnMouseWheel") &&
                   !dialog.Contains("OnScrollUpClicked") &&
                   !dialog.Contains("OnScrollDownClicked"),
-                  "settings body must scroll, not paginate");
+                  "scrollbar and wheel return only after minimal build is stable");
 
-            check("setting explanations are progressive disclosure",
-                  dialog.Contains("AddHoverText(Tooltip(setting)") &&
+            check("hover elements are disabled for crash isolation",
+                  !dialog.Contains("AddHoverText") &&
                   !dialog.Contains("AddStaticText(setting.Description"),
-                  "descriptions belong in hover/focus help, not permanent rows");
+                  "dozens of hover elements are a crash suspect");
 
             check("modified settings have a compact reset affordance",
                   dialog.Contains("↺") &&
@@ -344,6 +344,36 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("\"DEBUG VIEW ACTIVE\"") &&
                   dialog.Contains("Return to Normal Rendering"),
                   "debug tab should not require numeric IDs");
+
+            check("dialog lifecycle logging is high-granularity",
+                  dialog.Contains("[VV UI #") &&
+                  dialog.Contains("ENTER SliderChanged") &&
+                  dialog.Contains("EXIT SliderChanged") &&
+                  dialog.Contains("STALE CALLBACK") &&
+                  dialog.Contains("composerGen=") &&
+                  mod.Contains("ENTER ConfigChanged RefreshTuningStudio") &&
+                  mod.Contains("EXIT ConfigChanged RefreshTuningStudio"),
+                  "hard crash needs last-event breadcrumbs");
+
+            check("callbacks are composer-generation guarded",
+                  dialog.Contains("_composerGeneration++") &&
+                  dialog.Contains("IsCurrentGeneration") &&
+                  dialog.Contains("callbackGeneration="),
+                  "callbacks from disposed UI trees must be ignored");
+
+            check("structural recomposition is deferred",
+                  dialog.Contains("ScheduleCompose") &&
+                  dialog.Contains("RegisterCallback") &&
+                  dialog.Contains("_isComposing") &&
+                  dialog.Contains("_recomposePending"),
+                  "callbacks must not synchronously destroy their own composer");
+
+            check("live setting edits do not rebuild the composer",
+                  !dialog.Contains("if (_controller.Set(setting, target)) ComposeDialog()") &&
+                  !dialog.Contains("if (_controller.Set(setting, value ? 1f : 0f)) ComposeDialog()") &&
+                  !dialog.Contains("if (_controller.SetString(setting, code)) ComposeDialog()") &&
+                  dialog.Contains("_ignoreNextConfigRefresh"),
+                  "slider/toggle/dropdown edits must not trigger full rebuilds");
 
             check("native UI mutation calls ConfigManager.NotifyChanged",
                   mod.Contains("new VisualTuningStudioController") &&
