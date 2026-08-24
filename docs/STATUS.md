@@ -132,7 +132,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[x]` | Per-layer debug views (0–51) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
+| `[x]` | Per-layer debug views (0–52) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 plus 52 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |

@@ -131,6 +131,7 @@ namespace VintageVisuals.Ui
             Pbr(35, "Reflection contribution", "How much the reflection is adding to the final pixel.", Pixel);
             Pbr(36, "Fallback mask", "Where the analytic sky is standing in for a real reflection.", Pixel);
             Pbr(37, "Reflection coarseness", "How coarse roughness has made the reflection cells.", Pixel);
+            Pbr(52, "Material texels per pixel", "Green is resolvable, yellow is near one material texel per screen pixel, red is undersampled.", Pixel);
 
             const string Bridge = "Scene reflection bridge";
             Pbr(38, "Captured-frame coordinate", "Where on the captured frame each texel is reading.", Bridge);

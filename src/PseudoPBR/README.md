@@ -398,6 +398,12 @@ both directions.
 system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slider
 — because it is a uniform, not a patch decision.
 
+The reflection texel diagnostics deliberately use the projected material-texel
+footprint from `dFdx`, `dFdy` and `fwidth`, not camera distance. View 33 fades
+the material texel checker to neutral grey when the grid is below screen
+resolution, and view 52 shows that footprint directly: green is resolvable,
+yellow is near one material texel per screen pixel, red is undersampled.
+
 | Value | Shows | What it tells you |
 |---|---|---|
 | 0 | normal rendering | — |

@@ -44,6 +44,7 @@ namespace VintageVisuals.SmokeTest
             CheckOneColourPerTexel(check);
             CheckStructureIsNotInvented(check);
             CheckNotScreenSpace(check);
+            CheckProjectedTexelFootprint(check);
             CheckWhiteMetalGuard(check);
             CheckRoughnessCoarsens(check);
             CheckIntegrationPoint(check);
@@ -461,6 +462,64 @@ namespace VintageVisuals.SmokeTest
             check("the texture resolution comes from the atlas itself",
                 _code.Contains("textureSize(vv_materialTex, 0)"),
                 "no hard-coded 16x16 - the same source vvSnapToTexel already uses");
+        }
+
+        private static void CheckProjectedTexelFootprint(Action<string, bool, string> check)
+        {
+            Match footprint = Regex.Match(_code,
+                @"float vvMaterialTexelsPerPixel\(vec2 materialUv\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+            check("material texel footprint is measured from derivatives",
+                footprint.Success &&
+                footprint.Groups[1].Value.Contains("materialUv * atlasSize") &&
+                footprint.Groups[1].Value.Contains("dFdx(texelCoord)") &&
+                footprint.Groups[1].Value.Contains("dFdy(texelCoord)") &&
+                footprint.Groups[1].Value.Contains("max(length(dFdx(texelCoord)), length(dFdy(texelCoord)))"),
+                "distance-only fading cannot see FOV, grazing angle or UV scale");
+
+            Match resolve = Regex.Match(_code,
+                @"float vvMaterialTexelResolvability\(vec2 materialUv\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+            check("material texel resolvability gates below-Nyquist detail",
+                resolve.Success &&
+                resolve.Groups[1].Value.Contains("vvMaterialTexelsPerPixel(materialUv)") &&
+                resolve.Groups[1].Value.Contains("return 1.0 - smoothstep") &&
+                resolve.Groups[1].Value.Contains("smoothstep(VV_TEXEL_FOOTPRINT_CRISP") &&
+                resolve.Groups[1].Value.Contains("VV_TEXEL_FOOTPRINT_UNRESOLVED"),
+                "unresolved texels need a named footprint gate, not raw checker output");
+
+            Match grid = Regex.Match(_code,
+                @"vec3 vvMaterialTexelGridDebug\(vec2 materialUv\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+            check("material texel grid debug consumes the footprint",
+                grid.Success &&
+                grid.Groups[1].Value.Contains("fwidth(texelCoord)") &&
+                grid.Groups[1].Value.Contains("clamp(footprint, vec2(1e-5), vec2(0.5))") &&
+                grid.Groups[1].Value.Contains("vvMaterialTexelResolvability(materialUv)") &&
+                grid.Groups[1].Value.Contains("mix(0.5, antiAliased, resolvability)"),
+                "declaring a footprint without fading unresolved checker detail leaves the moire");
+
+            Match mode33 = Regex.Match(_code, @"if \(mode == 33\)\s*\{(.*?)\n\s*\}",
+                RegexOptions.Singleline);
+            check("material texel grid debug uses the derivative-aware renderer",
+                mode33.Success && mode33.Groups[1].Value.Contains("vvMaterialTexelGridDebug(materialUv)"),
+                "mode 33 must not return the raw alternating checker");
+
+            Match diagnostic = Regex.Match(_code,
+                @"vec3 vvMaterialTexelResolutionDebug\(vec2 materialUv\)\s*\{(.*?)\n\}",
+                RegexOptions.Singleline);
+            check("material texels-per-pixel diagnostic is derivative-driven",
+                diagnostic.Success &&
+                diagnostic.Groups[1].Value.Contains("vvMaterialTexelsPerPixel(materialUv)") &&
+                diagnostic.Groups[1].Value.Contains("green") &&
+                diagnostic.Groups[1].Value.Contains("yellow") &&
+                diagnostic.Groups[1].Value.Contains("red"),
+                "the diagnostic must show projected footprint, not distance bands");
+
+            Match mode52 = Regex.Match(_code, @"if \(mode == 52\) return vec4\((.*?), color\.a\);");
+            check("material texels-per-pixel diagnostic is reachable as mode 52",
+                mode52.Success && mode52.Groups[1].Value.Contains("vvMaterialTexelResolutionDebug(materialUv)"),
+                "the footprint view must be selectable without editing GLSL");
         }
 
         /// <summary>

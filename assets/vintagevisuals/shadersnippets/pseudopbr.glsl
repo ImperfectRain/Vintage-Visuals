@@ -1772,6 +1772,65 @@ const float VV_REFLECT_MAX = 1.2;
 
 const float VV_REFLECT_TWO_PI = 6.28318530718;
 
+// Projected material-texel footprint, in material texels per screen pixel.
+//
+// The material atlas deliberately uses nearest sampling and no mipmaps. That is
+// correct for the material data, but a diagnostic checker that literally draws
+// every atlas texel becomes false information once several material texels land
+// inside one framebuffer pixel. This helper measures that condition directly
+// from screen derivatives instead of guessing from distance.
+const float VV_TEXEL_FOOTPRINT_CRISP = 0.5;
+const float VV_TEXEL_FOOTPRINT_UNRESOLVED = 1.5;
+
+float vvMaterialTexelsPerPixel(vec2 materialUv)
+{
+    vec2 atlasSize = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+    vec2 texelCoord = materialUv * atlasSize;
+
+    return max(length(dFdx(texelCoord)), length(dFdy(texelCoord)));
+}
+
+float vvMaterialTexelResolvability(vec2 materialUv)
+{
+    float footprint = vvMaterialTexelsPerPixel(materialUv);
+    return 1.0 - smoothstep(VV_TEXEL_FOOTPRINT_CRISP,
+                            VV_TEXEL_FOOTPRINT_UNRESOLVED,
+                            footprint);
+}
+
+vec3 vvMaterialTexelGridDebug(vec2 materialUv)
+{
+    vec2 atlasSize = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+    vec2 texelCoord = materialUv * atlasSize;
+    vec2 texel = floor(texelCoord);
+
+    float checker = mix(0.25, 0.85, mod(texel.x + texel.y, 2.0));
+    float resolvability = vvMaterialTexelResolvability(materialUv);
+
+    vec2 cell = fract(texelCoord);
+    vec2 footprint = max(fwidth(texelCoord), vec2(1e-5));
+    vec2 aa = clamp(footprint, vec2(1e-5), vec2(0.5));
+    vec2 inside = smoothstep(vec2(0.0), aa, cell)
+                * (1.0 - smoothstep(vec2(1.0) - aa, vec2(1.0), cell));
+    float edge = 1.0 - min(inside.x, inside.y);
+    float antiAliased = mix(checker, 0.5, clamp(edge * max(footprint.x, footprint.y), 0.0, 1.0));
+
+    return vec3(mix(0.5, antiAliased, resolvability));
+}
+
+vec3 vvMaterialTexelResolutionDebug(vec2 materialUv)
+{
+    float footprint = vvMaterialTexelsPerPixel(materialUv);
+
+    vec3 green = vec3(0.1, 0.85, 0.1);
+    vec3 yellow = vec3(0.95, 0.85, 0.1);
+    vec3 red = vec3(0.95, 0.1, 0.05);
+
+    float toYellow = smoothstep(VV_TEXEL_FOOTPRINT_CRISP, 1.0, footprint);
+    float toRed = smoothstep(1.0, VV_TEXEL_FOOTPRINT_UNRESOLVED, footprint);
+    return mix(mix(green, yellow, toYellow), red, toRed);
+}
+
 // The world position of the centre of this fragment's material texel.
 //
 // The reason one colour per texel is a construction rather than a hope. The UV
@@ -3507,7 +3566,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // single edge scores 2 in the total variation at every radius and the band
     // starts above that. That is the check that this is counting occluders
     // rather than finding boundaries.
-    // ---- Pixel reflection, views 32-37 -----------------------------------
+    // ---- Pixel reflection, views 32-37 and 52 -----------------------------
     //
     // 32: the reflection direction, per texel. Red and blue are horizontal,
     // green is up. A flat face should be one steady colour; a normal-mapped one
@@ -3520,19 +3579,21 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(reflect(-v32, n32) * 0.5 + 0.5, color.a);
     }
 
-    // 33: the material texel index, as a checker.
+    // 33: the material texel index, as a derivative-aware checker.
     //
     // The grid everything else must land on, shown on its own so it can be read
     // off directly. Each square is one texture pixel. If these squares do not
     // match the texture's own pixels - if they are finer, coarser, or slide
     // across it - then the atlas resolution assumption is wrong and nothing
     // downstream can be trusted.
+    //
+    // Once several material texels project into one framebuffer pixel the raw
+    // checker lies: the alternating black/white grid is below Nyquist and turns
+    // into moire. At that point this view fades toward neutral grey instead of
+    // inventing false bands.
     if (mode == 33)
     {
-        vec2 size33 = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
-        vec2 texel33 = floor(materialUv * size33);
-        float checker = mod(texel33.x + texel33.y, 2.0);
-        return vec4(vec3(mix(0.25, 0.85, checker)), color.a);
+        return vec4(vvMaterialTexelGridDebug(materialUv), color.a);
     }
 
     // 34: THE IMPORTANT ONE - the quantised reflection, as flat colour.
@@ -3617,6 +3678,17 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(vec3(1.0 - (cells37 - VV_REFLECT_CELLS_ROUGH)
                              / (VV_REFLECT_CELLS_SHARP - VV_REFLECT_CELLS_ROUGH)), color.a);
     }
+
+    // 52: projected material texel footprint.
+    //
+    //   green   individual material texels are comfortably screen-resolvable
+    //   yellow  approaching one material texel per framebuffer pixel
+    //   red     multiple material texels occupy one framebuffer pixel
+    //
+    // This is the condition view 33 now responds to, and the signal a future
+    // reflection-cell LOD should use if runtime evidence says real reflections
+    // shimmer for the same reason.
+    if (mode == 52) return vec4(vvMaterialTexelResolutionDebug(materialUv), color.a);
 
     // 31: the RAW count at the gate's own radius, banded into false colour so a
     // screenshot answers the question without needing a number read off it.

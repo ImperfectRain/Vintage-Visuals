@@ -37,6 +37,10 @@ a studio slider points at the wrong property	src/Ui/VisualSettingRegistry.cs	"pb
 a studio slider offers a range the config would clamp	src/Ui/VisualSettingRegistry.cs	W, "Rain and wetness", 0f, 1f, 0.05f);	W, "Rain and wetness", 0f, 9f, 0.05f);	silently correct
 a friendly debug name points at no shader arm	src/Ui/DebugViewRegistry.cs	Pbr(13, "Foliage transmission"	Pbr(99, "Foliage transmission"	does not implement
 a shader diagnostic becomes unreachable by name	src/Ui/DebugViewRegistry.cs	Pbr(29, "Canopy gate"	Pbr(129, "Canopy gate"	can be reached by name
+the material texel footprint stops using derivatives	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	return max(length(dFdx(texelCoord)), length(dFdy(texelCoord)));	return 0.0;	measured from derivatives
+the material texel resolvability gate is inverted	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	return 1.0 - smoothstep(VV_TEXEL_FOOTPRINT_CRISP,	return smoothstep(VV_TEXEL_FOOTPRINT_CRISP,	gates below-Nyquist
+the material texel grid stops fading unresolved detail	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	return vec3(mix(0.5, antiAliased, resolvability));	return vec3(antiAliased);	consumes the footprint
+the material texels-per-pixel diagnostic is bypassed	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	if (mode == 52) return vec4(vvMaterialTexelResolutionDebug(materialUv), color.a);	if (mode == 52) return vec4(vec3(0.0), color.a);	reachable as mode 52
 the two panels disagree about a default	src/Common/VintageVisualsConfig.cs	public float AerialPerspective { get; set; } = 0.5f;	public float AerialPerspective { get; set; } = 0.7f;	describe a shared setting the same way
 the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"weather_frost", "Weather.FrostStrength"	"weather_frost_x", "Weather.FrostStrength"	exposes everything
 the native studio bypasses the config notification path	src/VintageVisualsModSystem.cs	() => ConfigManager.NotifyChanged()	() => { }	NotifyChanged
