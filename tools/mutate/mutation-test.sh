@@ -36,6 +36,12 @@ log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
 while IFS=$'\t' read -r label file from to expect; do
+    label=${label%$'\r'}
+    file=${file%$'\r'}
+    from=${from%$'\r'}
+    to=${to%$'\r'}
+    expect=${expect%$'\r'}
+
     case "$label" in ''|\#*) continue ;; esac
 
     hits=$(grep -F -c -- "$from" "$file" 2>/dev/null || echo 0)
@@ -54,6 +60,7 @@ open(path, 'w').write(s.replace(old, new, 1))
 PY
 
     dotnet run --project tools/smoketest >"$log" 2>&1
+    status=$?
     caught=$(grep '^  FAIL' "$log" | grep -c -- "$expect" || true)
     total=$(grep -c '^  FAIL' "$log" || true)
 
@@ -62,6 +69,10 @@ PY
     if [ "$caught" -gt 0 ]; then
         echo "  CAUGHT  $label -- $caught check(s) matching '$expect' failed"
         pass=$((pass + 1))
+    elif [ "$status" -ne 0 ] && [ "$total" -eq 0 ]; then
+        echo "  RUNFAIL $label -- smoke test did not run to checks"
+        head -20 "$log"
+        fail=$((fail + 1))
     else
         echo "  MISSED  $label -- expected a '$expect' failure, got $total failure(s)"
         grep '^  FAIL' "$log" | head -3
