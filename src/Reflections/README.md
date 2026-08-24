@@ -151,13 +151,14 @@ sampled scene depth against the half-block tolerance.
 
 **Roughness does not coarsen the scene reflection.** `vvPixelReflection`
 quantises the reflection direction into `cells` chosen by roughness — and then
-uses that quantised direction *only* for `vvReflectionFallback`.
-`vvSceneReflection` recomputes `r = reflect(-v, n)` from the unquantised normal,
-so a rough surface with a valid scene hit gets exactly the same reflection
-geometry as a polished one. The documented hierarchy — smooth reflects sharply,
-rough reflects coarsely — currently applies to the analytic sky and not to the
-captured world, so the two can have visibly different character on the same
-surface either side of a hit boundary.
+uses that quantised direction *only* for `vvReflectionFallback`. The captured
+world ray now uses the geometric face normal, deliberately ignoring material
+normal flecks after they produced a cone of near-floor hits instead of stable
+geometry. A rough surface with a valid scene hit therefore gets the same
+captured geometry as a polished one. The documented hierarchy — smooth reflects
+sharply, rough reflects coarsely — currently applies to the analytic sky and not
+to the captured world, so the two can have visibly different character on the
+same surface either side of a hit boundary.
 
 **The luminance ceiling is a compression rule, not an energy rule.** A scene hit
 brighter than `envLuma * VV_REFLECT_MAX` (1.2) is scaled down to it. With a local

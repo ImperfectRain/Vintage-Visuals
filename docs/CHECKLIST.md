@@ -298,9 +298,10 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | The march decoding alpha as normalised depth (`D43`) | external audit, verified | I13 | x |
 | The depth-precision view painting no-hit pixels red (`D43`) | runtime screenshot | I13 | x |
 | The depth-precision view never reporting coarse data | `D43` | I13 | x |
+| The scene reflection ray using material-normal flecks | runtime screenshot | `PixelReflectionChecks` | x |
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**44 mutations, 44 caught, 0 missed** at `HEAD`.
+**45 mutations, 45 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

@@ -363,7 +363,7 @@ namespace VintageVisuals.SmokeTest
 
             // --- the geometry ----------------------------------------------
             Match ssr = Regex.Match(_code,
-                @"VvSceneHit vvSceneReflection\(vec3 n, vec2 materialUv, vec3 cameraRelativePos\)\s*\{(.*?)\n\}",
+                @"VvSceneHit vvSceneReflection\(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelativePos\)\s*\{(.*?)\n\}",
                 RegexOptions.Singleline);
             check("the scene reflection exists", ssr.Success, "");
             if (!ssr.Success) return;
@@ -443,7 +443,7 @@ namespace VintageVisuals.SmokeTest
                 "an edge-on face has no invertible UV mapping");
 
             Match fn = Regex.Match(_pbr,
-                @"vec3 vvPixelReflection\(vec3 n, vec2 materialUv, float roughness, vec3 cameraRelativePos,\s*\n\s*vec3 environment\)\s*\{(.*?)\n\}",
+                @"vec3 vvPixelReflection\(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughness,\s*\n\s*vec3 cameraRelativePos, vec3 environment\)\s*\{(.*?)\n\}",
                 RegexOptions.Singleline);
             check("vvPixelReflection exists with the texel-centre signature", fn.Success, "");
             if (!fn.Success) return;
@@ -457,6 +457,17 @@ namespace VintageVisuals.SmokeTest
             check("no per-fragment position reaches the direction after that",
                 !Regex.IsMatch(reflect, @"reflect\(-normalize\(-cameraRelativePos\)"),
                 "");
+
+            check("scene reflection geometry uses the face normal",
+                reflect.Contains("vvSceneReflection(sceneNormal, materialUv, cameraRelativePos)")
+                    && _pbr.Contains("vvPixelReflection(n, normalize(faceNormal), materialUv, roughness,"),
+                "material-normal flecks steer the screen-space ray into a cone instead of reconstructing geometry");
+
+            check("scene reflection diagnostics trace the face normal",
+                _pbr.Contains("vec3 n39 = normalize(faceNormal);")
+                    && _pbr.Contains("vec3 n40 = normalize(faceNormal);")
+                    && _pbr.Contains("vec3 n51 = normalize(faceNormal);"),
+                "debug views 39, 40 and 51 must describe the same geometric ray as the live path");
         }
 
         /// <summary>

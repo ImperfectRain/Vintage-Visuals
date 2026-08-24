@@ -1740,10 +1740,12 @@ sample. The fix belonged in the capture format, not in `VV_SSR_REFINE`.
 
 **Confirmed: roughness does not coarsen the scene reflection.**
 `vvPixelReflection` picks `cells` from roughness, quantises the direction, and
-hands the quantised direction to `vvReflectionFallback` only. `vvSceneReflection`
-recomputes `reflect(-v, n)` from the unquantised normal. So the documented
-hierarchy - smooth sharp, rough coarse - governs the analytic sky and not the
-captured world, and one surface can change character across a hit boundary.
+hands the quantised direction to `vvReflectionFallback` only. The captured world
+ray now uses the geometric face normal, not the material normal, because
+normal-map flecks produced a cone of near-floor hits instead of stable reflected
+geometry. So the documented hierarchy - smooth sharp, rough coarse - governs the
+analytic sky and not the captured world, and one surface can change character
+across a hit boundary.
 
 **Confirmed: the luminance ceiling is a compression rule wearing an energy
 rule's clothes.** A scene hit above `envLuma * 1.2` is scaled to it. Environment

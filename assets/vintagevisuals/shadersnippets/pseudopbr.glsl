@@ -2061,7 +2061,7 @@ VvRayPoint vvProjectRay(vec3 cameraRelative)
 //
 // The ray starts at the texel centre, so this whole function is constant across
 // a material texel - which is where one colour per texel comes from.
-VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
+VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelativePos)
 {
     VvSceneHit miss;
     miss.color = vec3(0.0);
@@ -2076,7 +2076,7 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
 
     vec3 origin = vvTexelCentrePos(cameraRelativePos, materialUv);
     vec3 v = normalize(-origin);
-    vec3 r = reflect(-v, n);
+    vec3 r = reflect(-v, sceneNormal);
 
     float len = length(r);
     if (len < 1e-4) return miss;
@@ -2224,8 +2224,8 @@ VvSceneHit vvSceneReflection(vec3 n, vec2 materialUv, vec3 cameraRelativePos)
 // own and cannot exceed the ambient specular the surface already had.
 //
 // Strength 0 returns the input unchanged, which is vanilla.
-vec3 vvPixelReflection(vec3 n, vec2 materialUv, float roughness, vec3 cameraRelativePos,
-                       vec3 environment)
+vec3 vvPixelReflection(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughness,
+                       vec3 cameraRelativePos, vec3 environment)
 {
     float strength = clamp(vv_pbrPixelReflect, 0.0, 1.0);
     if (strength < 0.001) return environment;
@@ -2264,7 +2264,10 @@ vec3 vvPixelReflection(vec3 n, vec2 materialUv, float roughness, vec3 cameraRela
     // world cannot be seen, not the model - see the architecture note above
     // vvSceneReflection. Blended by the hit's own confidence so the boundary
     // between real reflection and fallback is a fade rather than a seam.
-    VvSceneHit scene = vvSceneReflection(n, materialUv, cameraRelativePos);
+    // The captured scene is geometry, not material grain. Trace it from the
+    // block face normal so normal-map flecks do not steer the ray back into a
+    // near-floor cone.
+    VvSceneHit scene = vvSceneReflection(sceneNormal, materialUv, cameraRelativePos);
 
     // THE CAPTURE IS THE FINISHED FRAME, not raw scene radiance. It has already
     // been colour graded, bloomed and exposure adapted, so reflecting it
@@ -2913,7 +2916,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // the reflection cannot exceed the ambient specular the surface was already
     // getting, and a fully matte or non-metallic texel still barely reflects.
     result += vvAmbientSpecular(f0, roughness, ndotv,
-                                vvPixelReflection(n, materialUv, roughness,
+                                vvPixelReflection(n, normalize(faceNormal), materialUv, roughness,
                                                   cameraRelativePos, environment))
             * energy
             * clamp(vv_sceneDayLight, 0.0, 1.0)
@@ -3148,7 +3151,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // smoothly as you turn, in blocks the size of a texture pixel.
     if (mode == 38)
     {
-        vec3 n38 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 n38 = normalize(faceNormal);
         vec3 origin = vvTexelCentrePos(cameraRelativePos, materialUv);
         vec3 r38 = reflect(-normalize(-origin), n38);
 
@@ -3178,7 +3181,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     {
         if (vv_reflectValid < 0.5) return vec4(0.0, 0.0, 1.0, color.a);
 
-        vec3 n39 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 n39 = normalize(faceNormal);
         VvSceneHit hit39 = vvSceneReflection(n39, materialUv, cameraRelativePos);
 
         return vec4(hit39.valid > 0.5 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), color.a);
@@ -3192,7 +3195,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // so in red.
     if (mode == 40)
     {
-        vec3 n40 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 n40 = normalize(faceNormal);
         VvSceneHit hit40 = vvSceneReflection(n40, materialUv, cameraRelativePos);
         return vec4(hit40.color * hit40.valid, color.a);
     }
@@ -3240,7 +3243,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // a plausible-looking reflection. It is not subtle here.
     if (mode == 43)
     {
-        vec3 n43 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        vec3 n43 = normalize(faceNormal);
         VvSceneHit hit43 = vvSceneReflection(n43, materialUv, cameraRelativePos);
 
         if (hit43.valid < 0.5) return vec4(vec3(0.08), color.a);
@@ -3282,7 +3285,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // View 39 called both of them red.
     if (mode == 48)
     {
-        vec3 n48 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        vec3 n48 = normalize(faceNormal);
         float why = vvSceneReflection(n48, materialUv, cameraRelativePos).reason;
 
         if (why == VV_SSR_HIT)         return vec4(0.1, 0.9, 0.1, color.a);
@@ -3308,7 +3311,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // thickness tolerance is being asked to absorb it.
     if (mode == 49)
     {
-        vec3 n49 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        vec3 n49 = normalize(faceNormal);
         VvSceneHit m49 = vvSceneReflection(n49, materialUv, cameraRelativePos);
 
         float used = m49.steps / float(VV_SSR_STEPS);
@@ -3333,7 +3336,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // coarse march, and raising it would hide that rather than fix it.
     if (mode == 50)
     {
-        vec3 n50 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        vec3 n50 = normalize(faceNormal);
         VvSceneHit m50 = vvSceneReflection(n50, materialUv, cameraRelativePos);
 
         float ratio = abs(m50.thickness) / max(1e-4, VV_SSR_THICKNESS);
@@ -3363,7 +3366,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // value the capture made available.
     if (mode == 51)
     {
-        vec3 n51 = vvSurfaceNormal(normalize(faceNormal), materialUv, cameraRelativePos);
+        vec3 n51 = normalize(faceNormal);
         VvSceneHit m51 = vvSceneReflection(n51, materialUv, cameraRelativePos);
 
         bool measured = m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK;
@@ -3622,7 +3625,8 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         float rough34 = clamp(vvSampleMaterial(materialUv).b + vv_pbrRoughnessBias, 0.04, 1.0);
         vec3 n34 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
 
-        return vec4(vvPixelReflection(n34, materialUv, rough34, cameraRelativePos, vec3(0.5)),
+        return vec4(vvPixelReflection(n34, normalize(faceNormal), materialUv, rough34,
+                                      cameraRelativePos, vec3(0.5)),
                     color.a);
     }
 
@@ -3648,7 +3652,8 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
             : vvReflectanceF0(color.rgb, mat35.a);
 
         return vec4(vvAmbientSpecular(f035, rough35, ndotv35,
-                        vvPixelReflection(n35, materialUv, rough35, cameraRelativePos,
+                        vvPixelReflection(n35, normalize(faceNormal), materialUv, rough35,
+                                          cameraRelativePos,
                                           environment)),
                     color.a);
     }
