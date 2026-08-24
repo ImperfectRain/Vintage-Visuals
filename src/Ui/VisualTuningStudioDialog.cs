@@ -101,8 +101,7 @@ namespace VintageVisuals.Ui
             _currentScroll = CurrentScroll();
 
             SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
-                .PremultipliedAlpha(false)
-                .AddShadedDialogBG(bgBounds, true, 4, 0.68f)
+                .AddShadedDialogBG(bgBounds)
                 .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
                 .BeginChildElements(bgBounds)
                     .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentX, 44, 380, 26))

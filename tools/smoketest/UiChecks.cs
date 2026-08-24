@@ -294,6 +294,12 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains(": GuiDialog") && dialog.Contains("CreateCompo("),
                   "dialog shell must be native Vintage Story UI");
 
+            check("the studio keeps the proven dialog composition path",
+                  dialog.Contains("AddShadedDialogBG(bgBounds)") &&
+                  !dialog.Contains("PremultipliedAlpha(false)") &&
+                  !dialog.Contains("AddShadedDialogBG(bgBounds, true"),
+                  "custom alpha/composition caused runtime GUI corruption");
+
             check("every displayed control maps to its registry entry",
                   dialog.Contains("VisibleSettings(tab") &&
                   dialog.Contains("RowsFor(SettingTab tab)") &&

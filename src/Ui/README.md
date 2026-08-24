@@ -119,9 +119,9 @@ Rendering action. The underlying per-shader debug numbers do not change.
 
 ## Status
 
-**L2 — native dialog UX redesigned and statically verified.** Runtime screenshots
-showed the first pass worked but was too dense; this pass replaces permanent
-descriptions and pagination with compact rows, tooltips, vertical navigation and
-native scrolling. It has not been re-opened in a running game from this
-environment, so the next gate remains screenshot/user review before presets,
-import/export or persistence are built.
+**L2 — native dialog UX redesign under regression isolation.** Runtime screenshots
+showed the first UX pass rendered corrupted after it changed both layout and GUI
+composition. The dialog now deliberately uses the same standard shaded background
+path as the last runtime-verified GUI while keeping the compact layout for the
+next in-game alpha test. It has not been re-opened in a running game from this
+environment, so presets, import/export and persistence remain blocked.
