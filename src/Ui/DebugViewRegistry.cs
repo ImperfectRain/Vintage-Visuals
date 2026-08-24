@@ -151,7 +151,7 @@ namespace VintageVisuals.Ui
             Pbr(48, "Why the ray ended", "Green hit, yellow found the surface and rejected it, red never crossed anything.", March);
             Pbr(49, "Stride against budget", "Red means the ray was walked coarser than the stride constant asks.", March);
             Pbr(50, "Crossing residual", "How far behind the surface the refined crossing landed.", March);
-            Pbr(51, "Depth precision", "Whether the hit decision is geometry or rounding. Any red means the capture's depth is too coarse.", March);
+            Pbr(51, "Depth precision", "On measured crossings, red means captured depth is too coarse. Black means no crossing was available to measure.", March);
 
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));

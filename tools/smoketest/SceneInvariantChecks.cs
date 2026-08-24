@@ -1068,6 +1068,10 @@ namespace VintageVisuals.SmokeTest
                   pbrCode.Contains("float quantum = max(1e-5, vvHalfFloatQuantum(sampleDepth));"),
                   "view 51 must report precision at the sampled depth, not zFar/255");
 
+            check("I13 the depth-precision view only reports measured crossings",
+                  pbrCode.Contains("if (!measured) return vec4(0.0, 0.0, 0.0, color.a);"),
+                  "view 51 should not paint no-hit pixels red from a fallback depth");
+
             double Coarse(double quantum)
             {
                 var syms = Syms("VV_SSR_THICKNESS", tolerance, "quantum", quantum);

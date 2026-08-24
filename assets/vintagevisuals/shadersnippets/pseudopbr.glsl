@@ -3356,6 +3356,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     //   green   per texel: this crossing's residual measured in QUANTA rather
     //           than in blocks. Below one quantum the number is noise
     //   blue     this crossing was rejected as too thick
+    //   black   no crossing was available to measure
     //
     // Bisection cannot rescue quantisation. Five passes refine the ray
     // parameter against the same sample, so they converge precisely onto the
@@ -3366,10 +3367,12 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         VvSceneHit m51 = vvSceneReflection(n51, materialUv, cameraRelativePos);
 
         bool measured = m51.reason == VV_SSR_HIT || m51.reason == VV_SSR_TOO_THICK;
-        float sampleDepth = measured ? texture(vv_reflectScene, clamp(m51.uv, 0.0, 1.0)).a : vv_reflectFar;
+        if (!measured) return vec4(0.0, 0.0, 0.0, color.a);
+
+        float sampleDepth = texture(vv_reflectScene, clamp(m51.uv, 0.0, 1.0)).a;
         float quantum = max(1e-5, vvHalfFloatQuantum(sampleDepth));
         float coarse = clamp(quantum / max(1e-5, VV_SSR_THICKNESS) - 1.0, 0.0, 1.0);
-        float inQuanta = measured ? clamp(abs(m51.thickness) / quantum, 0.0, 1.0) : 0.0;
+        float inQuanta = clamp(abs(m51.thickness) / quantum, 0.0, 1.0);
 
         return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
     }
