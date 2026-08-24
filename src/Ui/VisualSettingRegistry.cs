@@ -413,6 +413,21 @@ namespace VintageVisuals.Ui
                    "How much of the environment a reflective surface shows. One colour per texture pixel, on purpose - this is a pixel-art reflection rather than a mirror.",
                    R, "Scene reflections", 0f, 1f, 0.05f);
 
+            // ---- DEBUG -------------------------------------------------------
+            const SettingTab D = SettingTab.Debug;
+
+            Slider("compare_wipe", "CompareWipe", "Compare wipe",
+                   "Splits the frame between vanilla and Vintage Visuals. 0 is normal rendering; 0.5 puts the comparison seam in the middle.",
+                   D, "Debug utilities", 0f, 1f, 0.05f, null, false, SettingCost.Free, false, true);
+
+            Toggle("shader_debug_dump", "EnableShaderDebugDump", "Shader debug dump",
+                   "Writes patched shader source to the game's ShaderDebug folder so patch delivery can be inspected after a reload.",
+                   D, "Debug utilities", true, SettingCost.Free, false, true);
+
+            Toggle("write_scene_report", "WriteSceneReport", "Write scene report",
+                   "Writes one scene report describing what the world asked for and what each subsystem was allowed to change.",
+                   D, "Debug utilities", true, SettingCost.Free, false, true);
+
             return s;
         }
     }

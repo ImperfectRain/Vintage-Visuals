@@ -5,7 +5,6 @@ using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Atmosphere;
-using VintageVisuals.Atmosphere;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Scene;
 

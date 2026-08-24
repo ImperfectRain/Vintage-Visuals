@@ -59,6 +59,7 @@ namespace VintageVisuals.Ui
     public static class DebugViewRegistry
     {
         public const string PbrPath = "PseudoPBR.DebugView";
+        public const string EntityPath = "PseudoPBR.EntityDebugView";
         public const string AtmospherePath = "Atmosphere.AirDebugView";
         public const string CloudPath = "Weather.CloudDebugView";
 
@@ -150,6 +151,14 @@ namespace VintageVisuals.Ui
             Pbr(49, "Stride against budget", "Red means the ray was walked coarser than the stride constant asks.", March);
             Pbr(50, "Crossing residual", "How far behind the surface the refined crossing landed.", March);
             Pbr(51, "Depth precision", "Whether the hit decision is geometry or rounding. Any red means the capture's depth is too coarse.", March);
+
+            void Entity(int n, string name, string desc)
+                => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));
+
+            Entity(0, Off, "Entities as the mod normally draws them.");
+            Entity(1, "Entity highlight only", "The entity specular lobe with the base colour removed.");
+            Entity(2, "Entity wetness", "The shared scene wetness value reaching entities.");
+            Entity(3, "Scene restraint", "The gameplay-readability restraint reaching entities.");
 
             void Air(int n, string name, string desc)
                 => v.Add(new DebugView(AtmospherePath, n, name, desc, "Atmosphere"));

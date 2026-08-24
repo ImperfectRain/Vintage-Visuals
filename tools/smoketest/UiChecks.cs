@@ -140,8 +140,69 @@ namespace VintageVisuals.SmokeTest
             check("reset restores every setting to its shipped default",
                   stuck.Count == 0, string.Join(", ", stuck));
 
+            ControllerBoundary(repo, check);
             DebugViews(repo, check);
+            NativeDialog(repo, check);
             AgainstConfigLib(repo, check);
+        }
+
+        static void ControllerBoundary(string repo, Action<string, bool, string> check)
+        {
+            int notifications = 0;
+            var config = new VintageVisualsConfig();
+            var controller = new VisualTuningStudioController(() => config, () => notifications++);
+
+            VisualSetting boolSetting = VisualSettingRegistry.All.First(s => s.Kind == SettingKind.Toggle);
+            bool beforeBool = ConfigAccess.Get(config, boolSetting.Path) >= 0.5f;
+            notifications = 0;
+            bool boolChanged = controller.Set(boolSetting, beforeBool ? 0f : 1f);
+            check("bool rows mutate bool properties",
+                  boolChanged && notifications == 1 && (ConfigAccess.Get(config, boolSetting.Path) >= 0.5f) != beforeBool,
+                  "changed=" + boolChanged + ", notifications=" + notifications);
+
+            VisualSetting slider = VisualSettingRegistry.All.First(s => s.Kind == SettingKind.Slider);
+            notifications = 0;
+            float target = Math.Abs(ConfigAccess.Get(config, slider.Path) - slider.Max) > 1e-4f ? slider.Max : slider.Min;
+            bool sliderChanged = controller.Set(slider, target);
+            check("slider rows mutate intended float properties",
+                  sliderChanged && notifications == 1 && Math.Abs(ConfigAccess.Get(config, slider.Path) - target) < 1e-4f,
+                  "changed=" + sliderChanged + ", notifications=" + notifications);
+
+            VisualSetting dropdown = VisualSettingRegistry.All.First(s => s.Kind == SettingKind.Dropdown);
+            notifications = 0;
+            string choice = dropdown.Choices.First(c => !string.Equals(c, ConfigAccess.GetString(config, dropdown.Path), StringComparison.Ordinal));
+            bool dropdownChanged = controller.SetString(dropdown, choice);
+            check("dropdown rows mutate intended string properties",
+                  dropdownChanged && notifications == 1 && ConfigAccess.GetString(config, dropdown.Path) == choice,
+                  "changed=" + dropdownChanged + ", notifications=" + notifications);
+
+            notifications = 0;
+            bool reset = controller.Reset(slider);
+            check("resetting a setting restores the canonical default",
+                  reset && notifications == 1 && !ConfigAccess.IsModified(config, slider.Path),
+                  "reset=" + reset + ", notifications=" + notifications);
+
+            notifications = 0;
+            controller.Snapshot(VisualSettingRegistry.All.Take(10));
+            check("display refresh does not mutate config",
+                  notifications == 0,
+                  "snapshot raised " + notifications + " notifications");
+
+            notifications = 0;
+            DebugView entityWetness = DebugViewRegistry.For(DebugViewRegistry.EntityPath).First(v => v.Value == 2);
+            bool debugChanged = controller.SetDebugView(entityWetness);
+            check("debug dropdown maps friendly name to correct property/value",
+                  debugChanged && notifications == 1 &&
+                  Math.Abs(ConfigAccess.Get(config, DebugViewRegistry.EntityPath) - 2f) < 1e-4f,
+                  "changed=" + debugChanged + ", notifications=" + notifications);
+
+            notifications = 0;
+            bool normal = controller.ReturnToNormalRendering();
+            check("Return to Normal restores rendering",
+                  normal && notifications == 1 &&
+                  DebugViewRegistry.All.Select(v => v.OwnerPath).Distinct()
+                      .All(path => Math.Abs(ConfigAccess.Get(config, path)) < 1e-6f),
+                  "changed=" + normal + ", notifications=" + notifications);
         }
 
         /// <summary>
@@ -190,6 +251,7 @@ namespace VintageVisuals.SmokeTest
             }
 
             Compare("material", DebugViewRegistry.PbrPath, "vec4 vvDebugView(", Snippet("pseudopbr.glsl"));
+            Compare("entity", DebugViewRegistry.EntityPath, "vec4 vvEntityDebugView(", Snippet("pbrentity.glsl"));
             Compare("atmosphere", DebugViewRegistry.AtmospherePath, "vec4 vvAtmosDebug(", Snippet("atmosphere.glsl"));
 
             // And the numbers must be reachable from the slider that carries them.
@@ -204,6 +266,51 @@ namespace VintageVisuals.SmokeTest
                       Math.Abs(ConfigAccess.Get(config, group.Key) - max) < 1e-4f,
                       "asked for " + max + ", config clamped to " + ConfigAccess.Get(config, group.Key));
             }
+        }
+
+        static void NativeDialog(string repo, Action<string, bool, string> check)
+        {
+            string dialog = File.ReadAllText(Path.Combine(repo, "src/Ui/VisualTuningStudioDialog.cs"));
+            string controller = File.ReadAllText(Path.Combine(repo, "src/Ui/VisualTuningStudioController.cs"));
+            string mod = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
+            string ui = dialog + "\n" + controller;
+
+            check("hotkey registration code exists and uses the expected ID/type",
+                  mod.Contains("VisualTuningStudioDialog.HotkeyCode") &&
+                  mod.Contains("Vintage Visuals: Open Visual Tuning") &&
+                  mod.Contains("HotkeyType.GUIOrOtherControls") &&
+                  mod.Contains("GlKeys.U"),
+                  "open hotkey must be registered through the game input API");
+
+            check("the native dialog uses GuiDialog and GuiComposer",
+                  dialog.Contains(": GuiDialog") && dialog.Contains("CreateCompo("),
+                  "dialog shell must be native Vintage Story UI");
+
+            check("every displayed control maps to its registry entry",
+                  dialog.Contains("VisibleSettings(tab, _advanced)") &&
+                  dialog.Contains("AddSettingRow(setting") &&
+                  dialog.Contains("setting.Kind == SettingKind.Toggle") &&
+                  dialog.Contains("setting.Kind == SettingKind.Dropdown"),
+                  "rows must be registry-driven");
+
+            check("native UI mutation calls ConfigManager.NotifyChanged",
+                  mod.Contains("new VisualTuningStudioController") &&
+                  mod.Contains("() => ConfigManager.NotifyChanged()"),
+                  "controller must converge on ConfigManager.NotifyChanged");
+
+            check("while open, config changes refresh the native dialog",
+                  mod.Contains("ConfigManager.ConfigChanged += RefreshTuningStudio") &&
+                  dialog.Contains("RefreshFromConfig()") &&
+                  !dialog.Contains("ConfigAccess.Set(_controller.Config"),
+                  "ConfigLib changes must repaint without a write-back");
+
+            check("no UI class references OpenGL or shader APIs",
+                  !Regex.IsMatch(ui, @"\bReloadShaders\b|\bIShader\b|\bIShaderProgram\b|\bGl[A-Z]|\bOpenGL\b|\bUniform\("),
+                  "UI code may not touch render or shader APIs");
+
+            check("no UI control directly calls ReloadShaders",
+                  !dialog.Contains("ReloadShaders") && !controller.Contains("ReloadShaders"),
+                  "shader reloads belong to VintageVisualsModSystem gating");
         }
 
         /// <summary>

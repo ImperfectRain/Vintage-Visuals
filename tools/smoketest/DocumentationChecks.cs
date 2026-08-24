@@ -50,6 +50,17 @@ namespace VintageVisuals.SmokeTest
             "src/Reflections/README.md",
         };
 
+        /// <summary>
+        /// Repo-relative paths that are intentionally absent from version
+        /// control, but still must be documentable because the local workflow
+        /// depends on them.
+        /// </summary>
+        private static readonly string[] DocumentedLocalPaths =
+        {
+            "reference/game-shaders",
+            "tools/pbrgen/out",
+        };
+
         public static void Run(string repo, Action<string, bool, string> check)
         {
             CheckDocumentsExist(repo, check);
@@ -118,6 +129,7 @@ namespace VintageVisuals.SmokeTest
                     string full = Path.Combine(repo, candidate);
                     if (!File.Exists(full) && !Directory.Exists(full))
                     {
+                        if (IsDocumentedLocalPath(candidate)) continue;
                         missing.Add(doc + " -> " + candidate);
                     }
                 }
@@ -132,6 +144,22 @@ namespace VintageVisuals.SmokeTest
             check("there were paths to check at all",
                 examined > 20,
                 "only " + examined + " - the extractor may have stopped matching");
+        }
+
+        private static bool IsDocumentedLocalPath(string candidate)
+        {
+            string normalized = candidate.Replace('\\', '/').TrimEnd('/');
+
+            foreach (string local in DocumentedLocalPaths)
+            {
+                if (normalized.Equals(local, StringComparison.Ordinal) ||
+                    normalized.StartsWith(local + "/", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

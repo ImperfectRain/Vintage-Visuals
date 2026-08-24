@@ -33,6 +33,8 @@ debugging rounds.
 | `VisualSettingRegistry.cs` | Every setting the studio shows, in order, explicitly registered. |
 | `ConfigAccess.cs` | Reading and writing one config property named by a dotted path. |
 | `DebugViewRegistry.cs` | Friendly names for every numbered diagnostic the shaders implement. |
+| `VisualTuningStudioController.cs` | The live mutation boundary: set, reset, debug select, notify once. |
+| `VisualTuningStudioDialog.cs` | The native Vintage Story dialog shell and row composition. |
 
 ## Values live in the config; presentation lives here
 
@@ -97,4 +99,6 @@ question and stays one.
 
 ## Status
 
-**L2 — metadata implemented and statically verified. The dialog has not been seen.**
+**L2 — native dialog implemented and statically verified. It has not been opened
+in a running game.** The next gate is an in-game UX pass before presets,
+import/export or persistence are built.

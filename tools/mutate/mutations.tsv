@@ -39,3 +39,6 @@ a friendly debug name points at no shader arm	src/Ui/DebugViewRegistry.cs	Pbr(13
 a shader diagnostic becomes unreachable by name	src/Ui/DebugViewRegistry.cs	Pbr(29, "Canopy gate"	Pbr(129, "Canopy gate"	can be reached by name
 the two panels disagree about a default	src/Common/VintageVisualsConfig.cs	public float AerialPerspective { get; set; } = 0.5f;	public float AerialPerspective { get; set; } = 0.7f;	describe a shared setting the same way
 the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"weather_frost", "Weather.FrostStrength"	"weather_frost_x", "Weather.FrostStrength"	exposes everything
+the native studio bypasses the config notification path	src/VintageVisualsModSystem.cs	() => ConfigManager.NotifyChanged()	() => { }	NotifyChanged
+the native studio uses the reload hotkey default	src/VintageVisualsModSystem.cs	GlKeys.U, HotkeyType.GUIOrOtherControls	GlKeys.V, HotkeyType.GUIOrOtherControls	expected ID/type
+display refresh starts notifying subsystems	src/Ui/VisualTuningStudioController.cs	return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	_notifyChanged(); return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	display refresh does not mutate

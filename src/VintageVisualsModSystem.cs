@@ -9,6 +9,7 @@ using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
 using VintageVisuals.Common.Scene;
 using VintageVisuals.Reflections;
+using VintageVisuals.Ui;
 using VintageVisuals.Weather;
 
 namespace VintageVisuals
@@ -31,6 +32,7 @@ namespace VintageVisuals
         /// <summary>Shared so subsystems installing their own hooks stay under one id to unpatch.</summary>
         public string HarmonyId { get { return HarmonyIdValue; } }
         private const string ReloadHotkeyCode = "vintagevisuals_reloadconfig";
+        private const string StudioHotkeyCode = VisualTuningStudioDialog.HotkeyCode;
 
         public ICoreClientAPI Capi { get; private set; }
         public ConfigManager ConfigManager { get; private set; }
@@ -98,6 +100,7 @@ namespace VintageVisuals
 
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
+        private VisualTuningStudioDialog _tuningStudioDialog;
 
         // Uniform upload needs the vanilla program to exist and be compiled.
         // Exactly when that becomes true varies with load order and machine
@@ -146,7 +149,12 @@ namespace VintageVisuals
                 GlKeys.V, HotkeyType.GUIOrOtherControls, ctrlPressed: true);
             api.Input.SetHotKeyHandler(ReloadHotkeyCode, OnReloadHotkey);
 
+            api.Input.RegisterHotKey(StudioHotkeyCode, "Vintage Visuals: Open Visual Tuning",
+                GlKeys.U, HotkeyType.GUIOrOtherControls, ctrlPressed: true);
+            api.Input.SetHotKeyHandler(StudioHotkeyCode, OnStudioHotkey);
+
             ConfigManager.ConfigChanged += ApplyToAllSubsystems;
+            ConfigManager.ConfigChanged += RefreshTuningStudio;
             api.Event.ReloadShader += OnReloadShader;
 
             InstallConfigLibBridge(api);
@@ -440,6 +448,27 @@ namespace VintageVisuals
             return true;
         }
 
+        private bool OnStudioHotkey(KeyCombination combination)
+        {
+            if (_tuningStudioDialog == null)
+            {
+                _tuningStudioDialog = new VisualTuningStudioDialog(Capi,
+                    new VisualTuningStudioController(
+                        () => ConfigManager.Config,
+                        () => ConfigManager.NotifyChanged()));
+            }
+
+            if (_tuningStudioDialog.IsOpened()) _tuningStudioDialog.TryClose();
+            else _tuningStudioDialog.TryOpen();
+
+            return true;
+        }
+
+        private void RefreshTuningStudio()
+        {
+            if (_tuningStudioDialog != null) _tuningStudioDialog.RefreshFromConfig();
+        }
+
         /// <summary>
         /// Writes the scene report once when asked, then clears the flag.
         ///
@@ -457,6 +486,7 @@ namespace VintageVisuals
 
         private void ApplyToAllSubsystems()
         {
+            if (_interceptor != null) _interceptor.SetShaderDumpEnabled(ConfigManager.Config.EnableShaderDebugDump);
             ReloadShadersIfPatchGatingChanged();
             WriteSceneReportOnce();
 
@@ -501,10 +531,17 @@ namespace VintageVisuals
             if (_interceptor != null) _interceptor.Uninstall();
 
             if (ConfigManager != null) ConfigManager.ConfigChanged -= ApplyToAllSubsystems;
+            if (ConfigManager != null) ConfigManager.ConfigChanged -= RefreshTuningStudio;
             if (Capi != null)
             {
                 Capi.Event.ReloadShader -= OnReloadShader;
                 Capi.Event.BlockTexturesLoaded -= OnShadersReady;
+            }
+
+            if (_tuningStudioDialog != null)
+            {
+                _tuningStudioDialog.Dispose();
+                _tuningStudioDialog = null;
             }
 
             Capi = null;
