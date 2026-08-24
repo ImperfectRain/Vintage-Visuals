@@ -29,6 +29,7 @@ a rejected crossing is painted as a miss	assets/vintagevisuals/shadersnippets/ps
 two march outcomes share a code	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	#define VV_SSR_TOO_THICK    5.0	#define VV_SSR_TOO_THICK    4.0	its own code
 the step-budget diagnostic never reports saturation	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	        float over = clamp(m49.wanted / float(VV_SSR_STEPS) - 1.0, 0.0, 1.0);	        float over = 0.0;	saturated budget
 the march stops sampling at the named stride	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	    float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE);	    float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE * 8.0);	stride the constant names
+the march budget falls back to visible rings	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	const int VV_SSR_STEPS = 96;	const int VV_SSR_STEPS = 24;	grazing texel reflections
 the depth report compares against a stale tolerance	src/Reflections/SceneCaptureRenderer.cs	private const float ReflectionThicknessBlocks = 0.5f;	private const float ReflectionThicknessBlocks = 0.9f;	tolerance that ships
 the capture target loses half-float depth	src/Reflections/SceneCaptureRenderer.cs	                            PixelInternalFormat = EnumTextureInternalFormat.Rgba16f,	                            PixelInternalFormat = EnumTextureInternalFormat.Rgba8,	half float rather than RGBA8
 the capture normalises depth before writing alpha	assets/vintagevisuals/shaders/vvscenecapture.fsh	    outColor = vec4(scene, max(0.0, linear));	    outColor = vec4(scene, clamp(linear / max(1.0, zFar), 0.0, 1.0));	writes linear depth without zFar packing
@@ -53,3 +54,4 @@ the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"w
 the native studio bypasses the config notification path	src/VintageVisualsModSystem.cs	() => ConfigManager.NotifyChanged()	() => { }	NotifyChanged
 the native studio uses the reload hotkey default	src/VintageVisualsModSystem.cs	GlKeys.U, HotkeyType.GUIOrOtherControls	GlKeys.V, HotkeyType.GUIOrOtherControls	expected ID/type
 display refresh starts notifying subsystems	src/Ui/VisualTuningStudioController.cs	return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	_notifyChanged(); return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	display refresh does not mutate
+tab changes rebuild inside native callback dispatch	src/Ui/VisualTuningStudioDialog.cs	            }, RecomposeDelayMs);	            }, 0);	native callback dispatch

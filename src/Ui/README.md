@@ -124,11 +124,12 @@ change.
 **L2 — native dialog hard-crash isolation build.** The alpha/composition fix
 improved the corrupted screenshot but did not stop the crash. This build keeps
 the stable shaded background and compact layout. Native scrollbar/wheel handling
-has returned through guarded deferred recomposition, while hover elements,
-per-tab scroll restoration and the Advanced switch are still temporarily
-removed. Live setting edits no longer rebuild the whole composer, and
-structural rebuilds are deferred through the client callback queue with composer
-generation guards and `[VV UI #]` lifecycle logging.
+has returned through guarded deferred recomposition, while hover elements and
+the Advanced switch are still temporarily removed. Live setting edits no longer
+rebuild the whole composer, per-tab scroll positions are retained, and structural
+rebuilds are delayed briefly through the client callback queue with composer
+generation guards and `[VV UI #]` lifecycle logging so tab changes do not replace
+native controls while their own callback is still unwinding.
 
 The current layout is also constrained by a single grid: sidebar width/padding,
 content left edge, label/info/value/control/reset columns and footer placement

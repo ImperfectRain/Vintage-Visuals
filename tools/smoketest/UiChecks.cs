@@ -423,6 +423,13 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("_recomposePending"),
                   "callbacks must not synchronously destroy their own composer");
 
+            check("tab changes rebuild after native callback dispatch",
+                  dialog.Contains("RecomposeDelayMs") &&
+                  dialog.Contains("RegisterCallback(_ =>") &&
+                  dialog.Contains("}, RecomposeDelayMs)") &&
+                  dialog.Contains("if (_tab == tab)"),
+                  "zero-delay composer replacement can race the native button/dropdown callback that requested it");
+
             check("live setting edits do not rebuild the composer",
                   !dialog.Contains("if (_controller.Set(setting, target)) ComposeDialog()") &&
                   !dialog.Contains("if (_controller.Set(setting, value ? 1f : 0f)) ComposeDialog()") &&

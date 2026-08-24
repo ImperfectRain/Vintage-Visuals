@@ -1932,7 +1932,7 @@ const float VV_SSR_RANGE = 48.0;
 // Maximum march steps. The actual count is chosen per ray from how far it
 // travels ACROSS THE SCREEN, so a ray that barely moves costs a few steps and
 // only a long grazing one pays for all of these.
-const int VV_SSR_STEPS = 24;
+const int VV_SSR_STEPS = 96;
 
 // Capture texels to advance per step.
 //

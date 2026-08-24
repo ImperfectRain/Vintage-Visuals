@@ -38,6 +38,7 @@ namespace VintageVisuals.Ui
         private const double ValueWidth = 86;
         private const double ControlWidth = 154;
         private const double ResetWidth = 54;
+        private const int RecomposeDelayMs = 50;
         private const double InfoX = RowLeft + LabelWidth + 8;
         private const double ValueX = InfoX + InfoWidth + 10;
         private const double ControlX = ValueX + ValueWidth + 14;
@@ -153,41 +154,47 @@ namespace VintageVisuals.Ui
             }
 
             _isComposing = true;
-            _composerGeneration++;
-            int generation = _composerGeneration;
-            Log("ENTER ComposeDialog generation " + generation);
+            try
+            {
+                _composerGeneration++;
+                int generation = _composerGeneration;
+                Log("ENTER ComposeDialog generation " + generation);
 
-            ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
-                .WithAlignment(EnumDialogArea.CenterMiddle)
-                .WithFixedSize(DialogWidth, DialogHeight);
+                ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
+                    .WithAlignment(EnumDialogArea.CenterMiddle)
+                    .WithFixedSize(DialogWidth, DialogHeight);
 
-            ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
-            bgBounds.BothSizing = ElementSizing.FitToChildren;
+                ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
+                bgBounds.BothSizing = ElementSizing.FitToChildren;
 
-            _currentScroll = CurrentScroll();
+                _currentScroll = CurrentScroll();
 
-            SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
-                .AddShadedDialogBG(bgBounds)
-                .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
-                .BeginChildElements(bgBounds)
-                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
-                    .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
-                    .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
-                    .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, 552, 190, 24))
-                    .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 198, 556, 180, 20))
-                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
-                        CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
+                SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
+                    .AddShadedDialogBG(bgBounds)
+                    .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
+                    .BeginChildElements(bgBounds)
+                        .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
+                        .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
+                        .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
+                        .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, 552, 190, 24))
+                        .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 198, 556, 180, 20))
+                        .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
+                            CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
-            AddTabs(generation);
+                AddTabs(generation);
 
-            if (_tab == SettingTab.Overview) AddOverview();
-            else if (_tab == SettingTab.Debug) AddDebug();
-            else AddSettingsTab(_tab);
+                if (_tab == SettingTab.Overview) AddOverview();
+                else if (_tab == SettingTab.Debug) AddDebug();
+                else AddSettingsTab(_tab);
 
-            SingleComposer.EndChildElements().Compose();
-            ConfigureScrollbar();
-            _isComposing = false;
-            Log("EXIT ComposeDialog generation " + generation);
+                SingleComposer.EndChildElements().Compose();
+                ConfigureScrollbar();
+                Log("EXIT ComposeDialog generation " + generation);
+            }
+            finally
+            {
+                _isComposing = false;
+            }
 
             if (_recomposePending)
             {
@@ -229,6 +236,12 @@ namespace VintageVisuals.Ui
         private void SelectTab(SettingTab tab)
         {
             Log("ENTER SelectTab " + tab);
+            if (_tab == tab)
+            {
+                Log("EXIT SelectTab unchanged " + tab);
+                return;
+            }
+
             SaveScroll();
             _tab = tab;
             ScheduleCompose("tab change");
@@ -747,7 +760,7 @@ namespace VintageVisuals.Ui
                 _recomposePending = false;
                 ComposeDialog();
                 Log("EXIT DeferredCompose " + reason);
-            }, 0);
+            }, RecomposeDelayMs);
         }
 
         private void Log(string message)

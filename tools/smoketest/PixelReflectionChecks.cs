@@ -142,9 +142,9 @@ namespace VintageVisuals.SmokeTest
             int steps = int.Parse(st.Groups[1].Value, CultureInfo.InvariantCulture);
             int refine = int.Parse(rf.Groups[1].Value, CultureInfo.InvariantCulture);
 
-            check("the march stays far cheaper than conventional SSR",
-                steps <= 32,
-                steps + " steps - the destination is one colour for a whole texture pixel");
+            check("the march has enough budget for grazing texel reflections",
+                steps >= 64 && steps <= 128,
+                steps + " steps - too low rings on flat grazing surfaces, too high stops being bounded");
 
             check("the stride is a small number of texels",
                 stride >= 1.0f && stride <= 8.0f,

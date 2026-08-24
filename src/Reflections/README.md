@@ -112,16 +112,14 @@ both now visible in game rather than argued about:
 **The stride constant is not the stride on the rays that matter.**
 `VV_SSR_STRIDE` asks for one sample every two capture texels and explains at
 length why a uniform screen-space rate is what makes a reflection foreshorten
-instead of smear. `VV_SSR_STEPS` then caps the count at 24. On a short ray those
-agree exactly. On a long grazing ray — the ordinary case on a flat reflective
-floor, and the only case that carries a reflected tree — a 500-texel traverse
-asks for 250 steps, gets 24, and walks about 21 texels at a time. Ten times
-coarser than the constant claims, on precisely the rays the effect exists for.
-`VV_SSR_THICKNESS`'s own comment says that if it ever has to be raised to make
-distant reflections appear, the stride or the refinement is too coarse and the
-tolerance would be hiding it. Nothing measured whether the march was coarse.
-**Debug view 49 now does**, and until it has been read, no step count should be
-changed.
+instead of smear. `VV_SSR_STEPS` now caps the count at 96. The first visible
+scene used 24; on a long grazing ray — the ordinary case on a flat reflective
+floor, and the only case that carries a reflected tree — that walked broad
+intervals through the capture and produced ringed hit/miss bands in views 39,
+48 and 51. Raising the cap keeps the march bounded, but lets floor rays stay
+much closer to the named stride before the budget clamps. `VV_SSR_THICKNESS`
+stays at 0.5 because widening the tolerance would hide the coarse march rather
+than fix it.
 
 **One red was four faults.** View 39 paints a miss red whether the ray pointed
 back at the camera, started off the captured frame, walked off the edge without

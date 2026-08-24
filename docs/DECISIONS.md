@@ -1673,16 +1673,13 @@ int steps = int(clamp(wanted, 4.0, float(VV_SSR_STEPS)));
 `VV_SSR_STRIDE` is 2 capture texels and carries a long comment explaining that a
 uniform screen-space rate is what makes a reflection foreshorten instead of
 smear — it was written after a reported artefact where a trunk smeared across the
-whole floor. `VV_SSR_STEPS` is 24. For a short ray the two agree exactly. For a
-500-texel traverse — an ordinary grazing ray on a flat floor, and the only kind
-that carries a reflected tree — `wanted` is 250, `steps` is 24, and the ray is
+whole floor. The first visible scene used `VV_SSR_STEPS = 24`. For a 500-texel
+traverse — an ordinary grazing ray on a flat floor, and the only kind that
+carries a reflected tree — `wanted` is 250, `steps` was 24, and the ray was
 walked at about 21 texels per step. The overshoot the stride exists to prevent
-returns in full on exactly the rays the feature exists for, and a march that
-steps over a ten-texel trunk registers whatever it lands on instead.
-
-This is consistent with the report - broad reflective response with no
-recognizable structure - but consistency is not proof, and the fix is a
-measurement, not a larger number.
+returned in full on exactly the rays the feature exists for, and the runtime
+debug masks showed ringed hit/miss bands. The cap is now 96: still bounded, but
+much less likely to skip whole reflected silhouettes on flat grazing surfaces.
 
 **Finding two: one red was four faults.** Debug view 39 reports every miss as
 red. A miss means the ray pointed back at the camera, or its origin projected off
