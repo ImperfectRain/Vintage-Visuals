@@ -355,29 +355,42 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("AddToggle(setting, y)"),
                   "toggle rows should not also print an On/Off value column");
 
-            check("settings scrolling is disabled for crash isolation",
+            check("settings scrolling uses the native scrollbar with guarded deferred recomposition",
                   dialog.Contains("BeginClip(") &&
-                  !dialog.Contains("AddVerticalScrollbar") &&
-                  !dialog.Contains("SetHeights") &&
-                  !dialog.Contains("OnMouseWheel") &&
-                  !dialog.Contains("OnScrollUpClicked") &&
-                  !dialog.Contains("OnScrollDownClicked"),
-                  "scrollbar and wheel return only after minimal build is stable");
+                  dialog.Contains("AddVerticalScrollbar(OnScrollbarChanged") &&
+                  dialog.Contains("SetHeights") &&
+                  dialog.Contains("OnMouseWheel") &&
+                  dialog.Contains("ScheduleCompose(\"scrollbar\")") &&
+                  dialog.Contains("ScheduleCompose(\"mouse wheel\")"),
+                  "scrolling should be visible without returning to synchronous composer rebuilds");
 
             check("hover elements are disabled for crash isolation",
                   !dialog.Contains("AddHoverText") &&
                   !dialog.Contains("AddStaticText(setting.Description"),
                   "dozens of hover elements are a crash suspect");
 
-            check("modified settings have a compact reset affordance",
-                  dialog.Contains("↺") &&
-                  !dialog.Contains("\"Reset\", () => ResetSetting(setting)"),
-                  "per-row reset should be compact");
+            check("setting rows explain themselves without hover-only buttons",
+                  dialog.Contains("ShortDescription(setting)") &&
+                  !dialog.Contains(".AddButton(\"ⓘ\"") &&
+                  dialog.Contains("ResetSetting(setting)"),
+                  "rows need visible descriptions while hover elements remain disabled");
 
-            check("overview rows navigate without repeated Open buttons",
+            check("modified settings have a compact reset affordance",
+                  dialog.Contains("\"Reset\"") &&
+                  dialog.Contains("if (modified)") &&
+                  !dialog.Contains("string marker = modified"),
+                  "per-row reset should be explicit and only shown when useful");
+
+            check("overview rows have readable summaries and explicit navigation",
+                  dialog.Contains("Open exposure, tonemap") &&
+                  dialog.Contains("Open relief, roughness") &&
+                  dialog.Contains(".AddButton(\"Open  >\""),
+                  "overview cards should not depend on cramped multiline button text");
+
+            check("overview rows navigate through explicit Open buttons",
                   dialog.Contains("AddOverviewRow") &&
-                  !dialog.Contains("\"Open\""),
-                  "overview rows should be the navigation target");
+                  dialog.Contains(".AddButton(\"Open  >\""),
+                  "overview rows should expose the navigation action clearly");
 
             check("debug workflow selects system and named view",
                   dialog.Contains("\"Debug System\"") &&

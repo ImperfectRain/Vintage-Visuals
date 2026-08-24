@@ -107,23 +107,26 @@ rows with stable columns:
 modified  label  info  value  control  reset
 ```
 
-Descriptions are still present, but one interaction deeper through the row's info
-affordance. The setting name and current value remain visible at all times.
-Rows are clipped inside a native scroll region with mouse-wheel handling and a
-draggable vertical scrollbar; the navigation rail and footer stay fixed.
+Short descriptions are visible on each row because hover text remains disabled
+while the crash is isolated. The setting name and current value remain visible
+at all times. Rows are clipped inside a native scroll region with mouse-wheel
+handling and a draggable vertical scrollbar; the navigation rail and footer stay
+fixed.
 
-The Overview page is a set of navigable subsystem rows rather than a list of
-repeated Open buttons. The Debug page is a tool surface: choose a debug system,
-then a named debug view, with an active-view banner and a single Return to Normal
-Rendering action. The underlying per-shader debug numbers do not change.
+The Overview page is a set of subsystem cards with status, summary, description
+and an explicit Open action. The Debug page is a tool surface: choose a debug
+system, then a named debug view, with an active-view banner and a single Return
+to Normal Rendering action. The underlying per-shader debug numbers do not
+change.
 
 ## Status
 
 **L2 — native dialog hard-crash isolation build.** The alpha/composition fix
 improved the corrupted screenshot but did not stop the crash. This build keeps
-the stable shaded background and compact layout, but temporarily removes hover
-elements, native scrollbar/wheel handling, per-tab scroll restoration and the
-Advanced switch. Live setting edits no longer rebuild the whole composer, and
+the stable shaded background and compact layout. Native scrollbar/wheel handling
+has returned through guarded deferred recomposition, while hover elements,
+per-tab scroll restoration and the Advanced switch are still temporarily
+removed. Live setting edits no longer rebuild the whole composer, and
 structural rebuilds are deferred through the client callback queue with composer
 generation guards and `[VV UI #]` lifecycle logging.
 

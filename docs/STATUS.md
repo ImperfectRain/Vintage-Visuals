@@ -59,7 +59,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
 | `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
 | `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 25 mutations, 25 caught, 0 missed |
-| `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | hard-crash isolation build with geometry cleanup: standard shaded background retained; hover/scrollbar/wheel/per-tab scroll/Advanced switch still temporarily removed; live edits do not synchronously recompose; sidebar/content/footer now share centralized grid constants; needs in-game screenshot/stress review |
+| `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | hard-crash isolation build with geometry and readability cleanup: standard shaded background retained; native scrollbar/wheel restored through guarded deferred recomposition; hover/per-tab scroll/Advanced switch still temporarily removed; visible row descriptions and explicit overview actions added; needs in-game screenshot/stress review |
 | `[~]` | **Shipped defaults turn the mod on** | L2 | ten atmospheric effects and PseudoPBR now default on; the numbers are chosen, not measured. See [D44](DECISIONS.md) |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |

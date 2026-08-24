@@ -31,19 +31,21 @@ namespace VintageVisuals.Ui
         private const double FooterY = 548;
         private const double BodyHeight = FooterY - BodyY - 18;
         private const double RowLeft = 0;
-        private const double RowHeight = 44;
+        private const double RowHeight = 56;
         private const double HeaderHeight = 26;
         private const double LabelWidth = 210;
         private const double InfoWidth = 28;
         private const double ValueWidth = 86;
-        private const double ControlWidth = 180;
-        private const double ResetWidth = 30;
+        private const double ControlWidth = 154;
+        private const double ResetWidth = 54;
         private const double InfoX = RowLeft + LabelWidth + 8;
         private const double ValueX = InfoX + InfoWidth + 10;
         private const double ControlX = ValueX + ValueWidth + 14;
         private const double ResetX = ControlX + ControlWidth + 14;
+        private const string ScrollbarKey = "settings-scrollbar";
 
         private readonly VisualTuningStudioController _controller;
+        private readonly Dictionary<SettingTab, double> _scrollByTab = new Dictionary<SettingTab, double>();
 
         private readonly GuiTab[] _tabs =
         {
@@ -121,6 +123,19 @@ namespace VintageVisuals.Ui
             Log("EXIT RefreshFromConfig scheduled");
         }
 
+        public override void OnMouseWheel(MouseWheelEventArgs args)
+        {
+            base.OnMouseWheel(args);
+
+            if (_tab == SettingTab.Overview) return;
+
+            double delta = args.deltaPrecise != 0 ? args.deltaPrecise : args.delta;
+            if (Math.Abs(delta) <= 0.001) return;
+
+            ScrollTo(CurrentScroll() - delta * 34);
+            args.SetHandled();
+        }
+
         public override void Dispose()
         {
             Log("ENTER Dispose");
@@ -149,7 +164,7 @@ namespace VintageVisuals.Ui
             ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
             bgBounds.BothSizing = ElementSizing.FitToChildren;
 
-            _currentScroll = 0;
+            _currentScroll = CurrentScroll();
 
             SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
                 .AddShadedDialogBG(bgBounds)
@@ -170,6 +185,7 @@ namespace VintageVisuals.Ui
             else AddSettingsTab(_tab);
 
             SingleComposer.EndChildElements().Compose();
+            ConfigureScrollbar();
             _isComposing = false;
             Log("EXIT ComposeDialog generation " + generation);
 
@@ -213,6 +229,7 @@ namespace VintageVisuals.Ui
         private void SelectTab(SettingTab tab)
         {
             Log("ENTER SelectTab " + tab);
+            SaveScroll();
             _tab = tab;
             ScheduleCompose("tab change");
             Log("EXIT SelectTab " + tab);
@@ -250,39 +267,48 @@ namespace VintageVisuals.Ui
             y += 34;
 
             AddOverviewRow("COLOR & EXPOSURE", "ColorGrade.Enabled", SettingTab.Color,
-                "Exposure " + ValueByCode("colorgrade_exposure") + " · Eye adaptation " + OnOff("AdaptiveExposure.Enabled"), y);
-            y += 58;
+                "Exposure " + ValueByCode("colorgrade_exposure") + " · Eye adaptation " + OnOff("AdaptiveExposure.Enabled"),
+                "Open exposure, tonemap, colour style and adaptive grading controls.", y);
+            y += 78;
 
             AddOverviewRow("MATERIALS", "PseudoPBR.Enabled", SettingTab.Materials,
-                "Surface Relief " + ValueByCode("pbr_normalstrength") + " · Reflections " + OnOff("Reflections.SceneReflections"), y);
-            y += 58;
+                "Surface Relief " + ValueByCode("pbr_normalstrength") + " · Reflections " + OnOff("Reflections.SceneReflections"),
+                "Open relief, roughness, specular response, foliage light and emissive controls.", y);
+            y += 78;
 
             AddOverviewRow("WEATHER", "Weather.Enabled", SettingTab.Weather,
-                "Wetness " + ValueByCode("weather_wetness") + " · Cloud Shadows " + ValueByCode("weather_cloudshadow"), y);
-            y += 58;
+                "Wetness " + ValueByCode("weather_wetness") + " · Cloud Shadows " + ValueByCode("weather_cloudshadow"),
+                "Open wet surfaces, puddle ripples, rain response and cloud shadow controls.", y);
+            y += 78;
 
             AddOverviewRow("ATMOSPHERE", "Atmosphere.Enabled", SettingTab.Atmosphere,
-                "Scattering " + ValueByCode("atmosphere_scattering") + " · Ground Haze " + ValueByCode("atmosphere_groundhaze"), y);
-            y += 58;
+                "Scattering " + ValueByCode("atmosphere_scattering") + " · Ground Haze " + ValueByCode("atmosphere_groundhaze"),
+                "Open air scattering, extinction, aerial perspective and haze controls.", y);
+            y += 78;
 
             AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
-                "Scene reflections " + OnOff("Reflections.SceneReflections") + " · Pixel strength " + ValueByCode("pbr_pixelreflect"), y);
+                "Scene reflections " + OnOff("Reflections.SceneReflections") + " · Pixel strength " + ValueByCode("pbr_pixelreflect"),
+                "Open screen-space reflections, edge fading, stride and debug controls.", y);
         }
 
-        private void AddOverviewRow(string label, string path, SettingTab target, string summary, double y)
+        private void AddOverviewRow(string label, string path, SettingTab target, string summary, string description, double y)
         {
             bool on = ConfigAccess.Get(_controller.Config, path) >= 0.5f;
-            string status = (on ? "● On" : "○ Off") + "   >";
-            string text = label.PadRight(28) + status + "\n" + summary;
             int generation = _composerGeneration;
 
-            SingleComposer.AddButton(text, () =>
-            {
-                if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
-                SelectTab(target);
-                return true;
-            }, ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 46), CairoFont.WhiteSmallText(),
-                EnumButtonStyle.Normal, "overview-" + target);
+            SingleComposer
+                .AddInset(ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 68), 2, 0.42f)
+                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 14, y + 8, 230, 20))
+                .AddStaticText(on ? "● On" : "○ Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 256, y + 8, 80, 20))
+                .AddStaticText(summary, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 31, 300, 18))
+                .AddStaticText(description, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 49, 430, 18))
+                .AddButton("Open  >", () =>
+                {
+                    if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
+                    SelectTab(target);
+                    return true;
+                }, ElementBounds.Fixed(ContentLeft + ContentWidth - 122, y + 20, 76, 28),
+                    CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "overview-" + target);
         }
 
         private string OnOff(string path)
@@ -321,8 +347,10 @@ namespace VintageVisuals.Ui
             _currentBodyHeight = bodyHeight;
 
             ElementBounds clipBounds = ElementBounds.Fixed(ContentLeft, bodyY, ContentWidth, bodyHeight);
+            ElementBounds scrollbarBounds = ElementBounds.Fixed(ContentLeft + ContentWidth + 6, bodyY, 16, bodyHeight);
             _currentContentHeight = MeasureRows(rows);
-            _currentScroll = 0;
+            _currentScroll = ClampScroll(_currentScroll);
+            SaveScroll();
 
             SingleComposer.BeginClip(clipBounds);
 
@@ -342,6 +370,11 @@ namespace VintageVisuals.Ui
             }
 
             SingleComposer.EndClip();
+
+            if (_currentContentHeight > bodyHeight)
+            {
+                SingleComposer.AddVerticalScrollbar(OnScrollbarChanged, scrollbarBounds, ScrollbarKey);
+            }
         }
 
         private void AddSection(string label, double y, double bodyHeight)
@@ -358,21 +391,21 @@ namespace VintageVisuals.Ui
             if (y < -RowHeight || y > bodyHeight) return;
 
             bool modified = _controller.IsModified(setting);
-            string marker = modified ? "●" : "";
-            string resetText = modified ? "↺" : " ";
 
             SingleComposer
-                .AddStaticText(marker, CairoFont.WhiteDetailText(), ElementBounds.Fixed(RowLeft, y + 12, 12, 20))
-                .AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(RowLeft + 18, y + 10, LabelWidth - 18, 22))
-                .AddButton("ⓘ", () => true, ElementBounds.Fixed(InfoX, y + 7, InfoWidth, 24),
-                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "info-" + setting.Code)
-                .AddButton(resetText, () => ResetSetting(setting), ElementBounds.Fixed(ResetX, y + 7, ResetWidth, 24),
+                .AddStaticText(setting.DisplayName, CairoFont.WhiteSmallText(), ElementBounds.Fixed(RowLeft + 18, y + 6, LabelWidth - 18, 22))
+                .AddStaticText(ShortDescription(setting), CairoFont.WhiteDetailText(), ElementBounds.Fixed(RowLeft + 18, y + 29, LabelWidth + InfoWidth, 18));
+
+            if (modified)
+            {
+                SingleComposer.AddButton("Reset", () => ResetSetting(setting), ElementBounds.Fixed(ResetX, y + 14, ResetWidth, 24),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "reset-" + setting.Code);
+            }
 
             if (setting.Kind != SettingKind.Toggle)
             {
                 SingleComposer.AddStaticText(_controller.DisplayValue(setting), CairoFont.WhiteSmallText(),
-                    ElementBounds.Fixed(ValueX, y + 10, ValueWidth, 22));
+                    ElementBounds.Fixed(ValueX, y + 16, ValueWidth, 22));
             }
 
             if (setting.Kind == SettingKind.Toggle) AddToggle(setting, y);
@@ -411,7 +444,7 @@ namespace VintageVisuals.Ui
             bool on = _controller.Value(setting) >= 0.5f;
             int generation = _composerGeneration;
             SingleComposer.AddStaticText(on ? "ON" : "OFF", CairoFont.WhiteSmallText(),
-                ElementBounds.Fixed(ControlX, y + 10, 42, 22));
+                ElementBounds.Fixed(ControlX, y + 16, 42, 22));
 
             SingleComposer.AddSwitch(value =>
             {
@@ -420,7 +453,7 @@ namespace VintageVisuals.Ui
                 _ignoreNextConfigRefresh = true;
                 _controller.Set(setting, value ? 1f : 0f);
                 Log("EXIT ToggleChanged " + setting.Code);
-            }, ElementBounds.Fixed(ControlX + 50, y + 7, 58, 28), "switch-" + setting.Code);
+            }, ElementBounds.Fixed(ControlX + 50, y + 13, 58, 28), "switch-" + setting.Code);
 
             GuiElementSwitch sw = SingleComposer.GetSwitch("switch-" + setting.Code);
             if (sw != null) sw.On = on;
@@ -442,7 +475,7 @@ namespace VintageVisuals.Ui
                 _controller.Set(setting, target);
                 Log("EXIT SliderChanged " + setting.Code);
                 return true;
-            }, ElementBounds.Fixed(ControlX, y + 8, ControlWidth, 24), "slider-" + setting.Code);
+            }, ElementBounds.Fixed(ControlX, y + 14, ControlWidth, 24), "slider-" + setting.Code);
 
             GuiElementSlider slider = SingleComposer.GetSlider("slider-" + setting.Code);
             if (slider != null)
@@ -468,7 +501,22 @@ namespace VintageVisuals.Ui
                     _controller.SetString(setting, code);
                     Log("EXIT DropdownChanged " + setting.Code);
                 },
-                ElementBounds.Fixed(ControlX, y + 8, Math.Min(ControlWidth, 220), 24), "dropdown-" + setting.Code);
+                ElementBounds.Fixed(ControlX, y + 14, Math.Min(ControlWidth, 220), 24), "dropdown-" + setting.Code);
+        }
+
+        private static string ShortDescription(VisualSetting setting)
+        {
+            return ShortText(setting.Description, 48);
+        }
+
+        private static string ShortText(string text, int max)
+        {
+            text = text ?? "";
+            if (text.Length <= max) return text;
+
+            int cut = text.LastIndexOf(' ', max);
+            if (cut < 24) cut = max;
+            return text.Substring(0, cut) + "...";
         }
 
         private bool ResetSetting(VisualSetting setting)
@@ -511,11 +559,12 @@ namespace VintageVisuals.Ui
                         if (!IsCurrentGeneration(generation, "DebugViewChanged")) return;
                         OnDebugViewChanged(code, selectedValue);
                     },
-                    ElementBounds.Fixed(ContentLeft + LabelWidth + 8, y - 2, 360, 26), "debug-view")
-                .AddButton("ⓘ", () => true, ElementBounds.Fixed(ContentLeft + LabelWidth + 380, y - 2, 24, 24),
-                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, "debug-info");
+                    ElementBounds.Fixed(ContentLeft + LabelWidth + 8, y - 2, 360, 26), "debug-view");
 
             y += 46;
+            SingleComposer.AddStaticText(ShortText(current.Description, 92), CairoFont.WhiteDetailText(),
+                ElementBounds.Fixed(ContentLeft, y - 12, ContentWidth - 40, 18));
+
             if (current.Value != 0)
             {
                 AddDebugBanner(current, y);
@@ -616,6 +665,49 @@ namespace VintageVisuals.Ui
         private double MeasureRows(List<RowItem> rows)
         {
             return rows.Sum(row => row.IsSection ? HeaderHeight : RowHeight);
+        }
+
+        private void OnScrollbarChanged(float value)
+        {
+            Log("ENTER ScrollbarChanged");
+            _currentScroll = ClampScroll(value);
+            SaveScroll();
+            ScheduleCompose("scrollbar");
+            Log("EXIT ScrollbarChanged");
+        }
+
+        private void ScrollTo(double value)
+        {
+            Log("ENTER MouseWheelScroll");
+            _currentScroll = ClampScroll(value);
+            SaveScroll();
+            ScheduleCompose("mouse wheel");
+            Log("EXIT MouseWheelScroll");
+        }
+
+        private double CurrentScroll()
+        {
+            double value;
+            return _scrollByTab.TryGetValue(_tab, out value) ? value : 0;
+        }
+
+        private void SaveScroll()
+        {
+            _scrollByTab[_tab] = _currentScroll;
+        }
+
+        private double ClampScroll(double value)
+        {
+            return Math.Max(0, Math.Min(Math.Max(0, _currentContentHeight - _currentBodyHeight), value));
+        }
+
+        private void ConfigureScrollbar()
+        {
+            GuiElementScrollbar scrollbar = SingleComposer.GetScrollbar(ScrollbarKey);
+            if (scrollbar == null) return;
+
+            scrollbar.SetHeights((float)_currentBodyHeight, (float)Math.Max(_currentBodyHeight, _currentContentHeight));
+            scrollbar.SetScrollbarPosition((int)Math.Round(_currentScroll));
         }
 
         private bool Guard(int generation, string name, System.Func<bool> action)
