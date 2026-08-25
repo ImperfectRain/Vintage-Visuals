@@ -2280,6 +2280,15 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 #define VV_WORLD_LIMIT      3.0
 #define VV_WORLD_NO_VOLUME  4.0
 
+#define VV_WORLD_CLASS_EMPTY        0.0
+#define VV_WORLD_CLASS_FULL         1.0
+#define VV_WORLD_CLASS_PARTIAL      2.0
+#define VV_WORLD_CLASS_FOLIAGE      3.0
+#define VV_WORLD_CLASS_TRANSPARENT  4.0
+#define VV_WORLD_CLASS_LIQUID       5.0
+#define VV_WORLD_CLASS_EMISSIVE     6.0
+#define VV_WORLD_CLASS_UNSUPPORTED  7.0
+
 const float VV_WORLD_RANGE = 48.0;
 const float VV_WORLD_ORIGIN_BIAS = 0.05;
 const float VV_WORLD_TIE_EPSILON = 0.0001;
@@ -2291,6 +2300,7 @@ struct VvWorldHit
     float reason;
     float distance;
     float steps;
+    float voxelClass;
 };
 
 bool vvWorldInside(vec3 p)
@@ -2312,6 +2322,23 @@ vec4 vvWorldVoxel(ivec3 cell)
     return texture(vv_reflectWorld, pixel / max(vec2(1.0), vv_reflectWorldAtlasSize));
 }
 
+float vvWorldVoxelClass(vec4 voxel)
+{
+    return floor(voxel.a * 255.0 / 32.0 + 0.5);
+}
+
+vec3 vvWorldClassColor(float cls)
+{
+    if (cls == VV_WORLD_CLASS_FULL) return vec3(0.0, 1.0, 0.0);
+    if (cls == VV_WORLD_CLASS_PARTIAL) return vec3(0.86, 0.71, 0.31);
+    if (cls == VV_WORLD_CLASS_FOLIAGE) return vec3(0.27, 0.82, 0.27);
+    if (cls == VV_WORLD_CLASS_TRANSPARENT) return vec3(0.35, 0.71, 0.90);
+    if (cls == VV_WORLD_CLASS_LIQUID) return vec3(0.16, 0.35, 0.86);
+    if (cls == VV_WORLD_CLASS_EMISSIVE) return vec3(1.0, 0.47, 0.16);
+    if (cls == VV_WORLD_CLASS_UNSUPPORTED) return vec3(0.82, 0.27, 0.82);
+    return vec3(0.0);
+}
+
 VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelativePos)
 {
     VvWorldHit miss;
@@ -2319,6 +2346,7 @@ VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     miss.reason = VV_WORLD_NO_VOLUME;
     miss.distance = 0.0;
     miss.steps = 0.0;
+    miss.voxelClass = VV_WORLD_CLASS_EMPTY;
 
     if (vv_reflectWorldValid < 0.5) return miss;
 
@@ -2371,13 +2399,21 @@ VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     for (int i = 0; i < VV_WORLD_STEPS; i++)
     {
         vec4 voxel = vvWorldVoxel(cell);
-        if (voxel.a > 0.5)
+        float voxelClass = vvWorldVoxelClass(voxel);
+        if (voxelClass > VV_WORLD_CLASS_EMPTY && miss.voxelClass == VV_WORLD_CLASS_EMPTY)
+        {
+            miss.voxelClass = voxelClass;
+            miss.color = vvWorldClassColor(voxelClass);
+        }
+
+        if (voxelClass == VV_WORLD_CLASS_FULL)
         {
             VvWorldHit hit;
             hit.color = voxel.rgb;
             hit.reason = VV_WORLD_HIT;
             hit.distance = entryDistance;
             hit.steps = float(i + 1);
+            hit.voxelClass = voxelClass;
             return hit;
         }
 
@@ -3611,7 +3647,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
     }
 
-    // ---- World reflection proof, views 53-56 ----------------------------
+    // ---- World reflection proof, views 53-57 ----------------------------
     //
     // These bypass the screen-space capture and trace against the debug CPU
     // block volume. They are a coordinate proof only: full opaque cubes, one
@@ -3621,7 +3657,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // 53: why the world trace ended.
     //   green  hit an occupied full-cube cell
     //   red    left range without a hit
-    //   blue   started or walked outside the 64^3 local volume, or no volume
+    //   blue   started or walked outside the local volume, or no volume
     //   yellow hit the step/range limit
     if (mode == 53)
     {
@@ -3653,6 +3689,16 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     {
         VvWorldHit hit56 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
         return vec4(vec3(clamp(hit56.steps / float(VV_WORLD_STEPS), 0.0, 1.0)), color.a);
+    }
+
+    // 57: class of the first non-empty voxel crossed by the reflected ray.
+    // This distinguishes full cube hits from partial meshes, foliage,
+    // transparent blocks, liquids, emissive blocks, and unsupported complex
+    // blocks that the production resolver must treat differently.
+    if (mode == 57)
+    {
+        VvWorldHit hit57 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        return vec4(vvWorldClassColor(hit57.voxelClass), color.a);
     }
 
     // ---- Flora taxonomy, views 44-46 -------------------------------------

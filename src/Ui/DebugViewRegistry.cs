@@ -158,6 +158,7 @@ namespace VintageVisuals.Ui
             Pbr(54, "World hit color", "Representative diagnostic block colour for the hit cell.", WorldProof);
             Pbr(55, "World hit distance", "Distance in blocks to the world-volume hit.", WorldProof);
             Pbr(56, "World trace steps", "How many DDA cells this fragment traversed.", WorldProof);
+            Pbr(57, "World voxel class", "First non-empty block class crossed by the world reflection ray.", WorldProof);
 
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));

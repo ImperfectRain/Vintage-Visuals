@@ -625,7 +625,7 @@ namespace VintageVisuals.PseudoPBR
         {
             if (!program.HasUniform(ReflectWorldValidUniform)) return;
 
-            bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 56f;
+            bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 57f;
             EntityPos now = _capi.World?.Player?.Entity?.Pos;
             WorldReflectionVolume volume = WorldVolume;
 

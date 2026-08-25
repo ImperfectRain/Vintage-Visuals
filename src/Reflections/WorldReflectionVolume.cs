@@ -18,15 +18,16 @@ namespace VintageVisuals.Reflections
     public sealed class WorldReflectionVolume : IDisposable
     {
         public const int TextureUnit = 12;
-        public const int SizeX = 64;
+        public const int SizeX = 128;
         public const int SizeY = 64;
-        public const int SizeZ = 64;
-        public const int AtlasColumns = 8;
-        public const int AtlasRows = 8;
+        public const int SizeZ = 128;
+        public const int AtlasColumns = 16;
+        public const int AtlasRows = (SizeZ + AtlasColumns - 1) / AtlasColumns;
         public const int AtlasWidth = SizeX * AtlasColumns;
         public const int AtlasHeight = SizeY * AtlasRows;
 
-        private const int RebuildThresholdBlocks = 16;
+        private const int RebuildThresholdXzBlocks = 32;
+        private const int RebuildThresholdYBlocks = 16;
 
         private LoadedTexture _texture;
         private int[] _pixels;
@@ -129,9 +130,9 @@ namespace VintageVisuals.Reflections
         {
             if (_pixels == null) return true;
 
-            return Math.Abs(playerX - _lastPlayerBlockX) >= RebuildThresholdBlocks ||
-                   Math.Abs(playerY - _lastPlayerBlockY) >= RebuildThresholdBlocks ||
-                   Math.Abs(playerZ - _lastPlayerBlockZ) >= RebuildThresholdBlocks;
+            return Math.Abs(playerX - _lastPlayerBlockX) >= RebuildThresholdXzBlocks ||
+                   Math.Abs(playerY - _lastPlayerBlockY) >= RebuildThresholdYBlocks ||
+                   Math.Abs(playerZ - _lastPlayerBlockZ) >= RebuildThresholdXzBlocks;
         }
 
         private void Rebuild(ICoreClientAPI capi, ILogger logger, int dimension,
@@ -151,7 +152,7 @@ namespace VintageVisuals.Reflections
                 _pixels = new int[AtlasWidth * AtlasHeight];
             }
 
-            int occupied = 0;
+            var counts = new int[8];
             var pos = new BlockPos(dimension);
 
             for (int z = 0; z < SizeZ; z++)
@@ -167,15 +168,16 @@ namespace VintageVisuals.Reflections
                     {
                         pos.Set(_originX + x, _originY + y, _originZ + z);
                         Block block = capi.World.BlockAccessor.GetBlock(pos);
+                        WorldVoxelClass cls = Classify(block);
+                        counts[(int)cls]++;
 
-                        if (IsSupportedOpaqueCube(block))
+                        if (cls == WorldVoxelClass.FullOpaqueCube)
                         {
-                            _pixels[dest + x] = DiagnosticColor(block.Id);
-                            occupied++;
+                            _pixels[dest + x] = Pack(DiagnosticColor(block.Id), cls);
                         }
                         else
                         {
-                            _pixels[dest + x] = 0;
+                            _pixels[dest + x] = cls == WorldVoxelClass.Empty ? 0 : Pack(ClassColor(cls), cls);
                         }
                     }
                 }
@@ -194,14 +196,44 @@ namespace VintageVisuals.Reflections
 
             logger.Notification("[VintageVisuals] reflections: rebuilt world reflection volume origin=(" +
                 _originX + "," + _originY + "," + _originZ + "), cells=" +
-                (SizeX * SizeY * SizeZ) + ", occupied=" + occupied + ", uploadBytes=" +
+                (SizeX * SizeY * SizeZ) + ", fullOpaque=" + counts[(int)WorldVoxelClass.FullOpaqueCube] +
+                ", partial=" + counts[(int)WorldVoxelClass.PartialSolid] +
+                ", foliage=" + counts[(int)WorldVoxelClass.CutoutFoliage] +
+                ", transparent=" + counts[(int)WorldVoxelClass.Transparent] +
+                ", liquid=" + counts[(int)WorldVoxelClass.Liquid] +
+                ", emissive=" + counts[(int)WorldVoxelClass.Emissive] +
+                ", unsupported=" + counts[(int)WorldVoxelClass.UnsupportedComplex] +
+                ", uploadBytes=" +
                 (_pixels.Length * 4) + ", atlas=" + AtlasWidth + "x" + AtlasHeight +
                 ", elapsedMs=" + clock.ElapsedMilliseconds + ".");
         }
 
-        private static bool IsSupportedOpaqueCube(Block block)
+        private static WorldVoxelClass Classify(Block block)
         {
-            return block != null && block.Id != 0 && block.AllSidesOpaque;
+            if (block == null || block.Id == 0 || block.BlockMaterial == EnumBlockMaterial.Air)
+                return WorldVoxelClass.Empty;
+
+            switch (block.BlockMaterial)
+            {
+                case EnumBlockMaterial.Water:
+                    return WorldVoxelClass.Liquid;
+                case EnumBlockMaterial.Lava:
+                case EnumBlockMaterial.Fire:
+                    return WorldVoxelClass.Emissive;
+                case EnumBlockMaterial.Leaves:
+                case EnumBlockMaterial.Plant:
+                    return WorldVoxelClass.CutoutFoliage;
+                case EnumBlockMaterial.Glass:
+                case EnumBlockMaterial.Ice:
+                    return WorldVoxelClass.Transparent;
+            }
+
+            if (block.AllSidesOpaque) return WorldVoxelClass.FullOpaqueCube;
+            if (block.BlockMaterial == EnumBlockMaterial.Meta ||
+                block.BlockMaterial == EnumBlockMaterial.Other)
+                return WorldVoxelClass.UnsupportedComplex;
+
+            return WorldVoxelClass.PartialSolid;
         }
 
         private static int DiagnosticColor(int blockId)
@@ -213,7 +245,32 @@ namespace VintageVisuals.Reflections
             int r = 80 + (int)(h & 127u);
             int g = 80 + (int)((h >> 8) & 127u);
             int b = 80 + (int)((h >> 16) & 127u);
-            return r | (g << 8) | (b << 16) | (255 << 24);
+            return r | (g << 8) | (b << 16);
+        }
+
+        private static int ClassColor(WorldVoxelClass cls)
+        {
+            switch (cls)
+            {
+                case WorldVoxelClass.PartialSolid: return PackRgb(220, 180, 80);
+                case WorldVoxelClass.CutoutFoliage: return PackRgb(70, 210, 70);
+                case WorldVoxelClass.Transparent: return PackRgb(90, 180, 230);
+                case WorldVoxelClass.Liquid: return PackRgb(40, 90, 220);
+                case WorldVoxelClass.Emissive: return PackRgb(255, 120, 40);
+                case WorldVoxelClass.UnsupportedComplex: return PackRgb(210, 70, 210);
+                default: return 0;
+            }
+        }
+
+        private static int PackRgb(int r, int g, int b)
+        {
+            return r | (g << 8) | (b << 16);
+        }
+
+        private static int Pack(int rgb, WorldVoxelClass cls)
+        {
+            int alpha = Math.Min(255, Math.Max(0, (int)cls * 32));
+            return (rgb & 0x00ffffff) | (alpha << 24);
         }
 
         private static int Floor(double value)
@@ -236,5 +293,17 @@ namespace VintageVisuals.Reflections
             Release();
             _pixels = null;
         }
+    }
+
+    public enum WorldVoxelClass
+    {
+        Empty = 0,
+        FullOpaqueCube = 1,
+        PartialSolid = 2,
+        CutoutFoliage = 3,
+        Transparent = 4,
+        Liquid = 5,
+        Emissive = 6,
+        UnsupportedComplex = 7,
     }
 }

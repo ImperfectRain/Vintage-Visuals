@@ -75,6 +75,7 @@ namespace VintageVisuals.SmokeTest
             I13_AToleranceIsNotFinerThanItsData(repo, check);
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
+            I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
         }
 
         // -------------------------------------------------------------------
@@ -1278,6 +1279,53 @@ namespace VintageVisuals.SmokeTest
                   world.Contains("entryDistance = travel;") &&
                   !world.Contains("hit.distance = min(side.x, min(side.y, side.z));"),
                   "hit distance must describe the cell entered, not the next boundary");
+        }
+
+        // -------------------------------------------------------------------
+        // I16  WORLD VOLUME ALPHA IS CLASS METADATA, NOT AN OCCUPANCY BIT
+        //
+        // The production volume needs more than "solid or empty": full cubes can
+        // be traced immediately, while partial meshes, foliage, transparent
+        // blocks, liquids, emissive cells, and unsupported complex blocks need
+        // separate policies. That class id travels in texture alpha, so the
+        // shader must decode it explicitly instead of testing alpha > 0.5.
+        // -------------------------------------------------------------------
+        static void I16_WorldVolumeClassesSurviveGpuEncoding(string repo, Action<string, bool, string> check)
+        {
+            string pbrCode = Regex.Replace(_pbr, @"//[^\n]*", "");
+            string worldVolume = File.ReadAllText(Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));
+            string binder = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+
+            check("I16 world volume is wide enough to diagnose edge exits",
+                  worldVolume.Contains("SizeX = 128") &&
+                  worldVolume.Contains("SizeY = 64") &&
+                  worldVolume.Contains("SizeZ = 128"),
+                  "runtime screenshots showed the 64^3 proof volume leaving too many reflected rays outside");
+
+            check("I16 world volume records voxel classes",
+                  worldVolume.Contains("enum WorldVoxelClass") &&
+                  worldVolume.Contains("FullOpaqueCube") &&
+                  worldVolume.Contains("PartialSolid") &&
+                  worldVolume.Contains("CutoutFoliage") &&
+                  worldVolume.Contains("Transparent") &&
+                  worldVolume.Contains("Liquid") &&
+                  worldVolume.Contains("Emissive") &&
+                  worldVolume.Contains("UnsupportedComplex") &&
+                  worldVolume.Contains("(int)cls * 32"),
+                  "alpha should carry class ids for the resolver, not only occupied/not occupied");
+
+            check("I16 world DDA decodes class alpha before hit testing",
+                  pbrCode.Contains("float vvWorldVoxelClass") &&
+                  pbrCode.Contains("voxel.a * 255.0 / 32.0") &&
+                  pbrCode.Contains("voxelClass == VV_WORLD_CLASS_FULL") &&
+                  !pbrCode.Contains("voxel.a > 0.5"),
+                  "only full opaque cubes are proof-geometry hits; non-full classes need later policies");
+
+            check("I16 world class debug view is selectable and bound",
+                  pbrCode.Contains("if (mode == 57)") &&
+                  pbrCode.Contains("vvWorldClassColor(hit57.voxelClass)") &&
+                  binder.Contains("_look.DebugView >= 53f && _look.DebugView <= 57f"),
+                  "Debug > Debug System: Materials > World reflection proof > World voxel class (57) must upload the atlas");
         }
     }
 }
