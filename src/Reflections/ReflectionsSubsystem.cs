@@ -1,5 +1,7 @@
 using System;
 using Vintagestory.API.Client;
+using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 
 namespace VintageVisuals.Reflections
@@ -33,6 +35,7 @@ namespace VintageVisuals.Reflections
         private WorldReflectionVolume _worldVolume;
         private bool _registered;
         private bool _hookedReload;
+        private bool _hookedWorldEvents;
         private bool _reported;
 
         public string Name => SubsystemName;
@@ -97,6 +100,13 @@ namespace VintageVisuals.Reflections
                 _capi.Event.ReloadShader += OnShadersReloaded;
             }
 
+            if (!_hookedWorldEvents)
+            {
+                _hookedWorldEvents = true;
+                _capi.Event.BlockChanged += OnBlockChanged;
+                _capi.Event.ChunkDirty += OnChunkDirty;
+            }
+
             if (!_reported)
             {
                 _reported = true;
@@ -117,6 +127,16 @@ namespace VintageVisuals.Reflections
         {
             if (_capture != null) _capture.OnShadersReloaded();
             return true;
+        }
+
+        private void OnBlockChanged(BlockPos pos, Block oldBlock)
+        {
+            _worldVolume?.MarkBlockDirty(pos, oldBlock);
+        }
+
+        private void OnChunkDirty(Vec3i chunkCoord, IWorldChunk chunk, EnumChunkDirtyReason reason)
+        {
+            _worldVolume?.MarkChunkDirty(chunkCoord, reason);
         }
 
         private void Stop()
@@ -146,6 +166,19 @@ namespace VintageVisuals.Reflections
         public void Dispose()
         {
             Stop();
+            if (_capi != null && _hookedWorldEvents)
+            {
+                _capi.Event.BlockChanged -= OnBlockChanged;
+                _capi.Event.ChunkDirty -= OnChunkDirty;
+                _hookedWorldEvents = false;
+            }
+
+            if (_capi != null && _hookedReload)
+            {
+                _capi.Event.ReloadShader -= OnShadersReloaded;
+                _hookedReload = false;
+            }
+
             _worldVolume?.Dispose();
             _worldVolume = null;
         }

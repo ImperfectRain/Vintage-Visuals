@@ -32,12 +32,16 @@ namespace VintageVisuals.Reflections
         private LoadedTexture _texture;
         private int[] _pixels;
         private bool _dirty = true;
+        private bool _volumeDirty = true;
         private bool _uploadFailed;
         private bool _reportedUnsupportedColor;
+        private int _pendingInvalidations;
+        private string _lastInvalidationReason = "initial build";
 
         private int _originX;
         private int _originY;
         private int _originZ;
+        private int _currentDimension;
         private int _lastPlayerBlockX = int.MinValue;
         private int _lastPlayerBlockY = int.MinValue;
         private int _lastPlayerBlockZ = int.MinValue;
@@ -88,9 +92,10 @@ namespace VintageVisuals.Reflections
             int playerY = Floor(player.Y);
             int playerZ = Floor(player.Z);
 
-            if (NeedsRebuild(playerX, playerY, playerZ))
+            string rebuildReason = RebuildReason(playerX, playerY, playerZ);
+            if (rebuildReason != null)
             {
-                Rebuild(capi, logger, player.Dimension, playerX, playerY, playerZ);
+                Rebuild(capi, logger, player.Dimension, playerX, playerY, playerZ, rebuildReason);
             }
 
             if (!_dirty && TextureId != 0) return true;
@@ -126,23 +131,82 @@ namespace VintageVisuals.Reflections
             return true;
         }
 
-        private bool NeedsRebuild(int playerX, int playerY, int playerZ)
+        public void MarkBlockDirty(BlockPos pos, Block oldBlock)
         {
-            if (_pixels == null) return true;
+            if (pos == null || _pixels == null) return;
+            if (pos.dimension != _currentDimension) return;
 
-            return Math.Abs(playerX - _lastPlayerBlockX) >= RebuildThresholdXzBlocks ||
-                   Math.Abs(playerY - _lastPlayerBlockY) >= RebuildThresholdYBlocks ||
-                   Math.Abs(playerZ - _lastPlayerBlockZ) >= RebuildThresholdXzBlocks;
+            if (pos.X < _originX || pos.X >= _originX + SizeX ||
+                pos.Y < _originY || pos.Y >= _originY + SizeY ||
+                pos.Z < _originZ || pos.Z >= _originZ + SizeZ)
+            {
+                return;
+            }
+
+            MarkDirty("block changed at " + pos.X + "," + pos.Y + "," + pos.Z);
+        }
+
+        public void MarkChunkDirty(Vec3i chunkCoord, EnumChunkDirtyReason reason)
+        {
+            if (chunkCoord == null || _pixels == null) return;
+
+            int chunkSize = Vintagestory.API.Config.GlobalConstants.ChunkSize;
+            int minX = chunkCoord.X * chunkSize;
+            int minY = chunkCoord.Y * chunkSize;
+            int minZ = chunkCoord.Z * chunkSize;
+            int maxX = minX + chunkSize;
+            int maxY = minY + chunkSize;
+            int maxZ = minZ + chunkSize;
+
+            if (maxX <= _originX || minX >= _originX + SizeX ||
+                maxY <= _originY || minY >= _originY + SizeY ||
+                maxZ <= _originZ || minZ >= _originZ + SizeZ)
+            {
+                return;
+            }
+
+            MarkDirty("chunk dirty " + chunkCoord.X + "," + chunkCoord.Y + "," + chunkCoord.Z +
+                      " (" + reason + ")");
+        }
+
+        private void MarkDirty(string reason)
+        {
+            _volumeDirty = true;
+            _dirty = true;
+            _pendingInvalidations++;
+            _lastInvalidationReason = reason;
+        }
+
+        private string RebuildReason(int playerX, int playerY, int playerZ)
+        {
+            if (_pixels == null) return "initial upload";
+            if (_volumeDirty) return _lastInvalidationReason;
+
+            if (Math.Abs(playerX - _lastPlayerBlockX) >= RebuildThresholdXzBlocks ||
+                Math.Abs(playerZ - _lastPlayerBlockZ) >= RebuildThresholdXzBlocks)
+            {
+                return "player moved " +
+                    Math.Abs(playerX - _lastPlayerBlockX) + "," +
+                    Math.Abs(playerZ - _lastPlayerBlockZ) + " xz blocks";
+            }
+
+            if (Math.Abs(playerY - _lastPlayerBlockY) >= RebuildThresholdYBlocks)
+            {
+                return "player moved " + Math.Abs(playerY - _lastPlayerBlockY) + " y blocks";
+            }
+
+            return null;
         }
 
         private void Rebuild(ICoreClientAPI capi, ILogger logger, int dimension,
-                             int playerX, int playerY, int playerZ)
+                             int playerX, int playerY, int playerZ, string rebuildReason)
         {
             Stopwatch clock = Stopwatch.StartNew();
 
             _originX = playerX - SizeX / 2;
             _originY = playerY - SizeY / 2;
             _originZ = playerZ - SizeZ / 2;
+            _currentDimension = dimension;
             _lastPlayerBlockX = playerX;
             _lastPlayerBlockY = playerY;
             _lastPlayerBlockZ = playerZ;
@@ -185,6 +249,7 @@ namespace VintageVisuals.Reflections
 
             clock.Stop();
             _dirty = true;
+            _volumeDirty = false;
             _uploadFailed = false;
 
             if (!_reportedUnsupportedColor)
@@ -203,9 +268,13 @@ namespace VintageVisuals.Reflections
                 ", liquid=" + counts[(int)WorldVoxelClass.Liquid] +
                 ", emissive=" + counts[(int)WorldVoxelClass.Emissive] +
                 ", unsupported=" + counts[(int)WorldVoxelClass.UnsupportedComplex] +
+                ", reason=" + rebuildReason +
+                ", invalidations=" + _pendingInvalidations +
                 ", uploadBytes=" +
                 (_pixels.Length * 4) + ", atlas=" + AtlasWidth + "x" + AtlasHeight +
                 ", elapsedMs=" + clock.ElapsedMilliseconds + ".");
+
+            _pendingInvalidations = 0;
         }
 
         private static WorldVoxelClass Classify(Block block)

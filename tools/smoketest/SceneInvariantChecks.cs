@@ -76,6 +76,7 @@ namespace VintageVisuals.SmokeTest
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
+            I17_WorldVolumeInvalidatesFromWorldEvents(repo, check);
         }
 
         // -------------------------------------------------------------------
@@ -1326,6 +1327,53 @@ namespace VintageVisuals.SmokeTest
                   pbrCode.Contains("vvWorldClassColor(hit57.voxelClass)") &&
                   binder.Contains("_look.DebugView >= 53f && _look.DebugView <= 57f"),
                   "Debug > Debug System: Materials > World reflection proof > World voxel class (57) must upload the atlas");
+        }
+
+        // -------------------------------------------------------------------
+        // I17  WORLD VOLUME REBUILDS ON CHANGE, NOT EVERY DRAW
+        //
+        // A 128x64x128 atlas is large enough to be useful but too expensive to
+        // rebuild casually. The subsystem should hook the game's world-change
+        // events where the client API exposes them, dirty the atlas only when
+        // the changed region intersects the current volume, and log why the
+        // next rebuild happened.
+        // -------------------------------------------------------------------
+        static void I17_WorldVolumeInvalidatesFromWorldEvents(string repo, Action<string, bool, string> check)
+        {
+            string worldVolume = File.ReadAllText(Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));
+            string subsystem = File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"));
+
+            check("I17 world events dirty the reflection volume",
+                  subsystem.Contains("_capi.Event.BlockChanged += OnBlockChanged") &&
+                  subsystem.Contains("_capi.Event.ChunkDirty += OnChunkDirty") &&
+                  subsystem.Contains("MarkBlockDirty(pos, oldBlock)") &&
+                  subsystem.Contains("MarkChunkDirty(chunkCoord, reason)"),
+                  "block/chunk changes in the measured volume must invalidate the atlas");
+
+            check("I17 world event hooks are unsubscribed",
+                  subsystem.Contains("_capi.Event.BlockChanged -= OnBlockChanged") &&
+                  subsystem.Contains("_capi.Event.ChunkDirty -= OnChunkDirty"),
+                  "subsystem disposal must not leave handlers targeting disposed state");
+
+            check("I17 dirty block checks the current volume bounds",
+                  worldVolume.Contains("public void MarkBlockDirty") &&
+                  worldVolume.Contains("pos.dimension != _currentDimension") &&
+                  worldVolume.Contains("pos.X < _originX") &&
+                  worldVolume.Contains("pos.Z >= _originZ + SizeZ"),
+                  "unrelated block edits should not force a million-cell rebuild");
+
+            check("I17 dirty chunk checks intersection against the volume",
+                  worldVolume.Contains("public void MarkChunkDirty") &&
+                  worldVolume.Contains("GlobalConstants.ChunkSize") &&
+                  worldVolume.Contains("maxX <= _originX") &&
+                  worldVolume.Contains("minZ >= _originZ + SizeZ"),
+                  "chunk invalidation should be conservative but bounded");
+
+            check("I17 rebuild logs its reason and pending invalidations",
+                  worldVolume.Contains("reason=\" + rebuildReason") &&
+                  worldVolume.Contains("invalidations=\" + _pendingInvalidations") &&
+                  worldVolume.Contains("_pendingInvalidations = 0"),
+                  "performance logs need to explain why the atlas was rebuilt");
         }
     }
 }
