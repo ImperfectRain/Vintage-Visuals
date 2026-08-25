@@ -1744,11 +1744,12 @@ geometry. So the documented hierarchy - smooth sharp, rough coarse - governs the
 analytic sky and not the captured world, and one surface can change character
 across a hit boundary.
 
-**Confirmed: the luminance ceiling is a compression rule wearing an energy
-rule's clothes.** A scene hit above `envLuma * 1.2` is scaled to it. Environment
-0.20 against a sunlit tree at 0.70 delivers 0.24 - two thirds of the tree's
-luminance gone before PBR sees it - and a sunlit surface is legitimately allowed
-to be several times brighter than the local horizon colour.
+**Corrected: the luminance ceiling is a compression rule wearing an energy
+rule's clothes.** The first scene-hit cap scaled anything above `envLuma * 1.2`
+down to it. Environment 0.20 against a sunlit tree at 0.70 delivered 0.24 - two
+thirds of the tree's luminance gone before PBR saw it. The cap is now
+`envLuma * 2.0`: still bounded, but no longer crushing reflected object colour
+against the local horizon.
 
 **Confirmed and fixed, because it is a comment**: `vv_reflectCameraDelta` was
 documented as "capture camera position minus this frame's" while

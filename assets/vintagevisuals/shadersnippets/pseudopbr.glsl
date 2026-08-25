@@ -1765,10 +1765,11 @@ const float VV_REFLECT_HORIZON_LIFT = 1.15;
 const float VV_REFLECT_TOWARD = 0.30;
 
 // Absolute ceiling on the returned colour, as a multiple of the environment
-// colour handed in. THE WHITE METAL GUARD: a polished metal's f0 is close to
-// its albedo, so vvAmbientSpecular passes almost all of this through, and a
-// value much above 1 here is what turns iron into a white slab in daylight.
-const float VV_REFLECT_MAX = 1.2;
+// colour handed in. The captured scene is already a lit, graded colour and must
+// not be used as an amplifier, but real reflected objects can be materially
+// brighter than the local horizon sample. Keep the guard, leave room for
+// geometry colour.
+const float VV_REFLECT_MAX = 2.0;
 
 const float VV_REFLECT_TWO_PI = 6.28318530718;
 
@@ -1982,6 +1983,18 @@ const float VV_SSR_THICKNESS = 0.5;
 // Fading them out is cheaper and far more honest than sampling something wrong.
 const float VV_SSR_FACING_FADE = 0.25;
 
+// Initial screen-space advance. Starting exactly at the source pixel makes a
+// reflective floor eligible to hit its own depth, which is most visible when
+// the player looks almost straight down or touches the ground. Advance by a few
+// capture texels before measuring crossings, matching the validation step used
+// by conventional screen-space reflection implementations.
+const float VV_SSR_START_TEXELS = 2.0;
+
+// Fade hits that resolve near the captured frame's edge. Screen-space
+// reflections cannot know what lives outside the image, so edge hits should
+// disappear into the analytic fallback instead of popping or stretching.
+const float VV_SSR_EDGE_FADE = 0.04;
+
 // Why a march ended the way it did.
 //
 // ONE RED IS FOUR DIFFERENT FAULTS. Debug view 39 reports a miss as a single
@@ -2125,11 +2138,11 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 
     // THE BUDGET CAP IS NOT THE STRIDE, and until now nothing said when the two
     // parted company. VV_SSR_STRIDE asks for one sample every two capture
-    // texels; VV_SSR_STEPS caps the count at 24. A ray that crosses 500 texels
+    // texels; VV_SSR_STEPS caps the count at 96. A ray that crosses 500 texels
     // - which is an ordinary grazing ray on a flat floor, the kind that carries
-    // the reflected trees - asks for 250 steps, gets 24, and walks 21 texels at
-    // a time. Ten times coarser than the constant says, on exactly the rays the
-    // effect exists for.
+    // the reflected trees - asks for 250 steps, gets 96, and still saturates.
+    // Debug view 49 reports that remaining divergence instead of pretending the
+    // stride survived.
     //
     // The constants' own comment says raising the thickness tolerance to make
     // distant reflections appear would be hiding a coarse march. Nothing
@@ -2143,15 +2156,17 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     float invA = 1.0 / max(1e-4, a.depth);
     float invB = 1.0 / max(1e-4, b.depth);
 
-    float previousF = 0.0;
-    float previousDelta = -1.0;
-    bool havePrevious = false;
+    float startF = clamp(VV_SSR_START_TEXELS / max(1.0, max(travel.x, travel.y)), 0.0, 0.25);
+    vec2 startUv = mix(a.uv, b.uv, startF);
+    float previousF = startF;
+    float previousDepth = 1.0 / mix(invA, invB, startF);
+    float previousDelta = previousDepth - texture(vv_reflectScene, startUv).a;
 
     for (int i = 1; i <= VV_SSR_STEPS; i++)
     {
         if (i > steps) break;
 
-        float f = float(i) / float(steps);
+        float f = mix(startF, 1.0, float(i) / float(steps));
 
         vec2 uv = mix(a.uv, b.uv, f);
         if (any(greaterThan(abs(uv - 0.5), vec2(0.5)))) break;
@@ -2163,7 +2178,7 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 
         float delta = rayDepth - sceneDepth;
 
-        if (havePrevious && previousDelta < 0.0 && delta >= 0.0)
+        if (previousDelta < 0.0 && delta >= 0.0)
         {
             float lo = previousF;
             float hi = f;
@@ -2194,10 +2209,18 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
                 hit.wanted = wanted;
                 hit.thickness = thickness;
 
-                // Faded near the grazing limit so the reflection thins out
-                // instead of ending at a hard line.
-                hit.valid = 1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
-                                             1.0 - VV_SSR_FACING_FADE, facing);
+                // Faded near the grazing limit, the thickness limit and the
+                // captured frame edge, so an uncertain screen-space hit returns
+                // to the analytic fallback instead of snapping.
+                vec2 edge = min(hitUv, 1.0 - hitUv);
+                float edgeFade = smoothstep(0.0, VV_SSR_EDGE_FADE, min(edge.x, edge.y));
+                float thicknessFade = 1.0 - smoothstep(VV_SSR_THICKNESS * 0.65,
+                                                       VV_SSR_THICKNESS,
+                                                       max(0.0, thickness));
+                hit.valid = (1.0 - smoothstep(1.0 - VV_SSR_FACING_FADE * 2.0,
+                                              1.0 - VV_SSR_FACING_FADE, facing))
+                          * edgeFade
+                          * thicknessFade;
                 return hit;
             }
 
@@ -2209,7 +2232,6 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 
         previousDelta = delta;
         previousF = f;
-        havePrevious = true;
     }
 
     return miss;

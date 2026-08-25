@@ -905,10 +905,10 @@ namespace VintageVisuals.SmokeTest
         // VV_SSR_STRIDE says "capture texels to advance per step" and its
         // comment explains at length why a uniform screen-space rate is what
         // makes a reflection foreshorten instead of smear. VV_SSR_STEPS then
-        // caps the count at 24. On a short ray those agree. On a long grazing
-        // ray - which is the ordinary case on a flat reflective floor, and the
-        // only case that carries a reflected tree - the cap binds and the ray
-        // is walked ten times coarser than the constant claims.
+        // caps the count. On a short ray those agree. On a long grazing ray -
+        // which is the ordinary case on a flat reflective floor, and the only
+        // case that carries a reflected tree - the cap can still bind, and the
+        // shader must report when it does.
         //
         // That is not a defect this invariant fixes; it is a budget, and
         // changing it needs a measurement nobody has taken. What the invariant

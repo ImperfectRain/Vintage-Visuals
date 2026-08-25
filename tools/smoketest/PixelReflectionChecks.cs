@@ -87,6 +87,12 @@ namespace VintageVisuals.SmokeTest
                 _code.Contains("previousDelta < 0.0") && _code.Contains("delta >= 0.0"),
                 "proximity to a sample leaves gaps between the samples");
 
+            check("the march starts after a screen-space self-hit bias",
+                _code.Contains("VV_SSR_START_TEXELS")
+                    && Regex.IsMatch(_code, @"float startF = clamp\(VV_SSR_START_TEXELS / max\(1\.0, max\(travel\.x, travel\.y\)\)")
+                    && Regex.IsMatch(_code, @"float previousDelta = previousDepth - texture\(vv_reflectScene, startUv\)\.a;"),
+                "starting with a fake negative delta lets the floor immediately reflect its own depth near the camera");
+
             check("a crossing is refined by bisection",
                 _code.Contains("VV_SSR_REFINE") && Regex.IsMatch(_code, @"float mid = \(lo \+ hi\) \* 0\.5;"),
                 "the interval locates the surface; the refinement finds where in it");
@@ -106,6 +112,13 @@ namespace VintageVisuals.SmokeTest
             check("depth is interpolated as 1/w, not as w",
                 Regex.IsMatch(_code, @"float rayDepth = 1\.0 / mix\(invA, invB, f\);"),
                 "interpolating w directly is not perspective correct");
+
+            check("low-confidence scene hits fade instead of snapping",
+                _code.Contains("VV_SSR_EDGE_FADE")
+                    && _code.Contains("float edgeFade = smoothstep(0.0, VV_SSR_EDGE_FADE")
+                    && _code.Contains("float thicknessFade = 1.0 - smoothstep(VV_SSR_THICKNESS * 0.65")
+                    && Regex.IsMatch(_code, @"hit\.valid = \([\s\S]*\* edgeFade[\s\S]*\* thicknessFade;"),
+                "edge and near-thickness hits should return to fallback instead of drawing hard screen-space breaks");
 
             // --- one depth space -------------------------------------------
             Match proj = Regex.Match(_code,
@@ -593,9 +606,10 @@ namespace VintageVisuals.SmokeTest
         /// daylight is how iron became a uniformly white slab - the failure this
         /// pass exists to correct.
         ///
-        /// The function must therefore return a BOUNDED LOOKUP INTO A COLOUR,
-        /// never an amplifier: a value above 1 is the shader claiming the
-        /// environment is brighter than the environment.
+        /// The function must therefore return a bounded lookup into a colour,
+        /// not an open-ended amplifier. The scene cap is deliberately looser
+        /// than the analytic fallback so real reflected objects can stay
+        /// brighter than the local horizon sample.
         /// </summary>
         private static void CheckWhiteMetalGuard(Action<string, bool, string> check)
         {
@@ -606,9 +620,9 @@ namespace VintageVisuals.SmokeTest
 
             check("the ceiling is declared", !float.IsNaN(max), "VV_REFLECT_MAX");
 
-            check("the reflection cannot exceed the environment by much",
-                max <= 1.35f,
-                "ceiling " + max + " - metal turns white well before this");
+            check("the reflection ceiling leaves room for real scene colour",
+                max >= 1.8f && max <= 2.25f,
+                "ceiling " + max + " - too low crushes reflected objects, too high turns metal white");
 
             check("the ceiling is actually applied",
                 Regex.IsMatch(_code, @"clamp\(lift, 0\.0, VV_REFLECT_MAX\)"),

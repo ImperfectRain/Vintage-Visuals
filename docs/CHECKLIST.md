@@ -293,6 +293,10 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | The step-budget diagnostic never reporting saturation (`D42`) | source audit | I12 | x |
 | The march sampling coarser than `VV_SSR_STRIDE` names | source audit | I12 | x |
 | The march budget falling back to visible rings | runtime screenshot | `PixelReflectionChecks` | x |
+| The march starting from a fake self-hit crossing | runtime screenshot | `PixelReflectionChecks` | x |
+| Scene hits no longer fading near the capture edge | screen-space reflection literature | `PixelReflectionChecks` | x |
+| Scene hits no longer fading near the thickness limit | screen-space reflection literature | `PixelReflectionChecks` | x |
+| The reflected scene ceiling crushing object colour | runtime screenshot | `PixelReflectionChecks` | x |
 | The depth report comparing against a stale tolerance (`D43`) | external audit, verified | I13 | x |
 | The capture target losing half-float depth (`D43`) | external audit, verified | I13 | x |
 | The capture normalising depth before writing alpha (`D43`) | external audit, verified | I13 | x |
@@ -303,7 +307,7 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | Tab changes rebuilding inside native callback dispatch | runtime crash report | `UiChecks` | x |
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**47 mutations, 47 caught, 0 missed** at `HEAD`.
+**51 mutations, 51 caught, 0 missed** at `HEAD`.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

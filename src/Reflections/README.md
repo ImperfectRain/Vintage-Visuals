@@ -159,17 +159,12 @@ to the captured world, so the two can have visibly different character on the
 same surface either side of a hit boundary.
 
 **The luminance ceiling is a compression rule, not an energy rule.** A scene hit
-brighter than `envLuma * VV_REFLECT_MAX` (1.2) is scaled down to it. With a local
-environment at 0.20 and a sunlit tree at 0.70, the tree arrives at 0.24 — losing
-about two thirds of its luminance before PBR sees it. A sunlit surface can
-legitimately be several times brighter than the local horizon colour, so this is
-bounding the reflection by something that does not bound the world. It may still
-be the right visual choice; it is not the conservation rule its placement
-suggests.
-
-Both are recorded rather than changed. They sit downstream of the depth problem,
-and changing them first would be tuning the visible result before the information
-pipeline is trustworthy.
+brighter than `envLuma * VV_REFLECT_MAX` is scaled down to it. The first ceiling
+was 1.2, so with a local environment at 0.20 and a sunlit tree at 0.70, the tree
+arrived at 0.24 — losing about two thirds of its luminance before PBR saw it. A
+sunlit surface can legitimately be several times brighter than the local horizon
+colour, so the ceiling is now 2.0: still a white-metal guard, but no longer a
+hard crush against real reflected object colour.
 
 ### Reading the march views
 
