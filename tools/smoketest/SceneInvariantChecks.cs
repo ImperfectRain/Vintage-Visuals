@@ -247,19 +247,16 @@ namespace VintageVisuals.SmokeTest
             check("I2 a side-lit leaf sits between the two",
                   edge <= backlit + Eps && edge >= frontlit - Eps, edge.ToString());
 
-            // The transmitted colour is tinted toward yellow-green, and the tint
-            // must MOVE colour rather than add light - fruit opts out entirely.
-            try
-            {
-                string tint = Rhs(Statement(FunctionBody(_pbr, "vec3 vvFoliageTransmission("), "vec3 tint"));
-                Val leaf = Eval(tint, Syms("albedo", Vec(0.5, 0.5, 0.5), "chlorophyll", 1.0));
-                Val fruit = Eval(tint, Syms("albedo", Vec(0.5, 0.5, 0.5), "chlorophyll", 0.0));
-                check("I2 transmitted light through leaf tissue is green-dominant",
-                      leaf.Y > leaf.X && leaf.X > leaf.Z, leaf.ToString());
-                check("I2 fruit transmits its own colour, untinted",
-                      Math.Abs(fruit.X - fruit.Y) < Eps && Math.Abs(fruit.Y - fruit.Z) < Eps, fruit.ToString());
-            }
-            catch (Exception ex) { check("I2 transmission tint is readable", false, ex.Message); }
+            string pigment = FunctionBody(_pbr, "vec3 vvFoliageTransmissionPigment(");
+            check("I2 transmitted pigment is based on actual albedo",
+                  pigment.Contains("vec3 chroma") && pigment.Contains("base / luma"),
+                  "transmission colour must come from the already-known vegetation surface");
+            check("I2 green tissue receives only a conditional chlorophyll prior",
+                  pigment.Contains("greenLead") && pigment.Contains("(1.0 - fruit)"),
+                  "flowers and autumn leaves must not be forced to leaf green");
+            check("I2 fruit transmits its own colour, untinted",
+                  pigment.Contains("pigment = mix(pigment, chroma, fruit)"),
+                  "fruit must opt out of the chlorophyll prior");
         }
 
         // -------------------------------------------------------------------
@@ -1427,7 +1424,8 @@ namespace VintageVisuals.SmokeTest
 
             check("I19 normal reflection rendering uploads the world volume",
                   binder.Contains("bool activeReflection = _look.PixelReflection > 0.001f") &&
-                  binder.Contains("(!activeDebugView && !activeReflection)"),
+                  binder.Contains("bool activeCanopy = _look.SunDapple > 0.001f") &&
+                  binder.Contains("!activeDebugView && !activeReflection && !activeCanopy"),
                   "world-space hits cannot affect gameplay if the atlas is bound only for debug views");
 
             check("I19 pixel reflection resolves scene over world over fallback",

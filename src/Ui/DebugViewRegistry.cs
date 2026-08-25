@@ -161,6 +161,12 @@ namespace VintageVisuals.Ui
             Pbr(57, "World voxel class", "First non-empty block class crossed by the world reflection ray.", WorldProof);
             Pbr(58, "Hybrid reflection source", "White uses scene capture, green uses world volume, blue uses analytic fallback.", WorldProof);
 
+            const string Forest = "Forest lighting";
+            Pbr(59, "World canopy density", "Leaf-column density from the shared local world scan.", Forest);
+            Pbr(60, "World canopy color", "The actual lit leaf colour stored for the current column.", Forest);
+            Pbr(61, "Forest ambient filter", "The low-frequency canopy shade and colour filter applied before local-light terms.", Forest);
+            Pbr(62, "Vegetation LOD", "How much foliage transmission and cuticle detail survive at this distance.", Forest);
+
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));
 

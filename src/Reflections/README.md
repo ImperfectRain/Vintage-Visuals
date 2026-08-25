@@ -104,10 +104,19 @@ size as uniforms rather than hardcoding them.
 
 Each texel stores one classified voxel. Full opaque cubes store a representative
 game block colour multiplied by local block light in RGB, and store the voxel
-class in alpha. Non-full cells store class debug colour in RGB and the same class
-id in alpha. The first production pass traces only full opaque cubes for
+class in alpha. Cutout foliage stores its actual representative block colour in
+RGB rather than a class swatch, because the same scan now also feeds forest
+lighting. Other non-full cells store class debug colour in RGB and the same
+class id in alpha. The first production pass traces only full opaque cubes for
 reflection hits; partial, cutout, transparent, liquid, emissive and unsupported
 cells are classified for diagnostics and future coverage.
+
+The same rebuild also uploads a 128 x 128 canopy context texture. RGB is the
+current representative colour of leaf blocks in that X/Z column; alpha is a
+bounded leaf-density estimate. This is intentionally low frequency. The vanilla
+shadow map still owns animated leaf gaps, sunflecks and wind movement; the
+canopy texture owns only the broader question "am I under a tree, and what
+colour is that tree today?"
 
 The volume rebuilds on initial upload, after player movement beyond 32 horizontal
 blocks or 16 vertical blocks, after `BlockChanged` inside the volume, and after
@@ -132,6 +141,10 @@ The debug views exposed in the new UI are:
 | Debug > Debug System: Materials > World reflection proof > World trace steps | 56 | DDA cell budget used |
 | Debug > Debug System: Materials > World reflection proof > World voxel class | 57 | first non-empty classified cell crossed by the ray |
 | Debug > Debug System: Materials > World reflection proof > Hybrid reflection source | 58 | white screen-space, green world volume, blue analytic fallback |
+| Debug > Debug System: Materials > Forest lighting > World canopy density | 59 | leaf-column density from the canopy context texture |
+| Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | seasonal/lit leaf colour stored for the current column |
+| Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | low-frequency ambient attenuation/tint used under canopy |
+| Debug > Debug System: Materials > Forest lighting > Vegetation LOD | 62 | distance simplification applied to foliage lighting |
 
 ## Cost
 
@@ -140,7 +153,8 @@ The debug views exposed in the new UI are:
 | Render target | One RGBA16F at half the frame in each axis, so a quarter of the pixels |
 | When | Every frame the feature is on, whether or not anything reflective is visible |
 | Extra passes | One fullscreen copy |
-| World atlas | 128 x 64 x 128 classified cells packed into a 2048 x 512 RGBA upload when pixel reflection or world debug is active |
+| World atlas | 128 x 64 x 128 classified cells packed into a 2048 x 512 RGBA upload when pixel reflection, canopy lighting or world/canopy debug is active |
+| Canopy context | 128 x 128 RGBA upload, rebuilt with the world atlas and bound only when forest lighting or modes 59-62 need it |
 | World rebuild | Initial upload, player movement threshold, block edits inside the volume, or dirty chunks intersecting the volume |
 | Measured | **No.** Nothing here has been profiled |
 

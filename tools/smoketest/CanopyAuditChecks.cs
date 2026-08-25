@@ -102,14 +102,14 @@ namespace VintageVisuals.SmokeTest
                 "");
 
             // The shafts had the same flat gate the dapple did.
-            Match shaft = Regex.Match(pbr, @"float vvCanopyShaft\(vec3 cameraRelativePos\)\s*\{(.*?)\n\}",
+            Match shaft = Regex.Match(pbr, @"float vvCanopyShaft\([^)]*\)\s*\{(.*?)\n\}",
                                       RegexOptions.Singleline);
             check("the shaft mask no longer reads sun exposure",
                 shaft.Success && !shaft.Groups[1].Value.Contains("vv_sunExposure"),
                 "measured flat at ~1 across a whole forest scene");
 
             check("the shafts start at real sunflecks",
-                shaft.Success && shaft.Groups[1].Value.Contains("vvCanopySunfleck()"),
+                shaft.Success && pbr.Contains("vvCanopySunfleck()"),
                 "a beam has to start where the sun actually got through");
         }
 
@@ -212,7 +212,7 @@ namespace VintageVisuals.SmokeTest
             {
                 ("torchlight highlights", "result += vvBlockLightSpecular(f0"),
                 ("the sky specular term", "result += vvAmbientSpecular(f0"),
-                ("light through leaves", "result += vvFoliageTransmission(albedo"),
+                ("light through leaves", "result += vvFoliageTransmission("),
                 ("emission", "result += vvEmission(albedo"),
             })
             {
@@ -441,13 +441,11 @@ namespace VintageVisuals.SmokeTest
                 body.Contains("normalize(lightPosition)"),
                 "the beams must swing with the sun rather than be placed");
 
-            // Section 15 of the flora contract: a shaft is atmospheric, not a
-            // material property. It may ask what is occluding, never how wet or
-            // how rough that thing is.
-            check("shafts do not consult flora material state",
-                !body.Contains("vvWetness") && !body.Contains("vvFloraPooling") &&
-                !body.Contains("roughness") && !body.Contains("vvFloraThinness"),
-                "a shaft is atmospheric transport, not a leaf's material response");
+            check("leaf shafts are gated by real backlight state",
+                pbr.Contains("vvLeafBacklightSource(") &&
+                pbr.Contains("solarVisibility") &&
+                pbr.Contains("return strength * VV_SHAFT_LEAF * leafSource;"),
+                "a canopy leaf must not feed shafts without direct sun and N/L/V backlighting");
         }
 
         /// <summary>

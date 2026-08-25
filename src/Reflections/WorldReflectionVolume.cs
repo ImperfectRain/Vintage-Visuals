@@ -25,12 +25,17 @@ namespace VintageVisuals.Reflections
         public const int AtlasRows = (SizeZ + AtlasColumns - 1) / AtlasColumns;
         public const int AtlasWidth = SizeX * AtlasColumns;
         public const int AtlasHeight = SizeY * AtlasRows;
+        public const int CanopyTextureUnit = 11;
+        public const int CanopyWidth = SizeX;
+        public const int CanopyHeight = SizeZ;
 
         private const int RebuildThresholdXzBlocks = 32;
         private const int RebuildThresholdYBlocks = 16;
 
         private LoadedTexture _texture;
+        private LoadedTexture _canopyTexture;
         private int[] _pixels;
+        private int[] _canopyPixels;
         private bool _dirty = true;
         private bool _volumeDirty = true;
         private bool _uploadFailed;
@@ -49,6 +54,11 @@ namespace VintageVisuals.Reflections
         public int TextureId
         {
             get { return _texture == null ? 0 : _texture.TextureId; }
+        }
+
+        public int CanopyTextureId
+        {
+            get { return _canopyTexture == null ? 0 : _canopyTexture.TextureId; }
         }
 
         public Vec3f Size
@@ -98,7 +108,7 @@ namespace VintageVisuals.Reflections
                 Rebuild(capi, logger, player.Dimension, playerX, playerY, playerZ, rebuildReason);
             }
 
-            if (!_dirty && TextureId != 0) return true;
+            if (!_dirty && TextureId != 0 && CanopyTextureId != 0) return true;
             if (_uploadFailed || _pixels == null) return false;
 
             _uploadFailed = true;
@@ -106,10 +116,15 @@ namespace VintageVisuals.Reflections
             try
             {
                 if (_texture == null) _texture = new LoadedTexture(capi);
+                if (_canopyTexture == null) _canopyTexture = new LoadedTexture(capi);
 
                 _texture.Width = AtlasWidth;
                 _texture.Height = AtlasHeight;
                 capi.Render.LoadOrUpdateTextureFromRgba(_pixels, false, 0, ref _texture);
+
+                _canopyTexture.Width = CanopyWidth;
+                _canopyTexture.Height = CanopyHeight;
+                capi.Render.LoadOrUpdateTextureFromRgba(_canopyPixels, false, 0, ref _canopyTexture);
             }
             catch (Exception ex)
             {
@@ -119,10 +134,10 @@ namespace VintageVisuals.Reflections
                 return false;
             }
 
-            if (TextureId == 0)
+            if (TextureId == 0 || CanopyTextureId == 0)
             {
-                logger.Warning("[VintageVisuals] reflections: world reflection volume upload returned texture id 0. " +
-                               "World-volume reflection fallback and its debug views are inactive.");
+                logger.Warning("[VintageVisuals] reflections: world volume upload returned texture id 0. " +
+                               "World-volume reflection and canopy context debug views are inactive.");
                 return false;
             }
 
@@ -215,8 +230,16 @@ namespace VintageVisuals.Reflections
             {
                 _pixels = new int[AtlasWidth * AtlasHeight];
             }
+            if (_canopyPixels == null || _canopyPixels.Length != CanopyWidth * CanopyHeight)
+            {
+                _canopyPixels = new int[CanopyWidth * CanopyHeight];
+            }
 
             var counts = new int[8];
+            var canopyCounts = new int[SizeX * SizeZ];
+            var canopyR = new int[SizeX * SizeZ];
+            var canopyG = new int[SizeX * SizeZ];
+            var canopyB = new int[SizeX * SizeZ];
             var pos = new BlockPos(dimension);
 
             for (int z = 0; z < SizeZ; z++)
@@ -239,11 +262,46 @@ namespace VintageVisuals.Reflections
                         {
                             _pixels[dest + x] = Pack(RepresentativeColor(capi, block, pos), cls);
                         }
+                        else if (cls == WorldVoxelClass.CutoutFoliage)
+                        {
+                            int color = RepresentativeColor(capi, block, pos);
+                            _pixels[dest + x] = Pack(color, cls);
+
+                            if (block.BlockMaterial == EnumBlockMaterial.Leaves)
+                            {
+                                int column = z * SizeX + x;
+                                canopyCounts[column]++;
+                                canopyR[column] += ColorUtil.ColorR(color);
+                                canopyG[column] += ColorUtil.ColorG(color);
+                                canopyB[column] += ColorUtil.ColorB(color);
+                            }
+                        }
                         else
                         {
                             _pixels[dest + x] = cls == WorldVoxelClass.Empty ? 0 : Pack(ClassColor(cls), cls);
                         }
                     }
+                }
+            }
+
+            for (int z = 0; z < SizeZ; z++)
+            {
+                int row = z * CanopyWidth;
+                for (int x = 0; x < SizeX; x++)
+                {
+                    int column = z * SizeX + x;
+                    int count = canopyCounts[column];
+                    if (count <= 0)
+                    {
+                        _canopyPixels[row + x] = 0;
+                        continue;
+                    }
+
+                    int r = canopyR[column] / count;
+                    int g = canopyG[column] / count;
+                    int b = canopyB[column] / count;
+                    int density = Math.Min(255, Math.Max(0, (int)(255f * Math.Min(1f, count / 18f) + 0.5f)));
+                    _canopyPixels[row + x] = PackRgb(r, g, b) | (density << 24);
                 }
             }
 
@@ -272,7 +330,8 @@ namespace VintageVisuals.Reflections
                 ", reason=" + rebuildReason +
                 ", invalidations=" + _pendingInvalidations +
                 ", uploadBytes=" +
-                (_pixels.Length * 4) + ", atlas=" + AtlasWidth + "x" + AtlasHeight +
+                ((_pixels.Length + _canopyPixels.Length) * 4) + ", atlas=" + AtlasWidth + "x" + AtlasHeight +
+                ", canopy=" + CanopyWidth + "x" + CanopyHeight +
                 ", elapsedMs=" + clock.ElapsedMilliseconds + ".");
 
             _pendingInvalidations = 0;
@@ -385,10 +444,17 @@ namespace VintageVisuals.Reflections
 
         public void Release()
         {
-            if (_texture == null) return;
+            if (_texture != null)
+            {
+                _texture.Dispose();
+                _texture = null;
+            }
 
-            _texture.Dispose();
-            _texture = null;
+            if (_canopyTexture != null)
+            {
+                _canopyTexture.Dispose();
+                _canopyTexture = null;
+            }
             _uploadFailed = false;
             _dirty = true;
         }
@@ -397,6 +463,7 @@ namespace VintageVisuals.Reflections
         {
             Release();
             _pixels = null;
+            _canopyPixels = null;
         }
     }
 

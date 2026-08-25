@@ -1249,3 +1249,47 @@ not by the wall clock: `0.35 + 1.65 x windSpeed`. Leaves are still in still air
 and thrash in a gust, and the flecks they let through do the same. The floor
 exists because dead calm that never moves at all reads as a frozen texture
 rather than as a quiet day.
+
+## Production Vegetation Path
+
+Foliage no longer shares the opaque terrain material model after environment
+layers are resolved. `vvApplyFloraPbr` keeps vanilla's lit colour as the diffuse
+base, then adds only biology-shaped terms: thin-surface transmission, broad
+cuticle specular, local-light specular and a distance fade for expensive detail.
+It deliberately skips metalness, stone cavity, terrain grain and full-strength
+atlas normals. Leaf and grass textures use painted edges and veins; treating
+those pixels as rock relief was the source of distant foliage sparkle.
+
+The taxonomy is still vanilla's `renderFlags` wind mode. Wind remains animation;
+the shader only asks what kind of plant the already-moving fragment belongs to.
+Wind-data height is used only for verified bending ground flora. Tree leaves,
+bushes, vines, aquatic plants and fruit fail closed to neutral height because
+their bits are not proven to be a root-to-tip gradient.
+
+Transmission colour comes from the current albedo the game supplied, so season,
+biome and modded plant colour stay authoritative. Green tissue receives a
+chlorophyll prior; flowers, autumn leaves and fruit keep their own pigment.
+Weather is explicit: wet leaves mostly darken and sharpen at the surface, while
+snow and frost suppress light passing through the tissue.
+
+## Forest Ambient Context
+
+Direct moving detail still comes from Vintage Story's own shadow map. It already
+contains alpha-tested, wind-warped foliage and is therefore the correct source
+for sunflecks and dapple edges.
+
+The new world canopy texture is the low-frequency complement. It tells
+PseudoPBR whether a receiver is plausibly under a leaf column and what colour
+that canopy currently has. `vvForestAmbientResolve` uses that information to
+darken and slightly tint eligible receivers under trees, including overcast
+forests where there are no strong direct shafts. Local block light is spared via
+the existing `blockBrightness`-derived local-light share.
+
+The debugging path in the UI is:
+
+| UI path | Mode | Shows |
+|---|---:|---|
+| Debug > Debug System: Materials > Forest lighting > World canopy density | 59 | leaf-column density from the shared world scan |
+| Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | actual seasonal/lit leaf colour stored for that column |
+| Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | ambient attenuation/tint result |
+| Debug > Debug System: Materials > Forest lighting > Vegetation LOD | 62 | distance simplification applied to foliage lighting |

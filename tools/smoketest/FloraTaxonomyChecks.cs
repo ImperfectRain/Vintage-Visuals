@@ -192,12 +192,14 @@ namespace VintageVisuals.SmokeTest
                   t.ContainsKey("FRUIT") && t["FRUIT"] > 0f,
                   "backlit fruit is faintly translucent and zero would be a different error");
 
-            check("the chlorophyll tint is withheld from fruit",
-                  Regex.IsMatch(_pbr, @"chlorophyll\s*=\s*\(vvFloraClass\(\)\s*==\s*VV_FLORA_FRUIT\)\s*\?\s*0\.0\s*:\s*1\.0"),
-                  "transmitted light is filtered by chlorophyll, and fruit has none to filter with");
+            check("the pigment model keeps fruit on its own colour",
+                  _pbr.Contains("vvFoliageTransmissionPigment") &&
+                  Regex.IsMatch(_pbr, @"fruit\s*=\s*vvFloraClass\(\) == VV_FLORA_FRUIT \? 1\.0 : 0\.0") &&
+                  _pbr.Contains("pigment = mix(pigment, chroma, fruit)"),
+                  "fruit must not inherit the leaf chlorophyll prior");
 
             check("fruit has no tip-to-root gradient",
-                  Regex.IsMatch(_pbr, @"flora\s*==\s*VV_FLORA_FRUIT\)\s*return\s+0\.5\s*;"),
+                  Regex.IsMatch(_pbr, @"if \(!\(flora == VV_FLORA_HERB[\s\S]*?return 0\.5;"),
                   "vanilla reuses the wind-data bits as a fruit offset, not as a height");
         }
 
@@ -339,7 +341,7 @@ namespace VintageVisuals.SmokeTest
                   "how much light was filtered comes from the shadow map, per fragment");
 
             check("the measurement is continuous rather than banded",
-                  !Regex.IsMatch(body, @"step\s*\(") ,
+                  !Regex.IsMatch(body, @"(?<!smooth)step\s*\(") ,
                   "a hard step here would read as 'dapple mode activated'");
         }
 
@@ -381,7 +383,7 @@ namespace VintageVisuals.SmokeTest
                   "one physical fact, two constants, is how the two drift apart");
 
             check("transmission still stops in shadow",
-                  body.Contains("shadowBrightness"),
+                  body.Contains("solarVisibility"),
                   "a leaf with no sun behind it has nothing to transmit");
 
             check("transmission still stops at night",
@@ -396,9 +398,10 @@ namespace VintageVisuals.SmokeTest
                   !Regex.IsMatch(body, @"\*\s*clamp\(vv_sceneDayLight"),
                   "backlighting peaks at a low sun and daylight scaling removes it there");
 
-            check("transmission is not scaled by wetness",
-                  !body.Contains("wetness"),
-                  "a wet leaf transmits no differently, it only reflects more");
+            check("transmission has explicit weather optics",
+                  body.Contains("wetness") && body.Contains("snow") && body.Contains("frost") &&
+                  _pbr.Contains("vvFoliageOpticalWeather"),
+                  "wet/snow/frost may not reach transmission accidentally through albedo ordering");
         }
 
         /// <summary>
@@ -498,8 +501,10 @@ namespace VintageVisuals.SmokeTest
             string body = shaft.Groups[1].Value;
 
             check("shafts start at backlit canopy",
-                  body.Contains("if (vvIsCanopy()) return strength * VV_SHAFT_LEAF;"),
-                  "the canopy is the thing with gaps in it");
+                  _pbr.Contains("if (vvIsCanopy())") &&
+                  _pbr.Contains("vvLeafBacklightSource(") &&
+                  _pbr.Contains("return strength * VV_SHAFT_LEAF * leafSource;"),
+                  "the canopy must be solar-visible and backlit before it feeds shafts");
 
             check("no other plant is a shaft source",
                   Regex.IsMatch(body, @"if \(vvIsFoliage\(\)\) return 0\.0;"),

@@ -89,6 +89,8 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldSliceSizeUniform = "vv_reflectWorldSliceSize";
         public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
+        public const string CanopyContextUniform = "vv_canopyContext";
+        public const string CanopyContextValidUniform = "vv_canopyContextValid";
         public const string ShaftUniform = "vv_pbrShafts";
 
         // Entity programme only. Named apart from the terrain controls because
@@ -626,26 +628,48 @@ namespace VintageVisuals.PseudoPBR
 
             bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 58f;
             bool activeReflection = _look.PixelReflection > 0.001f;
+            bool activeCanopy = _look.SunDapple > 0.001f || _look.SunShafts > 0.001f ||
+                                (_look.DebugView >= 59f && _look.DebugView <= 62f);
             EntityPos now = _capi.World?.Player?.Entity?.Pos;
             WorldReflectionVolume volume = WorldVolume;
 
-            if ((!activeDebugView && !activeReflection) || volume == null || now == null ||
+            if ((!activeDebugView && !activeReflection && !activeCanopy) || volume == null || now == null ||
                 !volume.EnsureUploaded(_capi, _capi.Logger, now))
             {
                 TerrainTextureBindInterceptor.SetWorldReflection(0);
                 program.Uniform(ReflectWorldValidUniform, 0f);
+                SetIfPresent(program, CanopyContextValidUniform, 0f);
                 return;
             }
 
-            TerrainTextureBindInterceptor.SetWorldReflection(volume.TextureId);
-            program.BindTexture2D(ReflectWorldUniform, volume.TextureId, WorldReflectionVolume.TextureUnit);
+            if (activeDebugView || activeReflection)
+            {
+                TerrainTextureBindInterceptor.SetWorldReflection(volume.TextureId);
+                program.BindTexture2D(ReflectWorldUniform, volume.TextureId, WorldReflectionVolume.TextureUnit);
 
-            SetIfPresent(program, ReflectWorldOriginUniform, volume.OriginRelativeToPlayer(now));
-            SetIfPresent(program, ReflectWorldSizeUniform, volume.Size);
-            SetIfPresent(program, ReflectWorldSliceSizeUniform, volume.SliceSize);
-            SetIfPresent(program, ReflectWorldAtlasGridUniform, volume.AtlasGrid);
-            SetIfPresent(program, ReflectWorldAtlasSizeUniform, volume.AtlasSize);
-            program.Uniform(ReflectWorldValidUniform, 1f);
+                SetIfPresent(program, ReflectWorldOriginUniform, volume.OriginRelativeToPlayer(now));
+                SetIfPresent(program, ReflectWorldSizeUniform, volume.Size);
+                SetIfPresent(program, ReflectWorldSliceSizeUniform, volume.SliceSize);
+                SetIfPresent(program, ReflectWorldAtlasGridUniform, volume.AtlasGrid);
+                SetIfPresent(program, ReflectWorldAtlasSizeUniform, volume.AtlasSize);
+                program.Uniform(ReflectWorldValidUniform, 1f);
+            }
+            else
+            {
+                TerrainTextureBindInterceptor.SetWorldReflection(0);
+                program.Uniform(ReflectWorldValidUniform, 0f);
+            }
+
+            if (program.HasUniform(CanopyContextUniform) && volume.CanopyTextureId != 0)
+            {
+                program.BindTexture2D(CanopyContextUniform, volume.CanopyTextureId,
+                                      WorldReflectionVolume.CanopyTextureUnit);
+                SetIfPresent(program, CanopyContextValidUniform, 1f);
+            }
+            else
+            {
+                SetIfPresent(program, CanopyContextValidUniform, 0f);
+            }
         }
 
         private static void SetIfPresent(IShaderProgram program, string name, float value)

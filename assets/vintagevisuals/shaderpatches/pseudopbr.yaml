@@ -167,4 +167,4 @@
   filename: chunkopaque.fsh
   tokens: "outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));"
   content: |
-    outGlow = vec4(glowLevel + glow, max(godrayLevel, vvCanopyShaft(worldPos.xyz)), 0, min(1, fogAmount + outColor.a));
+    outGlow = vec4(glowLevel + glow, max(godrayLevel, vvCanopyShaft(worldPos.xyz, normal, uv, texColor.rgb)), 0, min(1, fogAmount + outColor.a));

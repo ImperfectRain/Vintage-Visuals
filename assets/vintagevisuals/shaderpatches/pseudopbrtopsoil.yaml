@@ -94,7 +94,7 @@
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
-    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, 1.0, fogAmount, 0.0, rgbaFog.rgb, blockLight);
+    outColor = vvDebugView(outColor, normal, uv, worldPos.xyz, vvShadow, fogAmount, 0.0, rgbaFog.rgb, blockLight);
     glow += vvEmissiveGlow(glowLevel) * vvEmissionMask(uv);
     outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
 
@@ -134,4 +134,4 @@
   filename: chunktopsoil.fsh
   tokens: "outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);"
   content: |
-    outGlow = vec4(glowLevel + glow, vvCanopyShaft(worldPos.xyz), 0, outColor.a);
+    outGlow = vec4(glowLevel + glow, vvCanopyShaft(worldPos.xyz, normal, uv, vvAlbedo), 0, outColor.a);

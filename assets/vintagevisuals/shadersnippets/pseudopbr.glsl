@@ -177,6 +177,13 @@ uniform vec2 vv_reflectWorldSliceSize;
 uniform vec2 vv_reflectWorldAtlasGrid;
 uniform vec2 vv_reflectWorldAtlasSize;
 
+// Low-frequency canopy metadata, built by the same CPU pass as the local world
+// reflection volume. RGB is the current game-reported/lit leaf colour for the
+// column; alpha is leaf-column density. The shadow map remains the high-
+// frequency truth for moving gaps.
+uniform sampler2D vv_canopyContext;
+uniform float vv_canopyContextValid;
+
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -352,7 +359,25 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
     if (vv_pbrEnabled < 0.5) return faceNormal;
 
     vec3 n = normalize(faceNormal);
-    return normalize(mix(n, vvPerturbNormal(n, materialUv), vvDetailFade(cameraRelativePos)));
+    float fade = vvDetailFade(cameraRelativePos);
+
+    int windMode = (renderFlags >> WindModePosition) & 0xF;
+    bool floraNormal = (renderFlags & WindModeBitMask) != 0 && windMode != 6 && windMode != 12;
+
+    if (floraNormal)
+    {
+        // Leaf, grass and petal textures contain cutout edges and painted veins.
+        // Treating those as stone relief is what makes distant crowns sparkle.
+        // Keep the card/face normal as the macro surface and only admit a small
+        // close-range hint of the derived atlas normal.
+        vec3 view = normalize(-cameraRelativePos);
+        if (dot(n, view) < 0.0) n = -n;
+
+        float detail = 0.14 * fade * fade;
+        return normalize(mix(n, vvPerturbNormal(n, materialUv), detail));
+    }
+
+    return normalize(mix(n, vvPerturbNormal(n, materialUv), fade));
 }
 
 // ---------------------------------------------------------------------------
@@ -551,22 +576,41 @@ float vvFloraHeight()
 {
     int flora = vvFloraClass();
 
-    if (flora == VV_FLORA_NONE || flora == VV_FLORA_FRUIT) return 0.5;
+    // Vanilla's wind-data bits are reliable as a root-to-tip gradient only for
+    // bending ground flora modes. Fruit, bushes, vines, aquatic plants and tree
+    // leaves use the same field for movement/category data or have not been
+    // verified in the local shader dump, so they fail closed to neutral height.
+    if (!(flora == VV_FLORA_HERB || flora == VV_FLORA_GRASS ||
+          flora == VV_FLORA_CROP || flora == VV_FLORA_REED  ||
+          flora == VV_FLORA_STIFF || flora == VV_FLORA_THIN))
+    {
+        return 0.5;
+    }
 
     return clamp(float((renderFlags >> WindDataPosition) & 0x7) / 7.0, 0.0, 1.0);
 }
 
-// How readily light passes THROUGH this tissue, 0 opaque to 1 near-transparent.
+bool vvFloraHasReliableHeight()
+{
+    int flora = vvFloraClass();
+
+    return flora == VV_FLORA_HERB || flora == VV_FLORA_GRASS ||
+           flora == VV_FLORA_CROP || flora == VV_FLORA_REED  ||
+           flora == VV_FLORA_STIFF || flora == VV_FLORA_THIN;
+}
+
+// How readily light passes THROUGH this one visible tissue fragment, 0 opaque
+// to 1 near-transparent.
 //
 // The single number the whole flora response hangs on, and every value below is
 // an ordering rather than a measurement: a grass blade is one cell layer and a
 // pear is a solid ball of fruit, and no amount of tuning should ever put them
 // the same way round.
 //
-// Multiplied by the height gradient where vanilla gives one, so a grass tip
-// glows and its root does not - which is what a backlit meadow actually looks
-// like and what a flat per-block value can never produce.
-float vvFloraThinness()
+// Canopy density is deliberately NOT baked into this value. A fragment is one
+// leaf/petal/blade; how many other leaves are above it belongs to canopy
+// context and shadowing.
+float vvFloraTissueTransmission()
 {
     int flora = vvFloraClass();
 
@@ -583,16 +627,38 @@ float vvFloraThinness()
     else if (flora == VV_FLORA_HERB)    base = 0.95;  // petals, thinner than leaves
     else if (flora == VV_FLORA_THIN)    base = 0.95;  // vanilla itself calls these thin
     else if (flora == VV_FLORA_CROP)    base = 0.85;
-    else if (flora == VV_FLORA_REED)    base = 0.80;
-    else if (flora == VV_FLORA_LEAVES)  base = 0.65;  // a canopy is many leaves deep
-    else if (flora == VV_FLORA_BUSH)    base = 0.60;  // denser again, and layered
-    else if (flora == VV_FLORA_VINE)    base = 0.70;
-    else if (flora == VV_FLORA_AQUATIC) base = 0.85;
+    else if (flora == VV_FLORA_REED)    base = 0.72;
+    else if (flora == VV_FLORA_LEAVES)  base = 0.78;  // one ordinary leaf
+    else if (flora == VV_FLORA_BUSH)    base = 0.68;  // one shrub leaf, not the shrub mass
+    else if (flora == VV_FLORA_VINE)    base = 0.74;
+    else if (flora == VV_FLORA_AQUATIC) base = 0.62;
     else                                base = 0.55;  // unknown mode: conservative
 
-    // Tip-to-root gradient, and only where the plant has one. Held back from
-    // full range so a root is dimmer rather than dark.
-    return base * mix(0.55, 1.0, vvFloraHeight());
+    if (vvFloraHasReliableHeight())
+    {
+        // Tip-to-root gradient, and only where the plant has one. Held back
+        // from full range so a root is dimmer rather than dark.
+        base *= mix(0.55, 1.0, vvFloraHeight());
+    }
+
+    return base;
+}
+
+float vvFloraCanopyDensity()
+{
+    int flora = vvFloraClass();
+
+    if (flora == VV_FLORA_LEAVES) return 0.68;
+    if (flora == VV_FLORA_BUSH) return 0.58;
+    if (flora == VV_FLORA_VINE) return 0.48;
+    if (flora == VV_FLORA_CROP || flora == VV_FLORA_REED) return 0.28;
+    if (flora == VV_FLORA_GRASS || flora == VV_FLORA_HERB || flora == VV_FLORA_THIN) return 0.16;
+    return 0.0;
+}
+
+float vvFloraThinness()
+{
+    return vvFloraTissueTransmission();
 }
 
 // How much a plant HOLDS rain rather than shedding it.
@@ -1455,6 +1521,30 @@ float vvLocalLightShare()
 #endif
 }
 
+struct VvCanopyContext
+{
+    float density;
+    float openness;
+    vec3 color;
+};
+
+VvCanopyContext vvReadCanopyContext(vec3 cameraRelativePos)
+{
+    if (vv_canopyContextValid < 0.5) return VvCanopyContext(0.0, 1.0, vec3(1.0));
+
+    vec2 uv = (cameraRelativePos.xz - vv_reflectWorldOrigin.xz) /
+              max(vv_reflectWorldSize.xz, vec2(1.0));
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+    {
+        return VvCanopyContext(0.0, 1.0, vec3(1.0));
+    }
+
+    vec4 sample = texture(vv_canopyContext, uv);
+    float density = clamp(sample.a, 0.0, 1.0);
+    vec3 color = density > 0.001 ? clamp(sample.rgb, vec3(0.02), vec3(1.0)) : vec3(1.0);
+    return VvCanopyContext(density, 1.0 - density, color);
+}
+
 // Is there a sun at all, 0 no, 1 yes.
 //
 // A GATE, NOT A DIMMER, and the distinction is the whole point.
@@ -1529,6 +1619,12 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // reached this vertex, which is a fact about the result, and measured
     // ~1 under a real canopy.
     float under = vvCanopyEvidence();
+    VvCanopyContext canopyContext = vvReadCanopyContext(cameraRelativePos);
+    if (vv_canopyContextValid > 0.5)
+    {
+        if (canopyContext.density < 0.015) return 0.0;
+        under = max(under, canopyContext.density * (1.0 - vvSunVisibility()));
+    }
     if (under < 0.001) return 0.0;
 
     // No sun, no flecks - but a GATE rather than a dimmer. A canopy shadow at
@@ -1580,6 +1676,33 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
          * under * sun * fade * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
+vec3 vvForestAmbientResolve(vec3 result, vec3 cameraRelativePos, float fade)
+{
+    if (vv_pbrDapple < 0.001) return result;
+    if (!vvIsCanopyReceiver()) return result;
+
+    VvCanopyContext canopyContext = vvReadCanopyContext(cameraRelativePos);
+    if (canopyContext.density < 0.015) return result;
+
+    float local = vvLocalLightShare();
+    float density = canopyContext.density * (1.0 - local) * fade * clamp(vv_pbrDapple, 0.0, 2.0);
+    if (density < 0.001) return result;
+
+    vec3 canopyColor = canopyContext.color;
+    float canopyLuma = max(dot(canopyColor, vec3(0.299, 0.587, 0.114)), 0.05);
+    vec3 canopyTint = clamp(canopyColor / canopyLuma, vec3(0.65), vec3(1.35));
+
+    // Low-frequency forest depth. This is the complement to direct dapple: it
+    // still works under overcast because the canopy blocks sky as well as sun,
+    // but it spares local lights by the same blockBrightness-derived measure.
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+    float shade = density * mix(0.12, 0.22, overcast);
+    vec3 filtered = result * (1.0 - shade);
+    filtered *= mix(vec3(1.0), canopyTint, density * mix(0.04, 0.10, overcast));
+
+    return filtered;
+}
+
 // Feeds vanilla's OWN god-ray channel, so the beams are the game's rather than
 // a second invented system sitting next to it.
 //
@@ -1602,7 +1725,7 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
 //     source - it has absorbed the light, not scattered it - so streaking it
 //     toward the sun is an approximation that reinforces the shape and is
 //     weighted accordingly. See VV_SHAFT_GROUND.
-float vvCanopyShaft(vec3 cameraRelativePos)
+float vvCanopyShaft(vec3 cameraRelativePos, vec3 faceNormal, vec2 materialUv, vec3 baseOpticalAlbedo)
 {
     if (vv_pbrShafts < 0.001) return 0.0;
 
@@ -1653,16 +1776,29 @@ float vvCanopyShaft(vec3 cameraRelativePos)
     // place weather can enter the beams at all.
     float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
 
+    float solarVisibility = vvSunVisibility();
+
     float strength = clamp(vv_pbrShafts, 0.0, 2.0) * sun * facing
                    * mix(1.0, VV_OVERCAST_DIRECT, overcast);
 
-    // Leaves lit from behind. Vanilla already draws the transmission; this says
-    // that the same fragments are where beams start.
+    // Leaves lit from behind. This now uses the same real backlight source as
+    // foliage transmission: class, direct solar visibility, N/L/V geometry and
+    // explicit weather optics. A front-lit or solar-shadowed leaf contributes
+    // no meaningful shaft merely because it is a leaf.
     //
     // The CANOPY, not every plant. A beam is sunlight coming through a gap in
     // something overhead; a grass blade at ankle height has no gap above it to
     // be the start of one, and treating it as a source put beams in the lawn.
-    if (vvIsCanopy()) return strength * VV_SHAFT_LEAF;
+    if (vvIsCanopy())
+    {
+        vec3 v = normalize(-cameraRelativePos);
+        vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        float wetness = vvWetness(faceNormal);
+        float leafSource = vvLeafBacklightSource(
+            n, toSun, v, solarVisibility, wetness, vvSnowLayer(faceNormal), vvFrostLayer());
+
+        return strength * VV_SHAFT_LEAF * leafSource;
+    }
     if (vvIsFoliage()) return 0.0;
 
     // A beam starts at a REAL gap, not an invented one.
@@ -2610,32 +2746,72 @@ float vvTranslucency(vec3 n, vec3 l, vec3 v)
     return pow(max(0.0, dot(v, -through)), power);
 }
 
+vec3 vvFoliageTransmissionPigment(vec3 albedo)
+{
+    vec3 base = max(albedo, vec3(0.02));
+    float luma = max(0.001, dot(base, vec3(0.299, 0.587, 0.114)));
+    vec3 chroma = clamp(base / luma, vec3(0.25), vec3(2.6));
+
+    float greenLead = clamp((base.g - max(base.r, base.b)) / max(luma, 0.001), 0.0, 1.0);
+    float warmLead = clamp((max(base.r, base.g) - base.b) / max(luma, 0.001), 0.0, 1.0);
+    float fruit = vvFloraClass() == VV_FLORA_FRUIT ? 1.0 : 0.0;
+
+    vec3 chlorophyll = vec3(1.04, 1.14, 0.70);
+    vec3 warmPigment = vec3(1.14, 1.02, 0.70);
+    vec3 pigment = chroma;
+
+    pigment = mix(pigment, pigment * chlorophyll, greenLead * (1.0 - fruit) * 0.65);
+    pigment = mix(pigment, pigment * warmPigment, warmLead * 0.25);
+
+    // Fruit transmits weakly through its own skin/pulp colour. It should not
+    // inherit the leaf chlorophyll prior merely because vanilla moves it.
+    pigment = mix(pigment, chroma, fruit);
+
+    return clamp(pigment * luma, vec3(0.0), vec3(1.8));
+}
+
+float vvFoliageOpticalWeather(float wetness, float snow, float frost)
+{
+    float wet = clamp(wetness, 0.0, 1.0);
+    float snowCover = clamp(snow, 0.0, 1.0);
+    float frostCover = clamp(frost, 0.0, 1.0);
+
+    // Wet leaves darken mostly in diffuse/specular surface response; their
+    // biological tissue does not become opaque. Snow and frost, however, are
+    // separate visible surfaces over the tissue and must explicitly suppress
+    // direct transmission.
+    float wetOptics = mix(1.0, 0.92, wet);
+    float snowOptics = mix(1.0, 0.10, snowCover);
+    float frostOptics = mix(1.0, 0.45, frostCover);
+
+    return wetOptics * snowOptics * frostOptics;
+}
+
+float vvLeafBacklightSource(vec3 n, vec3 l, vec3 v, float solarVisibility,
+                            float wetness, float snow, float frost)
+{
+    return vvTranslucency(n, l, v)
+         * vvFloraTissueTransmission()
+         * clamp(solarVisibility, 0.0, 1.0)
+         * vvFoliageOpticalWeather(wetness, snow, frost);
+}
+
 // The colour that comes through, to be added to the lit result.
 //
-// Tinted by the leaf's own albedo and pushed toward yellow-green, because
-// transmitted light has been filtered by chlorophyll on the way out and leaves
-// warmer and more saturated than light reflected off the same leaf. Skipping
-// that tint is what makes cheap foliage translucency read as grey haze.
-vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrightness)
+// Tinted by the plant's own current vanilla albedo. Green leaves get a
+// chlorophyll prior; flowers, autumn leaves and fruit keep their own pigment.
+vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v,
+                           float solarVisibility, float wetness, float snow, float frost)
 {
     if (vv_pbrFoliage < 0.001) return vec3(0.0);
 
     // WHICH plant, not merely whether. A grass blade is one cell layer and a
     // pear is a solid ball of fruit; before this they transmitted identically,
     // because the classification was a single bit. See vvFloraThinness.
-    float thinness = vvFloraThinness();
+    float thinness = vvFloraTissueTransmission();
     if (thinness < 0.001) return vec3(0.0);
 
-    // Chlorophyll filters what passes through, which is why transmitted light
-    // leaves a leaf warmer and more saturated than light reflected off it.
-    //
-    // The tint is applied in PROPORTION to how green the tissue actually is,
-    // rather than to everything that bends in the wind. Fruit is the case that
-    // forced this: a hanging pear is plant tissue, it does transmit a little,
-    // and pushing it toward yellow-green made it read as an unripe leaf. Its
-    // own albedo carries the colour it should transmit.
-    float chlorophyll = (vvFloraClass() == VV_FLORA_FRUIT) ? 0.0 : 1.0;
-    vec3 tint = albedo * mix(vec3(1.0), vec3(1.06, 1.12, 0.72), chlorophyll);
+    vec3 tint = vvFoliageTransmissionPigment(albedo);
 
     // Cloud cover diffuses the sun, and transmission needs a BEAM.
     //
@@ -2657,14 +2833,13 @@ vec3 vvFoliageTransmission(vec3 albedo, vec3 n, vec3 l, vec3 v, float shadowBrig
     float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
 
     // Shadowed leaves do not glow - there is no sun behind them to come
-    // through - and daylight scales it for the same reason. Wetness is
-    // deliberately absent: a wet leaf transmits no differently, it only
-    // reflects more, and that half is already handled.
+    // through. This is direct solar visibility, not vanilla's combined
+    // shadowBrightness, so a torch under a tree cannot create sun-direction
+    // transmission. Weather is explicit rather than accidentally inherited from
+    // the order in which surface albedo was changed.
     return tint
-         * vvTranslucency(n, l, v)
-         * thinness
+         * vvLeafBacklightSource(n, l, v, solarVisibility, wetness, snow, frost)
          * vv_pbrFoliage
-         * clamp(shadowBrightness, 0.0, 1.0)
 
          // A GATE, not a dimmer. This is the term that made a sunset forest
          // look like a midday one: transmission peaks when the sun is low and
@@ -2845,6 +3020,136 @@ float vvSpecularOcclusion(float cavity, float ndotv, float roughness)
     return mix(occlusion, lobe, clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
 }
 
+struct VvFloraContext
+{
+    int flora;
+    float lod;
+    float wetness;
+    float snow;
+    float frost;
+    float tissue;
+    float canopyDensity;
+    vec3 pigment;
+    vec3 normal;
+    float solarVisibility;
+};
+
+VvFloraContext vvBuildFloraContext(vec3 baseOpticalAlbedo, vec3 faceNormal, vec2 materialUv,
+                                   vec3 cameraRelativePos, float wetness, float snow, float frost)
+{
+    float distance = length(cameraRelativePos);
+    float lod = clamp(1.0 - (distance - 18.0) / 54.0, 0.0, 1.0);
+    vec3 normal = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+
+    return VvFloraContext(vvFloraClass(), lod, wetness, snow, frost,
+                          vvFloraTissueTransmission(), vvFloraCanopyDensity(),
+                          vvFoliageTransmissionPigment(baseOpticalAlbedo),
+                          normal, vvSunVisibility());
+}
+
+vec4 vvApplyFloraPbr(vec4 litColor, vec3 baseOpticalAlbedo, VvSurface surface,
+                     vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos,
+                     float shadowBrightness, float fog, float murkiness,
+                     vec3 environment, vec3 blockLightColor,
+                     float wetness, float snow, float frost)
+{
+    VvFloraContext flora = vvBuildFloraContext(baseOpticalAlbedo, faceNormal, materialUv,
+                                               cameraRelativePos, wetness, snow, frost);
+    if (flora.tissue < 0.001) return litColor;
+
+    vec3 l = normalize(lightPosition);
+    vec3 v = normalize(-cameraRelativePos);
+    vec3 n = flora.normal;
+    vec3 h = normalize(l + v);
+
+    float ndotlFront = max(dot(n, l), 0.0);
+    float ndotlBack = max(dot(-n, l), 0.0);
+    float ndotv = max(dot(n, v), 1e-4);
+    float ndoth = max(dot(n, h), 0.0);
+    float vdoth = max(dot(v, h), 0.0);
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+    float weatherOptics = vvFoliageOpticalWeather(wetness, snow, frost);
+
+    float clearDirect = clamp(flora.solarVisibility, 0.0, 1.0)
+                      * vvSunPresence()
+                      * mix(1.0, VV_OVERCAST_DIRECT, overcast);
+
+    // Dedicated biological surface response: no metalness, no stone cavity, no
+    // terrain grain anisotropy. Vanilla lit colour remains the base diffuse.
+    vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wetness);
+
+    float shaded = vvCanopyDapple(cameraRelativePos, flora.lod);
+    float local = vvLocalLightShare();
+    float canopy = clamp(shaded, 0.0, 0.55) * (1.0 - local);
+    if (canopy > 0.0)
+    {
+        result *= 1.0 - canopy;
+        result *= mix(vec3(1.0), clamp(flora.pigment / max(dot(flora.pigment, vec3(0.299, 0.587, 0.114)), 0.25), 0.75, 1.25),
+                      canopy * 0.08);
+    }
+    result = vvForestAmbientResolve(result, cameraRelativePos, flora.lod);
+
+    float wrapDiffuse = clamp((dot(n, l) + 0.45) / 1.45, 0.0, 1.0);
+    vec3 frontScatter = surface.albedo * wrapDiffuse * clearDirect * 0.10 * flora.lod;
+    result += frontScatter;
+
+    vec3 transmission = flora.pigment
+                      * vvLeafBacklightSource(n, l, v, flora.solarVisibility, wetness, snow, frost)
+                      * vv_pbrFoliage
+                      * vvSunPresence()
+                      * mix(1.0, VV_OVERCAST_DIRECT, overcast)
+                      * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+                      * mix(0.45, 1.0, flora.lod);
+    result += transmission;
+
+    float baseRoughness = clamp(surface.roughness, 0.0, 1.0);
+    float cuticleRoughness = mix(max(baseRoughness, 0.54), 0.40, wetness);
+    cuticleRoughness = mix(cuticleRoughness, 0.78, clamp(snow + frost, 0.0, 1.0));
+    cuticleRoughness = vvFilteredRoughness(cuticleRoughness, n);
+
+    vec3 f0 = vec3(mix(0.028, 0.052, wetness));
+    vec3 fresnel = vvFresnelSchlick(vdoth, f0);
+    float directSpecShape = vvDistributionGGX(ndoth, cuticleRoughness)
+                          * vvGeometrySmith(ndotv, max(ndotlFront, 0.04), cuticleRoughness);
+    vec3 cuticle = directSpecShape * fresnel
+                 / max(1e-4, 4.0 * ndotv * max(ndotlFront, 0.04));
+
+    float classSpec = flora.flora == VV_FLORA_GRASS ? 0.45 : 1.0;
+    classSpec = flora.flora == VV_FLORA_FRUIT ? 1.25 : classSpec;
+    float specLod = mix(0.18, 1.0, flora.lod);
+
+    result += cuticle * max(ndotlFront, ndotlBack * 0.35)
+            * clearDirect
+            * vv_pbrSpecularStrength
+            * classSpec
+            * specLod
+            * weatherOptics;
+
+    result += vvBlockLightSpecular(f0, cuticleRoughness, n, v, blockLightColor, cameraRelativePos)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * vv_pbrSpecularStrength
+            * classSpec
+            * specLod;
+
+    result += vvAmbientSpecular(f0, cuticleRoughness, ndotv,
+                                vvPixelReflection(n, normalize(faceNormal), materialUv,
+                                                  cuticleRoughness, cameraRelativePos,
+                                                  environment, result))
+            * clamp(vv_sceneDayLight, 0.0, 1.0)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * vv_pbrSpecularStrength
+            * mix(1.0, VV_OVERCAST_AMBIENT, overcast)
+            * 0.55
+            * specLod;
+
+    float emissionMask = vvEmissionMask(materialUv);
+    result += vvEmission(surface.albedo, glowLevel, cameraRelativePos)
+            * clamp(1.0 - fog - murkiness, 0.0, 1.0)
+            * emissionMask;
+
+    return vec4(result, litColor.a);
+}
+
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
                 vec3 cameraRelativePos, float shadowBrightness, float fog, float murkiness,
                 vec3 environment, vec3 blockLightColor)
@@ -2875,15 +3180,25 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // layer over the finished shading - a tint at the end is what wetness looks
     // like when it is done wrong.
     float wetness = vvWetness(faceNormal);
+    float snowLayer = vvSnowLayer(faceNormal);
+    float frostLayer = vvFrostLayer();
     float foliage = vvIsFoliage() ? 1.0 : 0.0;
+    vec3 baseOpticalAlbedo = albedo;
 
     VvSurface surface = vvApplyEnvironmentLayers(
         VvSurface(albedo, roughness, specularMask),
-        wetness, vvSnowLayer(faceNormal), vvFrostLayer(), foliage);
+        wetness, snowLayer, frostLayer, foliage);
 
     albedo = surface.albedo;
     roughness = surface.roughness;
     specularMask = surface.specular;
+
+    if (vvIsFoliage())
+    {
+        return vvApplyFloraPbr(litColor, baseOpticalAlbedo, surface, faceNormal, materialUv,
+                               cameraRelativePos, shadowBrightness, fog, murkiness,
+                               environment, blockLightColor, wetness, snowLayer, frostLayer);
+    }
 
     // The same normal the relief uses, so the highlight sits on the surface the
     // player can see rather than on one the shading invented.
@@ -3176,6 +3491,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
         float tint = canopy * VV_DAPPLE_GREEN;
         result *= vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
     }
+    result = vvForestAmbientResolve(result, cameraRelativePos, vvDetailFade(cameraRelativePos));
 
     // Ambient is deliberately NOT multiplied by the shadow map: sky light
     // reaches surfaces the sun does not, and killing it in shadow is what makes
@@ -3208,7 +3524,8 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // Light through leaves, last, because it is the one term that is not a
     // reflection off this surface - it is light that went past it. Fogged like
     // everything else so a distant canopy does not glow through the haze.
-    result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness)
+    result += vvFoliageTransmission(baseOpticalAlbedo, n, l, v,
+                                    vvSunVisibility(), wetness, snowLayer, frostLayer)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0);
 
     // Emission, after everything and dampened by nothing.
@@ -3343,7 +3660,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // looking toward the sun. Black everywhere if the player has god-rays
     // switched off in the game's own graphics settings, which is where the
     // effect actually lives.
-    if (mode == 17) return vec4(vec3(vvCanopyShaft(cameraRelativePos)), color.a);
+    if (mode == 17) return vec4(vec3(vvCanopyShaft(cameraRelativePos, faceNormal, materialUv, color.rgb)), color.a);
 
     // 18: what the grooves take from the REFLECTION, against what they take
     // from the ambient. Red is the flat cavity, green is the specular
@@ -3731,6 +4048,33 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(source, color.a);
     }
 
+    // 59-62: production vegetation and forest-lighting context.
+    if (mode == 59)
+    {
+        VvCanopyContext context = vvReadCanopyContext(cameraRelativePos);
+        return vec4(vec3(context.density), color.a);
+    }
+
+    if (mode == 60)
+    {
+        VvCanopyContext context = vvReadCanopyContext(cameraRelativePos);
+        return vec4(context.color * context.density, color.a);
+    }
+
+    if (mode == 61)
+    {
+        vec3 filtered = vvForestAmbientResolve(vec3(1.0), cameraRelativePos,
+                                               vvDetailFade(cameraRelativePos));
+        return vec4(filtered, color.a);
+    }
+
+    if (mode == 62)
+    {
+        float distance = length(cameraRelativePos);
+        float lod = clamp(1.0 - (distance - 18.0) / 54.0, 0.0, 1.0);
+        return vec4(vec3(lod), color.a);
+    }
+
     // ---- Flora taxonomy, views 44-46 -------------------------------------
     //
     // These answer the question the old single-bit classification made
@@ -4105,8 +4449,10 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     if (mode == 13)
     {
         vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
+        float wet = vvWetness(faceNormal);
         return vec4(vvFoliageTransmission(vec3(1.0), n, normalize(lightPosition),
-                                          normalize(-cameraRelativePos), shadowBrightness), color.a);
+                                          normalize(-cameraRelativePos), vvSunVisibility(),
+                                          wet, vvSnowLayer(faceNormal), vvFrostLayer()), color.a);
     }
 
     // 11: the rain ripple field, biased so still water reads as mid grey.

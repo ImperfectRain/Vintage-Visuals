@@ -120,7 +120,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | | Feature | Level | Notes |
 |---|---|---|---|
 | `[x]` | Surface relief in `chunkopaque.fsh` | L4 | |
-| `[~]` | **Foliage translucency** | L2 | **Shipped INVERTED until found in game** - fired on front-lit leaves, off on backlit. See DECISIONS D34 |
+| `[~]` | **Production vegetation lighting model** | L2 | Dedicated flora path: reduced atlas-normal sparkle, class-specific tissue transmission, pigment from current albedo, weather-aware optics, broad cuticle specular and distance simplification. Runtime tuning still required |
+| `[~]` | **World canopy context texture** | L2 | CPU world scan now also uploads a 128 x 128 leaf-density/leaf-colour texture for low-frequency forest ambient, separate from shadow-map sunflecks |
 | `[x]` | **Flora taxonomy from vanilla's wind modes** | **L4** | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. **Seen in a world**: debug view 44 shows leaves, grass, herbs and reeds as distinct flat colours, with soil and stone black. First runtime-validated flora feature |
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
 | `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |
@@ -132,7 +133,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[x]` | Per-layer debug views (0–58) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 plus 52 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march, 53-58 the world-volume reflection path. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
+| `[x]` | Per-layer debug views (0–62) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 plus 52 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march, 53-58 the world-volume reflection path, 59-62 forest lighting. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |
