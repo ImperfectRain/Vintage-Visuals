@@ -153,6 +153,12 @@ namespace VintageVisuals.Ui
             Pbr(50, "Crossing residual", "How far behind the surface the refined crossing landed.", March);
             Pbr(51, "Depth precision", "On measured crossings, red means captured depth is too coarse. Black means no crossing was available to measure.", March);
 
+            const string WorldProof = "World reflection proof";
+            Pbr(53, "World trace result", "Green hit, red miss, blue outside the local volume, yellow step or range limit.", WorldProof);
+            Pbr(54, "World hit color", "Representative diagnostic block colour for the hit cell.", WorldProof);
+            Pbr(55, "World hit distance", "Distance in blocks to the world-volume hit.", WorldProof);
+            Pbr(56, "World trace steps", "How many DDA cells this fragment traversed.", WorldProof);
+
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));
 

@@ -82,6 +82,11 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectValidUniform = "vv_reflectValid";
         public const string ReflectFarUniform = "vv_reflectFar";
         public const string ReflectFrameSizeUniform = "vv_reflectFrameSize";
+        public const string ReflectWorldUniform = "vv_reflectWorld";
+        public const string ReflectWorldValidUniform = "vv_reflectWorldValid";
+        public const string ReflectWorldOriginUniform = "vv_reflectWorldOrigin";
+        public const string ReflectWorldSizeUniform = "vv_reflectWorldSize";
+        public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
         public const string ShaftUniform = "vv_pbrShafts";
 
         // Entity programme only. Named apart from the terrain controls because
@@ -190,6 +195,9 @@ namespace VintageVisuals.PseudoPBR
         /// a validity of 0, which every consumer reads as "use the fallback".
         /// </summary>
         public SceneCaptureRenderer SceneCapture { get; set; }
+
+        /// <summary>Debug-only nearby block volume for the isolated world-DDA proof.</summary>
+        public WorldReflectionVolume WorldVolume { get; set; }
 
         public PbrShaderBinder(ICoreClientAPI capi, MaterialAtlasSet atlas, MaterialAtlasSet atlas2,
                                Func<Dictionary<int, int>> buildPageMap,
@@ -407,6 +415,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, SecondValidUniform, _secondAtlasReady ? 1f : 0f);
 
             BindSceneCapture(program);
+            BindWorldReflectionVolume(program);
 
             SetIfPresent(program, EnabledUniform, 1f);
 
@@ -605,6 +614,36 @@ namespace VintageVisuals.PseudoPBR
             program.Uniform(ReflectValidUniform, 1f);
         }
 
+        /// <summary>
+        /// Uploads the isolated world-space DDA proof volume. This is gated to
+        /// the new debug views so ordinary rendering never pays for the volume
+        /// rebuild, atlas upload, or extra sampler binding.
+        /// </summary>
+        private void BindWorldReflectionVolume(IShaderProgram program)
+        {
+            if (!program.HasUniform(ReflectWorldValidUniform)) return;
+
+            bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 56f;
+            EntityPos now = _capi.World?.Player?.Entity?.Pos;
+            WorldReflectionVolume volume = WorldVolume;
+
+            if (!activeDebugView || volume == null || now == null ||
+                !volume.EnsureUploaded(_capi, _capi.Logger, now))
+            {
+                TerrainTextureBindInterceptor.SetWorldReflection(0);
+                program.Uniform(ReflectWorldValidUniform, 0f);
+                return;
+            }
+
+            TerrainTextureBindInterceptor.SetWorldReflection(volume.TextureId);
+            program.BindTexture2D(ReflectWorldUniform, volume.TextureId, WorldReflectionVolume.TextureUnit);
+
+            SetIfPresent(program, ReflectWorldOriginUniform, volume.OriginRelativeToPlayer(now));
+            SetIfPresent(program, ReflectWorldSizeUniform, volume.Size);
+            SetIfPresent(program, ReflectWorldAtlasSizeUniform, volume.AtlasSize);
+            program.Uniform(ReflectWorldValidUniform, 1f);
+        }
+
         private static void SetIfPresent(IShaderProgram program, string name, float value)
         {
             if (program.HasUniform(name)) program.Uniform(name, value);
@@ -685,6 +724,8 @@ namespace VintageVisuals.PseudoPBR
             _reportedActive = false;
 
             TerrainTextureBindInterceptor.SetPages(null);
+            TerrainTextureBindInterceptor.SetSceneCapture(0);
+            TerrainTextureBindInterceptor.SetWorldReflection(0);
 
             if (_programsThinkEnabled)
             {

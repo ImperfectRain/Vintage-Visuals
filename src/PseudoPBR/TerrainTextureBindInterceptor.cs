@@ -65,6 +65,7 @@ namespace VintageVisuals.PseudoPBR
         /// different on screen.
         /// </summary>
         private static volatile int _captureTextureId;
+        private static volatile int _worldReflectionTextureId;
         private static ILogger _logger;
         private static volatile bool _active;
 
@@ -172,6 +173,15 @@ namespace VintageVisuals.PseudoPBR
         public static void SetSceneCapture(int textureId)
         {
             _captureTextureId = textureId;
+        }
+
+        /// <summary>
+        /// The debug-only world block-volume atlas to rebind per terrain draw,
+        /// or 0 when the proof views are inactive.
+        /// </summary>
+        public static void SetWorldReflection(int textureId)
+        {
+            _worldReflectionTextureId = textureId;
         }
 
         public static void SetPages(Dictionary<int, int> materialPageByAtlasTexture)
@@ -302,6 +312,14 @@ namespace VintageVisuals.PseudoPBR
                 {
                     program.BindTexture2D(PbrShaderBinder.ReflectSceneUniform, captureId,
                                           SceneCaptureRenderer.TextureUnit);
+                }
+
+                int worldReflectionId = _worldReflectionTextureId;
+
+                if (worldReflectionId != 0 && program.HasUniform(PbrShaderBinder.ReflectWorldUniform))
+                {
+                    program.BindTexture2D(PbrShaderBinder.ReflectWorldUniform, worldReflectionId,
+                                          WorldReflectionVolume.TextureUnit);
                 }
             }
             catch (Exception ex)

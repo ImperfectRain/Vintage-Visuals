@@ -162,6 +162,18 @@ uniform vec3 vv_reflectCameraDelta;  // THIS frame's camera position minus the c
 uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
 uniform float vv_reflectFar;         // far plane of the captured projection
 uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
+
+// Debug-only world-space reflection proof. Stored as a 2D atlas of 64 Z
+// slices: each slice is 64x64, and the atlas is 8 slices wide by 8 slices tall.
+// Origin is camera/player-relative, not absolute world space, so the shader
+// subtracts small floats while the CPU keeps the volume anchored to integer
+// world block coordinates.
+uniform sampler2D vv_reflectWorld;
+uniform float vv_reflectWorldValid;
+uniform vec3 vv_reflectWorldOrigin;
+uniform vec3 vv_reflectWorldSize;
+uniform vec2 vv_reflectWorldAtlasSize;
+
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -2253,6 +2265,144 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     return miss;
 }
 
+// ---- World reflection geometry proof ------------------------------------
+//
+// This is an isolated debug instrument. It proves the coordinate path for
+// reflecting against nearby world blocks, but does not feed final PBR output.
+// The shader still executes per fragment, not per material texel; it uses the
+// texel-centre position only to keep the ray origin stable across one texel.
+#define VV_WORLD_MISS       0.0
+#define VV_WORLD_HIT        1.0
+#define VV_WORLD_OUTSIDE    2.0
+#define VV_WORLD_LIMIT      3.0
+#define VV_WORLD_NO_VOLUME  4.0
+
+const float VV_WORLD_RANGE = 48.0;
+const int VV_WORLD_STEPS = 128;
+
+struct VvWorldHit
+{
+    vec3 color;
+    float reason;
+    float distance;
+    float steps;
+};
+
+bool vvWorldInside(vec3 p)
+{
+    return all(greaterThanEqual(p, vec3(0.0))) && all(lessThan(p, vv_reflectWorldSize));
+}
+
+vec4 vvWorldVoxel(ivec3 cell)
+{
+    if (cell.x < 0 || cell.y < 0 || cell.z < 0) return vec4(0.0);
+    if (cell.x >= int(vv_reflectWorldSize.x) ||
+        cell.y >= int(vv_reflectWorldSize.y) ||
+        cell.z >= int(vv_reflectWorldSize.z)) return vec4(0.0);
+
+    float z = float(cell.z);
+    vec2 slice = vec2(mod(z, 8.0), floor(z / 8.0));
+    vec2 pixel = slice * vec2(64.0, 64.0) + vec2(float(cell.x), float(cell.y)) + vec2(0.5);
+    return texture(vv_reflectWorld, pixel / max(vec2(1.0), vv_reflectWorldAtlasSize));
+}
+
+VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelativePos)
+{
+    VvWorldHit miss;
+    miss.color = vec3(0.0);
+    miss.reason = VV_WORLD_NO_VOLUME;
+    miss.distance = 0.0;
+    miss.steps = 0.0;
+
+    if (vv_reflectWorldValid < 0.5) return miss;
+
+    vec3 origin = vvTexelCentrePos(cameraRelativePos, materialUv);
+    vec3 view = normalize(-origin);
+    vec3 dir = reflect(-view, normalize(sceneNormal));
+
+    float len = length(dir);
+    if (len < 1e-4) return miss;
+    dir /= len;
+
+    // Move off the source face before the first voxel lookup. Otherwise a
+    // reflective floor can immediately hit the block it is drawn from, which is
+    // the "touching the ground breaks reflection" failure this proof exists to
+    // isolate.
+    vec3 local = origin + normalize(sceneNormal) * 0.05 + dir * 0.05 - vv_reflectWorldOrigin;
+
+    miss.reason = VV_WORLD_OUTSIDE;
+    if (!vvWorldInside(local)) return miss;
+
+    ivec3 cell = ivec3(floor(local));
+    ivec3 stepDir = ivec3(sign(dir));
+
+    vec3 safeDir = max(abs(dir), vec3(1e-5));
+    vec3 delta = 1.0 / safeDir;
+    vec3 nextBoundary = vec3(cell) + step(vec3(0.0), dir);
+    vec3 side = (nextBoundary - local) / dir;
+
+    if (stepDir.x == 0) side.x = 1e20;
+    if (stepDir.y == 0) side.y = 1e20;
+    if (stepDir.z == 0) side.z = 1e20;
+
+    miss.reason = VV_WORLD_MISS;
+
+    for (int i = 0; i < VV_WORLD_STEPS; i++)
+    {
+        vec4 voxel = vvWorldVoxel(cell);
+        if (voxel.a > 0.5)
+        {
+            VvWorldHit hit;
+            hit.color = voxel.rgb;
+            hit.reason = VV_WORLD_HIT;
+            hit.distance = min(side.x, min(side.y, side.z));
+            hit.steps = float(i + 1);
+            return hit;
+        }
+
+        float travel;
+        if (side.x <= side.y && side.x <= side.z)
+        {
+            travel = side.x;
+            side.x += delta.x;
+            cell.x += stepDir.x;
+        }
+        else if (side.y <= side.z)
+        {
+            travel = side.y;
+            side.y += delta.y;
+            cell.y += stepDir.y;
+        }
+        else
+        {
+            travel = side.z;
+            side.z += delta.z;
+            cell.z += stepDir.z;
+        }
+
+        miss.distance = travel;
+        miss.steps = float(i + 1);
+
+        if (travel > VV_WORLD_RANGE)
+        {
+            miss.reason = VV_WORLD_LIMIT;
+            return miss;
+        }
+
+        if (cell.x < 0 || cell.y < 0 || cell.z < 0 ||
+            cell.x >= int(vv_reflectWorldSize.x) ||
+            cell.y >= int(vv_reflectWorldSize.y) ||
+            cell.z >= int(vv_reflectWorldSize.z))
+        {
+            miss.reason = VV_WORLD_OUTSIDE;
+            return miss;
+        }
+    }
+
+    miss.reason = VV_WORLD_LIMIT;
+    return miss;
+}
+
 // The environment colour this texel reflects.
 //
 // Handed to vvAmbientSpecular in place of the flat colour it used to get, so
@@ -3435,6 +3585,50 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         float inQuanta = clamp(abs(m51.thickness) / quantum, 0.0, 1.0);
 
         return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
+    }
+
+    // ---- World reflection proof, views 53-56 ----------------------------
+    //
+    // These bypass the screen-space capture and trace against the debug CPU
+    // block volume. They are a coordinate proof only: full opaque cubes, one
+    // representative colour per block id, no partial meshes, no entities, and
+    // no contribution to final PBR.
+    //
+    // 53: why the world trace ended.
+    //   green  hit an occupied full-cube cell
+    //   red    left range without a hit
+    //   blue   started or walked outside the 64^3 local volume, or no volume
+    //   yellow hit the step/range limit
+    if (mode == 53)
+    {
+        VvWorldHit hit53 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+
+        if (hit53.reason == VV_WORLD_HIT)     return vec4(0.0, 1.0, 0.0, color.a);
+        if (hit53.reason == VV_WORLD_MISS)    return vec4(1.0, 0.0, 0.0, color.a);
+        if (hit53.reason == VV_WORLD_LIMIT)   return vec4(1.0, 1.0, 0.0, color.a);
+        return vec4(0.0, 0.2, 1.0, color.a);
+    }
+
+    // 54: representative block colour at the hit cell. This is diagnostic
+    // colour from the CPU volume, not yet the real block albedo.
+    if (mode == 54)
+    {
+        VvWorldHit hit54 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        return vec4(hit54.color * (hit54.reason == VV_WORLD_HIT ? 1.0 : 0.0), color.a);
+    }
+
+    // 55: hit distance in blocks, normalised against the 48-block proof range.
+    if (mode == 55)
+    {
+        VvWorldHit hit55 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        return vec4(vec3(clamp(hit55.distance / VV_WORLD_RANGE, 0.0, 1.0)), color.a);
+    }
+
+    // 56: how many DDA cells the fragment walked, normalised against budget.
+    if (mode == 56)
+    {
+        VvWorldHit hit56 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        return vec4(vec3(clamp(hit56.steps / float(VV_WORLD_STEPS), 0.0, 1.0)), color.a);
     }
 
     // ---- Flora taxonomy, views 44-46 -------------------------------------

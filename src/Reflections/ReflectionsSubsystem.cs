@@ -30,6 +30,7 @@ namespace VintageVisuals.Reflections
         private ICoreClientAPI _capi;
 
         private SceneCaptureRenderer _capture;
+        private WorldReflectionVolume _worldVolume;
         private bool _registered;
         private bool _hookedReload;
         private bool _reported;
@@ -39,10 +40,14 @@ namespace VintageVisuals.Reflections
         /// <summary>The capture, or null when the feature is off or has failed.</summary>
         public SceneCaptureRenderer Capture => _capture;
 
+        /// <summary>Debug-only block-volume atlas for the isolated world-DDA proof.</summary>
+        public WorldReflectionVolume WorldVolume => _worldVolume;
+
         public void Initialize(VintageVisualsModSystem mod)
         {
             _mod = mod;
             _capi = mod.Capi;
+            _worldVolume = new WorldReflectionVolume();
         }
 
         public void Apply()
@@ -141,6 +146,8 @@ namespace VintageVisuals.Reflections
         public void Dispose()
         {
             Stop();
+            _worldVolume?.Dispose();
+            _worldVolume = null;
         }
     }
 }

@@ -145,6 +145,7 @@ namespace VintageVisuals.PseudoPBR
             // Re-read every time rather than caching: a stale reference here
             // would keep binding a texture id the engine has already destroyed.
             _binder.SceneCapture = _mod?.Reflections?.Capture;
+            _binder.WorldVolume = _mod?.Reflections?.WorldVolume;
 
             _binder.SetState(active, config, _mod.ConfigManager.Config.CompareWipe);
         }
