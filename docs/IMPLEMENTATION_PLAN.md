@@ -24,27 +24,29 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 |---|---|---|
 | Shader patch engine, per-group rollback | L4 | `src/Common/Patching/` |
 | Config, live reload, ConfigLib bridge | L4 | `src/Common/` |
-| Environment state and scene intent | L4 | `src/Common/Scene/` |
-| Colour management, adaptive stack | L4 | `src/ColorGrade/` |
+| Environment state and scene intent | L2 | `src/Common/Scene/` |
+| Colour management core | L4 | `src/ColorGrade/` |
+| Adaptive exposure and adaptive grading | L2 | `src/ColorGrade/` |
 | Material inference and atlas (2 pages) | L4 | `src/PseudoPBR/` |
 | Per-texture material resolution | L3 | `src/PseudoPBR/MaterialResolver.cs` |
 | Second material atlas | L2 | `src/PseudoPBR/MaterialAtlas2Builder.cs` |
 | PBR on terrain | L4 | `chunkopaque`, `chunktopsoil` |
-| PBR on entities | L4 | `entityanimated` |
-| PBR on particles | L3 | `particlescube`, `particlesquad` |
+| PBR on entities | L2 | `entityanimated` |
+| PBR on particles | L2 | `particlescube`, `particlesquad` |
 | Metalness, multi-scatter, specular occlusion, anisotropy | L2 | `pbrcore.glsl` |
 | Emission masks | L2 | atlas 2, channel A |
 | Wetness, rain ripples | L4 | `src/Weather/` |
 | Snow dusting, frost response | L2 | `src/Weather/` |
-| Cloud shadows from the game's own tiles | L4 | `src/Weather/CloudTileReader.cs` |
+| Cloud shadows from the game's own tiles | runtime evidence, not visually closed | `src/Weather/CloudTileReader.cs` |
 | Sun dapple from vanilla's shadow map | L2 | `pseudopbr.glsl` |
 | God-ray shafts into vanilla's own pass | L2 | `pseudopbr.glsl` |
-| Scene capture and pixelated reflections | L2 | `src/Reflections/` |
+| Scene capture, world volume and pixelated reflections | L2 | `src/Reflections/` |
 | Atmosphere state read from the game | L2 | `src/Common/Scene/AtmosphereState.cs` |
 | Height haze through vanilla's ambient stack | L2 | `src/Atmosphere/` |
 | Aerial perspective, one owner for fog | L2 | `atmosphere.glsl`, four programs |
 | Atmospheric transport, 8 of 11 features | L2 | `AtmosphereInputs`, `atmosphere.glsl` |
-| Cloud-edge, godrays, dapple interaction | foundation | interface and debug view only - D26 |
+| World canopy context and forest lighting | L2 | `src/Reflections/WorldReflectionVolume.cs`, `pseudopbr.glsl` |
+| Cloud-edge, atmosphere godrays, dapple interaction | foundation | interface and debug view only - D26 |
 
 ---
 

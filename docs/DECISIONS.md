@@ -1429,8 +1429,9 @@ review. The product is where the defect is, and no amount of reading either line
 finds it.
 
 **Chosen.** A check category that runs ARITHMETIC on compositions:
-`tools/smoketest/SceneInvariantChecks.cs`, ten invariants I1-I10, each naming the
-defect it exists to prevent and the commit that fixed it. An invariant with no
+`tools/smoketest/SceneInvariantChecks.cs`. It began with ten invariants and now
+runs I1-I19, each naming the defect it exists to prevent and the commit that
+fixed it. An invariant with no
 defect behind it is not added - it would be one more green line making the suite
 look like evidence it is not.
 
@@ -1451,8 +1452,9 @@ every strength defaulted to zero. Visibility stays a runtime question.
 implementation, and it is the wrong one here - there is no reference for "the
 canopy term composed with the local-light exemption", only the shipped source.
 
-**Status.** Ten invariants, all passing, all mutation-proven. Found one live
-disagreement on its first run: see D39.
+**Status.** Nineteen invariants, all passing, with mutation coverage tracked in
+`tools/mutate/mutations.tsv`. Found one live disagreement on its first run: see
+D39.
 
 ---
 
@@ -1470,8 +1472,9 @@ runs `tools/smoketest`, and requires a failure whose name matches the invariant
 that claims to guard it. The mutation is then reverted with `git checkout --`, so
 the harness refuses to run on a dirty tree.
 
-Twelve rows today - the seven runtime defects plus five that are the next
-instance of a class that has already bitten once - and twelve caught.
+The table began with twelve rows - the seven runtime defects plus five that were
+the next instance of a class that had already bitten once. It now contains 52
+mutations.
 
 **What it changes about how this project reports itself.** "N checks pass" is
 retired as a statement of confidence. The statement that means something is "this
@@ -1499,8 +1502,9 @@ looked at since the dapple gate was fixed, and retuning the colour of unobserved
 shade is guessing - and the invariant now bounds the cost so it cannot grow into
 a real light loss outside `VisualBudget` without a check failing.
 
-**Status.** 12 mutations, 12 caught, 0 missed. Run it with
-`VINTAGE_STORY=... bash tools/mutate/mutation-test.sh` on a clean tree.
+**Status.** 52 mutations, 52 caught, 0 missed on the last documented full run.
+Run it with `VINTAGE_STORY=... bash tools/mutate/mutation-test.sh` on a clean
+tree.
 
 ---
 
@@ -1846,5 +1850,5 @@ correctly and nothing was reading it.
 a configuration state rather than a failure - because a player who reads
 "enabled" and sees nothing deserves the line that connects them.
 
-**Status.** L2. The defaults have not been seen in a game. 935 checks, 25 of 25
-mutations caught.
+**Status.** L2. The defaults have not been validated as a look in game. The
+current mutation table records 52 caught mutations.

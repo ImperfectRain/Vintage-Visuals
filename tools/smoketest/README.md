@@ -43,15 +43,15 @@ it is the shipped code, called directly.
 `SceneInvariantChecks.cs` is a different KIND of check from everything above it,
 and the difference is why it exists.
 
-Seven defects have been found in this mod by looking at the game. This suite
-found none of them, and it was green the whole time they shipped. Not for lack of
-coverage - for lack of the right question. Every other check here asks about ONE
-thing: is this uniform uploaded, does this anchor match, is this file ASCII.
-Every one of the seven was about TWO things multiplied together - a gate
-implemented as a dimmer, an effect multiplied by the complement of its own
-trigger, a diffuse term removed with nothing paying it back.
+Several defects have been found in this mod by looking at the game while this
+suite was green. Not for lack of coverage - for lack of the right question. Many
+ordinary checks here ask about ONE thing: is this uniform uploaded, does this
+anchor match, is this file ASCII. The interaction checks exist for the failures
+that sit between two things: a gate implemented as a dimmer, an effect
+multiplied by the complement of its own trigger, or a diffuse term removed with
+nothing paying it back.
 
-So invariants I1-I10 run arithmetic on compositions. `GlslEval` evaluates the
+So invariants I1-I19 run arithmetic on compositions. `GlslEval` evaluates the
 subset of GLSL these compositions are written in, over expressions pulled out of
 the shipped `.glsl` at test time rather than retyped into C#: only the leaf calls
 that read textures and shadow maps are stubbed, so a factor someone adds to a
@@ -67,8 +67,9 @@ asserting the opposite of the truth, which is worse than no line.
 
 ## Whether these checks would fail
 
-A suite that has been green throughout the period in which seven defects shipped
-has demonstrated that it passes, and nothing about whether it would fail. So:
+A suite that has been green throughout the period in which real visual defects
+shipped has demonstrated that it passes, and nothing about whether it would
+fail. So:
 
 ```sh
 VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
@@ -76,9 +77,10 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 
 That reintroduces each historical defect by exact substitution, runs this suite
 against the broken tree, and requires the guarding check to fail - then reverts
-with `git checkout --`, so it refuses to run on a dirty tree. 12 mutations, 12
-caught. A row that is not caught is reported as a hole in the suite rather than
-as a pass.
+with `git checkout --`, so it refuses to run on a dirty tree. The current table
+is in `tools/mutate/mutations.tsv`; the last documented full run caught 52 of
+52. A row that is not caught is reported as a hole in the suite rather than as a
+pass.
 
 **Add a mutation whenever you add an invariant.** An unmutated check is a claim,
 not evidence.

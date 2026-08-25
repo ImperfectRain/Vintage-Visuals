@@ -2,10 +2,11 @@
 
 Derives normal, roughness and specular-mask maps from a diffuse texture.
 
-This is **Phase 4a** of the implementation plan: the offline prototype that must
-be validated on real textures *before* any of this logic is ported into the
-game's texture-atlas pipeline. It is a content-authoring aid, deliberately kept
-out of the mod's C# build — iterating on it should not require a game restart.
+This is the offline reference for the runtime C# material atlas code in
+`src/PseudoPBR/`. It remains useful because it can generate contact sheets,
+stats and small fixtures without launching the game. The mod build does not
+reference this Python code; `tools/smoketest` keeps the C# port aligned where a
+fixture exists.
 
 ## Usage
 
@@ -68,7 +69,7 @@ the entire purpose of this being a separate offline tool.
 ## Known limitations
 
 Each is inherent to inferring material data from pixels that never carried it.
-They are listed here so nobody rediscovers them in Phase 4b.
+They are listed here so nobody rediscovers them while tuning the runtime atlas.
 
 - **Sobel cannot tell painted shading from geometry.** A dark band drawn to
   suggest a crack becomes a real crack — usually what you want. A highlight
@@ -80,25 +81,23 @@ They are listed here so nobody rediscovers them in Phase 4b.
 - **Hard albedo edges produce rough halos.** The variance window straddles the
   boundary, so `bricks` reads smooth on the faces (0.28) but saturates along the
   mortar lines whether or not that surface is actually rough.
-- **Albedo does not carry metalness.** `gold_block` — bright, saturated, plainly
-  metal — comes out at spec 0.02, i.e. matte, because the pass keys on
-  *desaturated* brightness. An unlit grey texture and a genuinely metallic grey
-  texture are indistinguishable to it. Fixing this needs per-block metadata,
-  not a better filter.
+- **Albedo does not carry metalness.** The runtime path no longer infers this
+  from pixels; it uses the game's material data. The offline prototype still
+  demonstrates why a better filter was the wrong fix.
 - **The sample set is synthetic.** Vintage Story's assets are not
   redistributable, so the repo ships stand-ins. They cover the material
   categories the Phase 4 milestone names and the known failure modes, but they
   are not a substitute for running this on the real thing.
 
-## What Phase 4b needs from this
+## What the runtime path still needs from this
 
-Before porting into `AtlasPreprocessor`:
+Before changing the runtime constants:
 
 1. Re-run the constant sweeps against real vanilla textures and update them.
 2. Confirm the three milestone categories — stone, metal ore, wood — still come
    out visibly distinct. `test_milestone_materials_are_visibly_distinct` encodes
    that acceptance criterion as a test.
-3. Decide how to supply metalness, which this pass fundamentally cannot infer.
+3. Keep the C# port and this prototype aligned where the parity fixture covers
+   the calculation.
 4. Note that `_label_colour_regions` is a scalar Python flood fill. It is fine
-   for single textures and will not survive a full atlas — it needs to become a
-   compute shader or a vectorised connected-components pass.
+   for single textures; the runtime path uses different atlas-scale plumbing.

@@ -141,10 +141,10 @@ failed upload must not black out the screen — but when debugging, trust
 - **The color space of the input is unconfirmed.** The ACES curve expects
   linear, scene-referred input. Whether `final.fsh`'s output is still linear
   where this grades it has not been checked against a running game, so
-  `TonemapStrength` **defaults to 0** and the other four controls — which are
-  space-agnostic enough to be useful either way — default to neutral. Confirm
-  this and update the default; it is the single most valuable thing left to
-  verify in this subsystem. Everything else here is confirmed rendering.
+  `TonemapStrength` **defaults to 0** and the direct grading controls — which
+  are space-agnostic enough to be useful either way — default to neutral.
+  Confirm this before enabling the tonemap by default. Adaptive exposure and
+  adaptive grading are implemented and tested, but not visually closed.
 - **Grading runs after vanilla's own tonemap and bloom**, not instead of them.
   Highlights already clipped upstream cannot be recovered by lowering exposure
   here.

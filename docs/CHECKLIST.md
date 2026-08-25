@@ -27,11 +27,11 @@ Column meanings:
 | Vis | visually validated against a named scene |
 | Doc | STATUS, ARCHITECTURE and this file agree with the code |
 
-**`Tst` is the weakest column here and this file used to overstate it.** Seven
-defects have been found in this mod by looking at the game and none by the
-checks, which were green throughout. A tick under `Tst` therefore says only that
-something beyond existence is checked. Whether the check would FAIL if the thing
-broke is a separate question with its own table, at the end of this file.
+**`Tst` is the weakest column here and this file used to overstate it.** Many
+defects have been found in this mod by looking at the game while the suite was
+green. A tick under `Tst` therefore says only that something beyond existence is
+checked. Whether the check would FAIL if the thing broke is a separate question
+with its own table, at the end of this file.
 
 ---
 
@@ -91,7 +91,7 @@ from the source texture.
 | Entity PBR | x | x | x | x | x | – | – | x | x |
 | Particle PBR | x | x | x | x | x | – | – | – | x |
 | Foliage transmission | x | x | x | x | x | – | – | x | x |
-| Flora taxonomy (11 classes, vanilla wind modes) | x | x | x | x | – | x | – | – | x |
+| Flora taxonomy (11 classes, vanilla wind modes) | x | x | x | x | x | x | – | x | x |
 | Per-plant transmission and pooling | x | x | x | x | – | – | – | – | x |
 | Understory receives canopy dapple | x | x | x | x | – | – | – | – | x |
 | Optical role (`vvIsCanopyReceiver`) | x | x | x | x | – | x | – | – | x |
@@ -115,9 +115,10 @@ proven excluded; the shade amount proven still measured from the shadow map
 rather than assigned by class; transmission proven to share the direct lobe's
 overcast constant rather than carry its own.
 
-**No flora scene has been rendered.** `docs/VISUAL-TESTS.md` carries the matrix
-and every row in it is unmarked. The single clearest one-object check is a
-backlit pear at sunset: it must not glow green.
+**Flora taxonomy has runtime evidence; flora lighting does not.** Debug view 44
+has shown the expected plant classes in a world. The lighting claims still need
+the scenes in `docs/VISUAL-TESTS.md`, especially a backlit pear at sunset: it
+must not glow green.
 
 ---
 
@@ -126,12 +127,12 @@ backlit pear at sunset: it must not glow green.
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
 | Wetness | x | x | x | x | x | – | – | x | x |
-| Rain ripples | x | x | x | x | x | x | – | x | x |
+| Rain ripples | x | x | x | x | x | x | – | – | x |
 | Snow dusting | x | x | x | x | – | – | – | – | x |
 | Frost response | x | x | x | x | – | – | – | – | x |
-| Cloud shadows (from game tiles) | x | x | x | x | x | x | – | x | x |
-| Overcast response | x | x | x | x | x | – | – | x | x |
-| Fog / atmosphere | x | x | x | x | x | – | – | x | x |
+| Cloud shadows (from game tiles) | x | x | x | x | x | x | – | – | x |
+| Overcast response | x | x | x | x | x | – | – | – | x |
+| Fog / atmosphere | x | x | x | x | – | – | – | – | x |
 
 Edge cases exercised: rain ripples anchored to the world rather than the camera
 (regression pinned by call-order test); cloud shadows when the game's cloud
@@ -229,9 +230,9 @@ Not yet validated, and each is a separate question:
 | Subsystem | Des | Imp | Cmp | Tst | Run | Edge | Perf | Vis | Doc |
 |---|---|---|---|---|---|---|---|---|---|
 | Colour grading | x | x | x | x | x | – | – | x | x |
-| Adaptive exposure | x | x | x | x | x | – | – | x | x |
-| Adaptive grading | x | x | x | x | x | – | – | x | x |
-| Tonemap | x | x | x | x | x | – | – | – | x |
+| Adaptive exposure | x | x | x | x | – | – | – | – | x |
+| Adaptive grading | x | x | x | x | – | – | – | – | x |
+| Tonemap | x | x | x | x | – | – | – | – | x |
 | Post-processing (bloom, DoF, camera FX) | – | – | – | – | – | – | – | – | x |
 
 **Colour grading operates in display-referred space.** See DECISIONS D16. It
@@ -307,7 +308,8 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | Tab changes rebuilding inside native callback dispatch | runtime crash report | `UiChecks` | x |
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**52 mutations, 52 caught, 0 missed** at `HEAD`.
+**52 mutations, 52 caught, 0 missed** at `HEAD` when the mutation harness was
+last run on a clean tree.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

@@ -1,244 +1,135 @@
 # Vintage Visuals
 
 A client-side **rendering framework** for [Vintage Story](https://www.vintagestory.at/)
-that ships a visual overhaul: colour grading that responds to the world, a
-pseudo-PBR material and lighting model derived from the vanilla textures, and a
-weather system that changes how surfaces respond to light.
+that ships a visual overhaul: colour grading, a pseudo-PBR material and lighting
+model derived from vanilla textures, weather-aware material response,
+atmospheric transport, pixelated reflections, and vegetation/forest lighting.
 
-Built as GLSL patches against the vanilla shaders plus a C# code mod. The goal
-is not to make Vintage Story look like another game - it is to reconstruct as
-much of a modern physically-inspired pipeline as the existing renderer allows
+Built as GLSL patches against vanilla shaders plus a C# code mod. The goal is
+not to make Vintage Story look like another game. It is to reconstruct as much
+of a modern physically inspired pipeline as the existing renderer allows
 **while preserving the game's art direction**. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-> **Status: pre-alpha (0.0.1).** Colour grading and the PBR material response
-> are confirmed rendering in game on 1.22.7. Weather is partly confirmed -
-> wetness renders; rain fog, cloud shadows, rain ripples and overcast light
-> compile against the game's own shaders but have not been seen on screen.
-> Water is not started; reflections are implemented but not visually validated. See
-> [Current state](#current-state) for exactly what has and has not been
-> verified.
+> **Status: pre-alpha (0.0.1).** Several systems have been seen in a real 1.22.7
+> client, but the project is still evidence-limited. Colour grading, terrain PBR,
+> wetness, cloud shadows, rain ripples, dapple, and parts of the reflection debug
+> path have runtime evidence. Atmosphere, vegetation/forest lighting, entity and
+> particle lighting, and the reflection resolver remain mostly L2/L3: built and
+> statically tested, but not visually closed. Scene reflections are off by
+> default; PseudoPBR, Weather, Atmosphere, and ColorGrade default on. The exact
+> source of truth is [docs/STATUS.md](docs/STATUS.md).
 
 ## Systems
 
-| System | State | Docs |
+| System | Current state | Docs |
 |---|---|---|
-| **Colour management** | renders | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
-| **Material system** | renders | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
-| **Lighting** | renders on terrain only | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
-| **Environment state** | done | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| **Weather** | partly confirmed | [src/Weather/README.md](src/Weather/README.md) |
-| **Atmosphere, shadows, water, vegetation, post FX** | not started | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
+| **Colour management** | core grading renders; tonemap still ships at strength 0 | [src/ColorGrade/README.md](src/ColorGrade/README.md) |
+| **Material and lighting** | terrain renders; advanced material, entity, particle, flora and forest lighting paths are mostly L2 | [src/PseudoPBR/README.md](src/PseudoPBR/README.md) |
+| **Environment state** | shared worldview, intent and budget layer implemented | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| **Weather** | wetness, cloud shadows and ripples have runtime evidence; snow/frost remain L2 | [src/Weather/README.md](src/Weather/README.md) |
+| **Atmosphere** | dedicated subsystem with ambient-stack and shader branches; needs runtime validation | [src/Atmosphere/README.md](src/Atmosphere/README.md) |
+| **Reflections** | scene capture, screen-space march, world volume and analytic fallback exist; visuals are not closed | [src/Reflections/README.md](src/Reflections/README.md) |
+| **Visual Tuning Studio** | native config dialog; crash-isolation and layout work still open | [src/Ui/README.md](src/Ui/README.md) |
+| **Water and post FX** | not implemented | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
 
-Feature-by-feature state, including everything planned but unbuilt, is tracked
-in **[docs/STATUS.md](docs/STATUS.md)**. The rules that decide whether a feature
-belongs at all are in **[docs/VISUAL-LANGUAGE.md](docs/VISUAL-LANGUAGE.md)**.
+Feature-by-feature state is tracked in [docs/STATUS.md](docs/STATUS.md). Proof
+level is tracked in [docs/CHECKLIST.md](docs/CHECKLIST.md). Design rules are in
+[docs/VISUAL-LANGUAGE.md](docs/VISUAL-LANGUAGE.md).
 
 ## Install
 
-1. Install the mod: drop `vintagevisuals_<version>.zip` into your
-   `VintagestoryData/Mods/` folder.
+1. Drop `vintagevisuals_<version>.zip` into `VintagestoryData/Mods/`.
 2. Launch the game. Settings live in
    `VintagestoryData/ModConfig/vintagevisuals.json`, created on first run.
-3. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> in game to reload the config from disk
-   without restarting. With the optional
-   [ConfigLib](https://mods.vintagestory.at/configlib) mod installed you get
-   sliders on <kbd>F7</kbd> instead.
+3. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> in game to reload the config from disk.
+   With the optional [ConfigLib](https://mods.vintagestory.at/configlib) mod
+   installed, the F7 panel is also available. The native Visual Tuning Studio is
+   opened by this mod's hotkey.
 
 ## Configuration
 
-All values live in `ModConfig/vintagevisuals.json`. Edit and press
-<kbd>Ctrl</kbd>+<kbd>V</kbd> to apply live — no world reload needed.
+All values live in `ModConfig/vintagevisuals.json`. ConfigLib and the native
+Visual Tuning Studio both write that same object; neither owns a separate copy.
 
-If you also have [ConfigLib](https://mods.vintagestory.at/configlib) installed,
-press <kbd>F7</kbd> for sliders instead. It is entirely optional: this mod
-declares no dependency on it, references none of its code, and behaves exactly
-the same without it. The two are not separate settings — ConfigLib writes into
-the same config this mod already uses, so a slider and a hand-edit are the same
-value.
+The public config is now too large for this README to be authoritative by hand.
+Use these files for exact values:
 
-| Key | Range | Default | Effect |
-|---|---|---|---|
-| `ColorGrade.Enabled` | bool | `true` | Master toggle for the subsystem |
-| `ColorGrade.Exposure` | 0.1 – 4.0 | `1.0` | Linear exposure multiplier applied before the tonemap |
-| `ColorGrade.Contrast` | 0.0 – 2.0 | `1.0` | Pivots around display mid-grey (0.5); 1.0 is neutral |
-| `ColorGrade.Saturation` | 0.0 – 2.0 | `1.0` | 0 is greyscale, 1.0 is neutral |
-| `ColorGrade.Temperature` | -1.0 – 1.0 | `0.0` | Negative is cooler/bluer, positive is warmer/oranger |
-| `ColorGrade.TonemapStrength` | 0.0 – 1.0 | `0.0` | Blend between vanilla output and the filmic curve. Off by default — see below |
-| `AdaptiveGrade.Enabled` | bool | `true` | Let the world grade itself |
-| `AdaptiveGrade.Style` | name | `None` | A look the whole stack leans toward: Filmic, Muted, Vivid, Cold, Warm |
-| `AdaptiveGrade.StyleStrength` | 0.0 – 1.0 | `0.6` | How far toward that style to lean |
-| `AdaptiveGrade.TimeOfDayStrength` | 0.0 – 2.0 | `1.0` | Golden hour, and the blue drain of night |
-| `AdaptiveGrade.WeatherStrength` | 0.0 – 2.0 | `1.0` | Rain and cloud draining colour and contrast |
-| `AdaptiveGrade.BiomeStrength` | 0.0 – 2.0 | `0.7` | Heat, cold, aridity and lushness |
-| `AdaptiveGrade.IndoorStrength` | 0.0 – 2.0 | `0.8` | Firelight warmth once the sky cannot reach you |
-| `AdaptiveGrade.DepthStrength` | 0.0 – 2.0 | `0.8` | Colour draining out underground |
-| `AdaptiveGrade.UnderwaterStrength` | 0.0 – 2.0 | `0.6` | The blue-green shift of being submerged |
-| `AdaptiveGrade.ResponseSeconds` | 0.1 – 30 | `2.5` | How fast the grade follows the world |
-| `AdaptiveExposure.Enabled` | bool | `true` | Eye adaptation: brightens dark places, settles in light |
-| `AdaptiveExposure.DarkGain` | 0.25 – 4.0 | `1.6` | Exposure multiplier in pitch darkness |
-| `AdaptiveExposure.BrightGain` | 0.25 – 4.0 | `1.0` | Exposure multiplier in full light |
-| `AdaptiveExposure.BrightenSeconds` | 0 – 60 | `4.0` | Seconds to adapt to darkness (slow, like a real eye) |
-| `AdaptiveExposure.DarkenSeconds` | 0 – 60 | `1.0` | Seconds to adapt to light (fast) |
-| `PseudoPBR.Enabled` | bool | **`false`** | Surface relief. Off by default — it is the only setting that patches the shader drawing the world, and it has not been confirmed working on a GPU |
-| `PseudoPBR.NormalStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the relief. 0 is flat, 1.0 is the tuned look |
-| `PseudoPBR.SpecularStrength` | 0.0 – 2.0 | `1.0` | Global multiplier on the specular highlight |
-| `PseudoPBR.RoughnessBias` | -0.5 – 0.5 | `0.0` | Shifts every material's roughness. Negative is glossier, positive is more matte |
-| `PseudoPBR.MetalResponse` | 0.0 – 1.0 | `1.0` | How metallic reflective materials read. 0 gives every surface a white highlight |
-| `PseudoPBR.AmbientSpecular` | 0.0 – 2.0 | `0.35` | Sky reflection strength, so metal in shade still has a highlight |
-| `PseudoPBR.SpecularAntiAliasing` | 0.0 – 2.0 | `1.0` | Stops rough surfaces sparkling as the camera moves |
-| `PseudoPBR.DetailDistance` | 4 – 192 | `48` | Blocks at which surface relief has faded out |
-| `PseudoPBR.BlockLightSpecular` | 0.0 – 2.0 | `1.0` | Highlights from torches, lava and glowing blocks. Works underground and at night |
-| `PseudoPBR.BlockLightDirectionality` | 0.0 – 1.0 | `0.7` | 0 treats block light as ambient; 1 estimates where the torch actually is |
-| `PseudoPBR.DebugView` | 0 – 9 | `0` | Renders one layer on its own: 1 normal, 2 roughness, 3 specular, 4 relief, 5 highlight, 6 world normal, 7 reflectance |
-| `PseudoPBR.WriteMaterialReport` | bool | `true` | Write `VintageVisuals/material-report.txt` listing every block's material |
-| `PseudoPBR.BuildMaterialAtlas` | bool | `true` | Derive the material atlas at world load, cached to disk |
-| `PseudoPBR.WriteAtlasPreview` | bool | `true` | Write viewable normal/roughness/specular PNGs beside the cache |
-| `Weather.Enabled` | bool | `true` | Rain makes exposed surfaces wet: smoother, more reflective, darker |
-| `Weather.WetnessStrength` | 0.0 – 2.0 | `1.0` | How wet rain makes surfaces look |
-| `Weather.DryingSeconds` | 1 – 600 | `60` | How long a soaked surface takes to dry once rain stops |
-| `Weather.RainCoverThreshold` | 0.0 – 1.0 | `0.82` | Sky exposure a surface needs before rain reaches it. Raise to keep porches dry |
-| `Weather.FrostStrength` | 0.0 – 1.0 | `0.8` | How much frost changes a surface, on top of the game's own |
-| `Weather.SnowDusting` | 0.0 – 1.0 | `0.6` | Thin snow film on surfaces the sky can see |
-| `Weather.RippleStrength` | 0.0 – 1.0 | `0.8` | Rain landing in standing water |
-| `Weather.OvercastStrength` | 0.0 – 1.0 | `0.7` | How completely cloud cover diffuses the sun |
-| `Weather.FogStrength` | 0.0 – 1.0 | `0.35` | How much rain thickens the air over terrain (never the sky) |
-| `Weather.FogTint` | 0.0 – 1.0 | `0.6` | How much rain drains colour from the fog |
-| `PseudoPBR.EmissiveStrength` | 0.0 – 2.0 | `0.8` | How hot emitting surfaces read |
-| `PseudoPBR.EmissiveTemperature` | 0.0 – 1.0 | `0.55` | How far a bright core shifts toward white |
-| `PseudoPBR.EmissiveFlicker` | 0.0 – 1.0 | `0.5` | How much a flame breathes |
-| `PseudoPBR.EmissiveBloom` | 0.0 – 1.0 | `0.35` | Contribution to the game's own bloom pass |
-| `PseudoPBR.FoliageTranslucency` | 0.0 – 2.0 | `0.7` | Light through leaves, grass and crops |
-| `PseudoPBR.CavityStrength` | 0.0 – 2.0 | `0.6` | Occlusion in the grooves, from the material normal |
-| `PseudoPBR.EntityLighting` | bool | `true` | Light mobs with the same model as the terrain |
-| `PseudoPBR.ParticleLighting` | bool | `true` | Light leaves, dust, sparks and smoke with the world |
-| `PseudoPBR.ParticleSpecular` | 0.0 – 2.0 | `0.45` | Particle specular strength |
-| `PseudoPBR.EntityRoughness` | 0.04 – 1.0 | `0.65` | How matte creatures read |
-| `PseudoPBR.EntitySpecular` | 0.0 – 2.0 | `0.8` | Creature specular strength |
-| `Weather.CloudsFromGame` | bool | `true` | Shadows follow the game's own clouds rather than a noise field |
-| `Weather.CloudShadowStrength` | 0.0 – 1.0 | `0.35` | Depth of cloud shadows on the ground |
-| `Weather.CloudScale` | 32 – 512 | `190` | Blocks across one cloud cell |
-| `Weather.CloudDriftSpeed` | 0 – 8 | `0.9` | Cloud shadow speed, cells per minute |
-| `Weather.CloudHeight` | 40 – 400 | `160` | Height the shadow-casting cloud deck sits at |
-| `WriteSceneReport` | bool | `false` | Writes `VintageVisuals/scenereport.txt`: who removed what light, and why |
-| `EnableShaderDebugDump` | bool | `false` | Dump post-patch GLSL to `VintagestoryData/ShaderDebug/` |
-
-Order of operations is fixed: exposure → white balance → tonemap → contrast →
-saturation. Rationale in [src/ColorGrade/README.md](src/ColorGrade/README.md).
-
-`TonemapStrength` ships at `0.0` deliberately. The ACES curve expects linear,
-scene-referred input, and nobody has yet confirmed against a running game
-whether `final.fsh`'s output is still linear where this mod grades it. Turning
-it on before that is checked risks a washed-out image on first install. Set it
-to `1.0`, look at the result, and if it holds up, change the default.
-
-## Current state
-
-Against the [MVP checklist](docs/IMPLEMENTATION_PLAN.md):
-
-| Item | Level reached |
+| Need | Source |
 |---|---|
-| Repo scaffold builds and loads in-game | **4 (renders)** |
-| `ShaderPatchLoader` applies a YAML patch, logs pass/fail | **4 (renders)** — patches reach the running shader |
-| Config system wired, live-tunable values | **4 (renders)** — Ctrl+V retunes without a reload |
-| **Color grade:** exposure/saturation/contrast/temperature | **4 (renders)** — confirmed on 1.22.7 |
-| **Color grade:** basic tonemap curve | 2 (compiles), ships off — see below |
-| ConfigLib integration (optional in-game GUI) | **3 (loads)** — F7 panel lists all 11 settings with the right labels, ranges and defaults |
-| **Adaptive exposure** (eye adaptation) | 2 (compiles) — 19 model checks pass, never run in game |
-| **PBR:** three passes ported to C# | 2 (compiles) — 21 parity checks against the Python reference |
-| **PBR:** block material classification | **3 (loads)** — 14090 blocks classified, 0 fallbacks |
-| **PBR:** derived material atlas + disk cache | **4 (renders)** — 2 pages derived, uploaded and sampled in game |
-| **PBR:** atlas uploaded to the GPU, bound per frame | 2 (compiles) |
-| **PBR:** surface relief in `chunkopaque.fsh` | **4 (renders)** — normals visible in game via the debug views |
-| **PBR:** surface relief in `chunktopsoil.fsh` (forest floor) | 2 (compiles) — anchors confirmed against the real shader |
-| **PBR:** Cook-Torrance specular + energy conservation | **4 (renders)** — confirmed in game, being tuned by eye |
-| **PBR:** per-layer debug views | 2 (compiles) |
-| **PBR:** offline prototype validated on sample textures | **done**, 31 tests passing |
-| **Adaptive grading:** world-driven exposure/contrast/saturation/tint | 2 (compiles) — 34 rule checks pass, never run in game |
-| **Environment state:** one shared worldview | 2 (compiles) — the only place the game is asked what is happening |
-| **Weather:** wetness model and surface response | **4 (renders)** — confirmed in game |
-| **Weather:** rain fog | 2 (compiles) — verified against the game's own shaders |
-| **Weather:** cloud shadows | 2 (compiles) — reported invisible three times; debug view and binder logging added to find out why |
-| **Weather:** rain ripples, overcast light | 2 (compiles) — first version was float32-quantised; field now measured for scatter and phase spread |
-| Reflections | implemented (L2) — scene capture plus a texel-quantised screen-space march. See `src/Reflections/README.md` |
-| Water, post FX | not started |
+| Defaults and clamp ranges | `src/Common/VintageVisualsConfig.cs` |
+| ConfigLib labels and UI ranges | `assets/vintagevisuals/config/configlib-patches.json` |
+| Native studio labels, sections and descriptions | `src/Ui/VisualSettingRegistry.cs` |
+| Debug-view names | `src/Ui/DebugViewRegistry.cs` |
 
-Levels are the ones defined in [CLAUDE.md](CLAUDE.md).
+High-risk defaults worth calling out:
 
-**Phase 1's milestone is met.** On a 1.22.7 install, setting
-`ColorGrade.Saturation` to `0.0` renders the world fully greyscale in a live
-session, with no manual shader-reload workaround, and the look survives a world
-reload. That was blocked by two faults, both fixed: `GetProgramByName("final")`
-never resolves the vanilla program (it is addressed by `EnumShaderProgram` id),
-and the game compiles its shaders during the pre-mod bootstrap, so the mod now
-requests one shader reload of its own when the hook has demonstrably seen
-nothing.
+| Key | Default | Notes |
+|---|---|---|
+| `ColorGrade.Enabled` | `true` | core grading is active |
+| `ColorGrade.TonemapStrength` | `0.0` | ACES curve exists but ships blended out |
+| `PseudoPBR.Enabled` | `true` | terrain material path is active by default |
+| `PseudoPBR.DebugView` | `0` | range `0..62`; use the named UI entries instead of memorising numbers |
+| `Reflections.SceneReflections` | `false` | screen-space scene reflections are experimental and off by default |
+| `Weather.Enabled` | `true` | weather material response is active |
+| `Atmosphere.Enabled` | `true` | atmosphere subsystem is active |
+| `EnableShaderDebugDump` | `false` | dumps post-patch GLSL when enabled |
+| `WriteSceneReport` | `false` | writes one scene-intent report when enabled |
 
-`TonemapStrength` still ships at `0.0` and is the one part of colour grading
-never confirmed on screen — see [Known limitations](#known-limitations).
+## Current State
 
-## Known limitations
+This is the short version. The detailed tracker is [docs/STATUS.md](docs/STATUS.md).
 
-These are known now, not discovered later. Kept current as the mod grows.
+| Area | Current proof |
+|---|---|
+| Patch engine, config reload, shader delivery diagnostics | L4/L3 depending on path |
+| Colour grade exposure, saturation, contrast and temperature | L4 |
+| Tonemap curve | L2, ships off |
+| Material atlas, terrain normal/roughness/specular response | L4 for the core terrain path |
+| Advanced material model: metalness, multi-scatter, specular occlusion, anisotropy, AO, emission masks | L2 |
+| Entity, particle and flora lighting | implemented, not visually closed |
+| Weather wetness, ripples and cloud shadows | runtime evidence exists; tuning remains open |
+| Snow, frost and atmosphere transport | L2 |
+| Reflections | implemented as a hybrid scene/world/analytic resolver, but still visibly wrong in close-range and contact cases |
+| Visual Tuning Studio | functional but still has reported tab-switch crash risk |
+| Water and post-processing | not implemented |
 
-- **Shader patches are version-fragile.** They regex-match vanilla GLSL. A game
-  update that rewords the matched lines silently disables the affected
-  subsystem (you get a loud log line, but the game will not crash). Expect to
-  re-verify patches against `assets/game/shaders/` on every game update.
-- **ConfigLib is integrated over the event bus, not its C# API.** Its NuGet
-  package (`Maltiez.VintageStory.ConfigLib`) is not published on nuget.org, and
-  the `configlib` package that *is* there is an unrelated abandoned stub. So the
-  bridge listens for ConfigLib's `configlib:vintagevisuals:*` event-bus messages
-  instead of referencing its assembly. Upside: nothing to resolve, so the
-  optional dependency cannot fail to load. Limitation: this mod can *read*
-  setting changes but cannot drive ConfigLib's GUI beyond what
-  `configlib-patches.json` declares.
-- **Compatibility with other shader mods is untested.** Volumetric Shading,
-  Coriaender Shaders and Ancestral Bliss Shaders patch some of the same vanilla
-  files. Conflicts are likely and are not yet documented.
-- **Color grading runs after the vanilla tonemap**, not instead of it, because
-  the patch inserts at the end of `final.fsh`. Highlights already clipped by
-  vanilla cannot be recovered by lowering exposure here.
-- **The material system ships switched off**, pending one look on a real GPU.
-  It patches `chunkopaque.fsh`, which draws the world, and it broke that render
-  repeatedly before the cause was found: non-ASCII characters in GLSL comments,
-  which NVIDIA's driver rejects outright (`unexpected $end`) while
-  `glslangValidator` compiles them without complaint. Guarded now at both load
-  time and in the test suite. Several other real faults were fixed on the way
-  there — sampler declaration order, texture-unit collisions, GL calls from
-  config handlers — none of which were the one causing the symptom.
-  Set `PseudoPBR.Enabled: true` (or tick it on F7) to try it; with it off the
-  patch is skipped entirely and the compiler gets vanilla source.
-  Multi-page block atlases are supported via a Harmony hook on the moment
-  vanilla selects an atlas page; if that hook cannot be installed, a multi-page
-  atlas falls back to vanilla rendering with a log line saying so.
-- **Roughness and specular shade the world.** `pseudopbr.glsl` evaluates
-  Cook-Torrance - GGX distribution, Smith-Schlick geometry, Schlick Fresnel,
-  energy-conserving - against the sun, sky irradiance, block light with a
-  recovered direction, and shadow-map occlusion. What is still missing is
-  *reach*: the model is welded to `chunkopaque` and `chunktopsoil`, so entities,
-  held items and liquids are still lit by vanilla and a mob standing on PBR-lit
-  ground is shaded by a different model than the ground.
-- **Texture analysis infers detail, not identity.** Sobel edge detection reads
-  *painted-on* shading as real geometry, and variance cannot distinguish "rough
-  surface" from "busy pattern". Both are inherent to reading pixels. What pixels
-  fundamentally *cannot* give — is this metal? — now comes from the block's own
-  `EnumBlockMaterial` instead, which the game already knows and which covers
-  modded blocks too. See [src/PseudoPBR/README.md](src/PseudoPBR/README.md).
+Levels are defined in [docs/STATUS.md](docs/STATUS.md). **L2 means built and
+checked without proving the image in game.**
+
+## Known Limitations
+
+- **Shader patches are version-fragile.** They match vanilla GLSL. A game update
+  can disable a patch group with a loud log line instead of a crash.
+- **ConfigLib integration is event-bus based.** The mod does not reference
+  ConfigLib's assembly, so the optional dependency cannot break loading.
+- **Compatibility with other shader mods is untested.** Anything patching the
+  same vanilla shader can change the result.
+- **Colour grading runs late.** It operates after vanilla composition, so it
+  cannot recover highlights already clipped upstream.
+- **Reflections are experimental.** The current system can reconstruct some
+  world geometry on a texel grid, but close-range contact, undersampling,
+  banding, and indoor/ceiling cases still need design work.
+- **Performance is not measured.** Operation-count arguments are not profiling.
+  The scene capture, reflection resolver and vegetation lighting need real GPU
+  numbers before quality tiers can be honest.
+- **Texture analysis infers detail, not identity.** Material identity now uses
+  game data where possible, but normals and roughness still derive from painted
+  textures and can read art shading as geometry.
 
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for build commands and repo conventions,
-[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the phase plan and
-MVP checklist, and [docs/WORKFLOW.md](docs/WORKFLOW.md) for commit conventions.
+[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for priorities, and
+[docs/WORKFLOW.md](docs/WORKFLOW.md) for process.
 
 ## Credits
 
 Shader-patching approach follows the pattern established by
-[Volumetric Shading](https://github.com/xxmicloxx/VolumetricShading) (xxmicloxx,
-Novocain) and Coriaender Shaders. The ACES-approximation tonemap curve is Stephen
-Hill's `ACESFitted`, widely published as a public-domain fit.
+[Volumetric Shading](https://github.com/xxmicloxx/VolumetricShading) and
+Coriaender Shaders. The ACES-approximation tonemap curve is Stephen Hill's
+`ACESFitted`, widely published as a public-domain fit.
 
 ## License
 
-Not yet chosen — see issue tracker before redistributing.
+Not yet chosen. Do not redistribute without checking the issue tracker first.

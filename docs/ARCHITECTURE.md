@@ -338,6 +338,8 @@ WorldReflectionVolume src/Reflections/           |
   128 x 64 x 128 classified cells                |
         |                                        |
         +----------------- unit 12 --------------> vvWorldReflection
+        |
+        +---- 128 x 128 canopy context, unit 11 -> vvReadCanopyContext
                                                  |
                                     hybrid resolver
                                       scene first
@@ -370,6 +372,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
 | Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Local reflection volume | `IBlockAccessor` over a bounded player-centred block region | classified block cells, representative colour multiplied by block light, 2D Z-slice atlas | world volume texture, unit 12 | `vvWorldReflection` |
+| Canopy context | `WorldReflectionVolume` CPU scan over the same local region | low-frequency leaf density and representative canopy colour | 128 x 128 texture, unit 11 | forest ambient, dapple restraint, canopy shafts |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |
@@ -422,6 +425,8 @@ quietly invalidate one of these.
 | Cloud shadows | game's cloud tiles | **off**, not substituted | invented clouds correspond to nothing | vanilla sky lighting |
 | Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
 | Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
+| World reflection volume | local scanned volume | `vv_worldReflectValid` 0 | scan or upload failed | scene hit or analytic fallback only |
+| Canopy context | local canopy texture | `vv_canopyContextValid` 0 | scan or upload failed | no forest ambient context; shadow-map flecks still work |
 | Entity / particle PBR | own patch group | independently gated | terrain problems must not disable them | vanilla flat diffuse |
 | Height haze | modifier in the game's ambient stack | modifier **removed**, not zeroed | a zeroed entry is residue in a dictionary shared with every mod | vanilla's own atmosphere |
 | Ambient stack unavailable | modifier installed | logged once, feature off | nothing else in the frame depends on it | vanilla's own atmosphere |
@@ -440,15 +445,17 @@ appears often.
 | Material atlas build | 2 pages, 4096x2048 each, cached to disk | no, once at load | no | texture count |
 | Atlas upload | 2 textures resident | no | no | — |
 | Scene capture | 1 RGBA16F at half frame per axis; one fullscreen copy | yes, while enabled | produces it | resolution |
-| Reflection march | up to 24 texture taps plus 5 bisection taps, only on rays that cross | per reflective fragment | yes, reads it | reflective pixel count |
+| Reflection march | up to 96 capture-texel steps plus 5 bisection taps, only on rays that cross | per reflective fragment | yes, reads it | reflective pixel count |
+| World reflection volume | 128 x 64 x 128 cells plus a 128 x 128 canopy context texture, CPU scan/upload | yes, while reflections, canopy lighting or matching debug views need it | no | local volume size |
 | Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
 | Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |
 | Cloud shadows | uniform array lookup, no sampler | per terrain fragment | no | resolution |
 | Colour grading | one fullscreen pass | yes | no | resolution |
 
-Two costs are paid whether or not anything on screen uses them: the scene capture
-and the terrain-wide shadow taps. Both are behind switches that default off or
-are cheap to zero.
+Three costs are paid ahead of the exact pixel that may use them: the scene
+capture, the local world-reflection/canopy scan, and terrain-wide shadow taps.
+They are behind feature/debug gates or strength checks, but none has been
+profiled.
 
 ## Related reading
 

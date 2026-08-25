@@ -121,8 +121,9 @@ colour is that tree today?"
 The volume rebuilds on initial upload, after player movement beyond 32 horizontal
 blocks or 16 vertical blocks, after `BlockChanged` inside the volume, and after
 `ChunkDirty` intersects the volume. Rebuild logs include reason, invalidation
-count and per-class totals. The atlas is bound only when pixel reflection is
-active or when a world-volume debug view is selected.
+count and per-class totals. The atlas is bound when pixel reflection is active,
+when canopy context is needed for forest lighting, or when a world-volume/canopy
+debug view is selected.
 
 `vvPixelReflection` resolves sources in this order:
 

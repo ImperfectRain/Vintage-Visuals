@@ -111,9 +111,9 @@ Don't comment what the code already says. Do comment:
   ("intentionally not normalizing here, see PBR.md")
 
 ### One README per subsystem folder, not just one at repo root
-For a project with 4 semi-independent subsystems (ColorGrade, Weather,
-Reflections, PseudoPBR), a single root README gets stale fastest in the
-section nobody's currently working on. Instead:
+For a project with several semi-independent subsystems, a single root README
+gets stale fastest in the section nobody is currently working on. Keep design
+detail beside the code instead:
 
 ```
 /src/PseudoPBR/README.md   <- what this subsystem does, its inputs/outputs,

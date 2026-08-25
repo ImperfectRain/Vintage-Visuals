@@ -38,8 +38,10 @@ What the audit found, verified against `VintagestoryAPI` and the dumped shaders:
 | Horizon fog on the sky | yes | `horizonFog`, `getFogAmountForSky` |
 | Directional in-scattering | **no** | nothing computes it |
 
-The last row is the only genuine gap, and it is the only thing here that would
-justify GLSL. It is not implemented yet.
+The last row was the only genuine gap found by the audit, and it is why
+`atmosphere.glsl` exists. The shader branch now implements the directional air
+terms for the patched terrain, ground-cover, entity and particle programs. It is
+still L2 until those effects are validated in a running world.
 
 ## The three layers
 

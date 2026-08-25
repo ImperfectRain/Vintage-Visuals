@@ -4,8 +4,10 @@ What the weather does to how the world looks.
 
 ## Status
 
-**Wet surfaces and cloud shadows.** All verified against the game's own shaders
-with `tools/verifypatches`; only wetness has been seen on screen.
+**Wet surfaces, cloud shadows and ripples have runtime evidence.** Wetness is
+the only weather feature treated as visually closed. Cloud shadows and ripples
+have been seen/debugged in game, but their look is still being tuned and they do
+not count as visually validated.
 
 **Rain fog has moved out of this subsystem's shader group.** Weather still
 decides how much - `FogStrength` and `FogTint` are still here, and this is still
@@ -16,11 +18,11 @@ See DECISIONS D23.
 |---|---|
 | Wetness model (`WetnessTracker`) | done, level 4 (renders) |
 | Rain response in the material shaders | done, level 4 (renders) |
-| Rain ripples in standing water | done, level 2 (compiles) |
-| Overcast light response | done, level 2 (compiles) |
+| Rain ripples in standing water | runtime evidence, not visually closed |
+| Overcast light response | runtime evidence, not visually closed |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
 | Fog and tint by weather state | **moved to `src/Atmosphere/`** - decided here, rendered there |
-| Cloud shadows | reworked, level 2 (compiles) |
+| Cloud shadows | runtime evidence, not visually closed; sub-tile drift still open |
 | Cloud shaping | **removed** - not possible from a cloud shader, see below |
 
 ## Wet surfaces

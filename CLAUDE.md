@@ -75,9 +75,9 @@ nothing. `verifypatches` refuses such a file by name rather than trusting it.
 ## What this project is
 
 A client-side **rendering framework** that ships a visual overhaul, not a shader
-pack. Read `docs/ARCHITECTURE.md` before adding a system: it defines the five
-layers, the rule that dependencies point down and inward only, and why a
-config-scaled value must never enter the shared environment state.
+pack. Read `docs/ARCHITECTURE.md` before adding a system: it defines the layers,
+the rule that dependencies point down and inward only, and why a config-scaled
+value must never enter the shared environment state.
 
 The one-line goal: reconstruct as much of a modern physically-inspired pipeline
 as Vintage Story's renderer allows, *while preserving the game's art direction*.
@@ -100,14 +100,15 @@ hierarchy, the budgets, and what this project deliberately does not build.
   a second through two copies of the same gain constant. The namespace is
   `Scene` rather than `Environment` because the latter shadows
   `System.Environment` for every file in `VintageVisuals.Common`.
-- `src/ColorGrade/`, `src/Weather/`, `src/Reflections/`, `src/PseudoPBR/` — one
-  folder per subsystem, each with its own `README.md`.
+- `src/ColorGrade/`, `src/Weather/`, `src/Atmosphere/`, `src/Reflections/`,
+  `src/PseudoPBR/`, `src/Ui/` — one folder per subsystem or configuration
+  client, each with its own `README.md`.
 - `assets/vintagevisuals/shaderpatches/*.yaml` — regex/token patches against
   **vanilla** shaders, one file per subsystem.
 - `assets/vintagevisuals/shadersnippets/*.glsl` — GLSL bodies the patches inject.
   Kept out of the YAML so the GLSL stays readable and diffable. `pbrcore.glsl`
-  is the ONE evaluation of Cook-Torrance and is injected into all three shading
-  programs (`chunkopaque`, `chunktopsoil`, `entityanimated`); a smoke check
+  is the ONE evaluation of Cook-Torrance and is injected into the terrain,
+  entity and particle shading programs; a smoke check
   asserts it is defined exactly once. `scene.glsl` is the ONE description of
   the conditions it runs in, injected at the same three anchors. Anything that
   shades a surface uses both rather than copying either.
@@ -230,7 +231,7 @@ hierarchy, the budgets, and what this project deliberately does not build.
   Check the zero case of every new uniform before adding it.
 - **A declared uniform is not an uploaded uniform.** An unset GLSL uniform reads
   as zero, and zero is a legal value, so a missing `program.Uniform(...)` call
-  is invisible from C# and from the log. Five shipped that way at once. The
+  is invisible from C# and from the log. Several shipped that way at once. The
   fix is `tools/smoketest`'s uniform-wiring check, which compares the shader's
   declarations against the binder's uploads in both directions.
 - **Check a function is REACHABLE before patching it.** `tools/verifypatches`

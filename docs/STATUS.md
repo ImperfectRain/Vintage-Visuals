@@ -54,18 +54,18 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Patch gating by config — skips the patch, not the effect | L4 | `IsPatchGroupEnabled` + shader reload |
 | `[x]` | Harmony hook on `ShaderRegistry.LoadShader` | L4 | reflection-guarded, logs rather than throws |
 | `[x]` | Config with live reload (<kbd>Ctrl</kbd>+<kbd>V</kbd>) | L4 | |
-| `[x]` | ConfigLib bridge over the event bus | L3 | 44 settings; zero coupling, no declared dependency |
+| `[x]` | ConfigLib bridge over the event bus | L3 | generated from `configlib-patches.json`; zero coupling, no declared dependency |
 | `[x]` | ASCII guard on shipped GLSL | L4 | load-time refusal + smoke scan |
-| `[x]` | `tools/smoketest` — 903 checks, no game needed | L4 | count retired as a measure of confidence; see the mutation row below |
-| `[x]` | Interaction invariants I1-I10 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
-| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 25 mutations, 25 caught, 0 missed |
+| `[x]` | `tools/smoketest` — no game needed | L4 | exact count changes with the suite; see the mutation row below |
+| `[x]` | Interaction invariants I1-I19 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
+| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 52 mutations, 52 caught, 0 missed |
 | `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | hard-crash isolation build with geometry and readability cleanup: standard shaded background retained; native scrollbar/wheel restored through guarded deferred recomposition; hover/per-tab scroll/Advanced switch still temporarily removed; visible row descriptions and explicit overview actions added; needs in-game screenshot/stress review |
 | `[~]` | **Shipped defaults turn the mod on** | L2 | ten atmospheric effects and PseudoPBR now default on; the numbers are chosen, not measured. See [D44](DECISIONS.md) |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |
 | `[x]` | Shader delivery table — one line per target, six states kept apart | L2 | seen / matched / applied / written back; see [D41](DECISIONS.md) |
 | `[-]` | Hooking every `LoadShader` overload | — | shipped as a total regression and reverted; [D41](DECISIONS.md) |
 | `[-]` | Per-group source sentinel | — | existed only for multi-hook delivery; removed with it |
-| `[~]` | **Chunk, topsoil and final shaders unpatched at runtime** | L3 | Total loss at `bd988bd` CLOSED — reported functional again at `8b318ea` ([D41](DECISIONS.md)). Whether the earlier PARTIAL failure persists is unmeasured: it was observed in one log where only `entityanimated.fsh` and `particlescube.fsh` reached the patcher ([D40](DECISIONS.md)), and the delivery table has not been read since |
+| `[-]` | **Total shader-delivery loss at runtime** | — | regression at `bd988bd` closed at `8b318ea` ([D41](DECISIONS.md)); the active guard is the shader census and delivery table above |
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |
@@ -88,7 +88,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Material identity from `EnumBlockMaterial` | L3 | 14090 blocks classified, 0 fallbacks; covers modded blocks |
 | `[x]` | Derived normal / roughness / specular / metal atlas | L4 | cached to disk, multi-page |
 | `[x]` | Multi-page atlas via Harmony bind hook | L4 | degrades to vanilla with a log line if the hook fails |
-| `[~]` | `CloudTileReader` — the game's own cloud placement | L2 | reflection into `VintagestoryLib`; **unverified**, see §9 |
+| `[~]` | `CloudTileReader` — the game's own cloud placement | L4 | found in a 1.22.7 client with FluffyClouds; sub-tile `windOffsetX/Z` remains unapplied |
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
 | `[x]` | **Emissive materials** from vanilla's own `glowLevel` | L2 | hot rather than bright, dimmer in daylight, position-seeded flicker, feeds vanilla's bloom |
 | `[ ]` | Camera state (velocity, FOV, underwater depth) as shared state | — | needed by motion effects and underwater |
@@ -97,8 +97,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | **Stack budgets** so one idea cannot apply twice | L2 | *a real defect today*: in rain, grading, overcast and fog all press the same direction with no budget. §3 |
 | `[x]` | **Gameplay readability constraint** | L2 | effects must yield to playability: caves navigable, rain fog not hiding a drifter, storms not also doing something clever. §4 |
 | `[x]` | Shared scene vocabulary snippet (`scene.glsl`) | L2 | §5 |
-| `[ ]` | Receiver masks (may this pixel receive this effect) | — | **deliberately not built.** Nothing would consume it until reflections or emissive land, and a contract with no consumer gets designed for the wrong shape. §6 |
-| `[x]` | Effect authorities and dampening | L2 | ColorGrade contrast, crevice occlusion, rain fog and overcast all own contrast today with no arbitration. Also covers other shader mods. §6 |
+| `[ ]` | Receiver masks (may this pixel receive this effect) | — | **deliberately not built.** Reflections, emission and canopy now carry local receiver logic; a generic shared mask still lacks one consumer contract. §6 |
+| `[x]` | Effect authorities and dampening | L2 | `VisualBudget` now arbitrates shared roles. Profiling and runtime tuning remain open. §6 |
 | `[x]` | Per-shader debug enums | L2 | §7 |
 | `[~]` | Style targets (None/Filmic/Muted/Vivid/Cold/Warm) | L2 | the reachable half of §9. Image-derived styles still open: decoding needs SkiaSharp, and without a framebuffer readback to compare against, aiming at a measured target is open loop |
 | `[ ]` | Detected-versus-effective state with suppression | — | **deliberately not built.** There is no override layer for it to protect. §8 |
@@ -162,7 +162,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Cloud shadows from the game's own cloud tiles | L2 | **reported broken three times**; see §9 |
 | `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
-| `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | tracked but nothing consumes it yet |
+| `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | consumed by the material snow film; real accumulated depth remains vanilla snow blocks |
 | `[~]` | **Snow film as a material response** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
 | `[x]` | **Frost as an environmental layer** | L2 | built on vanilla's own `frostAlpha`/`fragFrostAlpha`. Vanilla tints; this adds the material body |
 | `[ ]` | Rain streaks running down vertical wet faces | — | cut from the ripple commit on purpose, unverifiable blind |
@@ -1108,9 +1108,9 @@ committed.
 
 ### Closed by the pre-test proofing pass
 
-Seven defects found by inspection, not by symptom - none of them would have
-announced itself in a log, and five would have looked like "the feature does
-nothing" on screen.
+Seven defects from this pass were found by inspection, not by symptom - none of
+them would have announced itself in a log, and five would have looked like "the
+feature does nothing" on screen.
 
 | What was wrong | What it cost |
 |---|---|
