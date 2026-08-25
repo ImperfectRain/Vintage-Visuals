@@ -163,15 +163,18 @@ uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
 uniform float vv_reflectFar;         // far plane of the captured projection
 uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
 
-// Debug-only world-space reflection proof. Stored as a 2D atlas of 64 Z
-// slices: each slice is 64x64, and the atlas is 8 slices wide by 8 slices tall.
-// Origin is camera/player-relative, not absolute world space, so the shader
-// subtracts small floats while the CPU keeps the volume anchored to integer
-// world block coordinates.
+// Debug-only world-space reflection proof. Stored as a 2D atlas of Z slices.
+// Origin is render-origin/player-relative, not absolute world space, so the
+// shader subtracts small floats while the CPU keeps the volume anchored to
+// integer world block coordinates. This matches the terrain/capture convention
+// used elsewhere in this file: chunk positions are relative to the player
+// render origin, and the camera offset is baked into the matrix.
 uniform sampler2D vv_reflectWorld;
 uniform float vv_reflectWorldValid;
 uniform vec3 vv_reflectWorldOrigin;
 uniform vec3 vv_reflectWorldSize;
+uniform vec2 vv_reflectWorldSliceSize;
+uniform vec2 vv_reflectWorldAtlasGrid;
 uniform vec2 vv_reflectWorldAtlasSize;
 
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
@@ -2278,6 +2281,8 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 #define VV_WORLD_NO_VOLUME  4.0
 
 const float VV_WORLD_RANGE = 48.0;
+const float VV_WORLD_ORIGIN_BIAS = 0.05;
+const float VV_WORLD_TIE_EPSILON = 0.0001;
 const int VV_WORLD_STEPS = 128;
 
 struct VvWorldHit
@@ -2301,8 +2306,9 @@ vec4 vvWorldVoxel(ivec3 cell)
         cell.z >= int(vv_reflectWorldSize.z)) return vec4(0.0);
 
     float z = float(cell.z);
-    vec2 slice = vec2(mod(z, 8.0), floor(z / 8.0));
-    vec2 pixel = slice * vec2(64.0, 64.0) + vec2(float(cell.x), float(cell.y)) + vec2(0.5);
+    float columns = max(1.0, vv_reflectWorldAtlasGrid.x);
+    vec2 slice = vec2(mod(z, columns), floor(z / columns));
+    vec2 pixel = slice * vv_reflectWorldSliceSize + vec2(float(cell.x), float(cell.y)) + vec2(0.5);
     return texture(vv_reflectWorld, pixel / max(vec2(1.0), vv_reflectWorldAtlasSize));
 }
 
@@ -2324,11 +2330,13 @@ VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     if (len < 1e-4) return miss;
     dir /= len;
 
-    // Move off the source face before the first voxel lookup. Otherwise a
-    // reflective floor can immediately hit the block it is drawn from, which is
-    // the "touching the ground breaks reflection" failure this proof exists to
-    // isolate.
-    vec3 local = origin + normalize(sceneNormal) * 0.05 + dir * 0.05 - vv_reflectWorldOrigin;
+    // Move off the source face before the first voxel lookup. One named bias
+    // keeps the scale auditable: it is large enough to leave the emitting face
+    // but small enough to stay inside the adjacent block cell.
+    vec3 local = origin
+               + normalize(sceneNormal) * VV_WORLD_ORIGIN_BIAS
+               + dir * VV_WORLD_ORIGIN_BIAS
+               - vv_reflectWorldOrigin;
 
     miss.reason = VV_WORLD_OUTSIDE;
     if (!vvWorldInside(local)) return miss;
@@ -2336,16 +2344,29 @@ VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
     ivec3 cell = ivec3(floor(local));
     ivec3 stepDir = ivec3(sign(dir));
 
-    vec3 safeDir = max(abs(dir), vec3(1e-5));
-    vec3 delta = 1.0 / safeDir;
+    vec3 absDir = abs(dir);
+    vec3 delta = vec3(1e20);
     vec3 nextBoundary = vec3(cell) + step(vec3(0.0), dir);
-    vec3 side = (nextBoundary - local) / dir;
+    vec3 side = vec3(1e20);
 
-    if (stepDir.x == 0) side.x = 1e20;
-    if (stepDir.y == 0) side.y = 1e20;
-    if (stepDir.z == 0) side.z = 1e20;
+    if (absDir.x > 1e-5)
+    {
+        delta.x = 1.0 / absDir.x;
+        side.x = (nextBoundary.x - local.x) / dir.x;
+    }
+    if (absDir.y > 1e-5)
+    {
+        delta.y = 1.0 / absDir.y;
+        side.y = (nextBoundary.y - local.y) / dir.y;
+    }
+    if (absDir.z > 1e-5)
+    {
+        delta.z = 1.0 / absDir.z;
+        side.z = (nextBoundary.z - local.z) / dir.z;
+    }
 
     miss.reason = VV_WORLD_MISS;
+    float entryDistance = 0.0;
 
     for (int i = 0; i < VV_WORLD_STEPS; i++)
     {
@@ -2355,27 +2376,30 @@ VvWorldHit vvWorldReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
             VvWorldHit hit;
             hit.color = voxel.rgb;
             hit.reason = VV_WORLD_HIT;
-            hit.distance = min(side.x, min(side.y, side.z));
+            hit.distance = entryDistance;
             hit.steps = float(i + 1);
             return hit;
         }
 
-        float travel;
-        if (side.x <= side.y && side.x <= side.z)
+        float travel = min(side.x, min(side.y, side.z));
+        entryDistance = travel;
+
+        // Amanatides-Woo with a non-supercover edge convention: when two or
+        // three axes cross at the same parametric distance, advance all tied
+        // axes together. That prevents axis-order bias, repeated zero-area
+        // cells, and phantom hits that only touch a voxel corner.
+        if (side.x <= travel + VV_WORLD_TIE_EPSILON)
         {
-            travel = side.x;
             side.x += delta.x;
             cell.x += stepDir.x;
         }
-        else if (side.y <= side.z)
+        if (side.y <= travel + VV_WORLD_TIE_EPSILON)
         {
-            travel = side.y;
             side.y += delta.y;
             cell.y += stepDir.y;
         }
-        else
+        if (side.z <= travel + VV_WORLD_TIE_EPSILON)
         {
-            travel = side.z;
             side.z += delta.z;
             cell.z += stepDir.z;
         }

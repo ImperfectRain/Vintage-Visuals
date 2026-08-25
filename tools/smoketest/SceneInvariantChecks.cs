@@ -74,6 +74,7 @@ namespace VintageVisuals.SmokeTest
             I12_ARateConstantIsTheRateUsed(check);
             I13_AToleranceIsNotFinerThanItsData(repo, check);
             I14_EnabledMustNotMeanInert(check);
+            I15_WorldDdaReportsGeometryRatherThanBias(check);
         }
 
         // -------------------------------------------------------------------
@@ -1220,6 +1221,63 @@ namespace VintageVisuals.SmokeTest
                 check("I10 " + label + " debug view numbers are unique",
                       nums.Count == nums.Distinct().Count(), "");
             }
+        }
+
+        // -------------------------------------------------------------------
+        // I15  WORLD DDA MUST REPORT THE CELL IT ENTERED
+        //
+        // The first world-reflection proof showed coherent off-screen geometry,
+        // but its hit distance was subtly wrong: when a cell was occupied it
+        // reported the next voxel boundary, not the parametric distance at which
+        // the ray entered that cell. The same pass hard-coded the 64^3 / 8x8
+        // atlas layout in GLSL, making every larger production volume a shader
+        // edit rather than a data change.
+        // -------------------------------------------------------------------
+        static void I15_WorldDdaReportsGeometryRatherThanBias(Action<string, bool, string> check)
+        {
+            string pbrCode = Regex.Replace(_pbr, @"//[^\n]*", "");
+
+            check("I15 world volume layout is uploaded rather than hard-coded",
+                  pbrCode.Contains("uniform vec2 vv_reflectWorldSliceSize;") &&
+                  pbrCode.Contains("uniform vec2 vv_reflectWorldAtlasGrid;") &&
+                  pbrCode.Contains("slice * vv_reflectWorldSliceSize") &&
+                  !pbrCode.Contains("slice * vec2(64.0, 64.0)"),
+                  "changing volume dimensions must not require rewriting vvWorldVoxel");
+
+            check("I15 world DDA has one named origin bias",
+                  pbrCode.Contains("const float VV_WORLD_ORIGIN_BIAS") &&
+                  pbrCode.Contains("normalize(sceneNormal) * VV_WORLD_ORIGIN_BIAS") &&
+                  pbrCode.Contains("dir * VV_WORLD_ORIGIN_BIAS") &&
+                  !pbrCode.Contains("normalize(sceneNormal) * 0.05 + dir * 0.05"),
+                  "source-block escape distance must be auditable as one constant");
+
+            check("I15 world DDA keeps zero components finite",
+                  pbrCode.Contains("vec3 delta = vec3(1e20);") &&
+                  pbrCode.Contains("vec3 side = vec3(1e20);") &&
+                  pbrCode.Contains("if (absDir.x > 1e-5)") &&
+                  pbrCode.Contains("if (absDir.y > 1e-5)") &&
+                  pbrCode.Contains("if (absDir.z > 1e-5)"),
+                  "zero ray components must not flow through a divide");
+
+            check("I15 world DDA advances tied axes together",
+                  pbrCode.Contains("const float VV_WORLD_TIE_EPSILON") &&
+                  Regex.IsMatch(pbrCode, @"if\s*\(side\.x <= travel \+ VV_WORLD_TIE_EPSILON\)") &&
+                  Regex.IsMatch(pbrCode, @"if\s*\(side\.y <= travel \+ VV_WORLD_TIE_EPSILON\)") &&
+                  Regex.IsMatch(pbrCode, @"if\s*\(side\.z <= travel \+ VV_WORLD_TIE_EPSILON\)") &&
+                  !Regex.IsMatch(pbrCode, @"if\s*\(side\.x <= side\.y && side\.x <= side\.z\).*?else if",
+                                 RegexOptions.Singleline),
+                  "edge/corner crossings should not inherit X/Y/Z priority");
+
+            string world;
+            try { world = FunctionBody(_pbr, "VvWorldHit vvWorldReflection("); }
+            catch (Exception ex) { check("I15 world DDA body is readable", false, ex.Message); return; }
+
+            check("I15 world hit distance is the occupied cell entry distance",
+                  world.Contains("float entryDistance = 0.0;") &&
+                  world.Contains("hit.distance = entryDistance;") &&
+                  world.Contains("entryDistance = travel;") &&
+                  !world.Contains("hit.distance = min(side.x, min(side.y, side.z));"),
+                  "hit distance must describe the cell entered, not the next boundary");
         }
     }
 }

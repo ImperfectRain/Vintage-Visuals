@@ -86,6 +86,8 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldValidUniform = "vv_reflectWorldValid";
         public const string ReflectWorldOriginUniform = "vv_reflectWorldOrigin";
         public const string ReflectWorldSizeUniform = "vv_reflectWorldSize";
+        public const string ReflectWorldSliceSizeUniform = "vv_reflectWorldSliceSize";
+        public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
         public const string ShaftUniform = "vv_pbrShafts";
 
@@ -640,6 +642,8 @@ namespace VintageVisuals.PseudoPBR
 
             SetIfPresent(program, ReflectWorldOriginUniform, volume.OriginRelativeToPlayer(now));
             SetIfPresent(program, ReflectWorldSizeUniform, volume.Size);
+            SetIfPresent(program, ReflectWorldSliceSizeUniform, volume.SliceSize);
+            SetIfPresent(program, ReflectWorldAtlasGridUniform, volume.AtlasGrid);
             SetIfPresent(program, ReflectWorldAtlasSizeUniform, volume.AtlasSize);
             program.Uniform(ReflectWorldValidUniform, 1f);
         }

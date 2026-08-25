@@ -56,6 +56,16 @@ namespace VintageVisuals.Reflections
             get { return new Vec2f(AtlasWidth, AtlasHeight); }
         }
 
+        public Vec2f SliceSize
+        {
+            get { return new Vec2f(SizeX, SizeY); }
+        }
+
+        public Vec2f AtlasGrid
+        {
+            get { return new Vec2f(AtlasColumns, AtlasRows); }
+        }
+
         public Vec3f OriginRelativeToPlayer(EntityPos player)
         {
             if (player == null) return new Vec3f();
