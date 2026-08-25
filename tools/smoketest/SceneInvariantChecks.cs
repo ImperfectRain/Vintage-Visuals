@@ -78,6 +78,7 @@ namespace VintageVisuals.SmokeTest
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
             I17_WorldVolumeInvalidatesFromWorldEvents(repo, check);
             I18_WorldVolumeCarriesLitBlockColour(repo, check);
+            I19_HybridReflectionUsesWorldBetweenSceneAndSky(repo, check);
         }
 
         // -------------------------------------------------------------------
@@ -1326,7 +1327,7 @@ namespace VintageVisuals.SmokeTest
             check("I16 world class debug view is selectable and bound",
                   pbrCode.Contains("if (mode == 57)") &&
                   pbrCode.Contains("vvWorldClassColor(hit57.voxelClass)") &&
-                  binder.Contains("_look.DebugView >= 53f && _look.DebugView <= 57f"),
+                  binder.Contains("_look.DebugView >= 53f && _look.DebugView <= 58f"),
                   "Debug > Debug System: Materials > World reflection proof > World voxel class (57) must upload the atlas");
         }
 
@@ -1405,6 +1406,50 @@ namespace VintageVisuals.SmokeTest
                   worldVolume.Contains("LightChannel(b") &&
                   worldVolume.Contains("GameMath.Clamp(light, 0f, 1f)"),
                   "world-space reflections need local light, not unlit albedo pasted onto dark scenes");
+        }
+
+        // -------------------------------------------------------------------
+        // I19  WORLD VOLUME IS THE MIDDLE SOURCE IN THE HYBRID REFLECTION
+        //
+        // The final material path should prefer the screen-space capture where
+        // it is available, use world-space voxel hits for local geometry that
+        // the capture cannot see, and fall back to the analytic environment
+        // only after both real sources fail.
+        // -------------------------------------------------------------------
+        static void I19_HybridReflectionUsesWorldBetweenSceneAndSky(string repo, Action<string, bool, string> check)
+        {
+            string pbrCode = Regex.Replace(_pbr, @"//[^\n]*", "");
+            string pixel;
+            try { pixel = FunctionBody(_pbr, "vec3 vvPixelReflection("); }
+            catch (Exception ex) { check("I19 pixel reflection body is readable", false, ex.Message); return; }
+
+            string binder = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+
+            check("I19 normal reflection rendering uploads the world volume",
+                  binder.Contains("bool activeReflection = _look.PixelReflection > 0.001f") &&
+                  binder.Contains("(!activeDebugView && !activeReflection)"),
+                  "world-space hits cannot affect gameplay if the atlas is bound only for debug views");
+
+            check("I19 pixel reflection resolves scene over world over fallback",
+                  pixel.Contains("VvSceneHit scene = vvSceneReflection") &&
+                  pixel.Contains("VvWorldHit world = vvWorldReflection") &&
+                  pixel.Contains("vec3 worldImage = mix(fallback, world.color, worldConfidence)") &&
+                  pixel.Contains("vec3 image = mix(worldImage, sceneColor, sceneConfidence)") &&
+                  pixel.IndexOf("vec3 worldImage = mix(fallback, world.color, worldConfidence)", StringComparison.Ordinal) <
+                  pixel.IndexOf("vec3 image = mix(worldImage, sceneColor, sceneConfidence)", StringComparison.Ordinal),
+                  "resolver order should be analytic fallback, upgraded by world hit, then upgraded by scene capture");
+
+            check("I19 world contribution fades before the hard range limit",
+                  pbrCode.Contains("const float VV_WORLD_FADE_START") &&
+                  pixel.Contains("smoothstep(VV_WORLD_FADE_START, VV_WORLD_RANGE") &&
+                  pixel.Contains("(world.reason == VV_WORLD_HIT ? 1.0 : 0.0)"),
+                  "a hard cutoff at the volume/range edge would show as another reflection band");
+
+            check("I19 hybrid source debug view is named and implemented",
+                  pbrCode.Contains("if (mode == 58)") &&
+                  pbrCode.Contains("source = mix(source, vec3(1.0), scene58Confidence)") &&
+                  File.ReadAllText(Path.Combine(repo, "src/Ui/DebugViewRegistry.cs")).Contains("Hybrid reflection source"),
+                  "Debug > Debug System: Materials > World reflection proof > Hybrid reflection source (58) must explain the resolver");
         }
     }
 }

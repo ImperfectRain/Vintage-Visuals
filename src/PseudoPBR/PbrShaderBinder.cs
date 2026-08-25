@@ -625,11 +625,12 @@ namespace VintageVisuals.PseudoPBR
         {
             if (!program.HasUniform(ReflectWorldValidUniform)) return;
 
-            bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 57f;
+            bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 58f;
+            bool activeReflection = _look.PixelReflection > 0.001f;
             EntityPos now = _capi.World?.Player?.Entity?.Pos;
             WorldReflectionVolume volume = WorldVolume;
 
-            if (!activeDebugView || volume == null || now == null ||
+            if ((!activeDebugView && !activeReflection) || volume == null || now == null ||
                 !volume.EnsureUploaded(_capi, _capi.Logger, now))
             {
                 TerrainTextureBindInterceptor.SetWorldReflection(0);

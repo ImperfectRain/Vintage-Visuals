@@ -159,6 +159,7 @@ namespace VintageVisuals.Ui
             Pbr(55, "World hit distance", "Distance in blocks to the world-volume hit.", WorldProof);
             Pbr(56, "World trace steps", "How many DDA cells this fragment traversed.", WorldProof);
             Pbr(57, "World voxel class", "First non-empty block class crossed by the world reflection ray.", WorldProof);
+            Pbr(58, "Hybrid reflection source", "White uses scene capture, green uses world volume, blue uses analytic fallback.", WorldProof);
 
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));

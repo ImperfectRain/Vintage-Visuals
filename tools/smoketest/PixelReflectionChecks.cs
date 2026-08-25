@@ -411,9 +411,10 @@ namespace VintageVisuals.SmokeTest
 
             // The whole point of the pass: the analytic sky must be subordinate.
             check("the scene overrides the fallback where it is valid",
-                Regex.IsMatch(_code, @"mix\(fallback, sceneColor, sceneConfidence\)")
+                (Regex.IsMatch(_code, @"mix\(fallback, sceneColor, sceneConfidence\)")
+                    || Regex.IsMatch(_code, @"mix\(worldImage, sceneColor, sceneConfidence\)"))
                     && _code.Contains("float sceneConfidence = clamp(scene.valid, 0.0, 1.0)"),
-                "the fallback winning would make this the previous architecture again");
+                "the fallback or world volume winning over valid scene capture would make this the previous architecture again");
         }
 
         private static float Constant(string name)

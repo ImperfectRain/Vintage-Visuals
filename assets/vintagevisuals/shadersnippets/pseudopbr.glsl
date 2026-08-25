@@ -2292,6 +2292,7 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 const float VV_WORLD_RANGE = 48.0;
 const float VV_WORLD_ORIGIN_BIAS = 0.05;
 const float VV_WORLD_TIE_EPSILON = 0.0001;
+const float VV_WORLD_FADE_START = 38.0;
 const int VV_WORLD_STEPS = 128;
 
 struct VvWorldHit
@@ -2559,7 +2560,19 @@ vec3 vvPixelReflection(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughnes
     float sceneConfidence = clamp(scene.valid, 0.0, 1.0)
                           * mix(1.0, VV_REFLECT_FEEDBACK_KEEP, feedbackRisk);
 
-    vec3 image = mix(fallback, sceneColor, sceneConfidence);
+    // The world volume fills the gap between screen-space geometry and the
+    // analytic sky. It is lower fidelity than the capture, but it remains
+    // perspective-correct for reflected local geometry when that geometry is
+    // off screen or hidden behind the camera.
+    VvWorldHit world = vvWorldReflection(sceneNormal, materialUv, cameraRelativePos);
+    float worldDistanceFade = 1.0 - smoothstep(VV_WORLD_FADE_START, VV_WORLD_RANGE,
+                                               world.distance);
+    float worldConfidence = (world.reason == VV_WORLD_HIT ? 1.0 : 0.0)
+                          * worldDistanceFade
+                          * (1.0 - clamp(scene.valid, 0.0, 1.0));
+
+    vec3 worldImage = mix(fallback, world.color, worldConfidence);
+    vec3 image = mix(worldImage, sceneColor, sceneConfidence);
 
     return mix(environment, image, strength);
 }
@@ -3699,6 +3712,25 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     {
         VvWorldHit hit57 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
         return vec4(vvWorldClassColor(hit57.voxelClass), color.a);
+    }
+
+    // 58: hybrid source selection.
+    //   white  screen-space scene capture
+    //   green  world-volume reflection
+    //   blue   analytic fallback
+    if (mode == 58)
+    {
+        VvSceneHit scene58 = vvSceneReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        VvWorldHit world58 = vvWorldReflection(normalize(faceNormal), materialUv, cameraRelativePos);
+        float scene58Confidence = clamp(scene58.valid, 0.0, 1.0);
+        float world58Fade = 1.0 - smoothstep(VV_WORLD_FADE_START, VV_WORLD_RANGE, world58.distance);
+        float world58Confidence = (world58.reason == VV_WORLD_HIT ? 1.0 : 0.0)
+                                * world58Fade
+                                * (1.0 - scene58Confidence);
+
+        vec3 source = vec3(0.0, world58Confidence, 1.0 - max(scene58Confidence, world58Confidence));
+        source = mix(source, vec3(1.0), scene58Confidence);
+        return vec4(source, color.a);
     }
 
     // ---- Flora taxonomy, views 44-46 -------------------------------------
