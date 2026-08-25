@@ -37,8 +37,10 @@ namespace VintageVisuals.Reflections
         private int[] _pixels;
         private int[] _canopyPixels;
         private bool _dirty = true;
+        private bool _canopyDirty = true;
         private bool _volumeDirty = true;
         private bool _uploadFailed;
+        private bool _canopyUploadFailed;
         private bool _reportedUnsupportedColor;
         private int _pendingInvalidations;
         private string _lastInvalidationReason = "initial build";
@@ -58,7 +60,7 @@ namespace VintageVisuals.Reflections
 
         public int CanopyTextureId
         {
-            get { return _canopyTexture == null ? 0 : _canopyTexture.TextureId; }
+            get { return _canopyDirty || _canopyTexture == null ? 0 : _canopyTexture.TextureId; }
         }
 
         public Vec3f Size
@@ -108,41 +110,66 @@ namespace VintageVisuals.Reflections
                 Rebuild(capi, logger, player.Dimension, playerX, playerY, playerZ, rebuildReason);
             }
 
-            if (!_dirty && TextureId != 0 && CanopyTextureId != 0) return true;
+            if (!_dirty && TextureId != 0 && (!_canopyDirty || CanopyTextureId != 0)) return true;
             if (_uploadFailed || _pixels == null) return false;
 
-            _uploadFailed = true;
-
-            try
+            if (_dirty)
             {
-                if (_texture == null) _texture = new LoadedTexture(capi);
-                if (_canopyTexture == null) _canopyTexture = new LoadedTexture(capi);
+                _uploadFailed = true;
 
-                _texture.Width = AtlasWidth;
-                _texture.Height = AtlasHeight;
-                capi.Render.LoadOrUpdateTextureFromRgba(_pixels, false, 0, ref _texture);
+                try
+                {
+                    if (_texture == null) _texture = new LoadedTexture(capi);
 
-                _canopyTexture.Width = CanopyWidth;
-                _canopyTexture.Height = CanopyHeight;
-                capi.Render.LoadOrUpdateTextureFromRgba(_canopyPixels, false, 0, ref _canopyTexture);
+                    _texture.Width = AtlasWidth;
+                    _texture.Height = AtlasHeight;
+                    capi.Render.LoadOrUpdateTextureFromRgba(_pixels, false, 0, ref _texture);
+                }
+                catch (Exception ex)
+                {
+                    logger.Error("[VintageVisuals] reflections: world reflection volume upload failed. " +
+                                 "World-volume reflection fallback and its debug views are inactive.");
+                    logger.LogException(EnumLogType.Error, ex);
+                    return false;
+                }
+
+                if (TextureId == 0)
+                {
+                    logger.Warning("[VintageVisuals] reflections: world volume upload returned texture id 0. " +
+                                   "World-volume reflection and debug views are inactive.");
+                    return false;
+                }
+
+                _dirty = false;
+                _uploadFailed = false;
             }
-            catch (Exception ex)
+
+            if (_canopyDirty && !_canopyUploadFailed && _canopyPixels != null)
             {
-                logger.Error("[VintageVisuals] reflections: world reflection volume upload failed. " +
-                             "World-volume reflection fallback and its debug views are inactive.");
-                logger.LogException(EnumLogType.Error, ex);
-                return false;
+                _canopyUploadFailed = true;
+
+                try
+                {
+                    if (_canopyTexture == null) _canopyTexture = new LoadedTexture(capi);
+
+                    _canopyTexture.Width = CanopyWidth;
+                    _canopyTexture.Height = CanopyHeight;
+                    capi.Render.LoadOrUpdateTextureFromRgba(_canopyPixels, false, 0, ref _canopyTexture);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warning("[VintageVisuals] reflections: canopy context upload failed. " +
+                                   "Forest context lighting is inactive, but world-volume reflections remain active.");
+                    logger.LogException(EnumLogType.Warning, ex);
+                }
+
+                if (_canopyTexture != null && _canopyTexture.TextureId != 0)
+                {
+                    _canopyDirty = false;
+                    _canopyUploadFailed = false;
+                }
             }
 
-            if (TextureId == 0 || CanopyTextureId == 0)
-            {
-                logger.Warning("[VintageVisuals] reflections: world volume upload returned texture id 0. " +
-                               "World-volume reflection and canopy context debug views are inactive.");
-                return false;
-            }
-
-            _dirty = false;
-            _uploadFailed = false;
             return true;
         }
 
@@ -307,8 +334,10 @@ namespace VintageVisuals.Reflections
 
             clock.Stop();
             _dirty = true;
+            _canopyDirty = true;
             _volumeDirty = false;
             _uploadFailed = false;
+            _canopyUploadFailed = false;
 
             if (!_reportedUnsupportedColor)
             {
@@ -456,7 +485,9 @@ namespace VintageVisuals.Reflections
                 _canopyTexture = null;
             }
             _uploadFailed = false;
+            _canopyUploadFailed = false;
             _dirty = true;
+            _canopyDirty = true;
         }
 
         public void Dispose()

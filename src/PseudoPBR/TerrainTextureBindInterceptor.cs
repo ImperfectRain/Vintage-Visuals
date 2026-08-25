@@ -66,6 +66,7 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         private static volatile int _captureTextureId;
         private static volatile int _worldReflectionTextureId;
+        private static volatile int _canopyContextTextureId;
         private static ILogger _logger;
         private static volatile bool _active;
 
@@ -143,6 +144,9 @@ namespace VintageVisuals.PseudoPBR
         public void Uninstall()
         {
             SetPages(null);
+            SetSceneCapture(0);
+            SetWorldReflection(0);
+            SetCanopyContext(0);
 
             if (!_installed) return;
 
@@ -182,6 +186,18 @@ namespace VintageVisuals.PseudoPBR
         public static void SetWorldReflection(int textureId)
         {
             _worldReflectionTextureId = textureId;
+        }
+
+        /// <summary>
+        /// The canopy context texture to rebind per terrain draw, or 0 when
+        /// forest context is inactive. It follows the same rule as the scene
+        /// capture and world volume: texture-unit state is global, so a bind
+        /// performed during uniform upload is only a sampler-unit assignment,
+        /// not a guarantee that the texture survives until chunk rendering.
+        /// </summary>
+        public static void SetCanopyContext(int textureId)
+        {
+            _canopyContextTextureId = textureId;
         }
 
         public static void SetPages(Dictionary<int, int> materialPageByAtlasTexture)
@@ -320,6 +336,14 @@ namespace VintageVisuals.PseudoPBR
                 {
                     program.BindTexture2D(PbrShaderBinder.ReflectWorldUniform, worldReflectionId,
                                           WorldReflectionVolume.TextureUnit);
+                }
+
+                int canopyContextId = _canopyContextTextureId;
+
+                if (canopyContextId != 0 && program.HasUniform(PbrShaderBinder.CanopyContextUniform))
+                {
+                    program.BindTexture2D(PbrShaderBinder.CanopyContextUniform, canopyContextId,
+                                          WorldReflectionVolume.CanopyTextureUnit);
                 }
             }
             catch (Exception ex)

@@ -637,6 +637,7 @@ namespace VintageVisuals.PseudoPBR
                 !volume.EnsureUploaded(_capi, _capi.Logger, now))
             {
                 TerrainTextureBindInterceptor.SetWorldReflection(0);
+                TerrainTextureBindInterceptor.SetCanopyContext(0);
                 program.Uniform(ReflectWorldValidUniform, 0f);
                 SetIfPresent(program, CanopyContextValidUniform, 0f);
                 return;
@@ -662,12 +663,14 @@ namespace VintageVisuals.PseudoPBR
 
             if (program.HasUniform(CanopyContextUniform) && volume.CanopyTextureId != 0)
             {
+                TerrainTextureBindInterceptor.SetCanopyContext(volume.CanopyTextureId);
                 program.BindTexture2D(CanopyContextUniform, volume.CanopyTextureId,
                                       WorldReflectionVolume.CanopyTextureUnit);
                 SetIfPresent(program, CanopyContextValidUniform, 1f);
             }
             else
             {
+                TerrainTextureBindInterceptor.SetCanopyContext(0);
                 SetIfPresent(program, CanopyContextValidUniform, 0f);
             }
         }
@@ -754,6 +757,7 @@ namespace VintageVisuals.PseudoPBR
             TerrainTextureBindInterceptor.SetPages(null);
             TerrainTextureBindInterceptor.SetSceneCapture(0);
             TerrainTextureBindInterceptor.SetWorldReflection(0);
+            TerrainTextureBindInterceptor.SetCanopyContext(0);
 
             if (_programsThinkEnabled)
             {

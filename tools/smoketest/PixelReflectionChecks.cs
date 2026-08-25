@@ -362,9 +362,27 @@ namespace VintageVisuals.SmokeTest
                 interceptor.Contains("BindTexture2D(PbrShaderBinder.ReflectSceneUniform"),
                 "a per-frame bind and a per-draw bind are identical in every static test");
 
+            check("the canopy context is rebound per draw call, not once per frame",
+                interceptor.Contains("BindTexture2D(PbrShaderBinder.CanopyContextUniform"),
+                "forest context uses terrain shader texture state and must follow the atlas/capture bind path");
+
             check("the per-draw capture id is cleared when there is no capture",
                 Regex.IsMatch(binder, @"SetSceneCapture\(0\)"),
                 "a stale id keeps a destroyed texture bound");
+
+            check("the per-draw canopy id is cleared when canopy context is unavailable",
+                Regex.IsMatch(binder, @"SetCanopyContext\(0\)"),
+                "a stale canopy id can feed old column data into newly drawn terrain");
+
+            string worldVolume = File.ReadAllText(
+                Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));
+
+            check("canopy context upload cannot disable the world reflection volume",
+                worldVolume.Contains("canopy context upload failed") &&
+                worldVolume.Contains("world-volume reflections remain active") &&
+                Regex.IsMatch(worldVolume, @"if \(TextureId == 0\)[\s\S]{0,420}?return false;") &&
+                !Regex.IsMatch(worldVolume, @"if \(TextureId == 0 \|\| CanopyTextureId == 0\)"),
+                "the canopy texture is auxiliary; a failure there must not make terrain sample the world volume as invalid");
 
             check("the binder uploads a validity on EVERY path",
                 Regex.Matches(binder, @"Uniform\(ReflectValidUniform").Count >= 2,
