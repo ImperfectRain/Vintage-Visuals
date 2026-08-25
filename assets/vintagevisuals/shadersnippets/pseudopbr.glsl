@@ -163,7 +163,7 @@ uniform float vv_reflectValid;       // 0 no capture, 1 capture usable
 uniform float vv_reflectFar;         // far plane of the captured projection
 uniform vec2 vv_reflectFrameSize;    // screen size, for the capture debug view only
 
-// Debug-only world-space reflection proof. Stored as a 2D atlas of Z slices.
+// Local world-space reflection volume. Stored as a 2D atlas of Z slices.
 // Origin is render-origin/player-relative, not absolute world space, so the
 // shader subtracts small floats while the CPU keeps the volume anchored to
 // integer world block coordinates. This matches the terrain/capture convention
@@ -3660,12 +3660,10 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(coarse, inQuanta, m51.reason == VV_SSR_TOO_THICK ? 1.0 : 0.0, color.a);
     }
 
-    // ---- World reflection proof, views 53-57 ----------------------------
+    // ---- World reflection volume, views 53-58 ---------------------------
     //
-    // These bypass the screen-space capture and trace against the debug CPU
-    // block volume. They are a coordinate proof only: full opaque cubes, one
-    // representative colour per block id, no partial meshes, no entities, and
-    // no contribution to final PBR.
+    // These inspect the CPU-built world volume used as the middle reflection
+    // source between the screen-space capture and the analytic fallback.
     //
     // 53: why the world trace ended.
     //   green  hit an occupied full-cube cell

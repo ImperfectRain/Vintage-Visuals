@@ -334,6 +334,16 @@ SceneCaptureRenderer   src/Reflections/
                                       screen-space march
                                       crossing + bisection
                                                  |
+WorldReflectionVolume src/Reflections/           |
+  128 x 64 x 128 classified cells                |
+        |                                        |
+        +----------------- unit 12 --------------> vvWorldReflection
+                                                 |
+                                    hybrid resolver
+                                      scene first
+                                      world volume second
+                                      analytic fallback last
+                                                 |
                                     vvAmbientSpecular   <- substituted, not added
                                                  |
                                             final colour
@@ -359,6 +369,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Cloud placement | game's cloud renderer tiles | `CloudTileReader`, Beer-Lambert | uniform array | cloud shadows |
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
 | Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
+| Local reflection volume | `IBlockAccessor` over a bounded player-centred block region | classified block cells, representative colour multiplied by block light, 2D Z-slice atlas | world volume texture, unit 12 | `vvWorldReflection` |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |

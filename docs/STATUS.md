@@ -132,7 +132,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[x]` | Per-layer debug views (0–52) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 plus 52 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
+| `[x]` | Per-layer debug views (0–58) | L3 | 1-24 material layers, 25-31 the canopy audit, 32-37 plus 52 pixel reflection, 38-43 the scene bridge, 44-47 flora taxonomy, 48-51 the reflection march, 53-58 the world-volume reflection path. Slider range, config clamp and shader modes are pinned to each other by `tools/smoketest` |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |
@@ -226,6 +226,7 @@ and DECISIONS D8-D13.
 | `[x]` | Analytic sky/horizon/ground fallback | **L2** | Used where the ray leaves the screen, hits nothing, or points at the camera |
 | `[x]` | Reflection through the existing BRDF | **L2** | Substituted into `vvAmbientSpecular`, so Fresnel, metalness, specular occlusion and wetness all apply unchanged - D13 |
 | `[x]` | Wet surfaces reflect more strongly | **L2** | No reflection-specific code: `vvApplyEnvironmentLayers` lowers roughness and raises the specular mask, and both feed the reflection |
+| `[~]` | Local world-volume reflection fallback | **L2** | 128 x 64 x 128 classified block atlas, data-driven 2D slice layout, lit representative block colour for full cubes, block/chunk invalidation and hybrid source debug. Not profiled or seen in game from this environment |
 | `[ ]` | Water reflections | — | `chunkliquid.fsh` is in NO patch group. Deliberately deferred until the geometry is validated on terrain |
 | `[ ]` | Refraction | — | |
 | `[ ]` | Animated wave and micro-normals | — | vanilla animates water already; check before rebuilding |
@@ -239,7 +240,9 @@ and DECISIONS D8-D13.
   the player) cannot be and lags.
 - Screen-space limits apply and are not bugs: nothing behind the camera, off the
   frame, or hidden behind nearer geometry can be reflected.
-- Depth is packed into an 8-bit alpha, so precision at distance is poor.
+- World-volume hits currently trace only full opaque block cells. Partial blocks,
+  cutouts, liquids, entities and unsupported complex geometry are classified but
+  not yet used as reflection hits.
 - Entities are unsupported - no material atlas, so no texel grid.
 - Never profiled.
 

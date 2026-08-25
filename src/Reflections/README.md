@@ -35,6 +35,7 @@ AfterPostProcessing  ---> capture ---> reflection ray
 |---|---|
 | `SceneCaptureRenderer.cs` | The capture. Owns the framebuffer, copies the frame, records the transform it was drawn with |
 | `ReflectionsSubsystem.cs` | Lifecycle. Starts and stops the capture from config, registers the renderer |
+| `WorldReflectionVolume.cs` | Local classified block volume. Builds the 2D atlas used when screen-space reflection has no valid scene hit |
 | `../../assets/vintagevisuals/shaders/vvscenecapture.vsh` | Fullscreen quad, clip space, no matrix |
 | `../../assets/vintagevisuals/shaders/vvscenecapture.fsh` | Copies scene colour to RGB, linear view depth to alpha |
 
@@ -89,6 +90,49 @@ terrain feeds back toward black while sky remains normal because the sky pass is
 not replaced by PBR debug. The capture therefore pauses whenever
 `PseudoPBR.DebugView` is non-zero and diagnostics inspect the last normal frame.
 
+## World Volume
+
+Screen-space reflection remains the highest-confidence source, because it sees
+the actual rendered frame. It cannot see geometry that is off screen, hidden
+behind nearer pixels, or outside the previous capture. The world volume fills
+that gap with a bounded local block atlas.
+
+The volume is 128 x 64 x 128 cells around the player, stored as a 2D atlas of
+Z slices. The current atlas layout is data driven: 128 x 64 slices arranged as
+16 columns by 8 rows. The shader receives the slice size, grid and total atlas
+size as uniforms rather than hardcoding them.
+
+Each texel stores one classified voxel. Full opaque cubes store a representative
+game block colour multiplied by local block light in RGB, and store the voxel
+class in alpha. Non-full cells store class debug colour in RGB and the same class
+id in alpha. The first production pass traces only full opaque cubes for
+reflection hits; partial, cutout, transparent, liquid, emissive and unsupported
+cells are classified for diagnostics and future coverage.
+
+The volume rebuilds on initial upload, after player movement beyond 32 horizontal
+blocks or 16 vertical blocks, after `BlockChanged` inside the volume, and after
+`ChunkDirty` intersects the volume. Rebuild logs include reason, invalidation
+count and per-class totals. The atlas is bound only when pixel reflection is
+active or when a world-volume debug view is selected.
+
+`vvPixelReflection` resolves sources in this order:
+
+1. screen-space scene capture, when the captured frame has a valid hit;
+2. local world volume, when the scene hit is missing and the DDA hits a full
+   opaque cube inside range;
+3. analytic sky, horizon and ground fallback.
+
+The debug views exposed in the new UI are:
+
+| UI path | Mode | Shows |
+|---|---:|---|
+| Debug > Debug System: Materials > World reflection proof > World trace result | 53 | why the world DDA ended |
+| Debug > Debug System: Materials > World reflection proof > World hit color | 54 | lit representative block colour for the hit cell |
+| Debug > Debug System: Materials > World reflection proof > World hit distance | 55 | hit distance in blocks, normalised by range |
+| Debug > Debug System: Materials > World reflection proof > World trace steps | 56 | DDA cell budget used |
+| Debug > Debug System: Materials > World reflection proof > World voxel class | 57 | first non-empty classified cell crossed by the ray |
+| Debug > Debug System: Materials > World reflection proof > Hybrid reflection source | 58 | white screen-space, green world volume, blue analytic fallback |
+
 ## Cost
 
 | | |
@@ -96,6 +140,8 @@ not replaced by PBR debug. The capture therefore pauses whenever
 | Render target | One RGBA16F at half the frame in each axis, so a quarter of the pixels |
 | When | Every frame the feature is on, whether or not anything reflective is visible |
 | Extra passes | One fullscreen copy |
+| World atlas | 128 x 64 x 128 classified cells packed into a 2048 x 512 RGBA upload when pixel reflection or world debug is active |
+| World rebuild | Initial upload, player movement threshold, block edits inside the volume, or dirty chunks intersecting the volume |
 | Measured | **No.** Nothing here has been profiled |
 
 Off by default (`Reflections.SceneReflections`) for that reason.
@@ -103,6 +149,11 @@ Off by default (`Reflections.SceneReflections`) for that reason.
 ## Status
 
 **L2 — implemented, compiles, tested statically, not visually validated.**
+
+Normal terrain reflections now use a hybrid source: scene capture first, local
+world volume second, analytic fallback last. The world volume is production code,
+but still at L2 because it has not been profiled or validated in a running game
+from this environment.
 
 ### What the march does that nothing measured
 

@@ -176,8 +176,8 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
-        /// The debug-only world block-volume atlas to rebind per terrain draw,
-        /// or 0 when the proof views are inactive.
+        /// The world block-volume atlas to rebind per terrain draw, or 0 when
+        /// reflection and world-volume debug views are inactive.
         /// </summary>
         public static void SetWorldReflection(int textureId)
         {

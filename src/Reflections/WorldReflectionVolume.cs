@@ -8,7 +8,7 @@ using Vintagestory.API.MathTools;
 namespace VintageVisuals.Reflections
 {
     /// <summary>
-    /// Debug-only nearby block volume for proving world-space reflection rays.
+    /// Nearby classified block volume for world-space reflection rays.
     ///
     /// This is deliberately a 2D slice atlas rather than a sampler3D. The public
     /// render API already has a stable LoadOrUpdateTextureFromRgba path for 2D
@@ -114,7 +114,7 @@ namespace VintageVisuals.Reflections
             catch (Exception ex)
             {
                 logger.Error("[VintageVisuals] reflections: world reflection volume upload failed. " +
-                             "The debug-only world DDA views are inactive; normal rendering is unaffected.");
+                             "World-volume reflection fallback and its debug views are inactive.");
                 logger.LogException(EnumLogType.Error, ex);
                 return false;
             }
@@ -122,7 +122,7 @@ namespace VintageVisuals.Reflections
             if (TextureId == 0)
             {
                 logger.Warning("[VintageVisuals] reflections: world reflection volume upload returned texture id 0. " +
-                               "The debug-only world DDA views are inactive.");
+                               "World-volume reflection fallback and its debug views are inactive.");
                 return false;
             }
 

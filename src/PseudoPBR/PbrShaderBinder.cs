@@ -617,9 +617,8 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
-        /// Uploads the isolated world-space DDA proof volume. This is gated to
-        /// the new debug views so ordinary rendering never pays for the volume
-        /// rebuild, atlas upload, or extra sampler binding.
+        /// Uploads the local world-space reflection volume for reflective
+        /// gameplay and the world-volume debug views.
         /// </summary>
         private void BindWorldReflectionVolume(IShaderProgram program)
         {
