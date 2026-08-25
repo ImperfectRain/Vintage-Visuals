@@ -411,7 +411,8 @@ namespace VintageVisuals.SmokeTest
 
             // The whole point of the pass: the analytic sky must be subordinate.
             check("the scene overrides the fallback where it is valid",
-                Regex.IsMatch(_code, @"mix\(fallback, sceneColor, clamp\(scene\.valid"),
+                Regex.IsMatch(_code, @"mix\(fallback, sceneColor, sceneConfidence\)")
+                    && _code.Contains("float sceneConfidence = clamp(scene.valid, 0.0, 1.0)"),
                 "the fallback winning would make this the previous architecture again");
         }
 
@@ -458,6 +459,13 @@ namespace VintageVisuals.SmokeTest
             Match fn = Regex.Match(_pbr,
                 @"vec3 vvPixelReflection\(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughness,\s*\n\s*vec3 cameraRelativePos, vec3 environment\)\s*\{(.*?)\n\}",
                 RegexOptions.Singleline);
+            if (!fn.Success)
+            {
+                fn = Regex.Match(_pbr,
+                    @"vec3 vvPixelReflection\(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughness,\s*\n\s*vec3 cameraRelativePos, vec3 environment, vec3 surfaceColor\)\s*\{(.*?)\n\}",
+                    RegexOptions.Singleline);
+            }
+
             check("vvPixelReflection exists with the texel-centre signature", fn.Success, "");
             if (!fn.Success) return;
 
@@ -660,6 +668,13 @@ namespace VintageVisuals.SmokeTest
             check("the cap preserves hue rather than clamping channels",
                 Regex.IsMatch(_code, @"sceneColor \*= ceiling / sceneLuma;"),
                 "a per-channel clamp desaturates exactly the bright reflections that carry the most information");
+
+            check("self-similar reflected surface feedback loses confidence",
+                _code.Contains("VV_REFLECT_FEEDBACK_KEEP")
+                    && _code.Contains("vec3 surfaceHue = surfaceColor / max(surfaceLuma, 1e-4);")
+                    && _code.Contains("float feedbackRisk = hueMatch * overBright * clamp(scene.valid, 0.0, 1.0);")
+                    && Regex.IsMatch(_code, @"float sceneConfidence = clamp\(scene\.valid, 0\.0, 1\.0\)\s*\*\s*mix\(1\.0, VV_REFLECT_FEEDBACK_KEEP, feedbackRisk\);"),
+                "a composed-frame capture must not repeatedly reflect the same bright surface into itself");
 
             check("the image is blended in by strength rather than added",
                 Regex.IsMatch(_code, @"return mix\(environment, image, strength\);"),

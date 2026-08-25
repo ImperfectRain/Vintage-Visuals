@@ -1771,7 +1771,23 @@ const float VV_REFLECT_TOWARD = 0.30;
 // geometry colour.
 const float VV_REFLECT_MAX = 2.0;
 
+// How aggressively a captured scene hit that looks like this same surface is
+// trusted. The capture is last frame's finished image, so a reflective floor
+// can otherwise reflect its own already-reflected colour back into itself when
+// the player stands on it. Real object reflections are kept by testing colour
+// similarity, not just brightness.
+const float VV_REFLECT_FEEDBACK_KEEP = 0.35;
+const float VV_REFLECT_FEEDBACK_BRIGHT_START = 1.10;
+const float VV_REFLECT_FEEDBACK_BRIGHT_END = 1.90;
+const float VV_REFLECT_FEEDBACK_HUE_START = 0.18;
+const float VV_REFLECT_FEEDBACK_HUE_END = 0.42;
+
 const float VV_REFLECT_TWO_PI = 6.28318530718;
+
+float vvLuma(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
 
 // Projected material-texel footprint, in material texels per screen pixel.
 //
@@ -2247,7 +2263,7 @@ VvSceneHit vvSceneReflection(vec3 sceneNormal, vec2 materialUv, vec3 cameraRelat
 //
 // Strength 0 returns the input unchanged, which is vanilla.
 vec3 vvPixelReflection(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughness,
-                       vec3 cameraRelativePos, vec3 environment)
+                       vec3 cameraRelativePos, vec3 environment, vec3 surfaceColor)
 {
     float strength = clamp(vv_pbrPixelReflect, 0.0, 1.0);
     if (strength < 0.001) return environment;
@@ -2305,16 +2321,35 @@ vec3 vvPixelReflection(vec3 n, vec3 sceneNormal, vec2 materialUv, float roughnes
     // reflections that carry the most information.
     vec3 sceneColor = scene.color;
 
-    float sceneLuma = dot(sceneColor, vec3(0.2126, 0.7152, 0.0722));
-    float envLuma = dot(environment, vec3(0.2126, 0.7152, 0.0722));
+    float sceneLuma = vvLuma(sceneColor);
+    float envLuma = vvLuma(environment);
     float ceiling = envLuma * VV_REFLECT_MAX;
 
     if (sceneLuma > ceiling && sceneLuma > 1e-5)
     {
         sceneColor *= ceiling / sceneLuma;
+        sceneLuma = ceiling;
     }
 
-    vec3 image = mix(fallback, sceneColor, clamp(scene.valid, 0.0, 1.0));
+    // Recursive capture feedback is most visible when the current reflective
+    // surface fills the frame: the next capture contains that same brightened
+    // surface, not new geometry. Compare luminance-normalised colour, so a
+    // bright ceiling or tree is still allowed through while a bright copy of
+    // the floor falls back toward the analytic environment.
+    float surfaceLuma = vvLuma(surfaceColor);
+    vec3 sceneHue = sceneColor / max(sceneLuma, 1e-4);
+    vec3 surfaceHue = surfaceColor / max(surfaceLuma, 1e-4);
+    float hueMatch = 1.0 - smoothstep(VV_REFLECT_FEEDBACK_HUE_START,
+                                      VV_REFLECT_FEEDBACK_HUE_END,
+                                      length(sceneHue - surfaceHue));
+    float overBright = smoothstep(envLuma * VV_REFLECT_FEEDBACK_BRIGHT_START,
+                                  envLuma * VV_REFLECT_FEEDBACK_BRIGHT_END,
+                                  sceneLuma);
+    float feedbackRisk = hueMatch * overBright * clamp(scene.valid, 0.0, 1.0);
+    float sceneConfidence = clamp(scene.valid, 0.0, 1.0)
+                          * mix(1.0, VV_REFLECT_FEEDBACK_KEEP, feedbackRisk);
+
+    vec3 image = mix(fallback, sceneColor, sceneConfidence);
 
     return mix(environment, image, strength);
 }
@@ -2939,7 +2974,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // getting, and a fully matte or non-metallic texel still barely reflects.
     result += vvAmbientSpecular(f0, roughness, ndotv,
                                 vvPixelReflection(n, normalize(faceNormal), materialUv, roughness,
-                                                  cameraRelativePos, environment))
+                                                  cameraRelativePos, environment, result))
             * energy
             * clamp(vv_sceneDayLight, 0.0, 1.0)
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
@@ -3648,7 +3683,7 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         vec3 n34 = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
 
         return vec4(vvPixelReflection(n34, normalize(faceNormal), materialUv, rough34,
-                                      cameraRelativePos, vec3(0.5)),
+                                      cameraRelativePos, vec3(0.5), color.rgb),
                     color.a);
     }
 
@@ -3676,7 +3711,8 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
         return vec4(vvAmbientSpecular(f035, rough35, ndotv35,
                         vvPixelReflection(n35, normalize(faceNormal), materialUv, rough35,
                                           cameraRelativePos,
-                                          environment)),
+                                          environment,
+                                          color.rgb)),
                     color.a);
     }
 
