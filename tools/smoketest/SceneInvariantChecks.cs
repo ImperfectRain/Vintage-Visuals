@@ -77,6 +77,7 @@ namespace VintageVisuals.SmokeTest
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
             I17_WorldVolumeInvalidatesFromWorldEvents(repo, check);
+            I18_WorldVolumeCarriesLitBlockColour(repo, check);
         }
 
         // -------------------------------------------------------------------
@@ -1374,6 +1375,36 @@ namespace VintageVisuals.SmokeTest
                   worldVolume.Contains("invalidations=\" + _pendingInvalidations") &&
                   worldVolume.Contains("_pendingInvalidations = 0"),
                   "performance logs need to explain why the atlas was rebuilt");
+        }
+
+        // -------------------------------------------------------------------
+        // I18  WORLD HITS CARRY MATERIAL COLOUR AND LOCAL LIGHT
+        //
+        // Deterministic block-id colours were useful for the coordinate proof,
+        // but production reflections must carry what the game knows about the
+        // block: its representative colour at that position and the local light
+        // RGB at that cell.
+        // -------------------------------------------------------------------
+        static void I18_WorldVolumeCarriesLitBlockColour(string repo, Action<string, bool, string> check)
+        {
+            string worldVolume = File.ReadAllText(Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));
+
+            check("I18 full cube cells pack representative game colour",
+                  worldVolume.Contains("RepresentativeColor(capi, block, pos)") &&
+                  worldVolume.Contains("block.GetColor(capi, pos)") &&
+                  worldVolume.Contains("block.GetColorWithoutTint(capi, pos)") &&
+                  worldVolume.Contains("ColorUtil.ColorR(color)") &&
+                  worldVolume.Contains("ColorUtil.ColorG(color)") &&
+                  worldVolume.Contains("ColorUtil.ColorB(color)"),
+                  "world reflection hits should no longer be block-id hash colours except as fallback");
+
+            check("I18 world colour is multiplied by authoritative light RGB",
+                  worldVolume.Contains("GetLightRGBs(pos)") &&
+                  worldVolume.Contains("LightChannel(r") &&
+                  worldVolume.Contains("LightChannel(g") &&
+                  worldVolume.Contains("LightChannel(b") &&
+                  worldVolume.Contains("GameMath.Clamp(light, 0f, 1f)"),
+                  "world-space reflections need local light, not unlit albedo pasted onto dark scenes");
         }
     }
 }

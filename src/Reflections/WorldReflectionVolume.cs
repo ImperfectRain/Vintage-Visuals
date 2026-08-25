@@ -237,7 +237,7 @@ namespace VintageVisuals.Reflections
 
                         if (cls == WorldVoxelClass.FullOpaqueCube)
                         {
-                            _pixels[dest + x] = Pack(DiagnosticColor(block.Id), cls);
+                            _pixels[dest + x] = Pack(RepresentativeColor(capi, block, pos), cls);
                         }
                         else
                         {
@@ -256,7 +256,8 @@ namespace VintageVisuals.Reflections
             {
                 _reportedUnsupportedColor = true;
                 logger.Notification("[VintageVisuals] reflections: world reflection proof uses deterministic " +
-                    "diagnostic colours keyed by block id. It does not yet sample vanilla block albedo.");
+                    "diagnostic colours only as a fallback. Full cube cells use the block's game-reported " +
+                    "colour multiplied by the local light RGB.");
             }
 
             logger.Notification("[VintageVisuals] reflections: rebuilt world reflection volume origin=(" +
@@ -303,6 +304,41 @@ namespace VintageVisuals.Reflections
                 return WorldVoxelClass.UnsupportedComplex;
 
             return WorldVoxelClass.PartialSolid;
+        }
+
+        private static int RepresentativeColor(ICoreClientAPI capi, Block block, BlockPos pos)
+        {
+            if (capi == null || block == null) return 0;
+
+            int color;
+            try
+            {
+                color = block.GetColor(capi, pos);
+            }
+            catch
+            {
+                try { color = block.GetColorWithoutTint(capi, pos); }
+                catch { color = DiagnosticColor(block.Id); }
+            }
+
+            int r = ColorUtil.ColorR(color);
+            int g = ColorUtil.ColorG(color);
+            int b = ColorUtil.ColorB(color);
+
+            Vec4f light = capi.World.BlockAccessor.GetLightRGBs(pos);
+            r = LightChannel(r, light == null ? 1f : light.X);
+            g = LightChannel(g, light == null ? 1f : light.Y);
+            b = LightChannel(b, light == null ? 1f : light.Z);
+
+            return PackRgb(r, g, b);
+        }
+
+        private static int LightChannel(int channel, float light)
+        {
+            if (float.IsNaN(light) || float.IsInfinity(light)) light = 1f;
+            if (light > 1.5f) light /= 255f;
+            light = GameMath.Clamp(light, 0f, 1f);
+            return GameMath.Clamp((int)(channel * light + 0.5f), 0, 255);
         }
 
         private static int DiagnosticColor(int blockId)
