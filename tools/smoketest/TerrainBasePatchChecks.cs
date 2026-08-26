@@ -83,6 +83,12 @@ void main()
             check("chunktopsoil receives identity color operation",
                 topsoil.Contains("outColor = vvTerrainBaseIdentity(outColor);"),
                 "");
+            check("chunkopaque keeps vanilla lightPosition uniform",
+                opaque.Contains("uniform vec3 lightPosition;"),
+                "ShaderProgramBase.Use() uploads this vanilla uniform unconditionally");
+            check("chunktopsoil keeps vanilla lightPosition uniform",
+                topsoil.Contains("uniform vec3 lightPosition;"),
+                "ShaderProgramBase.Use() uploads this vanilla uniform unconditionally");
             check("chunkopaque vanilla godray channel preserved",
                 opaque.Contains("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));"),
                 "");
