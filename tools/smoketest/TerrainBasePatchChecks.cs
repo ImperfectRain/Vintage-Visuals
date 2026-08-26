@@ -65,6 +65,9 @@ void main()
                 patches.All(p => p.AppliesTo("chunkopaque.fsh") || p.AppliesTo("chunktopsoil.fsh")) &&
                 !patches.Any(p => p.AppliesTo("chunkopaque.vsh") || p.AppliesTo("chunktopsoil.vsh")),
                 "");
+            check("pbrterrainbase uses preserving patch operations",
+                patches.All(p => p.Kind == ShaderPatchKind.InsertBefore),
+                string.Join(", ", patches.Select(p => p.Kind).Distinct()));
             check("pbrterrainbase declares no texture sampler in resolved content",
                 !patches.Any(p => p.Content.Contains("uniform sampler") || p.Content.Contains("texture(")),
                 "Stage A must not alter the terrain sampler surface");

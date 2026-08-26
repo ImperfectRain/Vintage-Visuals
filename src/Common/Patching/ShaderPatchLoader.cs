@@ -208,29 +208,58 @@ namespace VintageVisuals.Common.Patching
             }
 
             string group = string.IsNullOrWhiteSpace(entry.Group) ? defaultGroup : entry.Group.Trim();
+            ShaderPatchKind kind = ParseKind(entry.Type, origin);
             string content = ResolveContent(entry, origin, resolveSnippet);
 
             RejectNonAscii(content, origin);
-            ShaderPatchKind kind = ParseKind(entry.Type, origin);
 
             Regex anchor = null;
             string anchorDescription = null;
 
-            if (kind == ShaderPatchKind.Token)
+            if (kind == ShaderPatchKind.Token || kind == ShaderPatchKind.Regex)
             {
-                if (string.IsNullOrEmpty(entry.Tokens))
-                    throw new ArgumentException(origin + ": type 'token' requires a 'tokens' key.");
+                if (kind == ShaderPatchKind.Token)
+                {
+                    if (string.IsNullOrEmpty(entry.Tokens))
+                        throw new ArgumentException(origin + ": type 'token' requires a 'tokens' key.");
 
-                anchor = GlslTokenPattern.Build(entry.Tokens);
-                anchorDescription = "tokens `" + Collapse(entry.Tokens) + "`";
+                    anchor = GlslTokenPattern.Build(entry.Tokens);
+                    anchorDescription = "tokens `" + Collapse(entry.Tokens) + "`";
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(entry.Regex))
+                        throw new ArgumentException(origin + ": type 'regex' requires a 'regex' key.");
+
+                    anchor = new Regex(entry.Regex, RegexOptions.Multiline | RegexOptions.CultureInvariant);
+                    anchorDescription = "regex `" + Collapse(entry.Regex) + "`";
+                }
             }
-            else if (kind == ShaderPatchKind.Regex)
+            else if (kind == ShaderPatchKind.Assert ||
+                     kind == ShaderPatchKind.InsertBefore ||
+                     kind == ShaderPatchKind.InsertAfter ||
+                     kind == ShaderPatchKind.Replace ||
+                     kind == ShaderPatchKind.Wrap)
             {
-                if (string.IsNullOrEmpty(entry.Regex))
-                    throw new ArgumentException(origin + ": type 'regex' requires a 'regex' key.");
+                bool hasTokens = !string.IsNullOrEmpty(entry.Tokens);
+                bool hasRegex = !string.IsNullOrEmpty(entry.Regex);
 
-                anchor = new Regex(entry.Regex, RegexOptions.Multiline | RegexOptions.CultureInvariant);
-                anchorDescription = "regex `" + Collapse(entry.Regex) + "`";
+                if (hasTokens == hasRegex)
+                {
+                    throw new ArgumentException(origin + ": type '" + entry.Type +
+                        "' requires exactly one of 'tokens' or 'regex'.");
+                }
+
+                if (hasTokens)
+                {
+                    anchor = GlslTokenPattern.Build(entry.Tokens);
+                    anchorDescription = "tokens `" + Collapse(entry.Tokens) + "`";
+                }
+                else
+                {
+                    anchor = new Regex(entry.Regex, RegexOptions.Multiline | RegexOptions.CultureInvariant);
+                    anchorDescription = "regex `" + Collapse(entry.Regex) + "`";
+                }
             }
 
             return new ShaderPatch(group, entry.Filename.Trim(), kind, content,
@@ -297,11 +326,18 @@ namespace VintageVisuals.Common.Patching
             {
                 case "token": return ShaderPatchKind.Token;
                 case "regex": return ShaderPatchKind.Regex;
+                case "assert": return ShaderPatchKind.Assert;
+                case "insert_before": return ShaderPatchKind.InsertBefore;
+                case "insertbefore": return ShaderPatchKind.InsertBefore;
+                case "insert_after": return ShaderPatchKind.InsertAfter;
+                case "insertafter": return ShaderPatchKind.InsertAfter;
+                case "replace": return ShaderPatchKind.Replace;
+                case "wrap": return ShaderPatchKind.Wrap;
                 case "start": return ShaderPatchKind.Start;
                 case "end": return ShaderPatchKind.End;
                 default:
                     throw new ArgumentException(origin + ": unknown patch type '" + type +
-                        "'. Valid types are token, regex, start, end.");
+                        "'. Valid types are token, regex, assert, insert_before, insert_after, replace, wrap, start, end.");
             }
         }
 

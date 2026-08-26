@@ -13,6 +13,21 @@ namespace VintageVisuals.Common.Patching
         /// <summary>Replace a raw regex match. Escape hatch for what Token cannot express.</summary>
         Regex,
 
+        /// <summary>Prove an anchor exists without modifying the source.</summary>
+        Assert,
+
+        /// <summary>Insert content before an anchor, preserving the matched source.</summary>
+        InsertBefore,
+
+        /// <summary>Insert content after an anchor, preserving the matched source.</summary>
+        InsertAfter,
+
+        /// <summary>Explicitly replace an anchor with content.</summary>
+        Replace,
+
+        /// <summary>Replace an anchor with content that contains a ${MATCH} placeholder.</summary>
+        Wrap,
+
         /// <summary>Insert immediately after the preprocessor preamble (#version / #extension).</summary>
         Start,
 
@@ -25,9 +40,9 @@ namespace VintageVisuals.Common.Patching
     ///
     /// Replacement content is treated as a **literal** string, never as a regex
     /// substitution template: GLSL is full of <c>$</c>-free but brace-heavy code
-    /// and silently interpreting <c>$1</c> would be a nasty trap. To keep the
-    /// anchor text, paste it back into the replacement — explicit beats clever
-    /// when the next reader is debugging a black screen.
+    /// and silently interpreting <c>$1</c> would be a nasty trap. New patch
+    /// operations preserve matched source explicitly; only <see cref="ShaderPatchKind.Replace"/>
+    /// and the legacy Token/Regex forms remove their anchors.
     /// </summary>
     public sealed class ShaderPatch
     {
@@ -117,9 +132,40 @@ namespace VintageVisuals.Common.Patching
                     "if replacing every occurrence is actually intended.");
             }
 
-            // Literal replacement — see the class comment.
-            string replacement = Content;
-            return Anchor.Replace(code, _ => replacement);
+            return Anchor.Replace(code, m => ReplacementFor(m));
+        }
+
+        private string ReplacementFor(Match match)
+        {
+            switch (Kind)
+            {
+                case ShaderPatchKind.Assert:
+                    return match.Value;
+
+                case ShaderPatchKind.InsertBefore:
+                    return Content + Environment.NewLine + match.Value;
+
+                case ShaderPatchKind.InsertAfter:
+                    return match.Value + Environment.NewLine + Content;
+
+                case ShaderPatchKind.Wrap:
+                    if (!Content.Contains("${MATCH}"))
+                    {
+                        throw new ShaderPatchException(Group, Filename,
+                            "wrap patch from " + Origin + " does not contain ${MATCH}; use replace for deliberate deletion.");
+                    }
+
+                    return Content.Replace("${MATCH}", match.Value);
+
+                case ShaderPatchKind.Replace:
+                case ShaderPatchKind.Token:
+                case ShaderPatchKind.Regex:
+                    return Content;
+
+                default:
+                    throw new ShaderPatchException(Group, Filename,
+                        "unsupported patch operation " + Kind + " from " + Origin);
+            }
         }
 
         /// <summary>

@@ -202,6 +202,68 @@ void main(void) {
         var empty = ShaderPatchLoader.ParsePatchFile("# only a comment\n", "g", "t", ResolveSnippet).ToList();
         Check("comment-only file yields no patches", empty.Count == 0);
 
+        Console.WriteLine("Explicit patch operations preserve anchors by construction");
+        string operationYaml = @"
+- type: assert
+  filename: final.fsh
+  tokens: layout(location = 0) out vec4 outColor;
+- type: insert_before
+  filename: final.fsh
+  tokens: vec4 color = fxaaTexturePixel(primaryScene, texCoord, invFrameSize);
+  content: |
+    // before color sample
+- type: insert_after
+  filename: final.fsh
+  tokens: vec4 color = fxaaTexturePixel(primaryScene, texCoord, invFrameSize);
+  content: |
+    // after color sample
+- type: wrap
+  filename: final.fsh
+  tokens: void main(void) {
+  content: |
+    ${MATCH}
+    // wrapped main marker
+- type: replace
+  filename: final.fsh
+  tokens: color.rgb += texture(bloomParts, texCoord).rgb;
+  content: |
+    color.rgb += vec3(1.0);
+";
+        var operationPatcher = new ShaderPatcher(new CollectingLogger());
+        var operationPatches = ShaderPatchLoader.ParsePatchFile(operationYaml, "ops", "ops", ResolveSnippet).ToList();
+        operationPatcher.SetPatches(operationPatches);
+        string operations = operationPatcher.Patch("final.fsh", Vanilla);
+        Check("assert operation does not delete its anchor",
+              operations.Contains("layout(location = 0) out vec4 outColor;"));
+        Check("insert_before preserves the matched source",
+              operations.Contains("// before color sample") &&
+              operations.Contains("vec4 color = fxaaTexturePixel(primaryScene, texCoord, invFrameSize);"));
+        Check("insert_after preserves the matched source",
+              operations.Contains("// after color sample") &&
+              operations.IndexOf("// after color sample", StringComparison.Ordinal) >
+              operations.IndexOf("vec4 color = fxaaTexturePixel(primaryScene, texCoord, invFrameSize);", StringComparison.Ordinal));
+        Check("wrap operation expands ${MATCH}",
+              operations.Contains("void main(void) {") &&
+              operations.Contains("// wrapped main marker"));
+        Check("replace operation is the only explicit deletion here",
+              operations.Contains("color.rgb += vec3(1.0);") &&
+              !operations.Contains("color.rgb += texture(bloomParts, texCoord).rgb;"));
+
+        try
+        {
+            var badWrap = ShaderPatchLoader.ParsePatchFile(
+                "- type: wrap\n  filename: final.fsh\n  tokens: void main(void) {\n  content: no placeholder",
+                "ops", "ops", ResolveSnippet).ToList();
+            var badPatcher = new ShaderPatcher(new CollectingLogger());
+            badPatcher.SetPatches(badWrap);
+            string bad = badPatcher.Patch("final.fsh", Vanilla);
+            Check("wrap without ${MATCH} fails closed", bad == Vanilla && !badPatcher.IsGroupHealthy("ops"));
+        }
+        catch (Exception ex)
+        {
+            Check("wrap without ${MATCH} fails closed", false, ex.Message);
+        }
+
         Console.WriteLine("Whitespace tolerance on real anchors");
         var reflowed = Vanilla
             .Replace("void main(void) {", "void  main( void )\n{")

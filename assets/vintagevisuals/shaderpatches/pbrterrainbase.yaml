@@ -5,26 +5,24 @@
 # alone breaks normal rendering, the defect is source patch shape/linkage rather
 # than a VV sampler, atlas, reflection texture, or PBR equation.
 
-- type: token
+- type: insert_before
   filename: chunkopaque.fsh
   tokens: uniform vec3 lightPosition;
   snippet: pbrterrainbase.glsl
 
-- type: token
+- type: insert_before
   filename: chunkopaque.fsh
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
     outColor = vvTerrainBaseIdentity(outColor);
-    outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
 
-- type: token
+- type: insert_before
   filename: chunktopsoil.fsh
   tokens: uniform vec3 lightPosition;
   snippet: pbrterrainbase.glsl
 
-- type: token
+- type: insert_before
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
     outColor = vvTerrainBaseIdentity(outColor);
-    outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
