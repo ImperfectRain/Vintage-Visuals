@@ -1,0 +1,30 @@
+# Vintage Visuals - zero-sampler terrain PBR restoration baseline.
+#
+# This group is separate from pseudopbr and pseudopbrtopsoil on purpose. It is
+# the first runtime checkpoint after the terrain recovery gate: if this group
+# alone breaks normal rendering, the defect is source patch shape/linkage rather
+# than a VV sampler, atlas, reflection texture, or PBR equation.
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrterrainbase.glsl
+
+- type: token
+  filename: chunkopaque.fsh
+  tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
+  content: |
+    outColor = vvTerrainBaseIdentity(outColor);
+    outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrterrainbase.glsl
+
+- type: token
+  filename: chunktopsoil.fsh
+  tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
+  content: |
+    outColor = vvTerrainBaseIdentity(outColor);
+    outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);

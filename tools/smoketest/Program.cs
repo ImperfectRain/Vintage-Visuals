@@ -233,6 +233,9 @@ void main(void) {
         Console.WriteLine("PseudoPBR shader patch applies and rolls back cleanly");
         PseudoPbrPatchChecks.Run(Repo, Check);
 
+        Console.WriteLine("Terrain PBR zero-sampler baseline patch is isolated");
+        TerrainBasePatchChecks.Run(Repo, Check);
+
         Console.WriteLine("Shipped GLSL is plain ASCII");
         AsciiChecks.Run(Repo, Check);
         AsciiChecks.RunDeadCodeCheck(Repo, Check);

@@ -31,6 +31,8 @@ namespace VintageVisuals.PseudoPBR
     {
         public const string GroupName = "pseudopbr";
 
+        public const string TerrainBaseGroupName = "pbrterrainbase";
+
         /// <summary>
         /// Grass and soil tops are drawn by their own program, so they get their
         /// own patch group. Groups succeed or fail as a unit, and one shared
@@ -50,6 +52,13 @@ namespace VintageVisuals.PseudoPBR
         /// gated because they do not patch terrain shaders.
         /// </summary>
         public const bool TerrainShaderPatchesEnabled = false;
+
+        /// <summary>
+        /// Stage A terrain restoration checkpoint: zero new samplers and an
+        /// exact identity color operation. This can be runtime-tested without
+        /// re-enabling the full terrain PBR shader or auxiliary texture binds.
+        /// </summary>
+        public const bool TerrainBasePatchEnabled = true;
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";
