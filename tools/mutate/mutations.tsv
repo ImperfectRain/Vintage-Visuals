@@ -59,4 +59,4 @@ the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"w
 the native studio bypasses the config notification path	src/VintageVisualsModSystem.cs	() => ConfigManager.NotifyChanged()	() => { }	NotifyChanged
 the native studio uses the reload hotkey default	src/VintageVisualsModSystem.cs	GlKeys.U, HotkeyType.GUIOrOtherControls	GlKeys.V, HotkeyType.GUIOrOtherControls	expected ID/type
 display refresh starts notifying subsystems	src/Ui/VisualTuningStudioController.cs	return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	_notifyChanged(); return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	display refresh does not mutate
-tab changes rebuild inside native callback dispatch	src/Ui/VisualTuningStudioDialog.cs	            }, RecomposeDelayMs);	            }, 0);	native callback dispatch
+settings scroll rebuilds the composer	src/Ui/VisualTuningStudioDialog.cs	            MoveScrollContent();	            ComposeDialog();	scroll does not recompose

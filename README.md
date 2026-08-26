@@ -30,7 +30,7 @@ of a modern physically inspired pipeline as the existing renderer allows
 | **Weather** | wetness, cloud shadows and ripples have runtime evidence; snow/frost remain L2 | [src/Weather/README.md](src/Weather/README.md) |
 | **Atmosphere** | dedicated subsystem with ambient-stack and shader branches; needs runtime validation | [src/Atmosphere/README.md](src/Atmosphere/README.md) |
 | **Reflections** | scene capture, screen-space march, world volume and analytic fallback exist; visuals are not closed | [src/Reflections/README.md](src/Reflections/README.md) |
-| **Visual Tuning Studio** | native config dialog; crash-isolation and layout work still open | [src/Ui/README.md](src/Ui/README.md) |
+| **Visual Tuning Studio** | native config dialog; production lifecycle simplification underway, with scroll moving native child bounds instead of rebuilding | [src/Ui/README.md](src/Ui/README.md) |
 | **Water and post FX** | not implemented | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) |
 
 Feature-by-feature state is tracked in [docs/STATUS.md](docs/STATUS.md). Proof

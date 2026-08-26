@@ -107,11 +107,12 @@ rows with stable columns:
 modified  label  info  value  control  reset
 ```
 
-Short descriptions are visible on each row because hover text remains disabled
-while the crash is isolated. The setting name and current value remain visible
-at all times. Rows are clipped inside a native scroll region with mouse-wheel
-handling and a draggable vertical scrollbar; the navigation rail and footer stay
-fixed.
+Short descriptions are visible on each row because hover-only help is still too
+easy to miss and too hard to validate from screenshots. The setting name and
+current value remain visible at all times. Rows are clipped inside a native
+scroll region with mouse-wheel handling and a draggable vertical scrollbar; the
+scroll operation moves the child bounds instead of rebuilding the composer, so
+the navigation rail and footer stay fixed.
 
 The Overview page is a set of subsystem cards with status, summary, description
 and an explicit Open action. The Debug page is a tool surface: choose a debug
@@ -121,15 +122,13 @@ change.
 
 ## Status
 
-**L2 — native dialog hard-crash isolation build.** The alpha/composition fix
-improved the corrupted screenshot but did not stop the crash. This build keeps
-the stable shaded background and compact layout. Native scrollbar/wheel handling
-has returned through guarded deferred recomposition, while hover elements and
-the Advanced switch are still temporarily removed. Live setting edits no longer
-rebuild the whole composer, per-tab scroll positions are retained, and structural
-rebuilds are delayed briefly through the client callback queue with composer
-generation guards and `[VV UI #]` lifecycle logging so tab changes do not replace
-native controls while their own callback is still unwinding.
+**L3 — production lifecycle simplification.** The crash-isolation footer and
+deferred recomposition scheduler are removed. This build keeps the stable shaded
+background and compact layout, but scroll/wheel handling now updates the native
+scroll child bounds in place. Live setting edits do not rebuild the whole
+composer, per-tab scroll positions are retained, and callbacks still carry
+composer generation guards with `[VV UI #]` lifecycle logging so stale callbacks
+from disposed UI trees are ignored.
 
 The current layout is also constrained by a single grid: sidebar width/padding,
 content left edge, label/info/value/control/reset columns and footer placement

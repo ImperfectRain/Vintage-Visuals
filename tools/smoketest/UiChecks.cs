@@ -344,9 +344,10 @@ namespace VintageVisuals.SmokeTest
 
             check("clipped settings rows do not double-apply the content offset",
                   dialog.Contains("BeginClip(clipBounds)") &&
-                  dialog.Contains("double y = -_currentScroll") &&
-                  dialog.Contains("AddSection(row.Section, y, bodyHeight)") &&
-                  dialog.Contains("AddSettingRow(row.Setting, y, bodyHeight)") &&
+                  dialog.Contains("BeginChildElements(_scrollContentBounds)") &&
+                  dialog.Contains("double y = 0") &&
+                  dialog.Contains("AddSection(row.Section, y)") &&
+                  dialog.Contains("AddSettingRow(row.Setting, y)") &&
                   !dialog.Contains("AddSettingRow(row.Setting, y, bodyY, bodyHeight)"),
                   "BeginClip children are positioned inside the clip, not in dialog coordinates");
 
@@ -355,19 +356,21 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("AddToggle(setting, y)"),
                   "toggle rows should not also print an On/Off value column");
 
-            check("settings scrolling uses the native scrollbar with guarded deferred recomposition",
+            check("settings scrolling moves native child bounds without recomposition",
                   dialog.Contains("BeginClip(") &&
+                  dialog.Contains("_scrollContentBounds = ElementBounds.Fixed") &&
                   dialog.Contains("AddVerticalScrollbar(OnScrollbarChanged") &&
                   dialog.Contains("SetHeights") &&
                   dialog.Contains("OnMouseWheel") &&
-                  dialog.Contains("ScheduleCompose(\"scrollbar\")") &&
-                  dialog.Contains("ScheduleCompose(\"mouse wheel\")"),
-                  "scrolling should be visible without returning to synchronous composer rebuilds");
+                  dialog.Contains("MoveScrollContent()") &&
+                  !dialog.Contains("ScheduleCompose(\"scrollbar\")") &&
+                  !dialog.Contains("ScheduleCompose(\"mouse wheel\")"),
+                  "scrolling should adjust the scroll child instead of rebuilding the composer");
 
-            check("hover elements are disabled for crash isolation",
+            check("hover elements remain disabled",
                   !dialog.Contains("AddHoverText") &&
                   !dialog.Contains("AddStaticText(setting.Description"),
-                  "dozens of hover elements are a crash suspect");
+                  "visible descriptions are easier to audit than hover-only UI");
 
             check("setting rows explain themselves without hover-only buttons",
                   dialog.Contains("ShortDescription(setting)") &&
@@ -416,19 +419,20 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("callbackGeneration="),
                   "callbacks from disposed UI trees must be ignored");
 
-            check("structural recomposition is deferred",
-                  dialog.Contains("ScheduleCompose") &&
-                  dialog.Contains("RegisterCallback") &&
-                  dialog.Contains("_isComposing") &&
-                  dialog.Contains("_recomposePending"),
-                  "callbacks must not synchronously destroy their own composer");
+            check("deferred recomposition machinery is removed",
+                  !dialog.Contains("ScheduleCompose") &&
+                  !dialog.Contains("RecomposeDelayMs") &&
+                  !dialog.Contains("_isComposing") &&
+                  !dialog.Contains("_recomposePending"),
+                  "the dialog should not carry stale crash-isolation scheduling state");
 
-            check("tab changes rebuild after native callback dispatch",
-                  dialog.Contains("RecomposeDelayMs") &&
-                  dialog.Contains("RegisterCallback(_ =>") &&
-                  dialog.Contains("}, RecomposeDelayMs)") &&
-                  dialog.Contains("if (_tab == tab)"),
-                  "zero-delay composer replacement can race the native button/dropdown callback that requested it");
+            check("tab changes are direct and guarded",
+                  dialog.Contains("if (_tab == tab)") &&
+                  dialog.Contains("Guard(generation, \"SelectTab\"") &&
+                  dialog.Contains("SelectTab((SettingTab)tab.DataInt)") &&
+                  dialog.Contains("ComposeDialog();") &&
+                  !dialog.Contains("\"Crash isolation build\""),
+                  "tab switching should use the explicit page state without the production crash footer");
 
             check("live setting edits do not rebuild the composer",
                   !dialog.Contains("if (_controller.Set(setting, target)) ComposeDialog()") &&

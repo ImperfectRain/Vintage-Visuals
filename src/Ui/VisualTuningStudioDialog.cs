@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Vintagestory.API.Client;
@@ -38,7 +39,6 @@ namespace VintageVisuals.Ui
         private const double ValueWidth = 86;
         private const double ControlWidth = 154;
         private const double ResetWidth = 54;
-        private const int RecomposeDelayMs = 50;
         private const double InfoX = RowLeft + LabelWidth + 8;
         private const double ValueX = InfoX + InfoWidth + 10;
         private const double ControlX = ValueX + ValueWidth + 14;
@@ -77,10 +77,10 @@ namespace VintageVisuals.Ui
         private double _currentScroll;
         private double _currentContentHeight;
         private double _currentBodyHeight = BodyHeight;
+        private double _currentBodyY = BodyY;
+        private ElementBounds _scrollContentBounds;
         private int _eventSequence;
         private int _composerGeneration;
-        private bool _isComposing;
-        private bool _recomposePending;
         private bool _ignoreNextConfigRefresh;
 
         public VisualTuningStudioDialog(ICoreClientAPI capi, VisualTuningStudioController controller)
@@ -120,8 +120,8 @@ namespace VintageVisuals.Ui
                 return;
             }
 
-            ScheduleCompose("external config refresh");
-            Log("EXIT RefreshFromConfig scheduled");
+            ComposeDialog();
+            Log("EXIT RefreshFromConfig recomposed");
         }
 
         public override void OnMouseWheel(MouseWheelEventArgs args)
@@ -146,61 +146,40 @@ namespace VintageVisuals.Ui
 
         private void ComposeDialog()
         {
-            if (_isComposing)
-            {
-                _recomposePending = true;
-                Log("ComposeDialog nested request deferred");
-                return;
-            }
+            _composerGeneration++;
+            int generation = _composerGeneration;
+            Log("ENTER ComposeDialog generation " + generation);
 
-            _isComposing = true;
-            try
-            {
-                _composerGeneration++;
-                int generation = _composerGeneration;
-                Log("ENTER ComposeDialog generation " + generation);
+            ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
+                .WithAlignment(EnumDialogArea.CenterMiddle)
+                .WithFixedSize(DialogWidth, DialogHeight);
 
-                ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
-                    .WithAlignment(EnumDialogArea.CenterMiddle)
-                    .WithFixedSize(DialogWidth, DialogHeight);
+            ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
+            bgBounds.BothSizing = ElementSizing.FitToChildren;
 
-                ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
-                bgBounds.BothSizing = ElementSizing.FitToChildren;
+            _currentScroll = CurrentScroll();
+            _scrollContentBounds = null;
 
-                _currentScroll = CurrentScroll();
+            SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
+                .AddShadedDialogBG(bgBounds)
+                .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
+                .BeginChildElements(bgBounds)
+                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
+                    .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
+                    .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
+                    .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, 552, 190, 24))
+                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
+                        CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
-                SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
-                    .AddShadedDialogBG(bgBounds)
-                    .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
-                    .BeginChildElements(bgBounds)
-                        .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
-                        .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
-                        .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
-                        .AddStaticText("Advanced Settings: Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, 552, 190, 24))
-                        .AddStaticText("Crash isolation build", CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 198, 556, 180, 20))
-                        .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
-                            CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
+            AddTabs(generation);
 
-                AddTabs(generation);
+            if (_tab == SettingTab.Overview) AddOverview();
+            else if (_tab == SettingTab.Debug) AddDebug();
+            else AddSettingsTab(_tab);
 
-                if (_tab == SettingTab.Overview) AddOverview();
-                else if (_tab == SettingTab.Debug) AddDebug();
-                else AddSettingsTab(_tab);
-
-                SingleComposer.EndChildElements().Compose();
-                ConfigureScrollbar();
-                Log("EXIT ComposeDialog generation " + generation);
-            }
-            finally
-            {
-                _isComposing = false;
-            }
-
-            if (_recomposePending)
-            {
-                _recomposePending = false;
-                ScheduleCompose("pending after compose");
-            }
+            SingleComposer.EndChildElements().Compose();
+            ConfigureScrollbar();
+            Log("EXIT ComposeDialog generation " + generation);
         }
 
         private void AddTabs(int generation)
@@ -244,7 +223,7 @@ namespace VintageVisuals.Ui
 
             SaveScroll();
             _tab = tab;
-            ScheduleCompose("tab change");
+            ComposeDialog();
             Log("EXIT SelectTab " + tab);
         }
 
@@ -253,7 +232,7 @@ namespace VintageVisuals.Ui
             Log("ENTER ResetTab");
             _ignoreNextConfigRefresh = true;
             _controller.ResetTab(_tab, _advanced);
-            ScheduleCompose("reset tab");
+            ComposeDialog();
             Log("EXIT ResetTab");
             return true;
         }
@@ -364,24 +343,29 @@ namespace VintageVisuals.Ui
             _currentContentHeight = MeasureRows(rows);
             _currentScroll = ClampScroll(_currentScroll);
             SaveScroll();
+            _currentBodyY = bodyY;
+            _scrollContentBounds = ElementBounds.Fixed(ContentLeft, bodyY - _currentScroll, ContentWidth,
+                Math.Max(bodyHeight, _currentContentHeight));
 
             SingleComposer.BeginClip(clipBounds);
+            SingleComposer.BeginChildElements(_scrollContentBounds);
 
-            double y = -_currentScroll;
+            double y = 0;
             foreach (RowItem row in rows)
             {
                 if (row.IsSection)
                 {
-                    AddSection(row.Section, y, bodyHeight);
+                    AddSection(row.Section, y);
                     y += HeaderHeight;
                 }
                 else
                 {
-                    AddSettingRow(row.Setting, y, bodyHeight);
+                    AddSettingRow(row.Setting, y);
                     y += RowHeight;
                 }
             }
 
+            SingleComposer.EndChildElements();
             SingleComposer.EndClip();
 
             if (_currentContentHeight > bodyHeight)
@@ -390,19 +374,15 @@ namespace VintageVisuals.Ui
             }
         }
 
-        private void AddSection(string label, double y, double bodyHeight)
+        private void AddSection(string label, double y)
         {
-            if (y < -HeaderHeight || y > bodyHeight) return;
-
             SingleComposer
                 .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(RowLeft, y + 4, 210, 20))
                 .AddInset(ElementBounds.Fixed(RowLeft + 150, y + 13, ContentWidth - 180, 1), 1, 0.45f);
         }
 
-        private void AddSettingRow(VisualSetting setting, double y, double bodyHeight)
+        private void AddSettingRow(VisualSetting setting, double y)
         {
-            if (y < -RowHeight || y > bodyHeight) return;
-
             bool modified = _controller.IsModified(setting);
 
             SingleComposer
@@ -536,7 +516,7 @@ namespace VintageVisuals.Ui
         {
             Log("ENTER ResetSetting " + setting.Code);
             _ignoreNextConfigRefresh = true;
-            if (_controller.Reset(setting)) ScheduleCompose("reset setting");
+            if (_controller.Reset(setting)) ComposeDialog();
             Log("EXIT ResetSetting " + setting.Code);
             return true;
         }
@@ -618,7 +598,7 @@ namespace VintageVisuals.Ui
 
             _debugSystemIndex = index;
             _debugOwnerPath = _debugSystems[index].OwnerPath;
-            ScheduleCompose("debug system");
+            ComposeDialog();
             Log("EXIT DebugSystemChanged");
         }
 
@@ -670,7 +650,7 @@ namespace VintageVisuals.Ui
             Log("ENTER ReturnToNormal");
             _ignoreNextConfigRefresh = true;
             _controller.ReturnToNormalRendering();
-            ScheduleCompose("return to normal");
+            ComposeDialog();
             Log("EXIT ReturnToNormal");
             return true;
         }
@@ -685,7 +665,7 @@ namespace VintageVisuals.Ui
             Log("ENTER ScrollbarChanged");
             _currentScroll = ClampScroll(value);
             SaveScroll();
-            ScheduleCompose("scrollbar");
+            MoveScrollContent();
             Log("EXIT ScrollbarChanged");
         }
 
@@ -694,7 +674,8 @@ namespace VintageVisuals.Ui
             Log("ENTER MouseWheelScroll");
             _currentScroll = ClampScroll(value);
             SaveScroll();
-            ScheduleCompose("mouse wheel");
+            MoveScrollContent();
+            ConfigureScrollbar();
             Log("EXIT MouseWheelScroll");
         }
 
@@ -723,6 +704,14 @@ namespace VintageVisuals.Ui
             scrollbar.SetScrollbarPosition((int)Math.Round(_currentScroll));
         }
 
+        private void MoveScrollContent()
+        {
+            if (_scrollContentBounds == null) return;
+
+            _scrollContentBounds.fixedY = _currentBodyY - _currentScroll;
+            _scrollContentBounds.CalcWorldBounds();
+        }
+
         private bool Guard(int generation, string name, System.Func<bool> action)
         {
             if (!IsCurrentGeneration(generation, name)) return false;
@@ -741,28 +730,6 @@ namespace VintageVisuals.Ui
             return false;
         }
 
-        private void ScheduleCompose(string reason)
-        {
-            Log("ScheduleCompose " + reason);
-            if (_recomposePending) return;
-
-            _recomposePending = true;
-            capi.Event.RegisterCallback(_ =>
-            {
-                Log("ENTER DeferredCompose " + reason);
-                if (!IsOpened())
-                {
-                    _recomposePending = false;
-                    Log("EXIT DeferredCompose skipped closed");
-                    return;
-                }
-
-                _recomposePending = false;
-                ComposeDialog();
-                Log("EXIT DeferredCompose " + reason);
-            }, RecomposeDelayMs);
-        }
-
         private void Log(string message)
         {
             int sequence = Interlocked.Increment(ref _eventSequence);
@@ -772,8 +739,7 @@ namespace VintageVisuals.Ui
                 " thread=" + Thread.CurrentThread.ManagedThreadId +
                 " composerNull=" + (SingleComposer == null) +
                 " opened=" + IsOpened() +
-                " composing=" + _isComposing +
-                " pending=" + _recomposePending);
+                " scroll=" + _currentScroll.ToString("0.##", CultureInfo.InvariantCulture));
         }
 
         private sealed class DebugSystem
