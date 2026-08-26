@@ -348,38 +348,31 @@ namespace VintageVisuals.SmokeTest
             check("the binder actually binds the captured scene",
                 binder.Contains("BindTexture2D(ReflectSceneUniform"), "");
 
-            // THE BUG THIS PINS. A texture unit is global GL state, not
-            // per-program. Binding once a frame in the binder does not survive
-            // to the chunk draws - anything the game binds in between replaces
-            // it - so the reflection sampled whatever texture happened to be on
-            // its unit at draw time. Debug view 41 showed the block atlas where
-            // the captured frame should have been, while view 39 reported
-            // confident hits against that garbage.
-            //
-            // The material atlases already had this problem and the interceptor
-            // was written to solve it. The capture has to ride the same path.
+            // Emergency recovery: the terrain postfix must not perform extra
+            // binds until Vintage Story's active texture state contract is
+            // proven. Binding extra samplers after vanilla terrainTex is the
+            // suspected opaque/topsoil corruption path.
             string interceptor = File.ReadAllText(
                 Path.Combine(repo, "src/PseudoPBR/TerrainTextureBindInterceptor.cs"));
 
-            check("the capture is rebound per draw call, not once per frame",
-                interceptor.Contains("BindTexture2D(PbrShaderBinder.ReflectSceneUniform"),
-                "a per-frame bind and a per-draw bind are identical in every static test");
+            check("terrain postfix binds are disabled during recovery",
+                interceptor.Contains("PerDrawTextureBindingEnabled = false") &&
+                Regex.IsMatch(interceptor, @"if \(!PerDrawTextureBindingEnabled\) return;"),
+                "extra binds inside vanilla terrainTex binding can leave unsafe GL active texture state");
 
-            check("canopy context binding is fail-closed pending sampler audit",
-                binder.Contains("private const bool CanopyContextBindingEnabled = false") &&
-                interceptor.Contains("private const bool CanopyContextBindingEnabled = false") &&
-                binder.Contains("if (CanopyContextBindingEnabled &&") &&
-                binder.Contains("BindTexture2D(CanopyContextUniform") &&
-                Regex.IsMatch(interceptor, @"CanopyContextBindingEnabled\s*\?\s*_canopyContextTextureId\s*:\s*0"),
-                "unit 11 is not proven safe; terrain must not bind a fifth auxiliary sampler by default");
+            check("canopy context sampler is compiled out during recovery",
+                !_pbr.Contains("uniform sampler2D vv_canopyContext") &&
+                !_pbr.Contains("texture(vv_canopyContext") &&
+                !binder.Contains("BindTexture2D(CanopyContextUniform") &&
+                !interceptor.Contains("BindTexture2D(PbrShaderBinder.CanopyContextUniform"),
+                "unit 11 is not proven safe; the recovery shader must not declare or bind the fifth terrain sampler");
 
             check("the per-draw capture id is cleared when there is no capture",
                 Regex.IsMatch(binder, @"SetSceneCapture\(0\)"),
                 "a stale id keeps a destroyed texture bound");
 
             check("the per-draw canopy id is cleared when canopy context is unavailable",
-                Regex.IsMatch(binder, @"SetCanopyContext\(0\)") &&
-                Regex.IsMatch(binder, @"SetIfPresent\(program, CanopyContextValidUniform, 0f\)"),
+                Regex.IsMatch(binder, @"SetCanopyContext\(0\)"),
                 "a stale canopy id can feed old column data into newly drawn terrain");
 
             check("documented terrain sampler units are unique",
@@ -397,8 +390,13 @@ namespace VintageVisuals.SmokeTest
                 WorldReflectionVolume.CanopyTextureUnit != MaterialAtlasTexture.SecondTextureUnit &&
                 WorldReflectionVolume.CanopyTextureUnit != SceneCaptureRenderer.TextureUnit &&
                 WorldReflectionVolume.CanopyTextureUnit != WorldReflectionVolume.TextureUnit &&
-                binder.Contains("CanopyContextBindingEnabled = false"),
+                !_pbr.Contains("uniform sampler2D vv_canopyContext"),
                 "the reserved canopy unit can exist in source, but it must not be bound while unaudited");
+
+            check("vegetation controls do not request the world volume while canopy binding is disabled",
+                !binder.Contains("activeCanopy") &&
+                Regex.IsMatch(binder, @"if \(\(!activeDebugView && !activeReflection\)"),
+                "dapple and shafts must not create or upload reflection-volume textures when their canopy sampler is compiled out");
 
             string worldVolume = File.ReadAllText(
                 Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));

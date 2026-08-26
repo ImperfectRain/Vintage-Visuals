@@ -455,7 +455,7 @@ namespace VintageVisuals.SmokeTest
             // The specific inversion, named, so reintroducing it fails loudly
             // rather than as a subtle ordering change.
             check("the bent ray is built from the light direction, not its negation",
-                  _pbr.Contains("normalize(l + n * distortion)"),
+                  _pbr.Contains("vvSafeNormalize(l + n * distortion"),
                   "building it from -l inverts the effect");
         }
 

@@ -211,7 +211,8 @@ namespace VintageVisuals.SmokeTest
             try
             {
                 string body = FunctionBody(_pbr, "float vvTranslucency(");
-                through = Rhs(Statement(body, "through", "normalize"));
+                through = Rhs(Statement(body, "through", "vvSafeNormalize"))
+                    .Replace("vvSafeNormalize(l + n * distortion, l)", "normalize(l + n * distortion)");
                 ret = Rhs(Statement(body, "return"));
                 distortion = Const(body, "distortion");
                 power = Const(body, "power");
@@ -1424,8 +1425,8 @@ namespace VintageVisuals.SmokeTest
 
             check("I19 normal reflection rendering uploads the world volume",
                   binder.Contains("bool activeReflection = _look.PixelReflection > 0.001f") &&
-                  binder.Contains("bool activeCanopy = _look.SunDapple > 0.001f") &&
-                  binder.Contains("!activeDebugView && !activeReflection && !activeCanopy"),
+                  !binder.Contains("activeCanopy") &&
+                  binder.Contains("!activeDebugView && !activeReflection"),
                   "world-space hits cannot affect gameplay if the atlas is bound only for debug views");
 
             check("I19 pixel reflection resolves scene over world over fallback",

@@ -1019,10 +1019,11 @@ light is solar, where a torch is not sunlight.
 
 ## D30. A shaft needs a beam, and vanilla's godray pass never asks about weather
 
-**Context.** `vvCanopyShaft` writes `outGlow.g`, the source mask `godrays.fsh`
-radially blurs outward from the sun's screen position. It is **live** in both
-patched programs - an earlier report calling it foundation-only had confused it
-with the atmosphere subsystem's separate, genuinely unwired godray feature.
+**Context.** Superseded by the emergency terrain recovery pass. `vvCanopyShaft`
+used to write `outGlow.g`, the source mask `godrays.fsh` radially blurs outward
+from the sun's screen position. That write is now disabled in both patched
+terrain programs, and debug view 17 is the only remaining consumer until the
+terrain render-state contract is re-proven.
 
 It responded to daylight, sun direction and angular proximity to the sun. It did
 not respond to overcast.

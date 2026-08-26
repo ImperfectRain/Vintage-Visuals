@@ -426,7 +426,7 @@ quietly invalidate one of these.
 | Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
 | Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
 | World reflection volume | local scanned volume | `vv_worldReflectValid` 0 | scan or upload failed | scene hit or analytic fallback only |
-| Canopy context | local canopy texture | `vv_canopyContextValid` 0 | scan or upload failed | no forest ambient context; shadow-map flecks still work |
+| Canopy context | disabled during terrain recovery | compiled out of terrain shader | sampler/state contract not proven | no forest ambient context; shadow-map flecks still work |
 | Entity / particle PBR | own patch group | independently gated | terrain problems must not disable them | vanilla flat diffuse |
 | Height haze | modifier in the game's ambient stack | modifier **removed**, not zeroed | a zeroed entry is residue in a dictionary shared with every mod | vanilla's own atmosphere |
 | Ambient stack unavailable | modifier installed | logged once, feature off | nothing else in the frame depends on it | vanilla's own atmosphere |

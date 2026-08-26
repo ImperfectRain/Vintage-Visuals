@@ -177,13 +177,6 @@ uniform vec2 vv_reflectWorldSliceSize;
 uniform vec2 vv_reflectWorldAtlasGrid;
 uniform vec2 vv_reflectWorldAtlasSize;
 
-// Low-frequency canopy metadata, built by the same CPU pass as the local world
-// reflection volume. RGB is the current game-reported/lit leaf colour for the
-// column; alpha is leaf-column density. The shadow map remains the high-
-// frequency truth for moving gaps.
-uniform sampler2D vv_canopyContext;
-uniform float vv_canopyContextValid;
-
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
@@ -205,6 +198,20 @@ uniform vec3 vv_pbrOrigin;
 // either chunk shader that knows the difference.
 in float vv_sunExposure;
 
+vec3 vvSafeNormalize(vec3 v, vec3 fallback)
+{
+    float len2 = dot(v, v);
+    if (!(len2 > 1e-12) || len2 > 1e24) return fallback;
+    return v * inversesqrt(len2);
+}
+
+vec2 vvSafeNormalize2(vec2 v, vec2 fallback)
+{
+    float len2 = dot(v, v);
+    if (!(len2 > 1e-12) || len2 > 1e24) return fallback;
+    return v * inversesqrt(len2);
+}
+
 // Builds a tangent frame for an axis-aligned block face.
 //
 // A proper renderer would take tangents from the mesh. Chunk geometry carries
@@ -214,7 +221,7 @@ in float vv_sunExposure;
 mat3 vvTangentFrame(vec3 n)
 {
     vec3 reference = abs(n.y) > 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
-    vec3 tangent = normalize(cross(reference, n));
+    vec3 tangent = vvSafeNormalize(cross(reference, n), vec3(1.0, 0.0, 0.0));
     vec3 bitangent = cross(n, tangent);
     return mat3(tangent, bitangent, n);
 }
@@ -307,7 +314,7 @@ vec3 vvPerturbNormal(vec3 faceNormal, vec2 materialUv)
     // normal further instead of denormalising it.
     float z = sqrt(max(1e-4, 1.0 - dot(xy, xy)));
 
-    return normalize(vvTangentFrame(faceNormal) * vec3(xy, z));
+    return vvSafeNormalize(vvTangentFrame(faceNormal) * vec3(xy, z), faceNormal);
 }
 
 // How much of the material response survives at this distance.
@@ -346,7 +353,7 @@ float vvDirectionalShade(vec3 n)
 // How much the perturbed normal changes vanilla's directional shading.
 float vvReliefDelta(vec3 faceNormal, vec2 materialUv)
 {
-    vec3 n = normalize(faceNormal);
+    vec3 n = vvSafeNormalize(faceNormal, vec3(0.0, 1.0, 0.0));
     return vvDirectionalShade(vvPerturbNormal(n, materialUv)) - vvDirectionalShade(n);
 }
 
@@ -358,7 +365,7 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
 {
     if (vv_pbrEnabled < 0.5) return faceNormal;
 
-    vec3 n = normalize(faceNormal);
+    vec3 n = vvSafeNormalize(faceNormal, vec3(0.0, 1.0, 0.0));
     float fade = vvDetailFade(cameraRelativePos);
 
     int windMode = (renderFlags >> WindModePosition) & 0xF;
@@ -370,14 +377,14 @@ vec3 vvSurfaceNormal(vec3 faceNormal, vec2 materialUv, vec3 cameraRelativePos)
         // Treating those as stone relief is what makes distant crowns sparkle.
         // Keep the card/face normal as the macro surface and only admit a small
         // close-range hint of the derived atlas normal.
-        vec3 view = normalize(-cameraRelativePos);
+        vec3 view = vvSafeNormalize(-cameraRelativePos, n);
         if (dot(n, view) < 0.0) n = -n;
 
         float detail = 0.14 * fade * fade;
-        return normalize(mix(n, vvPerturbNormal(n, materialUv), detail));
+        return vvSafeNormalize(mix(n, vvPerturbNormal(n, materialUv), detail), n);
     }
 
-    return normalize(mix(n, vvPerturbNormal(n, materialUv), fade));
+    return vvSafeNormalize(mix(n, vvPerturbNormal(n, materialUv), fade), n);
 }
 
 // ---------------------------------------------------------------------------
@@ -1396,7 +1403,8 @@ vec2 vvRippleSlope(vec2 p, float t, float density)
     float band = exp(-abs(r - front) * VV_RIPPLE_BAND);
     float decay = (1.0 - age) * (1.0 - age);
 
-    return normalize(offset + vec2(1e-5)) * sin((r - front) * VV_RIPPLE_WAVE) * band * decay;
+    return vvSafeNormalize2(offset + vec2(1e-5), vec2(1.0, 0.0))
+         * sin((r - front) * VV_RIPPLE_WAVE) * band * decay;
 }
 
 // Two scales of drop, at unrelated rates. One grid on its own reads as a grid
@@ -1464,7 +1472,7 @@ vec3 vvRainNormal(vec3 n, vec3 faceNormal, vec3 cameraRelativePos, float wetness
     // fade is vvDetailFade, the same distance falloff the relief uses. Ripples
     // are the highest-frequency thing this shader produces, so they are also
     // the first to alias into sparkle once a cell is smaller than a pixel.
-    return normalize(n + vec3(slope.x, 0.0, slope.y) * amount * VV_RIPPLE_DEPTH);
+    return vvSafeNormalize(n + vec3(slope.x, 0.0, slope.y) * amount * VV_RIPPLE_DEPTH, n);
 }
 
 // The sunfleck field: discrete soft-edged spots, not a noise threshold.
@@ -1530,19 +1538,7 @@ struct VvCanopyContext
 
 VvCanopyContext vvReadCanopyContext(vec3 cameraRelativePos)
 {
-    if (vv_canopyContextValid < 0.5) return VvCanopyContext(0.0, 1.0, vec3(1.0));
-
-    vec2 uv = (cameraRelativePos.xz - vv_reflectWorldOrigin.xz) /
-              max(vv_reflectWorldSize.xz, vec2(1.0));
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-    {
-        return VvCanopyContext(0.0, 1.0, vec3(1.0));
-    }
-
-    vec4 sample = texture(vv_canopyContext, uv);
-    float density = clamp(sample.a, 0.0, 1.0);
-    vec3 color = density > 0.001 ? clamp(sample.rgb, vec3(0.02), vec3(1.0)) : vec3(1.0);
-    return VvCanopyContext(density, 1.0 - density, color);
+    return VvCanopyContext(0.0, 1.0, vec3(1.0));
 }
 
 // Is there a sun at all, 0 no, 1 yes.
@@ -1619,12 +1615,6 @@ float vvCanopyDapple(vec3 cameraRelativePos, float fade)
     // reached this vertex, which is a fact about the result, and measured
     // ~1 under a real canopy.
     float under = vvCanopyEvidence();
-    VvCanopyContext canopyContext = vvReadCanopyContext(cameraRelativePos);
-    if (vv_canopyContextValid > 0.5)
-    {
-        if (canopyContext.density < 0.015) return 0.0;
-        under = max(under, canopyContext.density * (1.0 - vvSunVisibility()));
-    }
     if (under < 0.001) return 0.0;
 
     // No sun, no flecks - but a GATE rather than a dimmer. A canopy shadow at
@@ -1703,19 +1693,10 @@ vec3 vvForestAmbientResolve(vec3 result, vec3 cameraRelativePos, float fade)
     return filtered;
 }
 
-// Feeds vanilla's OWN god-ray channel, so the beams are the game's rather than
-// a second invented system sitting next to it.
-//
-// outGlow.g is the source mask for godrays.fsh, which radially blurs the frame
-// outward from the sun's screen position and accumulates wherever that mask is
-// bright. That is exactly what a shaft is - light streaking away from the sun
-// past whatever is occluding it - and terrain barely writes to it: chunkopaque
-// only sets it on sky-fading fragments, and chunktopsoil hard-codes zero.
-//
-// So the beams cost one number per fragment. No marching, no second buffer, no
-// depth reads. It also means they inherit the player's own god-ray graphics
-// setting: with godrays off, this writes a mask nothing reads and the effect
-// simply is not there, which is the correct way for it to degrade.
+// Disabled production shaft candidate. This stays available to debug view 17 so
+// the mask can be inspected, but terrain no longer writes it into outGlow.g
+// during the recovery pass. A later redesign must re-prove the vanilla godray
+// channel contract before using this value in production again.
 //
 // Two sources, because a canopy produces beams two ways:
 //
@@ -1735,7 +1716,7 @@ float vvCanopyShaft(vec3 cameraRelativePos, vec3 faceNormal, vec2 materialUv, ve
     float sun = vvSunPresence();
     if (sun < 0.01) return 0.0;
 
-    vec3 toSun = normalize(lightPosition);
+    vec3 toSun = vvSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
 
     // Angular proximity to the sun - NOT, as this comment used to claim, a test
     // of whether the camera is facing it. The distinction was raised in review
@@ -1753,7 +1734,7 @@ float vvCanopyShaft(vec3 cameraRelativePos, vec3 faceNormal, vec2 materialUv, ve
     // It is also where the effect gets its dependence on the real sun: the
     // beams follow lightPosition, so they swing through the day and lie flat at
     // dawn without being told to.
-    float look = dot(normalize(cameraRelativePos), toSun);
+    float look = dot(vvSafeNormalize(cameraRelativePos, -toSun), toSun);
     float facing = smoothstep(0.35, 0.95, look);
     if (facing < 0.004) return 0.0;
 
@@ -1791,7 +1772,7 @@ float vvCanopyShaft(vec3 cameraRelativePos, vec3 faceNormal, vec2 materialUv, ve
     // be the start of one, and treating it as a source put beams in the lawn.
     if (vvIsCanopy())
     {
-        vec3 v = normalize(-cameraRelativePos);
+        vec3 v = vvSafeNormalize(-cameraRelativePos, -toSun);
         vec3 n = vvSurfaceNormal(faceNormal, materialUv, cameraRelativePos);
         float wetness = vvWetness(faceNormal);
         float leafSource = vvLeafBacklightSource(
@@ -2741,7 +2722,7 @@ float vvTranslucency(vec3 n, vec3 l, vec3 v)
     // The correct form bends the light direction ITSELF through the surface -
     // l + n * distortion - and then asks how directly the viewer is looking
     // back down that ray.
-    vec3 through = normalize(l + n * distortion);
+    vec3 through = vvSafeNormalize(l + n * distortion, l);
 
     return pow(max(0.0, dot(v, -through)), power);
 }
@@ -3057,10 +3038,10 @@ vec4 vvApplyFloraPbr(vec4 litColor, vec3 baseOpticalAlbedo, VvSurface surface,
                                                cameraRelativePos, wetness, snow, frost);
     if (flora.tissue < 0.001) return litColor;
 
-    vec3 l = normalize(lightPosition);
-    vec3 v = normalize(-cameraRelativePos);
+    vec3 l = vvSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    vec3 v = vvSafeNormalize(-cameraRelativePos, vec3(0.0, 0.0, 1.0));
     vec3 n = flora.normal;
-    vec3 h = normalize(l + v);
+    vec3 h = vvSafeNormalize(l + v, n);
 
     float ndotlFront = max(dot(n, l), 0.0);
     float ndotlBack = max(dot(-n, l), 0.0);
@@ -3084,8 +3065,9 @@ vec4 vvApplyFloraPbr(vec4 litColor, vec3 baseOpticalAlbedo, VvSurface surface,
     if (canopy > 0.0)
     {
         result *= 1.0 - canopy;
-        result *= mix(vec3(1.0), clamp(flora.pigment / max(dot(flora.pigment, vec3(0.299, 0.587, 0.114)), 0.25), 0.75, 1.25),
-                      canopy * 0.08);
+        float pigmentLuma = max(dot(flora.pigment, vec3(0.299, 0.587, 0.114)), 0.05);
+        vec3 pigmentTint = clamp(flora.pigment / pigmentLuma, vec3(0.75), vec3(1.25));
+        result *= mix(vec3(1.0), pigmentTint, canopy * 0.08);
     }
     result = vvForestAmbientResolve(result, cameraRelativePos, flora.lod);
 
@@ -3147,7 +3129,7 @@ vec4 vvApplyFloraPbr(vec4 litColor, vec3 baseOpticalAlbedo, VvSurface surface,
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * emissionMask;
 
-    return vec4(result, litColor.a);
+    return vec4(clamp(result, vec3(0.0), vec3(32.0)), litColor.a);
 }
 
 vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
@@ -3210,12 +3192,12 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
     // breaks up is the whole effect.
     n = vvRainNormal(n, faceNormal, cameraRelativePos, wetness, vvDetailFade(cameraRelativePos));
 
-    vec3 l = normalize(lightPosition);
+    vec3 l = vvSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
 
     // worldPos is camera-relative here - vanilla's own applyReflectiveEffect
     // treats it that way - so the view vector points back from the fragment.
-    vec3 v = normalize(-cameraRelativePos);
-    vec3 h = normalize(l + v);
+    vec3 v = vvSafeNormalize(-cameraRelativePos, vec3(0.0, 0.0, 1.0));
+    vec3 h = vvSafeNormalize(l + v, n);
 
     float ndotl = max(dot(n, l), 0.0);
     float ndotv = max(dot(n, v), 1e-4);
@@ -3556,7 +3538,7 @@ vec4 vvApplyPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec2 materialUv,
             * clamp(1.0 - fog - murkiness, 0.0, 1.0)
             * emissionMask;
 
-    return vec4(result, litColor.a);
+    return vec4(clamp(result, vec3(0.0), vec3(32.0)), litColor.a);
 }
 
 // Replaces the output with one layer of the material system.
@@ -3655,11 +3637,8 @@ vec4 vvDebugView(vec4 color, vec3 faceNormal, vec2 materialUv, vec3 cameraRelati
     // and read off the two values.
     if (mode == 16) return vec4(vec3(clamp(vv_sunExposure, 0.0, 1.0)), color.a);
 
-    // 17: the god-ray source mask this writes into outGlow.g. Bright where a
-    // beam starts - backlit leaves and lit flecks, and only while the camera is
-    // looking toward the sun. Black everywhere if the player has god-rays
-    // switched off in the game's own graphics settings, which is where the
-    // effect actually lives.
+    // 17: disabled shaft candidate. This does not feed outGlow.g in production
+    // during recovery; it only shows what the old mask would have been.
     if (mode == 17) return vec4(vec3(vvCanopyShaft(cameraRelativePos, faceNormal, materialUv, color.rgb)), color.a);
 
     // 18: what the grooves take from the REFLECTION, against what they take

@@ -40,10 +40,11 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Vanilla's block atlas sampler. The name we are watching for.</summary>
         private const string TerrainSampler = "terrainTex";
 
-        // Same fail-closed switch as PbrShaderBinder. Keeping it here prevents
-        // an old published texture id from binding unit 11 through the postfix
-        // if the binder path is changed later.
-        private const bool CanopyContextBindingEnabled = false;
+        // Emergency terrain recovery switch. The hook is still installed so the
+        // old lifecycle can clean itself up, but it must not perform extra
+        // texture binds inside vanilla's terrain binding sequence until the
+        // active texture state contract has been proven from the engine.
+        private static readonly bool PerDrawTextureBindingEnabled = false;
 
         // Static because Harmony patches must be. There is one client and one
         // instance of this mod per process, which is what makes that safe.
@@ -282,6 +283,7 @@ namespace VintageVisuals.PseudoPBR
             // game, so the common case must be a volatile read and a return.
             if (!_active) return;
             if (_reentrant) return;
+            if (!PerDrawTextureBindingEnabled) return;
             if (!string.Equals(__0, TerrainSampler, StringComparison.Ordinal)) return;
 
             int materialTextureId;
@@ -343,13 +345,9 @@ namespace VintageVisuals.PseudoPBR
                                           WorldReflectionVolume.TextureUnit);
                 }
 
-                int canopyContextId = CanopyContextBindingEnabled ? _canopyContextTextureId : 0;
-
-                if (canopyContextId != 0 && program.HasUniform(PbrShaderBinder.CanopyContextUniform))
-                {
-                    program.BindTexture2D(PbrShaderBinder.CanopyContextUniform, canopyContextId,
-                                          WorldReflectionVolume.CanopyTextureUnit);
-                }
+                // Canopy context is intentionally not terrain-bound during the
+                // recovery pass. SetCanopyContext remains as a cleanup hook for
+                // older sessions, but no extra sampler is declared or rebound.
             }
             catch (Exception ex)
             {

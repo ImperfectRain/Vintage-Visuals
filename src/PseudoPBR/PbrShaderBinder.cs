@@ -89,16 +89,7 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldSliceSizeUniform = "vv_reflectWorldSliceSize";
         public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
-        public const string CanopyContextUniform = "vv_canopyContext";
-        public const string CanopyContextValidUniform = "vv_canopyContextValid";
         public const string ShaftUniform = "vv_pbrShafts";
-
-        // Fail-closed isolation for the production vegetation sampler. The
-        // shader keeps the uniform and fallback path, but terrain rendering must
-        // never depend on a fifth auxiliary sampler until the linked 1.22.7
-        // terrain programs prove that the unit is free and BindTexture2D leaves
-        // no unsafe active texture state behind.
-        private const bool CanopyContextBindingEnabled = false;
 
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
@@ -195,7 +186,6 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedBusy;
         private bool _reportedEntities;
         private bool _reportedParticles;
-        private bool _reportedCanopyBindingDisabled;
 
         /// <summary>
         /// The scene capture, when the reflection subsystem has one.
@@ -428,8 +418,6 @@ namespace VintageVisuals.PseudoPBR
 
             BindSceneCapture(program);
             BindWorldReflectionVolume(program);
-            ReportCanopyBindingDisabled();
-
             SetIfPresent(program, EnabledUniform, 1f);
 
             // In frame PIXELS rather than a fraction, so the shader compares
@@ -637,18 +625,15 @@ namespace VintageVisuals.PseudoPBR
 
             bool activeDebugView = _look.DebugView >= 53f && _look.DebugView <= 58f;
             bool activeReflection = _look.PixelReflection > 0.001f;
-            bool activeCanopy = _look.SunDapple > 0.001f || _look.SunShafts > 0.001f ||
-                                (_look.DebugView >= 59f && _look.DebugView <= 62f);
             EntityPos now = _capi.World?.Player?.Entity?.Pos;
             WorldReflectionVolume volume = WorldVolume;
 
-            if ((!activeDebugView && !activeReflection && !activeCanopy) || volume == null || now == null ||
+            if ((!activeDebugView && !activeReflection) || volume == null || now == null ||
                 !volume.EnsureUploaded(_capi, _capi.Logger, now))
             {
                 TerrainTextureBindInterceptor.SetWorldReflection(0);
                 TerrainTextureBindInterceptor.SetCanopyContext(0);
                 program.Uniform(ReflectWorldValidUniform, 0f);
-                SetIfPresent(program, CanopyContextValidUniform, 0f);
                 return;
             }
 
@@ -670,32 +655,7 @@ namespace VintageVisuals.PseudoPBR
                 program.Uniform(ReflectWorldValidUniform, 0f);
             }
 
-            if (CanopyContextBindingEnabled &&
-                program.HasUniform(CanopyContextUniform) &&
-                volume.CanopyTextureId != 0)
-            {
-                TerrainTextureBindInterceptor.SetCanopyContext(volume.CanopyTextureId);
-                program.BindTexture2D(CanopyContextUniform, volume.CanopyTextureId,
-                                      WorldReflectionVolume.CanopyTextureUnit);
-                SetIfPresent(program, CanopyContextValidUniform, 1f);
-            }
-            else
-            {
-                TerrainTextureBindInterceptor.SetCanopyContext(0);
-                SetIfPresent(program, CanopyContextValidUniform, 0f);
-            }
-        }
-
-        private void ReportCanopyBindingDisabled()
-        {
-            if (CanopyContextBindingEnabled || _reportedCanopyBindingDisabled) return;
-
-            _reportedCanopyBindingDisabled = true;
-            _capi.Logger.Notification("[VintageVisuals] pseudopbr: canopy context terrain sampler binding is " +
-                "disabled pending the 1.22.7 sampler-state audit. Active VV terrain units: material=" +
-                MaterialAtlasTexture.TextureUnit + ", material2=" + MaterialAtlasTexture.SecondTextureUnit +
-                ", scene=" + SceneCaptureRenderer.TextureUnit + ", world=" + WorldReflectionVolume.TextureUnit +
-                "; reserved canopy unit " + WorldReflectionVolume.CanopyTextureUnit + " is not bound.");
+            TerrainTextureBindInterceptor.SetCanopyContext(0);
         }
 
         private static void SetIfPresent(IShaderProgram program, string name, float value)

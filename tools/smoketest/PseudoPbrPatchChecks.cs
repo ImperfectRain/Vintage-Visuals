@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using VintageVisuals.Common.Patching;
 
 namespace VintageVisuals.SmokeTest
@@ -134,7 +135,7 @@ void main()
                 return;
             }
 
-            ok("11 patches produced", patches.Count == 11);
+            ok("10 patches produced", patches.Count == 10);
             ok("all in group 'pseudopbr'", patches.All(p => p.Group == "pseudopbr"));
             ok("targets both stages of the chunkopaque program",
                 patches.All(p => p.AppliesTo("chunkopaque.fsh") || p.AppliesTo("chunkopaque.vsh")) &&
@@ -191,6 +192,12 @@ void main()
             ok("debug view applied before the glow write",
                 result.IndexOf("vvDebugView(outColor", StringComparison.Ordinal) <
                 result.IndexOf("outGlow = vec4(glowLevel", StringComparison.Ordinal));
+            ok("chunkopaque keeps vanilla godray output during recovery",
+                result.Contains("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));") &&
+                !Regex.IsMatch(result, @"outGlow\s*=\s*vec4\([^;\n]*vvCanopyShaft"));
+            ok("canopy context sampler is not declared in terrain",
+                !result.Contains("uniform sampler2D vv_canopyContext") &&
+                !result.Contains("texture(vv_canopyContext"));
             ok("lightPosition assertion applied",
                 CountOf(result, "uniform vec3 lightPosition; // vintagevisuals") == 1);
 
@@ -432,7 +439,7 @@ void main()
             List<ShaderPatch> patches = ShaderPatchLoader
                 .ParsePatchFile(yaml, "pseudopbrtopsoil", "test", resolveSnippet).ToList();
 
-            ok("pseudopbrtopsoil.yaml parsed into 11 patches", patches.Count == 11);
+            ok("pseudopbrtopsoil.yaml parsed into 10 patches", patches.Count == 10);
             ok("targets both stages of the chunktopsoil program",
                 patches.All(p => p.AppliesTo("chunktopsoil.fsh") || p.AppliesTo("chunktopsoil.vsh")) &&
                 patches.Any(p => p.AppliesTo("chunktopsoil.vsh")));
@@ -458,6 +465,9 @@ void main()
                 result.IndexOf("outColor = applyFogAndShadowWithNormal", StringComparison.Ordinal));
             ok("microfacet pass runs on the lit topsoil colour",
                 result.Contains("outColor = vvApplyPbr(outColor, vvAlbedo, normal, uv, worldPos.xyz, vvShadow, fogAmount, murkiness, rgbaFog.rgb, blockLight);"));
+            ok("topsoil keeps vanilla godray output during recovery",
+                result.Contains("outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);") &&
+                !Regex.IsMatch(result, @"outGlow\s*=\s*vec4\([^;\n]*vvCanopyShaft"));
             ok("topsoil braces balanced", result.Count(c => c == '{') == result.Count(c => c == '}'));
 
             // Same rule as chunkopaque, and it has to hold independently: our

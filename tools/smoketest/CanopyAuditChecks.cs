@@ -438,7 +438,7 @@ namespace VintageVisuals.SmokeTest
                 "there is no sun to make a beam from after dark");
 
             check("shafts follow the real sun direction",
-                body.Contains("normalize(lightPosition)"),
+                body.Contains("vvSafeNormalize(lightPosition"),
                 "the beams must swing with the sun rather than be placed");
 
             check("leaf shafts are gated by real backlight state",

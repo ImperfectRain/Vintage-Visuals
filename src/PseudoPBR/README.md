@@ -957,11 +957,12 @@ the `SHADOWQUALITY=0` third.
 
 ### A shaft needs a beam too
 
-`vvCanopyShaft` writes `outGlow.g`, which is the source mask
-[vanilla's own godray pass](../../reference) radially blurs outward from the
-sun's screen position. It is **live**, in both `chunkopaque` and `chunktopsoil` —
-it is not foundation-only, and an earlier report saying so had confused it with
-the *atmosphere* subsystem's separate, genuinely unwired godray feature.
+`vvCanopyShaft` is currently **debug-only**. It used to write `outGlow.g`, the
+source mask [vanilla's own godray pass](../../reference) radially blurs outward
+from the sun's screen position, but the terrain recovery pass restored vanilla's
+own `outGlow` writes for both `chunkopaque` and `chunktopsoil`. Debug view 17
+still shows the candidate mask so the idea can be revisited after the terrain
+render-state regression is closed.
 
 It did not respond to overcast. A shaft is sunlight scattering in the air along
 **one direction**; under overcast the sky becomes a source the size of the sky,
@@ -1210,13 +1211,11 @@ under a tree, read off the two values, and the gate stops being a guess.
 
 `PseudoPBR.SunShafts`; debug view 17 shows the source mask.
 
-The beams are **vanilla's own god-ray pass**, not a second system beside it.
+The beam mask is **not wired into production terrain during recovery**. The old
+design used vanilla's own god-ray pass rather than a second system beside it:
 `outGlow.g` is the source mask `godrays.fsh` radially blurs outward from the
-sun's screen position, accumulating wherever that mask is bright - which is
-exactly what a shaft is, light streaking away from the sun past whatever
-occludes it. Terrain barely uses the channel: `chunkopaque` only sets it on
-sky-fading fragments and `chunktopsoil` hard-codes zero, so writing to it is
-nearly free and needs no marching, no second buffer and no depth reads.
+sun's screen position. That contract now needs a runtime render-state audit
+before it is allowed back into `chunkopaque` or `chunktopsoil`.
 
 Two sources, because a canopy makes beams two ways:
 
