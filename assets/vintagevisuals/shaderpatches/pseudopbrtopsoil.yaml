@@ -126,12 +126,3 @@
   content: |
     rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, cameraPos);
     vv_sunExposure = rgbaLightIn.a;
-
-# Feed vanilla's own god-ray channel from the canopy. See the note in
-# pseudopbr.yaml. This shader hard-codes zero in that channel, so the whole of
-# the green component is ours here.
-- type: token
-  filename: chunktopsoil.fsh
-  tokens: "outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);"
-  content: |
-    outGlow = vec4(glowLevel + glow, vvCanopyShaft(worldPos.xyz, normal, uv, vvAlbedo), 0, outColor.a);
