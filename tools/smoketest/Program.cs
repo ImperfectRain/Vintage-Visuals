@@ -248,6 +248,17 @@ void main(void) {
         Check("replace operation is the only explicit deletion here",
               operations.Contains("color.rgb += vec3(1.0);") &&
               !operations.Contains("color.rgb += texture(bloomParts, texCoord).rgb;"));
+        Check("patch manifest records operations and before/after facts",
+              operationPatcher.Manifest.ContainsKey("final.fsh") &&
+              operationPatcher.Manifest["final.fsh"].Operations.Count == 5 &&
+              operationPatcher.Manifest["final.fsh"].DeclarationsBefore.Contains("layout(location = 0) out vec4 outColor;") &&
+              operationPatcher.Manifest["final.fsh"].DeclarationsAfter.Contains("layout(location = 0) out vec4 outColor;"),
+              operationPatcher.Manifest.ContainsKey("final.fsh")
+                  ? operationPatcher.Manifest["final.fsh"].ToStableText()
+                  : "no manifest");
+        Check("generated patch text uses canonical LF newlines",
+              !operations.Contains("\r"),
+              "CRLF found in generated shader text");
 
         try
         {
@@ -263,6 +274,51 @@ void main(void) {
         {
             Check("wrap without ${MATCH} fails closed", false, ex.Message);
         }
+
+        Console.WriteLine("Patch ordering is phase/dependency driven and legacy use is visible");
+        string orderedYaml = @"
+- type: insert_before
+  group: late
+  after: early
+  phase: FinalOutput
+  filename: final.fsh
+  tokens: outColor = color;
+  content: |
+    color.rgb += vec3(0.25);
+- type: insert_before
+  group: early
+  phase: Declarations
+  filename: final.fsh
+  tokens: uniform vec2 invFrameSize;
+  content: |
+    uniform float vv_orderProbe;
+";
+        var orderedPatcher = new ShaderPatcher(new CollectingLogger());
+        var orderedPatches = ShaderPatchLoader.ParsePatchFile(orderedYaml, "order", "order", ResolveSnippet).ToList();
+        orderedPatcher.SetPatches(orderedPatches);
+        string ordered = orderedPatcher.Patch("final.fsh", Vanilla);
+        Check("dependency ordering applies declarations before final output",
+              ordered.IndexOf("uniform float vv_orderProbe;", StringComparison.Ordinal) <
+              ordered.IndexOf("color.rgb += vec3(0.25);", StringComparison.Ordinal),
+              ordered);
+
+        var legacyLog = new CollectingLogger();
+        var legacyPatcher = new ShaderPatcher(legacyLog);
+        var legacyPatches = ShaderPatchLoader.ParsePatchFile(
+            "- type: token\n  filename: final.fsh\n  tokens: outColor = color;\n  content: outColor = color;",
+            "newlegacy", "newlegacy", ResolveSnippet).ToList();
+        legacyPatcher.SetPatches(legacyPatches);
+        Check("unallowlisted legacy token patches warn",
+              legacyLog.Lines.Any(l => l.Contains("legacy destructive Token")),
+              string.Join(" | ", legacyLog.Lines));
+
+        legacyLog.Lines.Clear();
+        legacyPatcher.SetPatches(ShaderPatchLoader.ParsePatchFile(
+            "- type: token\n  filename: final.fsh\n  allowLegacy: true\n  tokens: outColor = color;\n  content: outColor = color;",
+            "newlegacy", "newlegacy", ResolveSnippet).ToList());
+        Check("allowlisted legacy token patches stay quiet",
+              !legacyLog.Lines.Any(l => l.Contains("legacy destructive")),
+              string.Join(" | ", legacyLog.Lines));
 
         Console.WriteLine("Whitespace tolerance on real anchors");
         var reflowed = Vanilla

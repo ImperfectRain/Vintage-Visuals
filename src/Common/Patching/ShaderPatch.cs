@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -46,6 +47,8 @@ namespace VintageVisuals.Common.Patching
     /// </summary>
     public sealed class ShaderPatch
     {
+        public const string DefaultPhase = "Legacy";
+
         /// <summary>Subsystem this patch belongs to. All patches in a group succeed or fail together.</summary>
         public string Group { get; }
 
@@ -53,6 +56,20 @@ namespace VintageVisuals.Common.Patching
         public string Filename { get; }
 
         public ShaderPatchKind Kind { get; }
+
+        /// <summary>Named compiler phase used for deterministic ordering.</summary>
+        public string Phase { get; }
+
+        /// <summary>Stable order inside one patch file after phase sorting.</summary>
+        public int SourceOrder { get; }
+
+        /// <summary>Groups that must be applied before this patch's group.</summary>
+        public IReadOnlyList<string> AfterGroups { get; }
+
+        /// <summary>True when a legacy destructive operation has been explicitly allowlisted.</summary>
+        public bool LegacyAllowed { get; }
+
+        public bool IsLegacyDestructive => Kind == ShaderPatchKind.Token || Kind == ShaderPatchKind.Regex;
 
         /// <summary>GLSL to insert, or to replace the match with.</summary>
         public string Content { get; }
@@ -73,12 +90,17 @@ namespace VintageVisuals.Common.Patching
         public string Origin { get; }
 
         public ShaderPatch(string group, string filename, ShaderPatchKind kind, string content,
-                           Regex anchor, string anchorDescription, bool optional, bool multiple, string origin)
+                           Regex anchor, string anchorDescription, bool optional, bool multiple, string origin,
+                           string phase, int sourceOrder, IEnumerable<string> afterGroups, bool legacyAllowed)
         {
             Group = group;
             Filename = filename;
             Kind = kind;
-            Content = content ?? "";
+            Phase = string.IsNullOrWhiteSpace(phase) ? DefaultPhase : phase.Trim();
+            SourceOrder = sourceOrder;
+            AfterGroups = new List<string>(afterGroups ?? Array.Empty<string>());
+            LegacyAllowed = legacyAllowed;
+            Content = ShaderSourceAnalysis.NormalizeNewlines(content ?? "");
             Anchor = anchor;
             AnchorDescription = anchorDescription;
             Optional = optional;
@@ -103,11 +125,17 @@ namespace VintageVisuals.Common.Patching
                     return ApplyStart(code);
 
                 case ShaderPatchKind.End:
-                    return code + Environment.NewLine + Content + Environment.NewLine;
+                    return code + "\n" + Content + "\n";
 
                 default:
                     return ApplyAnchored(filename, code);
             }
+        }
+
+        public int CountMatches(string code)
+        {
+            if (Kind == ShaderPatchKind.Start || Kind == ShaderPatchKind.End) return 1;
+            return Anchor == null || code == null ? 0 : Anchor.Matches(code).Count;
         }
 
         private string ApplyAnchored(string filename, string code)
@@ -143,10 +171,10 @@ namespace VintageVisuals.Common.Patching
                     return match.Value;
 
                 case ShaderPatchKind.InsertBefore:
-                    return Content + Environment.NewLine + match.Value;
+                    return Content + "\n" + match.Value;
 
                 case ShaderPatchKind.InsertAfter:
-                    return match.Value + Environment.NewLine + Content;
+                    return match.Value + "\n" + Content;
 
                 case ShaderPatchKind.Wrap:
                     if (!Content.Contains("${MATCH}"))
@@ -189,18 +217,24 @@ namespace VintageVisuals.Common.Patching
                 {
                     if (!inserted && !IsPreambleLine(line))
                     {
-                        sb.AppendLine(Content);
+                        AppendLine(sb, Content);
                         inserted = true;
                     }
 
-                    sb.AppendLine(line);
+                    AppendLine(sb, line);
                 }
 
                 // Degenerate case: the file is nothing but a preamble.
-                if (!inserted) sb.AppendLine(Content);
+                if (!inserted) AppendLine(sb, Content);
             }
 
             return sb.ToString();
+        }
+
+        private static void AppendLine(StringBuilder sb, string line)
+        {
+            sb.Append(line);
+            sb.Append('\n');
         }
 
         // Matched against a single line: blank, a // comment, or a #version /

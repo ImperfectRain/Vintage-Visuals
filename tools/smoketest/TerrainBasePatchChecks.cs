@@ -68,6 +68,10 @@ void main()
             check("pbrterrainbase uses preserving patch operations",
                 patches.All(p => p.Kind == ShaderPatchKind.InsertBefore),
                 string.Join(", ", patches.Select(p => p.Kind).Distinct()));
+            check("pbrterrainbase declares deterministic compiler phases",
+                patches.Count(p => p.Phase == "Declarations") == 2 &&
+                patches.Count(p => p.Phase == "FinalOutput") == 2,
+                string.Join(", ", patches.Select(p => p.Phase)));
             check("pbrterrainbase declares no texture sampler in resolved content",
                 !patches.Any(p => p.Content.Contains("uniform sampler") || p.Content.Contains("texture(")),
                 "Stage A must not alter the terrain sampler surface");
@@ -106,6 +110,41 @@ void main()
                 !opaque.Contains("vvSceneReflection") && !topsoil.Contains("vvSceneReflection") &&
                 !opaque.Contains("vvWorldReflection") && !topsoil.Contains("vvWorldReflection"),
                 "");
+
+            ShaderPatchManifestEntry opaqueManifest = patcher.Manifest["chunkopaque.fsh"];
+            ShaderPatchManifestEntry topsoilManifest = patcher.Manifest["chunktopsoil.fsh"];
+
+            check("chunkopaque manifest records source hashes",
+                opaqueManifest.BaseSourceHash.Length == 64 &&
+                opaqueManifest.FinalSourceHash.Length == 64 &&
+                opaqueManifest.BaseSourceHash != opaqueManifest.FinalSourceHash,
+                opaqueManifest.ToStableText());
+            check("chunktopsoil manifest records source hashes",
+                topsoilManifest.BaseSourceHash.Length == 64 &&
+                topsoilManifest.FinalSourceHash.Length == 64 &&
+                topsoilManifest.BaseSourceHash != topsoilManifest.FinalSourceHash,
+                topsoilManifest.ToStableText());
+            check("chunkopaque manifest records matched anchors",
+                opaqueManifest.Operations.Count == 2 &&
+                opaqueManifest.Operations.All(o => o.Matches == 1) &&
+                opaqueManifest.Operations.Any(o => o.Anchor.Contains("lightPosition")) &&
+                opaqueManifest.Operations.Any(o => o.Anchor.Contains("outGlow")),
+                opaqueManifest.ToStableText());
+            check("Stage A manifest exposes sampler surface unchanged",
+                opaqueManifest.SamplersAdded.Count == 0 &&
+                opaqueManifest.SamplersRemoved.Count == 0 &&
+                topsoilManifest.SamplersAdded.Count == 0 &&
+                topsoilManifest.SamplersRemoved.Count == 0,
+                opaqueManifest.ToStableText() + topsoilManifest.ToStableText());
+            check("Stage A manifest exposes preserved vanilla declarations",
+                opaqueManifest.DeclarationsRemoved.Count == 0 &&
+                topsoilManifest.DeclarationsRemoved.Count == 0 &&
+                opaqueManifest.DeclarationsAfter.Contains("uniform vec3 lightPosition;") &&
+                topsoilManifest.DeclarationsAfter.Contains("uniform vec3 lightPosition;"),
+                opaqueManifest.ToStableText() + topsoilManifest.ToStableText());
+            check("manifest output is deterministic text without CRLF",
+                !opaqueManifest.ToStableText().Contains("\r"),
+                opaqueManifest.ToStableText());
         }
     }
 }

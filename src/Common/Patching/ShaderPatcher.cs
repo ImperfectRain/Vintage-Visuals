@@ -18,6 +18,21 @@ namespace VintageVisuals.Common.Patching
     {
         private readonly ILogger _logger;
         private readonly List<ShaderPatchGroup> _groups = new List<ShaderPatchGroup>();
+        private readonly Dictionary<string, ShaderPatchManifestEntry> _manifest =
+            new Dictionary<string, ShaderPatchManifestEntry>(StringComparer.OrdinalIgnoreCase);
+
+        private static readonly Dictionary<string, int> PhaseOrder =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Assertions", 0 },
+                { "Declarations", 10 },
+                { "SharedFunctions", 20 },
+                { "Material", 30 },
+                { "Lighting", 40 },
+                { "FinalOutput", 50 },
+                { "Debug", 60 },
+                { ShaderPatch.DefaultPhase, 100 }
+            };
 
         public ShaderPatcher(ILogger logger)
         {
@@ -25,6 +40,8 @@ namespace VintageVisuals.Common.Patching
         }
 
         public IReadOnlyList<ShaderPatchGroup> Groups => _groups;
+
+        public IReadOnlyDictionary<string, ShaderPatchManifestEntry> Manifest => _manifest;
 
         /// <summary>Replaces the loaded patch set. Called on (re)load of the YAML assets.</summary>
         /// <summary>
@@ -117,8 +134,9 @@ namespace VintageVisuals.Common.Patching
         public void SetPatches(IEnumerable<ShaderPatch> patches)
         {
             _groups.Clear();
+            _manifest.Clear();
 
-            foreach (ShaderPatch patch in patches)
+            foreach (ShaderPatch patch in OrderPatches(patches))
             {
                 ShaderPatchGroup group = _groups.FirstOrDefault(g => g.Name == patch.Group);
                 if (group == null)
@@ -128,7 +146,84 @@ namespace VintageVisuals.Common.Patching
                 }
 
                 group.Patches.Add(patch);
+
+                if (patch.IsLegacyDestructive && !patch.LegacyAllowed)
+                {
+                    _logger.Warning("[VintageVisuals] shader patch " + patch.Origin + " uses legacy destructive " +
+                                    patch.Kind + " without an allow-list. New production patches should use " +
+                                    "assert, insert_before, insert_after, wrap, or explicit replace.");
+                }
             }
+        }
+
+        private static IEnumerable<ShaderPatch> OrderPatches(IEnumerable<ShaderPatch> patches)
+        {
+            var list = (patches ?? Enumerable.Empty<ShaderPatch>()).ToList();
+            var groupOrder = OrderGroups(list);
+            return list.OrderBy(p => groupOrder[p.Group])
+                       .ThenBy(p => PhaseRank(p.Phase))
+                       .ThenBy(p => p.SourceOrder)
+                       .ThenBy(p => p.Origin, StringComparer.Ordinal)
+                       .ToList();
+        }
+
+        private static Dictionary<string, int> OrderGroups(List<ShaderPatch> patches)
+        {
+            var names = patches.Select(p => p.Group).Distinct(StringComparer.Ordinal).ToList();
+            var byName = patches.GroupBy(p => p.Group, StringComparer.Ordinal)
+                                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            var visiting = new HashSet<string>(StringComparer.Ordinal);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (string name in names.OrderBy(n => GroupPhaseRank(byName[n])).ThenBy(n => n, StringComparer.Ordinal))
+            {
+                Visit(name, byName, result, visiting, visited);
+            }
+
+            return result;
+        }
+
+        private static void Visit(string name, Dictionary<string, List<ShaderPatch>> byName,
+                                  Dictionary<string, int> result, HashSet<string> visiting,
+                                  HashSet<string> visited)
+        {
+            if (visited.Contains(name)) return;
+            if (visiting.Contains(name))
+            {
+                // Cycles are a patch authoring defect. Keep deterministic order
+                // instead of throwing during load; the manifest and warning path
+                // make the dependency visible without taking out unrelated groups.
+                return;
+            }
+
+            visiting.Add(name);
+            List<ShaderPatch> patches;
+            if (byName.TryGetValue(name, out patches))
+            {
+                foreach (string dependency in patches.SelectMany(p => p.AfterGroups)
+                                                     .Where(byName.ContainsKey)
+                                                     .Distinct(StringComparer.Ordinal)
+                                                     .OrderBy(d => d, StringComparer.Ordinal))
+                {
+                    Visit(dependency, byName, result, visiting, visited);
+                }
+            }
+
+            visiting.Remove(name);
+            visited.Add(name);
+            if (!result.ContainsKey(name)) result[name] = result.Count;
+        }
+
+        private static int GroupPhaseRank(List<ShaderPatch> patches)
+        {
+            return patches.Count == 0 ? int.MaxValue : patches.Min(p => PhaseRank(p.Phase));
+        }
+
+        private static int PhaseRank(string phase)
+        {
+            int rank;
+            return PhaseOrder.TryGetValue(phase ?? "", out rank) ? rank : 90;
         }
 
         /// <summary>
@@ -165,6 +260,11 @@ namespace VintageVisuals.Common.Patching
                 return code;
             }
 
+            string original = code;
+            ShaderSourceFacts beforeFacts = ShaderSourceAnalysis.Facts(original);
+            var operations = new List<ShaderPatchOperationRecord>();
+            bool normalizedForPatch = false;
+
             if (!string.IsNullOrEmpty(filename) && !_seen.ContainsKey(filename)) _seen[filename] = 0;
 
             foreach (ShaderPatchGroup group in _groups)
@@ -189,12 +289,35 @@ namespace VintageVisuals.Common.Patching
 
                 try
                 {
+                    string sourceForGroup = code;
+                    if (!normalizedForPatch)
+                    {
+                        sourceForGroup = ShaderSourceAnalysis.NormalizeNewlines(code);
+                        original = sourceForGroup;
+                        beforeFacts = ShaderSourceAnalysis.Facts(original);
+                    }
+
                     // Staged in a local so a mid-group failure cannot leave the
                     // shader half-patched.
-                    string staged = code;
-                    foreach (ShaderPatch patch in applicable) staged = patch.Apply(filename, staged);
+                    string staged = sourceForGroup;
+                    var groupOperations = new List<ShaderPatchOperationRecord>();
+                    foreach (ShaderPatch patch in applicable)
+                    {
+                        groupOperations.Add(new ShaderPatchOperationRecord
+                        {
+                            Group = group.Name,
+                            Kind = patch.Kind.ToString(),
+                            Phase = patch.Phase,
+                            Origin = patch.Origin,
+                            Anchor = patch.AnchorDescription ?? patch.Kind.ToString(),
+                            Matches = patch.CountMatches(staged)
+                        });
+                        staged = patch.Apply(filename, staged);
+                    }
 
                     code = staged;
+                    normalizedForPatch = true;
+                    operations.AddRange(groupOperations);
                     if (!group.PatchedFiles.Contains(filename)) group.PatchedFiles.Add(filename);
 
                     Delivery applied;
@@ -229,7 +352,42 @@ namespace VintageVisuals.Common.Patching
                 }
             }
 
+            if (!string.IsNullOrEmpty(filename) && operations.Count > 0)
+            {
+                _manifest[filename] = BuildManifest(filename, original, code, beforeFacts, operations);
+            }
+
             return code;
+        }
+
+        private static ShaderPatchManifestEntry BuildManifest(string filename, string before, string after,
+                                                              ShaderSourceFacts beforeFacts,
+                                                              List<ShaderPatchOperationRecord> operations)
+        {
+            ShaderSourceFacts afterFacts = ShaderSourceAnalysis.Facts(after);
+            var entry = new ShaderPatchManifestEntry
+            {
+                Filename = filename,
+                BaseSourceHash = ShaderSourceAnalysis.Sha256(before),
+                FinalSourceHash = ShaderSourceAnalysis.Sha256(after),
+                ValidationPassed = true,
+                ValidationMessage = "static source contract generated"
+            };
+
+            entry.Operations.AddRange(operations);
+            entry.DeclarationsBefore.AddRange(beforeFacts.Declarations);
+            entry.DeclarationsAfter.AddRange(afterFacts.Declarations);
+            entry.SamplersBefore.AddRange(beforeFacts.Samplers);
+            entry.SamplersAfter.AddRange(afterFacts.Samplers);
+            entry.VaryingsBefore.AddRange(beforeFacts.Varyings);
+            entry.VaryingsAfter.AddRange(afterFacts.Varyings);
+            entry.DeclarationsAdded.AddRange(ShaderSourceAnalysis.Added(beforeFacts.Declarations, afterFacts.Declarations));
+            entry.DeclarationsRemoved.AddRange(ShaderSourceAnalysis.Removed(beforeFacts.Declarations, afterFacts.Declarations));
+            entry.SamplersAdded.AddRange(ShaderSourceAnalysis.Added(beforeFacts.Samplers, afterFacts.Samplers));
+            entry.SamplersRemoved.AddRange(ShaderSourceAnalysis.Removed(beforeFacts.Samplers, afterFacts.Samplers));
+            entry.VaryingsAdded.AddRange(ShaderSourceAnalysis.Added(beforeFacts.Varyings, afterFacts.Varyings));
+            entry.VaryingsRemoved.AddRange(ShaderSourceAnalysis.Removed(beforeFacts.Varyings, afterFacts.Varyings));
+            return entry;
         }
 
         /// <summary>

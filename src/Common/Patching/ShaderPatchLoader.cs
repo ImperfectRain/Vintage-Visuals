@@ -100,7 +100,7 @@ namespace VintageVisuals.Common.Patching
                 return;
             }
 
-            foreach (IAsset asset in assets)
+            foreach (IAsset asset in assets.OrderBy(a => a.Name, StringComparer.Ordinal))
             {
                 string origin = asset.Location.ToString();
 
@@ -263,7 +263,41 @@ namespace VintageVisuals.Common.Patching
             }
 
             return new ShaderPatch(group, entry.Filename.Trim(), kind, content,
-                                   anchor, anchorDescription, entry.Optional, entry.Multiple, origin);
+                                   anchor, anchorDescription, entry.Optional, entry.Multiple, origin,
+                                   entry.Phase, ExtractEntryNumber(origin), SplitList(entry.After),
+                                   entry.AllowLegacy || IsLegacyAllowedByDefault(defaultGroup));
+        }
+
+        private static int ExtractEntryNumber(string origin)
+        {
+            Match match = Regex.Match(origin ?? "", @" entry ([0-9]+)$", RegexOptions.CultureInvariant);
+            int value;
+            return match.Success && int.TryParse(match.Groups[1].Value, out value) ? value : 0;
+        }
+
+        private static IEnumerable<string> SplitList(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return Array.Empty<string>();
+            return value.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(v => v.Trim())
+                        .Where(v => v.Length > 0);
+        }
+
+        private static bool IsLegacyAllowedByDefault(string defaultGroup)
+        {
+            switch ((defaultGroup ?? "").Trim().ToLowerInvariant())
+            {
+                case "atmosphere":
+                case "colorgrade":
+                case "pbrentity":
+                case "pbrparticle":
+                case "pseudopbr":
+                case "pseudopbrtopsoil":
+                case "weather":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static string ResolveContent(PatchEntry entry, string origin, System.Func<string, string> resolveSnippet)
@@ -363,6 +397,9 @@ namespace VintageVisuals.Common.Patching
             public string Regex { get; set; }
             public bool Optional { get; set; }
             public bool Multiple { get; set; }
+            public string Phase { get; set; }
+            public string After { get; set; }
+            public bool AllowLegacy { get; set; }
         }
     }
 }

@@ -429,6 +429,7 @@ namespace VintageVisuals
                         // delivery table says how far each target actually got.
                         ShaderPatcher.LogCensus();
                         ShaderPatcher.LogDelivery();
+                        RuntimeShaderIntrospector.LogTerrainPrograms(Capi, Mod.Logger);
                     }
                 }, attempt * ApplyRetryIntervalMs);
             }
