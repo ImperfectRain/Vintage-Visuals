@@ -43,6 +43,14 @@ namespace VintageVisuals.PseudoPBR
 
         public const string TopsoilGroupName = "pseudopbrtopsoil";
 
+        /// <summary>
+        /// Emergency terrain recovery gate. When false, chunkopaque and
+        /// chunktopsoil receive vanilla source and the terrain binder performs
+        /// no atlas work. Entity and particle lighting stay independently
+        /// gated because they do not patch terrain shaders.
+        /// </summary>
+        public const bool TerrainShaderPatchesEnabled = false;
+
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";
 
@@ -116,7 +124,8 @@ namespace VintageVisuals.PseudoPBR
         {
             if (_binder == null) return;
 
-            bool active = config.Enabled && _atlasTexture != null && _atlasTexture.HasPixels && _atlasPagesSupported;
+            bool active = TerrainShaderPatchesEnabled && config.Enabled &&
+                          _atlasTexture != null && _atlasTexture.HasPixels && _atlasPagesSupported;
 
             // Says why, once per reason, when the answer is no. "Enabled is
             // ticked but nothing happens" has been the shape of every problem
@@ -124,7 +133,9 @@ namespace VintageVisuals.PseudoPBR
             // which precondition failed.
             if (!active && config.Enabled)
             {
-                string reason = _atlasTexture == null || !_atlasTexture.HasPixels
+                string reason = !TerrainShaderPatchesEnabled
+                    ? "terrain PBR shader patches are disabled by the emergency terrain recovery gate"
+                    : _atlasTexture == null || !_atlasTexture.HasPixels
                     ? "no material atlas has been derived (see the pseudopbr lines above)"
                     : "the block texture atlas needs " + _atlasPages + " pages and the terrain bind hook " +
                       "could not be installed, so only a single-page atlas can be served";

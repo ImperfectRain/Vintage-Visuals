@@ -27,6 +27,7 @@ namespace VintageVisuals.SmokeTest
         {
             string patchDir = Path.Combine(repo, "assets/vintagevisuals/shaderpatches");
             string modSystem = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
+            string pbrSubsystem = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PseudoPbrSubsystem.cs"));
 
             // Group defaults to the file's own name, so the shipped groups are
             // the shipped filenames unless a file overrides it.
@@ -92,6 +93,13 @@ namespace VintageVisuals.SmokeTest
             var orphaned = gated.Where(g => !groups.Contains(g)).ToList();
             check("every gated group is actually shipped", orphaned.Count == 0,
                 string.Join(", ", orphaned));
+
+            check("terrain PBR source patches are fail-closed during recovery",
+                pbrSubsystem.Contains("public const bool TerrainShaderPatchesEnabled = false;") &&
+                gate.Contains("PseudoPbrSubsystem.TerrainShaderPatchesEnabled") &&
+                gate.Contains("ConfigManager.Config.PseudoPBR.Enabled") &&
+                gate.Contains("PseudoPbrSubsystem.TopsoilGroupName"),
+                "chunkopaque and chunktopsoil must receive vanilla source until the terrain corruption is isolated");
 
             // A flag the gate reads but the signature does not is a toggle that
             // takes effect only after a manual shader reload, which reads to

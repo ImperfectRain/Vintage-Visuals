@@ -222,7 +222,8 @@ namespace VintageVisuals
         {
             if (group == PseudoPbrSubsystem.GroupName || group == PseudoPbrSubsystem.TopsoilGroupName)
             {
-                return ConfigManager.Config.PseudoPBR.Enabled;
+                return PseudoPbrSubsystem.TerrainShaderPatchesEnabled &&
+                       ConfigManager.Config.PseudoPBR.Enabled;
             }
 
             // Gated apart from the terrain groups, and on its own flag. The
@@ -270,6 +271,7 @@ namespace VintageVisuals
         private string PatchGatingSignature()
         {
             return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
+                   (PseudoPbrSubsystem.TerrainShaderPatchesEnabled ? "T" : "-") +
                    (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
                    (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
