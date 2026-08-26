@@ -111,19 +111,19 @@ class id in alpha. The first production pass traces only full opaque cubes for
 reflection hits; partial, cutout, transparent, liquid, emissive and unsupported
 cells are classified for diagnostics and future coverage.
 
-The same rebuild also uploads a 128 x 128 canopy context texture. RGB is the
+The same rebuild can upload a 128 x 128 canopy context texture. RGB is the
 current representative colour of leaf blocks in that X/Z column; alpha is a
 bounded leaf-density estimate. This is intentionally low frequency. The vanilla
-shadow map still owns animated leaf gaps, sunflecks and wind movement; the
-canopy texture owns only the broader question "am I under a tree, and what
-colour is that tree today?"
+shadow map still owns animated leaf gaps, sunflecks and wind movement. Terrain
+binding for this texture is currently fail-closed until the 1.22.7 terrain
+sampler map and active texture state have been audited at runtime.
 
 The volume rebuilds on initial upload, after player movement beyond 32 horizontal
 blocks or 16 vertical blocks, after `BlockChanged` inside the volume, and after
 `ChunkDirty` intersects the volume. Rebuild logs include reason, invalidation
-count and per-class totals. The atlas is bound when pixel reflection is active,
-when canopy context is needed for forest lighting, or when a world-volume/canopy
-debug view is selected.
+count and per-class totals. The atlas is bound when pixel reflection is active or
+when a world-volume debug view is selected. Canopy context does not currently
+bind an additional terrain sampler.
 
 `vvPixelReflection` resolves sources in this order:
 
@@ -142,9 +142,9 @@ The debug views exposed in the new UI are:
 | Debug > Debug System: Materials > World reflection proof > World trace steps | 56 | DDA cell budget used |
 | Debug > Debug System: Materials > World reflection proof > World voxel class | 57 | first non-empty classified cell crossed by the ray |
 | Debug > Debug System: Materials > World reflection proof > Hybrid reflection source | 58 | white screen-space, green world volume, blue analytic fallback |
-| Debug > Debug System: Materials > Forest lighting > World canopy density | 59 | leaf-column density from the canopy context texture |
-| Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | seasonal/lit leaf colour stored for the current column |
-| Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | low-frequency ambient attenuation/tint used under canopy |
+| Debug > Debug System: Materials > Forest lighting > World canopy density | 59 | fallback while canopy terrain binding is disabled |
+| Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | fallback while canopy terrain binding is disabled |
+| Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | fallback while canopy terrain binding is disabled |
 | Debug > Debug System: Materials > Forest lighting > Vegetation LOD | 62 | distance simplification applied to foliage lighting |
 
 ## Cost
@@ -154,8 +154,8 @@ The debug views exposed in the new UI are:
 | Render target | One RGBA16F at half the frame in each axis, so a quarter of the pixels |
 | When | Every frame the feature is on, whether or not anything reflective is visible |
 | Extra passes | One fullscreen copy |
-| World atlas | 128 x 64 x 128 classified cells packed into a 2048 x 512 RGBA upload when pixel reflection, canopy lighting or world/canopy debug is active |
-| Canopy context | 128 x 128 RGBA upload, rebuilt with the world atlas and bound only when forest lighting or modes 59-62 need it |
+| World atlas | 128 x 64 x 128 classified cells packed into a 2048 x 512 RGBA upload when pixel reflection or world-volume debug is active |
+| Canopy context | 128 x 128 RGBA upload path exists, but terrain sampler binding is disabled pending sampler audit |
 | World rebuild | Initial upload, player movement threshold, block edits inside the volume, or dirty chunks intersecting the volume |
 | Measured | **No.** Nothing here has been profiled |
 

@@ -45,7 +45,7 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 | Height haze through vanilla's ambient stack | L2 | `src/Atmosphere/` |
 | Aerial perspective, one owner for fog | L2 | `atmosphere.glsl`, four programs |
 | Atmospheric transport, 8 of 11 features | L2 | `AtmosphereInputs`, `atmosphere.glsl` |
-| World canopy context and forest lighting | L2 | `src/Reflections/WorldReflectionVolume.cs`, `pseudopbr.glsl` |
+| World canopy context and forest lighting | L1 | `src/Reflections/WorldReflectionVolume.cs`, `pseudopbr.glsl`; terrain sampler binding disabled pending audit |
 | Cloud-edge, atmosphere godrays, dapple interaction | foundation | interface and debug view only - D26 |
 
 ---

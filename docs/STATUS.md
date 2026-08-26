@@ -121,7 +121,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 |---|---|---|---|
 | `[x]` | Surface relief in `chunkopaque.fsh` | L4 | |
 | `[~]` | **Production vegetation lighting model** | L2 | Dedicated flora path: reduced atlas-normal sparkle, class-specific tissue transmission, pigment from current albedo, weather-aware optics, broad cuticle specular and distance simplification. Runtime tuning still required |
-| `[~]` | **World canopy context texture** | L2 | CPU world scan now also uploads a 128 x 128 leaf-density/leaf-colour texture for low-frequency forest ambient, separate from shadow-map sunflecks |
+| `[~]` | **World canopy context texture** | L1 | CPU world scan can upload a 128 x 128 leaf-density/leaf-colour texture, but terrain binding is fail-closed until the 1.22.7 sampler map and active texture state are audited |
 | `[x]` | **Flora taxonomy from vanilla's wind modes** | **L4** | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. **Seen in a world**: debug view 44 shows leaves, grass, herbs and reeds as distinct flat colours, with soil and stone black. First runtime-validated flora feature |
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |
 | `[x]` | **Optical role separate from the taxonomy** | L2 | `vvIsCanopyReceiver`. An exclusion list, not a membership one: a pear under a tree is in that tree's shade whatever its botany says |

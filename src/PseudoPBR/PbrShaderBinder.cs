@@ -93,6 +93,13 @@ namespace VintageVisuals.PseudoPBR
         public const string CanopyContextValidUniform = "vv_canopyContextValid";
         public const string ShaftUniform = "vv_pbrShafts";
 
+        // Fail-closed isolation for the production vegetation sampler. The
+        // shader keeps the uniform and fallback path, but terrain rendering must
+        // never depend on a fifth auxiliary sampler until the linked 1.22.7
+        // terrain programs prove that the unit is free and BindTexture2D leaves
+        // no unsafe active texture state behind.
+        private const bool CanopyContextBindingEnabled = false;
+
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
         // there is one roughness for all of them rather than one per texel.
@@ -188,6 +195,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedBusy;
         private bool _reportedEntities;
         private bool _reportedParticles;
+        private bool _reportedCanopyBindingDisabled;
 
         /// <summary>
         /// The scene capture, when the reflection subsystem has one.
@@ -420,6 +428,7 @@ namespace VintageVisuals.PseudoPBR
 
             BindSceneCapture(program);
             BindWorldReflectionVolume(program);
+            ReportCanopyBindingDisabled();
 
             SetIfPresent(program, EnabledUniform, 1f);
 
@@ -661,7 +670,9 @@ namespace VintageVisuals.PseudoPBR
                 program.Uniform(ReflectWorldValidUniform, 0f);
             }
 
-            if (program.HasUniform(CanopyContextUniform) && volume.CanopyTextureId != 0)
+            if (CanopyContextBindingEnabled &&
+                program.HasUniform(CanopyContextUniform) &&
+                volume.CanopyTextureId != 0)
             {
                 TerrainTextureBindInterceptor.SetCanopyContext(volume.CanopyTextureId);
                 program.BindTexture2D(CanopyContextUniform, volume.CanopyTextureId,
@@ -673,6 +684,18 @@ namespace VintageVisuals.PseudoPBR
                 TerrainTextureBindInterceptor.SetCanopyContext(0);
                 SetIfPresent(program, CanopyContextValidUniform, 0f);
             }
+        }
+
+        private void ReportCanopyBindingDisabled()
+        {
+            if (CanopyContextBindingEnabled || _reportedCanopyBindingDisabled) return;
+
+            _reportedCanopyBindingDisabled = true;
+            _capi.Logger.Notification("[VintageVisuals] pseudopbr: canopy context terrain sampler binding is " +
+                "disabled pending the 1.22.7 sampler-state audit. Active VV terrain units: material=" +
+                MaterialAtlasTexture.TextureUnit + ", material2=" + MaterialAtlasTexture.SecondTextureUnit +
+                ", scene=" + SceneCaptureRenderer.TextureUnit + ", world=" + WorldReflectionVolume.TextureUnit +
+                "; reserved canopy unit " + WorldReflectionVolume.CanopyTextureUnit + " is not bound.");
         }
 
         private static void SetIfPresent(IShaderProgram program, string name, float value)

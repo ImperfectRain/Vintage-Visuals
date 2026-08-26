@@ -40,6 +40,11 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Vanilla's block atlas sampler. The name we are watching for.</summary>
         private const string TerrainSampler = "terrainTex";
 
+        // Same fail-closed switch as PbrShaderBinder. Keeping it here prevents
+        // an old published texture id from binding unit 11 through the postfix
+        // if the binder path is changed later.
+        private const bool CanopyContextBindingEnabled = false;
+
         // Static because Harmony patches must be. There is one client and one
         // instance of this mod per process, which is what makes that safe.
         private static readonly Dictionary<int, int> MaterialPageByAtlasTexture = new Dictionary<int, int>();
@@ -338,7 +343,7 @@ namespace VintageVisuals.PseudoPBR
                                           WorldReflectionVolume.TextureUnit);
                 }
 
-                int canopyContextId = _canopyContextTextureId;
+                int canopyContextId = CanopyContextBindingEnabled ? _canopyContextTextureId : 0;
 
                 if (canopyContextId != 0 && program.HasUniform(PbrShaderBinder.CanopyContextUniform))
                 {

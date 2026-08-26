@@ -1,7 +1,10 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
+using VintageVisuals.PseudoPBR;
+using VintageVisuals.Reflections;
 
 namespace VintageVisuals.SmokeTest
 {
@@ -362,17 +365,40 @@ namespace VintageVisuals.SmokeTest
                 interceptor.Contains("BindTexture2D(PbrShaderBinder.ReflectSceneUniform"),
                 "a per-frame bind and a per-draw bind are identical in every static test");
 
-            check("the canopy context is rebound per draw call, not once per frame",
-                interceptor.Contains("BindTexture2D(PbrShaderBinder.CanopyContextUniform"),
-                "forest context uses terrain shader texture state and must follow the atlas/capture bind path");
+            check("canopy context binding is fail-closed pending sampler audit",
+                binder.Contains("private const bool CanopyContextBindingEnabled = false") &&
+                interceptor.Contains("private const bool CanopyContextBindingEnabled = false") &&
+                binder.Contains("if (CanopyContextBindingEnabled &&") &&
+                binder.Contains("BindTexture2D(CanopyContextUniform") &&
+                Regex.IsMatch(interceptor, @"CanopyContextBindingEnabled\s*\?\s*_canopyContextTextureId\s*:\s*0"),
+                "unit 11 is not proven safe; terrain must not bind a fifth auxiliary sampler by default");
 
             check("the per-draw capture id is cleared when there is no capture",
                 Regex.IsMatch(binder, @"SetSceneCapture\(0\)"),
                 "a stale id keeps a destroyed texture bound");
 
             check("the per-draw canopy id is cleared when canopy context is unavailable",
-                Regex.IsMatch(binder, @"SetCanopyContext\(0\)"),
+                Regex.IsMatch(binder, @"SetCanopyContext\(0\)") &&
+                Regex.IsMatch(binder, @"SetIfPresent\(program, CanopyContextValidUniform, 0f\)"),
                 "a stale canopy id can feed old column data into newly drawn terrain");
+
+            check("documented terrain sampler units are unique",
+                new[]
+                {
+                    MaterialAtlasTexture.TextureUnit,
+                    MaterialAtlasTexture.SecondTextureUnit,
+                    SceneCaptureRenderer.TextureUnit,
+                    WorldReflectionVolume.TextureUnit
+                }.Distinct().Count() == 4,
+                "VV auxiliary units currently active on terrain may not collide");
+
+            check("canopy unit is not active while fail-closed",
+                WorldReflectionVolume.CanopyTextureUnit != MaterialAtlasTexture.TextureUnit &&
+                WorldReflectionVolume.CanopyTextureUnit != MaterialAtlasTexture.SecondTextureUnit &&
+                WorldReflectionVolume.CanopyTextureUnit != SceneCaptureRenderer.TextureUnit &&
+                WorldReflectionVolume.CanopyTextureUnit != WorldReflectionVolume.TextureUnit &&
+                binder.Contains("CanopyContextBindingEnabled = false"),
+                "the reserved canopy unit can exist in source, but it must not be bound while unaudited");
 
             string worldVolume = File.ReadAllText(
                 Path.Combine(repo, "src/Reflections/WorldReflectionVolume.cs"));

@@ -339,7 +339,7 @@ WorldReflectionVolume src/Reflections/           |
         |                                        |
         +----------------- unit 12 --------------> vvWorldReflection
         |
-        +---- 128 x 128 canopy context, unit 11 -> vvReadCanopyContext
+        +---- 128 x 128 canopy context, not terrain-bound while sampler audit is open
                                                  |
                                     hybrid resolver
                                       scene first
@@ -372,7 +372,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
 | Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Local reflection volume | `IBlockAccessor` over a bounded player-centred block region | classified block cells, representative colour multiplied by block light, 2D Z-slice atlas | world volume texture, unit 12 | `vvWorldReflection` |
-| Canopy context | `WorldReflectionVolume` CPU scan over the same local region | low-frequency leaf density and representative canopy colour | 128 x 128 texture, unit 11 | forest ambient, dapple restraint, canopy shafts |
+| Canopy context | `WorldReflectionVolume` CPU scan over the same local region | low-frequency leaf density and representative canopy colour | 128 x 128 texture; terrain binding disabled pending sampler audit | shader fallback only until binding is proven safe |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |
@@ -446,7 +446,7 @@ appears often.
 | Atlas upload | 2 textures resident | no | no | — |
 | Scene capture | 1 RGBA16F at half frame per axis; one fullscreen copy | yes, while enabled | produces it | resolution |
 | Reflection march | up to 96 capture-texel steps plus 5 bisection taps, only on rays that cross | per reflective fragment | yes, reads it | reflective pixel count |
-| World reflection volume | 128 x 64 x 128 cells plus a 128 x 128 canopy context texture, CPU scan/upload | yes, while reflections, canopy lighting or matching debug views need it | no | local volume size |
+| World reflection volume | 128 x 64 x 128 cells plus a 128 x 128 canopy context texture, CPU scan/upload | yes, while reflections or matching debug views need it; canopy terrain binding currently disabled | no | local volume size |
 | Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
 | Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |
 | Cloud shadows | uniform array lookup, no sampler | per terrain fragment | no | resolution |
