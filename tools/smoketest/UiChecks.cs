@@ -409,11 +409,12 @@ namespace VintageVisuals.SmokeTest
                   "debug tab should not require numeric IDs");
 
             check("PBR terrain debug views fail closed during terrain recovery",
-                  dialog.Contains("PbrTerrainDebugUnavailable()") &&
-                  dialog.Contains("Terrain material/reflection masks are disabled in the safe terrain baseline.") &&
-                  dialog.Contains("blocked terrain PBR recovery") &&
-                  dialog.Contains("!PseudoPbrSubsystem.TerrainShaderPatchesEnabled"),
-                  "material/reflection masks are unavailable while the terrain PBR shader groups are compiled out");
+                  dialog.Contains("PbrTerrainDebugLimited()") &&
+                  dialog.Contains("Safe terrain baseline: only primary material atlas masks are available.") &&
+                  dialog.Contains("blocked unavailable terrain debug view") &&
+                  dialog.Contains("value == 0 || value == 1 || value == 2 || value == 3") &&
+                  dialog.Contains("value == 33 || value == 52"),
+                  "only debug views backed by the current one-sampler terrain shader should be selectable");
 
             check("dialog lifecycle logging is high-granularity",
                   dialog.Contains("[VV UI #") &&

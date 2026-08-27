@@ -6,10 +6,12 @@ per block.
 
 ## Status
 
-**Phase 4, surface relief wired to the screen.** The mod works out what material
-every block is made of, derives a material atlas from the block textures, and
-feeds it to the chunk shader so the game's own lighting shades real surface
-relief instead of flat faces.
+**Phase 4, staged terrain material restoration.** The mod works out what
+material every block is made of, derives a material atlas from the block
+textures, and currently feeds only the primary atlas page back to terrain
+through the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
+`pseudopbrtopsoil` terrain groups remain fail-closed after the terrain
+corruption regression.
 
 Not yet verified in game — see [Verification](#verification) below for exactly
 what that means and what is still unconfirmed.
@@ -25,10 +27,12 @@ what that means and what is still unconfirmed.
 | Preview images for inspection | done, one set per atlas page |
 | Multi-page block atlases | done, level 2 (compiles) |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
-| `chunkopaque.fsh` samples it for normals | done, level 2 (compiles), 49 checks |
-| Cook-Torrance specular + energy conservation | done, level 2 (compiles) |
-| Per-layer debug views | done, level 2 (compiles) |
-| `chunktopsoil.fsh` (grass, dirt tops) | done, L2 - `pseudopbrtopsoil` group, 9 anchors, compiles in all 24 combinations |
+| `pbrterrainbase` zero-sampler terrain baseline | active, level 2 (compiles) |
+| `pbrterrainmaterial` primary material sampler | active, level 2 (compiles), one VV sampler only |
+| `chunkopaque.fsh` samples the primary atlas | staged, level 2 (compiles), conservative response only |
+| Cook-Torrance specular + energy conservation | built in legacy terrain path, currently fail-closed |
+| Per-layer debug views | staged: primary material masks only on terrain |
+| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial`; legacy `pseudopbrtopsoil` remains disabled |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 

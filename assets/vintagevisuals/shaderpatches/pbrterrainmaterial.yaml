@@ -1,0 +1,43 @@
+# Vintage Visuals - one-sampler terrain material restoration checkpoint.
+#
+# This is deliberately separate from pseudopbr/pseudopbrtopsoil. It restores
+# only the primary material atlas path and the debug views that can be answered
+# by that one resource.
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: in vec2 uv;
+
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.fsh
+  tokens: uniform sampler2D liquidDepth;
+  snippet: pbrterrainmaterial.glsl
+
+- type: insert_before
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
+  content: |
+    outColor = vvTerrainMaterialPrimary(outColor, uv);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: in vec2 uv;
+
+- type: insert_after
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  tokens: uniform sampler2D liquidDepth;
+  snippet: pbrterrainmaterial.glsl
+
+- type: insert_before
+  phase: Material
+  filename: chunktopsoil.fsh
+  tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
+  content: |
+    outColor = vvTerrainMaterialPrimary(outColor, uv);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);

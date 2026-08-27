@@ -96,10 +96,13 @@ namespace VintageVisuals.SmokeTest
 
             check("terrain PBR source patches are fail-closed during recovery",
                 pbrSubsystem.Contains("public const bool TerrainShaderPatchesEnabled = false;") &&
+                pbrSubsystem.Contains("public const bool TerrainMaterialPrimaryPatchEnabled = true;") &&
                 gate.Contains("PseudoPbrSubsystem.TerrainShaderPatchesEnabled") &&
+                gate.Contains("PseudoPbrSubsystem.TerrainMaterialGroupName") &&
+                gate.Contains("PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled") &&
                 gate.Contains("ConfigManager.Config.PseudoPBR.Enabled") &&
                 gate.Contains("PseudoPbrSubsystem.TopsoilGroupName"),
-                "chunkopaque and chunktopsoil must receive vanilla source until the terrain corruption is isolated");
+                "legacy chunkopaque/chunktopsoil groups must stay fail-closed while the staged material group is restored separately");
 
             // A flag the gate reads but the signature does not is a toggle that
             // takes effect only after a manual shader reload, which reads to
@@ -110,6 +113,10 @@ namespace VintageVisuals.SmokeTest
 
             string signature = modSystem.Substring(signatureStart,
                 modSystem.IndexOf("\n        }", signatureStart, StringComparison.Ordinal) - signatureStart);
+
+            check("terrain material gate participates in shader reload signature",
+                signature.Contains("TerrainMaterialPrimaryPatchEnabled ? \"M\" : \"-\""),
+                signature);
 
             var read = Regex.Matches(gate, @"ConfigManager\.Config\.(\w+\.\w+)")
                 .Cast<Match>().Select(m => m.Groups[1].Value).Distinct().ToList();

@@ -226,6 +226,12 @@ namespace VintageVisuals
                        ConfigManager.Config.PseudoPBR.Enabled;
             }
 
+            if (group == PseudoPbrSubsystem.TerrainMaterialGroupName)
+            {
+                return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled &&
+                       ConfigManager.Config.PseudoPBR.Enabled;
+            }
+
             if (group == PseudoPbrSubsystem.GroupName || group == PseudoPbrSubsystem.TopsoilGroupName)
             {
                 return PseudoPbrSubsystem.TerrainShaderPatchesEnabled &&
@@ -278,6 +284,7 @@ namespace VintageVisuals
         {
             return (ConfigManager.Config.PseudoPBR.Enabled ? "P" : "-") +
                    (PseudoPbrSubsystem.TerrainBasePatchEnabled ? "B" : "-") +
+                   (PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled ? "M" : "-") +
                    (PseudoPbrSubsystem.TerrainShaderPatchesEnabled ? "T" : "-") +
                    (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
                    (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +

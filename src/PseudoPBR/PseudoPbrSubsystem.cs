@@ -21,17 +21,19 @@ namespace VintageVisuals.PseudoPBR
     /// preview images answered "do the grooves read" before a shader existed
     /// to render them.
     ///
-    /// What reaches the screen today is surface relief only — the derived
-    /// normals replace the flat per-face block normal in vanilla's own
-    /// lighting call. Roughness and specular are in the atlas and are not yet
-    /// read by any shader; they need a light direction chunkopaque.fsh does
-    /// not currently hand us.
+    /// What reaches the screen today is staged terrain restoration. The legacy
+    /// terrain PBR groups are fail-closed after the terrain corruption
+    /// regression; the active terrain path is the zero-sampler baseline plus a
+    /// one-sampler primary material atlas read for conservative response and
+    /// material debug masks.
     /// </summary>
     public sealed class PseudoPbrSubsystem : IVisualSubsystem
     {
         public const string GroupName = "pseudopbr";
 
         public const string TerrainBaseGroupName = "pbrterrainbase";
+
+        public const string TerrainMaterialGroupName = "pbrterrainmaterial";
 
         /// <summary>
         /// Grass and soil tops are drawn by their own program, so they get their
@@ -59,6 +61,13 @@ namespace VintageVisuals.PseudoPBR
         /// re-enabling the full terrain PBR shader or auxiliary texture binds.
         /// </summary>
         public const bool TerrainBasePatchEnabled = true;
+
+        /// <summary>
+        /// Stage B terrain restoration checkpoint: primary material atlas only.
+        /// This reintroduces exactly one VV terrain sampler, vv_materialTex, and
+        /// no legacy pseudopbr/topsoil branches.
+        /// </summary>
+        public const bool TerrainMaterialPrimaryPatchEnabled = true;
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";
@@ -133,7 +142,8 @@ namespace VintageVisuals.PseudoPBR
         {
             if (_binder == null) return;
 
-            bool active = TerrainShaderPatchesEnabled && config.Enabled &&
+            bool active = (TerrainShaderPatchesEnabled || TerrainMaterialPrimaryPatchEnabled) &&
+                          config.Enabled &&
                           _atlasTexture != null && _atlasTexture.HasPixels && _atlasPagesSupported;
 
             // Says why, once per reason, when the answer is no. "Enabled is
@@ -142,8 +152,8 @@ namespace VintageVisuals.PseudoPBR
             // which precondition failed.
             if (!active && config.Enabled)
             {
-                string reason = !TerrainShaderPatchesEnabled
-                    ? "terrain PBR shader patches are disabled by the emergency terrain recovery gate"
+                string reason = !TerrainShaderPatchesEnabled && !TerrainMaterialPrimaryPatchEnabled
+                    ? "terrain material shader patches are disabled by the emergency terrain recovery gate"
                     : _atlasTexture == null || !_atlasTexture.HasPixels
                     ? "no material atlas has been derived (see the pseudopbr lines above)"
                     : "the block texture atlas needs " + _atlasPages + " pages and the terrain bind hook " +

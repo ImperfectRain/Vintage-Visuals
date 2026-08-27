@@ -561,9 +561,9 @@ namespace VintageVisuals.Ui
             y += 46;
             SingleComposer.AddStaticText(ShortText(current.Description, 92), CairoFont.WhiteDetailText(),
                 ElementBounds.Fixed(ContentLeft, y - 12, ContentWidth - 40, 18));
-            if (PbrTerrainDebugUnavailable())
+            if (PbrTerrainDebugLimited())
             {
-                SingleComposer.AddStaticText("Terrain material/reflection masks are disabled in the safe terrain baseline.",
+                SingleComposer.AddStaticText("Safe terrain baseline: only primary material atlas masks are available.",
                     CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft, y + 10, ContentWidth - 40, 18));
                 y += 28;
             }
@@ -616,9 +616,11 @@ namespace VintageVisuals.Ui
         {
             if (!selected) return;
             Log("ENTER DebugViewChanged");
-            if (PbrTerrainDebugUnavailable() && code != "0")
+            int requested;
+            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out requested) &&
+                !IsDebugViewAvailable(requested))
             {
-                Log("EXIT DebugViewChanged blocked terrain PBR recovery");
+                Log("EXIT DebugViewChanged blocked unavailable terrain debug view " + requested);
                 ComposeDialog();
                 return;
             }
@@ -629,7 +631,7 @@ namespace VintageVisuals.Ui
             Log("EXIT DebugViewChanged");
         }
 
-        private bool PbrTerrainDebugUnavailable()
+        private bool PbrTerrainDebugLimited()
         {
             return _debugOwnerPath == DebugViewRegistry.PbrPath &&
                    !PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
@@ -638,7 +640,29 @@ namespace VintageVisuals.Ui
         private IEnumerable<DebugView> CurrentDebugViews()
         {
             DebugSystem system = _debugSystems[_debugSystemIndex];
-            return DebugViewRegistry.For(system.OwnerPath).Where(system.Include);
+            return DebugViewRegistry.For(system.OwnerPath)
+                .Where(system.Include)
+                .Where(v => system.OwnerPath != DebugViewRegistry.PbrPath || IsDebugViewAvailable(v.Value));
+        }
+
+        private bool IsDebugViewAvailable(int value)
+        {
+            if (_debugOwnerPath != DebugViewRegistry.PbrPath) return true;
+            if (FullTerrainDebugAvailable()) return true;
+            if (!PrimaryTerrainMaterialDebugAvailable()) return value == 0;
+
+            return value == 0 || value == 1 || value == 2 || value == 3 ||
+                   value == 33 || value == 52;
+        }
+
+        private static bool FullTerrainDebugAvailable()
+        {
+            return PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
+        }
+
+        private static bool PrimaryTerrainMaterialDebugAvailable()
+        {
+            return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled;
         }
 
         private DebugView CurrentDebugView(List<DebugView> views)
