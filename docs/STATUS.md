@@ -58,7 +58,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | ASCII guard on shipped GLSL | L4 | load-time refusal + smoke scan |
 | `[x]` | `tools/smoketest` — no game needed | L4 | exact count changes with the suite; see the mutation row below |
 | `[x]` | Interaction invariants I1-I19 — arithmetic over the shipped GLSL | L4 | `SceneInvariantChecks`; each names the defect it prevents |
-| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 52 mutations, 52 caught, 0 missed |
+| `[x]` | `tools/mutate` — reintroduces each historical defect and requires a failure | L4 | 55 mutations, 55 caught, 0 missed |
 | `[~]` | Visual Tuning Studio native dialog (`src/Ui/`) | L2 | production lifecycle simplification: standard shaded background retained; native scrollbar/wheel now move the scroll child bounds without recomposition; crash-isolation footer and deferred scheduler removed; visible row descriptions and explicit overview actions remain; needs in-game screenshot/stress review |
 | `[~]` | **Shipped defaults turn the mod on** | L2 | ten atmospheric effects and PseudoPBR now default on; the numbers are chosen, not measured. See [D44](DECISIONS.md) |
 | `[x]` | Shader census — which targets the hook actually delivered | L2 | silent unless a target never arrived; see [D40](DECISIONS.md) |

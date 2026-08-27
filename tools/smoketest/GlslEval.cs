@@ -423,6 +423,18 @@ namespace VintageVisuals.SmokeTest
                         return new Val(a[0].X * a[1].X + a[0].Y * a[1].Y + a[0].Z * a[1].Z);
                     case "length":
                         return new Val(Math.Sqrt(a[0].X * a[0].X + a[0].Y * a[0].Y + a[0].Z * a[0].Z));
+                    // The shader's own guarded normalize: unit-length the
+                    // first argument, fall back to the second when it has no
+                    // length. Taught to the evaluator rather than rewritten at
+                    // each call site - I2 used to string-replace one exact
+                    // spelling of it, so a one-character edit to the shader
+                    // silently stopped the arithmetic reading the shipped line.
+                    case "vvSafeNormalize":
+                    {
+                        double len2 = Math.Sqrt(a[0].X * a[0].X + a[0].Y * a[0].Y + a[0].Z * a[0].Z);
+                        if (len2 <= 1e-12) return a.Count > 1 ? a[1] : a[0];
+                        return new Val(a[0].X / len2, a[0].Y / len2, a[0].Z / len2);
+                    }
                     case "normalize":
                     {
                         double len = Math.Sqrt(a[0].X * a[0].X + a[0].Y * a[0].Y + a[0].Z * a[0].Z);

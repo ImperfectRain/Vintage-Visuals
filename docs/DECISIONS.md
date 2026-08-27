@@ -1853,3 +1853,100 @@ a configuration state rather than a failure - because a player who reads
 
 **Status.** L2. The defaults have not been validated as a look in game. The
 current mutation table records 52 caught mutations.
+
+---
+
+## D45. The terrain shaders did not compile, and nothing green noticed
+
+Found by running `tools/verifypatches` after pulling 46 commits of other work.
+`chunkopaque.fsh` failed **48 of 48** define combinations and `chunktopsoil.fsh`
+**24 of 24**:
+
+```
+ERROR: 0:3628: 'vvLeafBacklightSource' : no matching overloaded function found
+```
+
+`vvCanopyShaft` calls `vvLeafBacklightSource` about a thousand lines above the
+definition. GLSL has no forward references, so that message is what a compiler
+says when it has not seen the name yet. The world would not have rendered.
+
+**Nothing caught it.** `dotnet build` compiles C# and never opens a shader. The
+smoke suite was green at 1116 checks. `tools/verifypatches` is the only tool that
+compiles GLSL, and it needs glslang installed plus the game's own dumped shaders
+present, and takes minutes - which makes it the one tool most likely to be
+skipped before a push. That is not a criticism of whoever pushed it; it is a hole
+in the process, and the fix belongs in the fast suite rather than in a habit.
+
+**Chosen, three parts.**
+
+**One prototype**, immediately above `vvCanopyShaft` and the only forward
+declaration in the file. Kept on a single line so it is one literal a mutation
+can remove.
+
+**A check that needs no GPU**: `GlslOrderChecks` reads every shipped snippet and
+fails when a file calls a function it declares later in itself. Function order is
+a property of the text, so it costs milliseconds and runs for everyone on every
+run. It is deliberately same-file only - a snippet calling into another snippet
+is injection order's business and is not knowable from one file - and the defect
+that shipped was a file calling forward into itself.
+
+**A declared exclusion.** With the compile error gone, two more surfaced:
+`pbrterrainmaterial` and `pseudopbr` both inject
+`uniform sampler2D vv_materialTex`, and applying both is "declared more than
+once". They cannot both be live - `IsPatchGroupEnabled` keeps them apart during
+the terrain material migration - but `verifypatches` applies every group it finds
+on disk and knew nothing about the gating, so it reported a failure the game
+cannot have. A false alarm is how a real one gets ignored.
+
+`ShaderPatchGroups.MutuallyExclusive` now states the exclusion once. The tool
+skips the impossible combination and says why; a smoke check DERIVES the conflict
+rather than trusting the list, requiring every pair of groups that shares a
+uniform on a shared target to be declared exclusive, and requiring the runtime
+flags to honour it. Finishing the migration by flipping
+`TerrainShaderPatchesEnabled` back on now fails a test instead of a world.
+
+**Status.** Terrain shaders compile again: 38 ok, up from 36, with the two
+impossible combinations skipped. The one remaining `verifypatches` failure is the
+long-standing contaminated `final.fsh` reference dump, which is a stale file
+rather than a code defect.
+
+---
+
+## D46. An invariant that cannot be evaluated must fail, not crash
+
+Found while repairing six stale or missed mutation rows.
+
+Mutating the foliage transmission sign no longer failed `I2`. It did something
+worse: `I2`'s `try` wrapped only the EXTRACTION of the expression, not the
+arithmetic over it, so an expression the evaluator could not parse threw straight
+out of `SceneInvariantChecks.Run`. **Every check after I2 - several hundred of
+them - silently never ran.** The suite exited non-zero, so the mutation harness
+saw a failure and moved on; it was the wrong failure, and the coverage loss was
+invisible.
+
+The proximate cause was a hardcoded string substitution. `I2` did
+`.Replace("vvSafeNormalize(l + n * distortion, l)", "normalize(...)")` to get an
+expression the evaluator understood. That works on exactly one spelling: change a
+single character in the shader and the replacement stops matching, the original
+call reaches the parser, and it throws. An invariant whose reading of the source
+depends on the source not changing is not reading the source.
+
+**Chosen.** `GlslEval` now knows `vvSafeNormalize` as a builtin, with the
+shader's own semantics - unit-length the first argument, fall back to the second
+when it has no length - so the brittle replacement is gone and the arithmetic
+reads whatever ships. And every invariant runs inside a guard that turns a throw
+into a failed check naming the invariant, because an invariant that cannot
+evaluate the shipped source HAS failed, and reporting it as one keeps the rest of
+the sweep alive to report its own.
+
+**The other five rows.** Two literals had gone stale against refactored code and
+matched nothing, which the harness reports rather than passing over. Two named
+the wrong check in their expectation, so a guard that fired correctly was scored
+as a miss. One could not compile at all. All repaired against the current source.
+
+**`I9` was weakened by its own looseness**, separately: it searched for the string
+`Event.ReloadShader` anywhere in a subsystem folder, and an UNSUBSCRIBE satisfied
+it. Removing the `+=` while leaving the matching `-=` kept the check green -
+which is precisely the defect it exists for. It now requires an actual `+=`.
+
+**Status.** 55 mutations, 55 caught, 0 missed - up from 49 caught with 6 holes.

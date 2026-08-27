@@ -9,14 +9,14 @@
 #
 # Literals are matched exactly and must be unique in the file.
 a67886b sunset suppression	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	return smoothstep(0.0, VV_SUN_PRESENCE_DAWN, clamp(vv_sceneDayLight, 0.0, 1.0));	return clamp(vv_sceneDayLight, 0.0, 1.0);	I1
-140d3fb inverted transmission	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	vec3 through = normalize(l + n * distortion);	vec3 through = normalize(-l + n * distortion);	I2
+140d3fb inverted transmission	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	vec3 through = vvSafeNormalize(l + n * distortion, l);	vec3 through = vvSafeNormalize(-l + n * distortion, l);	I2
 bf97881 dapple cancelled by its own gate	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos));	float shaded = vvCanopyDapple(cameraRelativePos, vvDetailFade(cameraRelativePos)) * shadowBrightness;	I3
 canopy dims torchlight	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float canopy = clamp(shaded, 0.0, 0.85) * (1.0 - local);	float canopy = clamp(shaded, 0.0, 0.85);	I4
 green shade grows into a light loss	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	const float VV_DAPPLE_GREEN = 0.055;	const float VV_DAPPLE_GREEN = 0.5;	I4
 84f7926 metal loses diffuse with no payback	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	result *= mix(1.0, 1.0 - metalness * metalPayback, vv_pbrSpecularStrength);	result *= mix(1.0, 1.0 - metalness, vv_pbrSpecularStrength);	I5
 8c0d4ce automatic lift with no shoulder	assets/vintagevisuals/shadersnippets/colorgrade.glsl	float shoulder = max(clamp(vv_tonemapStrength, 0.0, 1.0), autoLift);	float shoulder = clamp(vv_tonemapStrength, 0.0, 1.0);	I6
 a shaft strength of zero stops being off	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	if (vv_pbrShafts < 0.001) return 0.0;	if (vv_pbrShafts < -1.0) return 0.0;	I7
-fog applied twice in one chain	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness)	result += vvFoliageTransmission(albedo, n, l, v, shadowBrightness) * energy * specularOcclusion * energy	I8
+fog applied twice in one chain	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	                                    vvSunVisibility(), wetness, snowLayer, frostLayer)	                                    vvSunVisibility(), wetness, snowLayer, frostLayer) * energy * specularOcclusion * energy	I8
 dc54d25 reflections dispose themselves on reload	src/Reflections/ReflectionsSubsystem.cs	_capi.Event.ReloadShader += OnShadersReloaded;	_capi.Event.RegisterCallback(_ => { }, 0);	I9
 two debug views answer the same question	assets/vintagevisuals/shadersnippets/atmosphere.glsl	if (mode == 6) return vec4(vec3(vvAtmosHeightFactor()), pixel.a);	if (mode == 6) return vec4(vec3(t), pixel.a);	I10
 5a796d6 binder never unbinds	src/Atmosphere/AtmosphereShaderBinder.cs	program.Stop();	// program.Stop();	Use()
@@ -31,8 +31,8 @@ the step-budget diagnostic never reports saturation	assets/vintagevisuals/shader
 the march stops sampling at the named stride	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	    float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE);	    float wanted = max(travel.x, travel.y) / max(0.5, VV_SSR_STRIDE * 8.0);	stride the constant names
 the march budget falls back to visible rings	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	const int VV_SSR_STEPS = 96;	const int VV_SSR_STEPS = 24;	grazing texel reflections
 the march starts from a fake self-hit crossing	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float previousDelta = previousDepth - texture(vv_reflectScene, startUv).a;	float previousDelta = -1.0;	screen-space self-hit bias
-scene hits stop fading near the capture edge	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	                          * edgeFade	                          * 1.0	captured frame edge
-scene hits stop fading near the thickness limit	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	                          * thicknessFade;	                          * 1.0;	thickness limit
+scene hits stop fading near the capture edge	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	                          * edgeFade	                          * 1.0	fade instead of snapping
+scene hits stop fading near the thickness limit	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	                          * thicknessFade;	                          * 1.0;	fade instead of snapping
 the reflected scene ceiling crushes object colour	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	const float VV_REFLECT_MAX = 2.0;	const float VV_REFLECT_MAX = 1.2;	real scene colour
 the depth report compares against a stale tolerance	src/Reflections/SceneCaptureRenderer.cs	private const float ReflectionThicknessBlocks = 0.5f;	private const float ReflectionThicknessBlocks = 0.9f;	tolerance that ships
 the capture target loses half-float depth	src/Reflections/SceneCaptureRenderer.cs	                            PixelInternalFormat = EnumTextureInternalFormat.Rgba16f,	                            PixelInternalFormat = EnumTextureInternalFormat.Rgba8,	half float rather than RGBA8
@@ -59,4 +59,7 @@ the studio stops exposing a ConfigLib setting	src/Ui/VisualSettingRegistry.cs	"w
 the native studio bypasses the config notification path	src/VintageVisualsModSystem.cs	() => ConfigManager.NotifyChanged()	() => { }	NotifyChanged
 the native studio uses the reload hotkey default	src/VintageVisualsModSystem.cs	GlKeys.U, HotkeyType.GUIOrOtherControls	GlKeys.V, HotkeyType.GUIOrOtherControls	expected ID/type
 display refresh starts notifying subsystems	src/Ui/VisualTuningStudioController.cs	return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	_notifyChanged(); return settings.ToDictionary(s => s.Code, DisplayValue, StringComparer.Ordinal);	display refresh does not mutate
-settings scroll rebuilds the composer	src/Ui/VisualTuningStudioDialog.cs	            MoveScrollContent();	            ComposeDialog();	scroll does not recompose
+settings scroll rebuilds the composer	src/Ui/VisualTuningStudioDialog.cs	AddVerticalScrollbar(OnScrollbarChanged	AddCompactVerticalScrollbar(OnScrollbarChanged	without recomposition
+two groups sharing a uniform stop being exclusive	src/Common/Patching/ShaderPatchGroups.cs	new[] { "pbrterrainmaterial", "pseudopbr" },	new[] { "pbrterrainmaterial", "pseudopbr_x" },	declared mutually exclusive
+both terrain material paths are switched on	src/PseudoPBR/PseudoPbrSubsystem.cs	public const bool TerrainShaderPatchesEnabled = false;	public const bool TerrainShaderPatchesEnabled = true;	not both switched on
+a shader function is used before it is declared	assets/vintagevisuals/shadersnippets/pseudopbr.glsl	float vvLeafBacklightSource(vec3 n, vec3 l, vec3 v, float solarVisibility, float wetness, float snow, float frost);	// prototype removed, which is how this shipped	declares later in the same file

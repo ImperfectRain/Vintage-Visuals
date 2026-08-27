@@ -1706,6 +1706,21 @@ vec3 vvForestAmbientResolve(vec3 result, vec3 cameraRelativePos, float fade)
 //     source - it has absorbed the light, not scattered it - so streaking it
 //     toward the sun is an approximation that reinforces the shape and is
 //     weighted accordingly. See VV_SHAFT_GROUND.
+// FORWARD DECLARATION, and the only one in this file.
+//
+// GLSL has no forward references: a function must be declared before the line
+// that calls it, and "no matching overloaded function found" is what a compiler
+// says when it has not seen the name yet. vvLeafBacklightSource is defined a
+// thousand lines below this one because it belongs with the rest of the foliage
+// optics, and vvCanopyShaft needs it here.
+//
+// This is not a style question. Without it chunkopaque.fsh and chunktopsoil.fsh
+// fail to compile in EVERY define combination, which costs the world render
+// rather than the effect - and it is invisible to dotnet build and to the
+// 1116-check smoke suite, because neither compiles GLSL. Only
+// tools/verifypatches does.
+float vvLeafBacklightSource(vec3 n, vec3 l, vec3 v, float solarVisibility, float wetness, float snow, float frost);
+
 float vvCanopyShaft(vec3 cameraRelativePos, vec3 faceNormal, vec2 materialUv, vec3 baseOpticalAlbedo)
 {
     if (vv_pbrShafts < 0.001) return 0.0;

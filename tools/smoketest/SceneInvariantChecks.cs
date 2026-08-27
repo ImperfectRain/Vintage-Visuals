@@ -58,21 +58,43 @@ namespace VintageVisuals.SmokeTest
             Console.WriteLine();
             Console.WriteLine("Interaction invariants (arithmetic over the shipped GLSL)");
 
+            // NO INVARIANT MAY TAKE THE SUITE DOWN WITH IT.
+            //
+            // I2's try wrapped only the extraction, not the arithmetic, so an
+            // expression the evaluator could not parse threw straight out of
+            // Run - and every check after it, several hundred of them, silently
+            // never ran. A mutation walked through the gap: the suite exited
+            // non-zero for the right reason and reported the wrong one.
+            //
+            // An invariant that cannot evaluate the shipped source has FAILED,
+            // and that is a finding rather than a crash. Reporting it as one
+            // keeps the rest of the sweep alive to report its own.
+            void Guarded(string name, Action body)
+            {
+                try { body(); }
+                catch (Exception ex)
+                {
+                    check(name + " could be evaluated at all", false,
+                          "threw " + ex.GetType().Name + ": " + ex.Message +
+                          " - the invariant did not run, so nothing it guards is covered");
+                }
+            }
+
             EvaluatorSelfTest(check);
 
-            I1_GateSaturates(check);
-            I2_BacklitIsBacklit(check);
-            I3_EffectSurvivesItsOwnTrigger(check);
-            I4_OccluderTakesOnlyTheSunsShare(check);
-            I5_EnergyRemovedIsEnergyReturned(check);
-            I6_AutomaticGainBringsItsOwnShoulder(repo, check);
-            I7_ZeroComposesToTheIdentity(check);
-            I8_NoFactorAppliedTwice(check);
-            I9_GpuResourcesSurviveAReload(repo, check);
-            I10_DebugViewsAreDistinct(check);
-            I11_ADiagnosticKeepsItsStatesApart(check);
-            I12_ARateConstantIsTheRateUsed(check);
-            I13_AToleranceIsNotFinerThanItsData(repo, check);
+            Guarded("I1", () => I1_GateSaturates(check));
+            Guarded("I2", () => I2_BacklitIsBacklit(check));
+            Guarded("I3", () => I3_EffectSurvivesItsOwnTrigger(check));
+            Guarded("I4", () => I4_OccluderTakesOnlyTheSunsShare(check));
+            Guarded("I5", () => I5_EnergyRemovedIsEnergyReturned(check));
+            Guarded("I6", () => I6_AutomaticGainBringsItsOwnShoulder(repo, check));
+            Guarded("I7", () => I7_ZeroComposesToTheIdentity(check));
+            Guarded("I8", () => I8_NoFactorAppliedTwice(check));
+            Guarded("I9", () => I9_GpuResourcesSurviveAReload(repo, check));
+            Guarded("I10", () => I10_DebugViewsAreDistinct(check));
+            Guarded("I11", () => I11_ADiagnosticKeepsItsStatesApart(check));
+            Guarded("I12", () => I12_ARateConstantIsTheRateUsed(check));
+            Guarded("I13", () => I13_AToleranceIsNotFinerThanItsData(repo, check));
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
@@ -211,8 +233,7 @@ namespace VintageVisuals.SmokeTest
             try
             {
                 string body = FunctionBody(_pbr, "float vvTranslucency(");
-                through = Rhs(Statement(body, "through", "vvSafeNormalize"))
-                    .Replace("vvSafeNormalize(l + n * distortion, l)", "normalize(l + n * distortion)");
+                through = Rhs(Statement(body, "through", "vvSafeNormalize"));
                 ret = Rhs(Statement(body, "return"));
                 distortion = Const(body, "distortion");
                 power = Const(body, "power");
@@ -804,9 +825,18 @@ namespace VintageVisuals.SmokeTest
                 // rebuilt by ReflectionsSubsystem, and no naming convention
                 // relates the two - guessing one would only have made this
                 // check fail on the file whose defect it was written for.
+                // A SUBSCRIPTION, not a mention. This searched for the bare
+                // string "Event.ReloadShader" and an UNSUBSCRIBE satisfied it,
+                // so removing the `+=` while leaving the matching `-=` in the
+                // same file kept the check green - which is exactly the defect
+                // the check exists for, and a mutation walked straight through
+                // it. Only `+=` registers a handler.
+                bool Subscribes(string text)
+                    => Regex.IsMatch(text, @"Event\.ReloadShader\s*\+=");
+
                 string folder = Path.GetFileName(Path.GetDirectoryName(f.Path));
-                bool hooked = f.Text.Contains("Event.ReloadShader")
-                           || files.Any(o => o.Folder == folder && o.Text.Contains("Event.ReloadShader"));
+                bool hooked = Subscribes(f.Text)
+                           || files.Any(o => o.Folder == folder && Subscribes(o.Text));
 
                 check("I9 " + f.Name + " is rebuilt when shaders reload", hooked,
                       "nothing in src/" + folder + "/ subscribes to Event.ReloadShader");
@@ -815,7 +845,7 @@ namespace VintageVisuals.SmokeTest
             // And the latch. A subsystem that gives up permanently turns a
             // recoverable reload into a dead feature, which is the half of this
             // defect that made it last for weeks rather than a session.
-            foreach (var f in files.Where(f => f.Text.Contains("Event.ReloadShader")))
+            foreach (var f in files.Where(f => Regex.IsMatch(f.Text, @"Event\.ReloadShader\s*\+=")))
             {
                 var reset = Regex.IsMatch(f.Text, @"_failed\s*=\s*false|_disabled\s*=\s*false|Reset\(\)");
                 bool latches = Regex.IsMatch(f.Text, @"_failed\s*=\s*true|_disabled\s*=\s*true");

@@ -402,6 +402,10 @@ void main(void) {
 
         UiChecks.Run(Repo, Check);
 
+        PatchExclusionChecks.Run(Repo, Check);
+
+        GlslOrderChecks.Run(Repo, Check);
+
         DocumentationChecks.Run(Repo, Check);
 
         Console.WriteLine();

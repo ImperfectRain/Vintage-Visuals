@@ -157,6 +157,23 @@ namespace VintageVisuals.VerifyPatches
 
                 if (hitting.Length < 2) continue;
 
+                // A combination the game cannot produce is not a failure.
+                //
+                // This pass applies every group it finds on disk, which is right
+                // for the ones that genuinely stack and wrong for the ones the
+                // runtime gating keeps apart. Reporting a compile error for a
+                // state that cannot occur is how a real failure gets ignored, so
+                // the exclusion is read from the same declaration the gating
+                // uses rather than guessed at here.
+                string[] exclusive = ShaderPatchGroups.FirstExclusivePair(hitting);
+                if (exclusive != null)
+                {
+                    Console.WriteLine("  skip  " + filename + ": '" + exclusive[0] + "' and '" +
+                                      exclusive[1] + "' are mutually exclusive, so the game never " +
+                                      "applies both. Verified separately above.");
+                    continue;
+                }
+
                 var logger = new CollectingLogger();
                 var patcher = new ShaderPatcher(logger);
                 patcher.SetPatches(all);
