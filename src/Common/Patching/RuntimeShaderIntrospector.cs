@@ -16,8 +16,16 @@ namespace VintageVisuals.Common.Patching
             if (_reported || capi == null || logger == null) return;
             _reported = true;
 
-            LogProgram(capi, logger, EnumShaderProgram.Chunkopaque, "chunkopaque");
-            LogProgram(capi, logger, EnumShaderProgram.Chunktopsoil, "chunktopsoil");
+            try
+            {
+                LogProgram(capi, logger, EnumShaderProgram.Chunkopaque, "chunkopaque");
+                LogProgram(capi, logger, EnumShaderProgram.Chunktopsoil, "chunktopsoil");
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("[VintageVisuals] shader introspection disabled after an unexpected diagnostics error: " +
+                    ex.GetType().Name + ": " + ex.Message);
+            }
         }
 
         private static void LogProgram(ICoreClientAPI capi, ILogger logger, EnumShaderProgram id, string name)
@@ -185,34 +193,81 @@ namespace VintageVisuals.Common.Patching
             {
                 uniform = default(ActiveUniformInfo);
                 MethodInfo method = _glType.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                    .FirstOrDefault(m => m.Name == "GetActiveUniform" && m.GetParameters().Length >= 7);
+                    .FirstOrDefault(IsActiveUniformMethod);
                 if (method == null) return false;
-
-                ParameterInfo[] p = method.GetParameters();
-                Type uniformType = p[6].ParameterType.IsByRef ? p[6].ParameterType.GetElementType() : p[6].ParameterType;
-                object[] args =
-                {
-                    program,
-                    index,
-                    256,
-                    0,
-                    0,
-                    0,
-                    Enum.ToObject(uniformType, 0),
-                    new StringBuilder(256)
-                };
 
                 try
                 {
+                    ParameterInfo[] p = method.GetParameters();
+                    int typeIndex = FindEnumParameter(p);
+                    int nameIndex = FindStringBuilderParameter(p);
+                    if (typeIndex < 0 || nameIndex < 0) return false;
+
+                    Type uniformType = ByRefElement(p[typeIndex].ParameterType);
+                    if (uniformType == null || !uniformType.IsEnum) return false;
+
+                    object[] args = new object[p.Length];
+                    args[0] = program;
+                    args[1] = index;
+                    args[2] = 256;
+
+                    for (int i = 3; i < args.Length; i++)
+                    {
+                        Type parameterType = ByRefElement(p[i].ParameterType);
+                        if (i == typeIndex) args[i] = Enum.ToObject(uniformType, 0);
+                        else if (i == nameIndex) args[i] = new StringBuilder(256);
+                        else if (parameterType == typeof(int)) args[i] = 0;
+                        else return false;
+                    }
+
                     method.Invoke(null, args);
-                    uniform.Name = args[7].ToString();
-                    uniform.Type = args[6].ToString();
+                    uniform.Name = args[nameIndex].ToString();
+                    uniform.Type = args[typeIndex].ToString();
                     return !string.IsNullOrEmpty(uniform.Name);
                 }
                 catch
                 {
                     return false;
                 }
+            }
+
+            private static bool IsActiveUniformMethod(MethodInfo method)
+            {
+                if (method.Name != "GetActiveUniform") return false;
+
+                ParameterInfo[] p = method.GetParameters();
+                return p.Length >= 7 &&
+                       p[0].ParameterType == typeof(int) &&
+                       p[1].ParameterType == typeof(int) &&
+                       p[2].ParameterType == typeof(int) &&
+                       FindEnumParameter(p) >= 0 &&
+                       FindStringBuilderParameter(p) >= 0;
+            }
+
+            private static int FindEnumParameter(ParameterInfo[] parameters)
+            {
+                for (int i = 3; i < parameters.Length; i++)
+                {
+                    Type type = ByRefElement(parameters[i].ParameterType);
+                    if (type != null && type.IsEnum) return i;
+                }
+
+                return -1;
+            }
+
+            private static int FindStringBuilderParameter(ParameterInfo[] parameters)
+            {
+                for (int i = 3; i < parameters.Length; i++)
+                {
+                    if (ByRefElement(parameters[i].ParameterType) == typeof(StringBuilder)) return i;
+                }
+
+                return -1;
+            }
+
+            private static Type ByRefElement(Type type)
+            {
+                return type != null && type.IsByRef ? type.GetElementType() : type;
             }
 
             private static Type[] SafeTypes(Assembly assembly)
