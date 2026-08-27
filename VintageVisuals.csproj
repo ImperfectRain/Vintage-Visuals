@@ -42,6 +42,7 @@
     <Version>0.0.1</Version>
     <!-- The game loads mods from a flat folder; satellite/deps files just add noise. -->
     <GenerateDependencyFile>false</GenerateDependencyFile>
+    <ResolveAssemblyReferencesFindRelatedSatellites>false</ResolveAssemblyReferencesFindRelatedSatellites>
     <!--
       Required, not optional. Library projects do NOT copy their NuGet
       dependencies to the output folder by default, so without this YamlDotNet

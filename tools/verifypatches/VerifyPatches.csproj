@@ -5,6 +5,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>verifypatches</AssemblyName>
     <RootNamespace>VintageVisuals.VerifyPatches</RootNamespace>
+    <ResolveAssemblyReferencesFindRelatedSatellites>false</ResolveAssemblyReferencesFindRelatedSatellites>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../smoketest/CollectingLogger.cs" />

@@ -9,6 +9,31 @@
   filename: chunkopaque.fsh
   tokens: in vec2 uv;
 
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: in vec3 normal;
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: in vec4 worldPos;
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: in vec4 rgbaFog;
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: in vec3 blockLight;
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: uniform vec3 lightPosition;
+
 - type: insert_after
   phase: Declarations
   filename: chunkopaque.fsh
@@ -20,13 +45,39 @@
   filename: chunkopaque.fsh
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
-    outColor = vvTerrainMaterialPrimary(outColor, uv);
-    outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);
+    outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    glow += vvTerrainEmissiveGlow(glowLevel, uv);
 
 - type: assert
   phase: Assertions
   filename: chunktopsoil.fsh
   tokens: in vec2 uv;
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: in vec3 normal;
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: in vec4 worldPos;
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: in vec4 rgbaFog;
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: in vec3 blockLight;
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  tokens: uniform vec3 lightPosition;
 
 - type: insert_after
   phase: Declarations
@@ -39,5 +90,6 @@
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
-    outColor = vvTerrainMaterialPrimary(outColor, uv);
-    outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);
+    outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    glow += vvTerrainEmissiveGlow(glowLevel, uv);

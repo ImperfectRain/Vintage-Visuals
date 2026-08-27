@@ -17,14 +17,21 @@ uniform sampler2D glow;
 uniform sampler2D sky;
 uniform sampler2D liquidDepth;
 in vec2 uv;
+in vec3 normal;
+in vec4 worldPos;
+in vec4 rgbaFog;
+in vec3 blockLight;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
 void main()
 {
+    vec4 texColor = vec4(1);
     float glow = 0;
     float glowLevel = 0;
     float godrayLevel = 0;
     float fogAmount = 0;
+    float murkiness = 0;
+    float b = 1;
     outColor = vec4(1);
     outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
 }
@@ -38,12 +45,18 @@ uniform sampler2DShadow shadowMapNear;
 uniform vec3 lightPosition;
 uniform sampler2D liquidDepth;
 in vec2 uv;
+in vec3 normal;
+in vec4 worldPos;
+in vec4 rgbaFog;
+in vec3 blockLight;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
 void main()
 {
     float glow = 0;
     float glowLevel = 0;
+    float fogAmount = 0;
+    float murkiness = 0;
     outColor = vec4(1);
     outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
 }
@@ -162,8 +175,8 @@ void main()
             var patches = ShaderPatchLoader.ParsePatchFile(
                 yaml, "pbrterrainmaterial", "test", resolveSnippet).ToList();
 
-            check("pbrterrainmaterial.yaml parsed into six patches",
-                patches.Count == 6,
+            check("pbrterrainmaterial.yaml parsed into sixteen patches",
+                patches.Count == 16,
                 patches.Count.ToString());
             check("pbrterrainmaterial group is isolated",
                 patches.All(p => p.Group == "pbrterrainmaterial"),
@@ -174,19 +187,41 @@ void main()
                                  p.Kind == ShaderPatchKind.InsertBefore),
                 string.Join(", ", patches.Select(p => p.Kind).Distinct()));
             check("pbrterrainmaterial declares deterministic compiler phases",
-                patches.Count(p => p.Phase == "Assertions") == 2 &&
+                patches.Count(p => p.Phase == "Assertions") == 12 &&
                 patches.Count(p => p.Phase == "Declarations") == 2 &&
                 patches.Count(p => p.Phase == "Material") == 2,
                 string.Join(", ", patches.Select(p => p.Phase)));
 
             string resolved = string.Join("\n", patches.Select(p => p.Content));
-            check("Stage B material terrain declares only the primary VV sampler",
+            check("Stage C material terrain declares only material atlas VV samplers",
                 resolved.CountSubstring("uniform sampler2D vv_materialTex;") == 2 &&
-                !resolved.Contains("vv_materialTex2") &&
+                resolved.CountSubstring("uniform sampler2D vv_materialTex2;") == 2 &&
                 !resolved.Contains("vv_reflectScene") &&
                 !resolved.Contains("vv_reflectWorld") &&
                 !resolved.Contains("vv_canopy"),
-                "Stage B is limited to one VV sampler");
+                "Stage C is limited to primary and secondary material atlas samplers");
+            check("Stage C terrain material decodes the primary and secondary atlas channels",
+                resolved.Contains("struct VvTerrainMaterial") &&
+                resolved.Contains("VvTerrainMaterial vvDecodeTerrainMaterial") &&
+                resolved.Contains("m.metalness = clamp(secondary.r") &&
+                resolved.Contains("m.height = clamp(secondary.g") &&
+                resolved.Contains("m.ao = clamp(secondary.b") &&
+                resolved.Contains("m.emissionMask = vv_material2Valid < 0.5 ? 1.0"),
+                "material response must not silently collapse back to the primary atlas only");
+            check("Stage C terrain material contains a bounded microfacet response",
+                resolved.Contains("vvDistributionGGXTerrain") &&
+                resolved.Contains("vvGeometrySmithTerrain") &&
+                resolved.Contains("vvFresnelSchlickTerrain") &&
+                resolved.Contains("mix(dielectricF0, m.baseColor, m.metalness)") &&
+                resolved.Contains("diffuseEnergy") &&
+                resolved.Contains("(1.0 - m.metalness)"),
+                "terrain material response must stay energy-aware and metalness-aware");
+            check("Stage C terrain material has no scene-capture, world-reflection or canopy reads",
+                !resolved.Contains("texture(vv_reflect") &&
+                !resolved.Contains("textureLod(vv_reflect") &&
+                !resolved.Contains("texture(vv_canopy") &&
+                !resolved.Contains("textureLod(vv_canopy"),
+                "optional terrain resources remain disabled during safe material restoration");
 
             var logger = new CollectingLogger();
             var patcher = new ShaderPatcher(logger);
@@ -197,18 +232,18 @@ void main()
 
             check("pbrterrainmaterial group healthy", patcher.IsGroupHealthy("pbrterrainmaterial"), "");
             check("chunkopaque receives primary material operation before outGlow",
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, uv);", StringComparison.Ordinal) >= 0 &&
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);", StringComparison.Ordinal) >
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, uv);", StringComparison.Ordinal) &&
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >= 0 &&
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) &&
                 opaque.IndexOf("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));", StringComparison.Ordinal) >
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);", StringComparison.Ordinal),
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal),
                 "");
             check("chunktopsoil receives primary material operation before outGlow",
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, uv);", StringComparison.Ordinal) >= 0 &&
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);", StringComparison.Ordinal) >
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, uv);", StringComparison.Ordinal) &&
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >= 0 &&
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) &&
                 topsoil.IndexOf("outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);", StringComparison.Ordinal) >
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, uv);", StringComparison.Ordinal),
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal),
                 "");
             check("Stage B preserves vanilla glow contracts",
                 opaque.Contains("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));") &&
@@ -216,16 +251,15 @@ void main()
                 "");
             check("Stage B does not restore reflection or canopy resources",
                 !opaque.Contains("vv_reflect") && !topsoil.Contains("vv_reflect") &&
-                !opaque.Contains("vv_canopy") && !topsoil.Contains("vv_canopy") &&
-                !opaque.Contains("vv_materialTex2") && !topsoil.Contains("vv_materialTex2"),
+                !opaque.Contains("vv_canopy") && !topsoil.Contains("vv_canopy"),
                 "");
 
             ShaderPatchManifestEntry opaqueManifest = patcher.Manifest["chunkopaque.fsh"];
             ShaderPatchManifestEntry topsoilManifest = patcher.Manifest["chunktopsoil.fsh"];
 
-            check("Stage B manifest exposes exactly one added sampler per terrain shader",
-                opaqueManifest.SamplersAdded.SequenceEqual(new[] { "sampler2D vv_materialTex" }) &&
-                topsoilManifest.SamplersAdded.SequenceEqual(new[] { "sampler2D vv_materialTex" }) &&
+            check("Stage C manifest exposes exactly two material samplers per terrain shader",
+                opaqueManifest.SamplersAdded.SequenceEqual(new[] { "sampler2D vv_materialTex", "sampler2D vv_materialTex2" }) &&
+                topsoilManifest.SamplersAdded.SequenceEqual(new[] { "sampler2D vv_materialTex", "sampler2D vv_materialTex2" }) &&
                 opaqueManifest.SamplersRemoved.Count == 0 &&
                 topsoilManifest.SamplersRemoved.Count == 0,
                 opaqueManifest.ToStableText() + topsoilManifest.ToStableText());

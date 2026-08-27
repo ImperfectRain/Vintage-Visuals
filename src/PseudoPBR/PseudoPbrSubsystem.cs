@@ -24,8 +24,9 @@ namespace VintageVisuals.PseudoPBR
     /// What reaches the screen today is staged terrain restoration. The legacy
     /// terrain PBR groups are fail-closed after the terrain corruption
     /// regression; the active terrain path is the zero-sampler baseline plus a
-    /// one-sampler primary material atlas read for conservative response and
-    /// material debug masks.
+    /// modular material path that reads the primary and secondary material
+    /// atlases. Reflection, scene-capture and canopy samplers remain disabled
+    /// on terrain.
     /// </summary>
     public sealed class PseudoPbrSubsystem : IVisualSubsystem
     {
@@ -63,9 +64,10 @@ namespace VintageVisuals.PseudoPBR
         public const bool TerrainBasePatchEnabled = true;
 
         /// <summary>
-        /// Stage B terrain restoration checkpoint: primary material atlas only.
-        /// This reintroduces exactly one VV terrain sampler, vv_materialTex, and
-        /// no legacy pseudopbr/topsoil branches.
+        /// Staged terrain material checkpoint. The name is retained for the
+        /// public gate/checks, but the active group now owns the safe primary
+        /// and secondary material atlas reads and still excludes the legacy
+        /// pseudopbr/topsoil branches.
         /// </summary>
         public const bool TerrainMaterialPrimaryPatchEnabled = true;
 

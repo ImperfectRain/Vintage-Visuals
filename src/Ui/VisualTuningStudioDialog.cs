@@ -563,7 +563,7 @@ namespace VintageVisuals.Ui
                 ElementBounds.Fixed(ContentLeft, y - 12, ContentWidth - 40, 18));
             if (PbrTerrainDebugLimited())
             {
-                SingleComposer.AddStaticText("Safe terrain baseline: only primary material atlas masks are available.",
+                SingleComposer.AddStaticText("Safe terrain path: material and secondary atlas masks are available.",
                     CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft, y + 10, ContentWidth - 40, 18));
                 y += 28;
             }
@@ -652,7 +652,10 @@ namespace VintageVisuals.Ui
             if (!PrimaryTerrainMaterialDebugAvailable()) return value == 0;
 
             return value == 0 || value == 1 || value == 2 || value == 3 ||
-                   value == 33 || value == 52;
+                   value == 4 || value == 5 || value == 6 || value == 7 ||
+                   value == 8 || value == 10 || value == 12 || value == 14 ||
+                   value == 19 || value == 20 || value == 21 || value == 22 ||
+                   value == 23 || value == 33 || value == 52;
         }
 
         private static bool FullTerrainDebugAvailable()

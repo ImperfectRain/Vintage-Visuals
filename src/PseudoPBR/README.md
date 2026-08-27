@@ -7,9 +7,9 @@ per block.
 ## Status
 
 **Phase 4, staged terrain material restoration.** The mod works out what
-material every block is made of, derives a material atlas from the block
-textures, and currently feeds only the primary atlas page back to terrain
-through the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
+material every block is made of, derives material atlases from the block
+textures, and feeds the primary plus secondary pages back to terrain through
+the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
 `pseudopbrtopsoil` terrain groups remain fail-closed after the terrain
 corruption regression.
 
@@ -28,10 +28,10 @@ what that means and what is still unconfirmed.
 | Multi-page block atlases | done, level 2 (compiles) |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
 | `pbrterrainbase` zero-sampler terrain baseline | active, level 2 (compiles) |
-| `pbrterrainmaterial` primary material sampler | active, level 2 (compiles), one VV sampler only |
-| `chunkopaque.fsh` samples the primary atlas | staged, level 2 (compiles), conservative response only |
-| Cook-Torrance specular + energy conservation | built in legacy terrain path, currently fail-closed |
-| Per-layer debug views | staged: primary material masks only on terrain |
+| `pbrterrainmaterial` material samplers | active, level 2 (compiles), `vv_materialTex` and `vv_materialTex2` only |
+| `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response |
+| Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
+| Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
 | `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial`; legacy `pseudopbrtopsoil` remains disabled |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
@@ -44,7 +44,8 @@ profile. `MaterialAtlasBuilder` derives the maps and packs them into one texture
 laid out to match the block atlas exactly — so the shader can sample it with the
 UVs the block already has, and no new UV plumbing is needed.
 
-Channel packing, the decision everything downstream depends on:
+Primary atlas channel packing, the decision the close-range material response
+depends on:
 
 | Channel | Holds |
 |---|---|
@@ -57,13 +58,19 @@ Normal Z is not stored; it is reconstructed in the shader as
 `sqrt(1 - x² - y²)`, which is exact for a unit normal and buys the fourth
 channel for something that cannot be derived.
 
-**Metalness is deliberately absent**, even though `MaterialProfile` carries it.
-There are five values worth storing and four channels. Metalness is the one that
-drops with least visible loss — its main effect is tinting the specular
-highlight by albedo rather than white, a refinement on top of "is this shiny at
-all". Storing it needs either a second atlas (a whole extra texture unit) or a
-bit-packing trick that bilinear filtering would destroy. Revisit if metal ends
-up looking like shiny plastic; the fix is a second atlas, not a cleverer pack.
+The secondary atlas is optional and fail-closed. When it is bound, its channels
+are:
+
+| Channel | Holds |
+|---|---|
+| R | metalness |
+| G | height |
+| B | baked ambient occlusion |
+| A | emission mask |
+
+If the secondary page is absent, the shader uses neutral defaults: dielectric
+metalness, mid height, full AO and an emission mask that preserves vanilla's
+own `glowLevel` contract.
 
 Two details that are easy to get wrong:
 
@@ -156,14 +163,20 @@ lines — so the folder should contain its own answer.
 
 ## Reaching the screen
 
-The relief effect is deliberately the smallest possible intervention in the
-render pipeline. There is **no second lighting model** and no extra pass — the
-game already shades by normal, so it is given a better one:
+The active terrain path is deliberately modular rather than the old monolithic
+`pseudopbr` replacement. `pbrterrainbase` first proves a zero-sampler identity
+patch. `pbrterrainmaterial` then inserts a bounded material operation immediately
+before vanilla writes `outGlow`, preserving the game's glow/godray contracts and
+keeping fog, liquid depth and shadow authority in vanilla's code.
 
-```glsl
-outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1),
-                                           min(b, vvSurfaceBrightness(nb, normal, uv)), worldPos.xyz);
-```
+The current material operation derives a tangent-frame normal from the primary
+atlas, snaps material lookups to texel centers, widens roughness for geometric
+specular antialiasing, and uses local GGX/Smith/Schlick terms for direct sun,
+block-light and ambient specular. Wetness, snow and frost are material layers,
+not extra samplers. `chunkopaque` uses vanilla's `texColor.rgb` as the base
+colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
+which is acceptable as a recovery step but weaker than capturing the original
+topsoil albedo before lighting.
 
 Two facts about 1.22.7's `chunkopaque.fsh` shaped that line, and both were
 guessed wrong before the real file was read:
@@ -234,20 +247,18 @@ that must never happen here is a black world: `chunkopaque.fsh` draws the
 terrain, so unlike every other patch in this mod, a failure that reached the
 GLSL compiler would cost the player everything, not one effect.
 
-### Single-page atlases only
+### Multi-page atlases
 
-The shader samples our atlas with the diffuse's own `uv`, which works because
-both atlases share a layout. When the block atlas needs more than one page the
-game binds a different terrain texture per draw call, and `uv` alone no longer
-says which page a fragment came from — and there is nowhere left in the vertex
-format to tell us (see [Why not vertex flags](#why-not-vertex-flags)).
+The shader samples the material atlases with the diffuse's own `uv`, which works
+because all atlases share a layout. When the block atlas needs more than one
+page the game binds a different terrain texture per draw call, and `uv` alone no
+longer says which page a fragment came from — and there is nowhere left in the
+vertex format to tell us (see [Why not vertex flags](#why-not-vertex-flags)).
 
-So a multi-page atlas switches the relief off and logs why. Vanilla renders
-untouched; the report, the atlas and the previews are still produced. A 1.22.7
-install packs ~3700 block textures into a single 4096×2048 page with room to
-spare, so this is a guard for heavily modded installs, not the common case.
-Lifting it means one material atlas per page plus a hook into the chunk draw
-call to bind alongside whichever terrain page is active.
+`TerrainTextureBindInterceptor` is the answer: it observes vanilla's terrain
+page bind and selects the matching primary and secondary material pages for that
+draw. If that hook is unavailable, multi-page terrain fails closed to vanilla
+with a log line rather than sampling page 0 against unrelated terrain pages.
 
 ## Two things that make relief read as texture rather than smear
 

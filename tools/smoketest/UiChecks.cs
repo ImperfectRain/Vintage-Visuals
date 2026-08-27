@@ -410,11 +410,12 @@ namespace VintageVisuals.SmokeTest
 
             check("PBR terrain debug views fail closed during terrain recovery",
                   dialog.Contains("PbrTerrainDebugLimited()") &&
-                  dialog.Contains("Safe terrain baseline: only primary material atlas masks are available.") &&
+                  dialog.Contains("Safe terrain path: material and secondary atlas masks are available.") &&
                   dialog.Contains("blocked unavailable terrain debug view") &&
                   dialog.Contains("value == 0 || value == 1 || value == 2 || value == 3") &&
+                  dialog.Contains("value == 19 || value == 20 || value == 21 || value == 22") &&
                   dialog.Contains("value == 33 || value == 52"),
-                  "only debug views backed by the current one-sampler terrain shader should be selectable");
+                  "only debug views backed by the current modular terrain shader should be selectable");
 
             check("dialog lifecycle logging is high-granularity",
                   dialog.Contains("[VV UI #") &&
