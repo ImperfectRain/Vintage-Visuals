@@ -134,10 +134,11 @@ The current layout is also constrained by a single grid: sidebar width/padding,
 content left edge, label/info/value/control/reset columns and footer placement
 are centralized in `VisualTuningStudioDialog`. The page title, section headings
 and setting labels share one content axis; unfinished Presets text and the
-redundant secondary Close button are removed. The clipped settings body uses
-local scroll-child and row coordinates under its content clip; using dialog
-coordinates there double-applies the content offset and pushes non-overview tabs
-to the right and down.
+redundant secondary Close button are removed. The settings body is a positioned
+content child, then a local clip, then a local scroll child with local row
+coordinates; using dialog coordinates inside that nested body double-applies the
+content offset, while attaching the local scroll child directly to the root lets
+rows escape the inset.
 The sidebar uses a full-width button stack instead of native `AddVerticalTabs`
 because the native element sizes its rendered tabs from text width. It has not
 been re-opened in a running game from this environment, so presets,

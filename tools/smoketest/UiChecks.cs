@@ -343,6 +343,9 @@ namespace VintageVisuals.SmokeTest
                   "clipped rows should use local coordinates under the content axis");
 
             check("clipped settings rows do not double-apply the content offset",
+                  dialog.Contains("bodyBounds = ElementBounds.Fixed(ContentLeft, bodyY, ContentWidth, bodyHeight)") &&
+                  dialog.Contains("clipBounds = ElementBounds.Fixed(0, 0, ContentWidth, bodyHeight)") &&
+                  dialog.Contains("BeginChildElements(bodyBounds)") &&
                   dialog.Contains("BeginClip(clipBounds)") &&
                   dialog.Contains("BeginChildElements(_scrollContentBounds)") &&
                   dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
@@ -404,6 +407,13 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("\"DEBUG VIEW ACTIVE\"") &&
                   dialog.Contains("Return to Normal Rendering"),
                   "debug tab should not require numeric IDs");
+
+            check("PBR terrain debug views fail closed during terrain recovery",
+                  dialog.Contains("PbrTerrainDebugUnavailable()") &&
+                  dialog.Contains("Terrain material/reflection masks are disabled in the safe terrain baseline.") &&
+                  dialog.Contains("blocked terrain PBR recovery") &&
+                  dialog.Contains("!PseudoPbrSubsystem.TerrainShaderPatchesEnabled"),
+                  "material/reflection masks are unavailable while the terrain PBR shader groups are compiled out");
 
             check("dialog lifecycle logging is high-granularity",
                   dialog.Contains("[VV UI #") &&

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using VintageVisuals.PseudoPBR;
 
 namespace VintageVisuals.Ui
 {
@@ -338,7 +339,8 @@ namespace VintageVisuals.Ui
         {
             _currentBodyHeight = bodyHeight;
 
-            ElementBounds clipBounds = ElementBounds.Fixed(ContentLeft, bodyY, ContentWidth, bodyHeight);
+            ElementBounds bodyBounds = ElementBounds.Fixed(ContentLeft, bodyY, ContentWidth, bodyHeight);
+            ElementBounds clipBounds = ElementBounds.Fixed(0, 0, ContentWidth, bodyHeight);
             ElementBounds scrollbarBounds = ElementBounds.Fixed(ContentLeft + ContentWidth + 6, bodyY, 16, bodyHeight);
             _currentContentHeight = MeasureRows(rows);
             _currentScroll = ClampScroll(_currentScroll);
@@ -347,6 +349,7 @@ namespace VintageVisuals.Ui
             _scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll, ContentWidth,
                 Math.Max(bodyHeight, _currentContentHeight));
 
+            SingleComposer.BeginChildElements(bodyBounds);
             SingleComposer.BeginClip(clipBounds);
             SingleComposer.BeginChildElements(_scrollContentBounds);
 
@@ -367,6 +370,7 @@ namespace VintageVisuals.Ui
 
             SingleComposer.EndChildElements();
             SingleComposer.EndClip();
+            SingleComposer.EndChildElements();
 
             if (_currentContentHeight > bodyHeight)
             {
@@ -557,6 +561,12 @@ namespace VintageVisuals.Ui
             y += 46;
             SingleComposer.AddStaticText(ShortText(current.Description, 92), CairoFont.WhiteDetailText(),
                 ElementBounds.Fixed(ContentLeft, y - 12, ContentWidth - 40, 18));
+            if (PbrTerrainDebugUnavailable())
+            {
+                SingleComposer.AddStaticText("Terrain material/reflection masks are disabled in the safe terrain baseline.",
+                    CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft, y + 10, ContentWidth - 40, 18));
+                y += 28;
+            }
 
             if (current.Value != 0)
             {
@@ -606,10 +616,23 @@ namespace VintageVisuals.Ui
         {
             if (!selected) return;
             Log("ENTER DebugViewChanged");
+            if (PbrTerrainDebugUnavailable() && code != "0")
+            {
+                Log("EXIT DebugViewChanged blocked terrain PBR recovery");
+                ComposeDialog();
+                return;
+            }
+
             DebugView view = CurrentDebugViews().FirstOrDefault(v => v.Value.ToString() == code);
             _ignoreNextConfigRefresh = true;
             _controller.SetDebugView(view);
             Log("EXIT DebugViewChanged");
+        }
+
+        private bool PbrTerrainDebugUnavailable()
+        {
+            return _debugOwnerPath == DebugViewRegistry.PbrPath &&
+                   !PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
         }
 
         private IEnumerable<DebugView> CurrentDebugViews()
