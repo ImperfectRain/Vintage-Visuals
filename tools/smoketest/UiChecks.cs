@@ -345,6 +345,8 @@ namespace VintageVisuals.SmokeTest
             check("clipped settings rows do not double-apply the content offset",
                   dialog.Contains("BeginClip(clipBounds)") &&
                   dialog.Contains("BeginChildElements(_scrollContentBounds)") &&
+                  dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
+                  dialog.Contains("_scrollContentBounds.fixedY = -_currentScroll") &&
                   dialog.Contains("double y = 0") &&
                   dialog.Contains("AddSection(row.Section, y)") &&
                   dialog.Contains("AddSettingRow(row.Setting, y)") &&

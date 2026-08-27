@@ -344,7 +344,7 @@ namespace VintageVisuals.Ui
             _currentScroll = ClampScroll(_currentScroll);
             SaveScroll();
             _currentBodyY = bodyY;
-            _scrollContentBounds = ElementBounds.Fixed(ContentLeft, bodyY - _currentScroll, ContentWidth,
+            _scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll, ContentWidth,
                 Math.Max(bodyHeight, _currentContentHeight));
 
             SingleComposer.BeginClip(clipBounds);
@@ -708,7 +708,7 @@ namespace VintageVisuals.Ui
         {
             if (_scrollContentBounds == null) return;
 
-            _scrollContentBounds.fixedY = _currentBodyY - _currentScroll;
+            _scrollContentBounds.fixedY = -_currentScroll;
             _scrollContentBounds.CalcWorldBounds();
         }
 
