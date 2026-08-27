@@ -30,10 +30,10 @@ what that means and what is still unconfirmed.
 | Derived material atlas | done, 29 checks |
 | Disk cache keyed by content fingerprint | done |
 | Preview images for inspection | done, one set per atlas page |
-| Multi-page block atlases | done, level 2 (compiles) |
+| Multi-page block atlases | done, level 2 (compiles); material pages rebind per terrain draw with active texture restoration |
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
 | `pbrterrainbase` zero-sampler terrain baseline | active, level 2 (compiles) |
-| `pbrterrainmaterial` material samplers | active, level 2 (compiles), `vv_materialTex` and `vv_materialTex2` only |
+| `pbrterrainmaterial` material samplers | active, level 2 (compiles), `vv_materialTex` and `vv_materialTex2` only; no scene/world/canopy sampler participates in this checkpoint |
 | `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response for non-flora terrain |
 | Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |

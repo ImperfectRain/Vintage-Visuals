@@ -348,17 +348,23 @@ namespace VintageVisuals.SmokeTest
             check("the binder actually binds the captured scene",
                 binder.Contains("BindTexture2D(ReflectSceneUniform"), "");
 
-            // Emergency recovery: the terrain postfix must not perform extra
-            // binds until Vintage Story's active texture state contract is
-            // proven. Binding extra samplers after vanilla terrainTex is the
-            // suspected opaque/topsoil corruption path.
+            // Recovery boundary: page-correct material atlases are allowed
+            // back into the terrain draw, but only with active texture state
+            // restoration. Auxiliary resources stay fenced off until their
+            // own resource contract is proven.
             string interceptor = File.ReadAllText(
                 Path.Combine(repo, "src/PseudoPBR/TerrainTextureBindInterceptor.cs"));
 
-            check("terrain postfix binds are disabled during recovery",
-                interceptor.Contains("PerDrawTextureBindingEnabled = false") &&
-                Regex.IsMatch(interceptor, @"if \(!PerDrawTextureBindingEnabled\) return;"),
-                "extra binds inside vanilla terrainTex binding can leave unsafe GL active texture state");
+            check("terrain material page binds restore active texture state",
+                interceptor.Contains("PerDrawMaterialBindingEnabled = true") &&
+                Regex.IsMatch(interceptor, @"TryGetActiveTexture\(out previousActiveTexture\)") &&
+                Regex.IsMatch(interceptor, @"if \(restoreActiveTexture\) RestoreActiveTexture\(previousActiveTexture\);"),
+                "extra binds inside vanilla terrainTex binding must not leave a different active texture unit");
+
+            check("terrain auxiliary per-draw binds are still disabled",
+                interceptor.Contains("PerDrawAuxiliaryBindingEnabled = false") &&
+                Regex.IsMatch(interceptor, @"if \(PerDrawAuxiliaryBindingEnabled\)"),
+                "scene/world/canopy resources are not part of the base material PBR checkpoint");
 
             check("canopy context sampler is compiled out during recovery",
                 !_pbr.Contains("uniform sampler2D vv_canopyContext") &&

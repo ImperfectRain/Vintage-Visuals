@@ -567,8 +567,11 @@ namespace VintageVisuals.PseudoPBR
                 return;
             }
 
-            // The per-draw rebind is what actually reaches the chunk draws; this
-            // bind only makes the sampler uniform point at the right unit.
+            // The safe material-PBR checkpoint keeps auxiliary per-draw binds
+            // disabled. This bind assigns the sampler and may be sufficient
+            // while the unit survives to terrain; if it is displaced later, the
+            // shader's validity/fallback path is the safe outcome until scene
+            // reflections get their own binding-plan checkpoint.
             TerrainTextureBindInterceptor.SetSceneCapture(capture.TextureId);
 
             program.BindTexture2D(ReflectSceneUniform, capture.TextureId,

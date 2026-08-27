@@ -40,11 +40,15 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Vanilla's block atlas sampler. The name we are watching for.</summary>
         private const string TerrainSampler = "terrainTex";
 
-        // Emergency terrain recovery switch. The hook is still installed so the
-        // old lifecycle can clean itself up, but it must not perform extra
-        // texture binds inside vanilla's terrain binding sequence until the
-        // active texture state contract has been proven from the engine.
-        private static readonly bool PerDrawTextureBindingEnabled = false;
+        // Re-enable only the proven material-page half of the hook. The
+        // auxiliary scene/world/canopy binds remain off until they have their
+        // own resource contract: terrain PBR needs page-correct material data,
+        // while reflections and canopy context can fail closed without making
+        // the material atlas lie.
+        private static readonly bool PerDrawMaterialBindingEnabled = true;
+        private static readonly bool PerDrawAuxiliaryBindingEnabled = false;
+        private static readonly Lazy<GlTextureStateApi> GlTextureState =
+            new Lazy<GlTextureStateApi>(GlTextureStateApi.TryCreate);
 
         // Static because Harmony patches must be. There is one client and one
         // instance of this mod per process, which is what makes that safe.
@@ -283,7 +287,7 @@ namespace VintageVisuals.PseudoPBR
             // game, so the common case must be a volatile read and a return.
             if (!_active) return;
             if (_reentrant) return;
-            if (!PerDrawTextureBindingEnabled) return;
+            if (!PerDrawMaterialBindingEnabled) return;
             if (!string.Equals(__0, TerrainSampler, StringComparison.Ordinal)) return;
 
             int materialTextureId;
@@ -301,6 +305,9 @@ namespace VintageVisuals.PseudoPBR
             // the GUI and everything else that binds a terrain texture falls
             // out here without needing to be named.
             if (program == null || !program.HasUniform(PbrShaderBinder.SamplerUniform)) return;
+
+            int previousActiveTexture;
+            bool restoreActiveTexture = TryGetActiveTexture(out previousActiveTexture);
 
             _reentrant = true;
             try
@@ -325,24 +332,27 @@ namespace VintageVisuals.PseudoPBR
                                           MaterialAtlasTexture.SecondTextureUnit);
                 }
 
-                // The captured scene, on the same per-draw footing. See the
-                // note on _captureTextureId: bound once a frame it does not
-                // survive to the chunk draws, and the reflection then samples
-                // whatever texture the unit is holding instead.
-                int captureId = _captureTextureId;
-
-                if (captureId != 0 && program.HasUniform(PbrShaderBinder.ReflectSceneUniform))
+                if (PerDrawAuxiliaryBindingEnabled)
                 {
-                    program.BindTexture2D(PbrShaderBinder.ReflectSceneUniform, captureId,
-                                          SceneCaptureRenderer.TextureUnit);
-                }
+                    // The captured scene and world volume are deliberately
+                    // still fenced off. Re-enabling them is a separate
+                    // resource checkpoint, because they add failure modes that
+                    // base material PBR does not need.
+                    int captureId = _captureTextureId;
 
-                int worldReflectionId = _worldReflectionTextureId;
+                    if (captureId != 0 && program.HasUniform(PbrShaderBinder.ReflectSceneUniform))
+                    {
+                        program.BindTexture2D(PbrShaderBinder.ReflectSceneUniform, captureId,
+                                              SceneCaptureRenderer.TextureUnit);
+                    }
 
-                if (worldReflectionId != 0 && program.HasUniform(PbrShaderBinder.ReflectWorldUniform))
-                {
-                    program.BindTexture2D(PbrShaderBinder.ReflectWorldUniform, worldReflectionId,
-                                          WorldReflectionVolume.TextureUnit);
+                    int worldReflectionId = _worldReflectionTextureId;
+
+                    if (worldReflectionId != 0 && program.HasUniform(PbrShaderBinder.ReflectWorldUniform))
+                    {
+                        program.BindTexture2D(PbrShaderBinder.ReflectWorldUniform, worldReflectionId,
+                                              WorldReflectionVolume.TextureUnit);
+                    }
                 }
 
                 // Canopy context is intentionally not terrain-bound during the
@@ -364,7 +374,115 @@ namespace VintageVisuals.PseudoPBR
             }
             finally
             {
+                if (restoreActiveTexture) RestoreActiveTexture(previousActiveTexture);
                 _reentrant = false;
+            }
+        }
+
+        private static bool TryGetActiveTexture(out int activeTexture)
+        {
+            activeTexture = 0;
+
+            GlTextureStateApi api = GlTextureState.Value;
+            return api != null && api.TryGetActiveTexture(out activeTexture);
+        }
+
+        private static void RestoreActiveTexture(int activeTexture)
+        {
+            GlTextureStateApi api = GlTextureState.Value;
+            if (api != null) api.TrySetActiveTexture(activeTexture);
+        }
+
+        /// <summary>
+        /// Tiny reflected OpenGL bridge. The project intentionally does not
+        /// compile against OpenTK; Vintage Story owns that dependency and can
+        /// move between OpenTK namespaces. Runtime reflection keeps this hook
+        /// fail-closed rather than turning a library shape change into a build
+        /// dependency.
+        /// </summary>
+        private sealed class GlTextureStateApi
+        {
+            private readonly MethodInfo _getInteger;
+            private readonly MethodInfo _activeTexture;
+            private readonly object _activeTextureGetName;
+            private readonly Type _textureUnitType;
+
+            private GlTextureStateApi(MethodInfo getInteger, MethodInfo activeTexture,
+                                      object activeTextureGetName, Type textureUnitType)
+            {
+                _getInteger = getInteger;
+                _activeTexture = activeTexture;
+                _activeTextureGetName = activeTextureGetName;
+                _textureUnitType = textureUnitType;
+            }
+
+            public static GlTextureStateApi TryCreate()
+            {
+                try
+                {
+                    Type glType = AppDomain.CurrentDomain.GetAssemblies()
+                        .SelectMany(SafeTypes)
+                        .FirstOrDefault(t => t.FullName == "OpenTK.Graphics.OpenGL.GL" ||
+                                             t.FullName == "OpenTK.Graphics.OpenGL4.GL");
+                    if (glType == null) return null;
+
+                    MethodInfo getInteger = glType.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                        .FirstOrDefault(m => m.Name == "GetInteger" &&
+                                             m.GetParameters().Length == 2 &&
+                                             m.GetParameters()[1].ParameterType == typeof(int).MakeByRefType());
+                    if (getInteger == null) return null;
+
+                    Type getNameType = getInteger.GetParameters()[0].ParameterType;
+                    object activeTextureGetName = Enum.Parse(getNameType, "ActiveTexture");
+
+                    MethodInfo activeTexture = glType.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                        .FirstOrDefault(m => m.Name == "ActiveTexture" &&
+                                             m.GetParameters().Length == 1 &&
+                                             m.GetParameters()[0].ParameterType.IsEnum);
+                    if (activeTexture == null) return null;
+
+                    return new GlTextureStateApi(getInteger, activeTexture, activeTextureGetName,
+                                                 activeTexture.GetParameters()[0].ParameterType);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            public bool TryGetActiveTexture(out int activeTexture)
+            {
+                activeTexture = 0;
+                try
+                {
+                    object[] args = { _activeTextureGetName, 0 };
+                    _getInteger.Invoke(null, args);
+                    activeTexture = (int)args[1];
+                    return activeTexture > 0;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            public bool TrySetActiveTexture(int activeTexture)
+            {
+                try
+                {
+                    _activeTexture.Invoke(null, new[] { Enum.ToObject(_textureUnitType, activeTexture) });
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            private static Type[] SafeTypes(Assembly assembly)
+            {
+                try { return assembly.GetTypes(); }
+                catch (ReflectionTypeLoadException ex) { return ex.Types.Where(t => t != null).ToArray(); }
             }
         }
     }

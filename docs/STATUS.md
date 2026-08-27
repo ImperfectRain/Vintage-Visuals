@@ -87,8 +87,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Wrapped animation clock | L2 | unbounded clocks collapse phase in float32 |
 | `[x]` | Material identity from `EnumBlockMaterial` | L3 | 14090 blocks classified, 0 fallbacks; covers modded blocks |
 | `[x]` | Derived normal / roughness / specular / metal atlas | L4 | cached to disk, multi-page |
-| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`; wind-mode vegetation is bypassed back to vanilla; the legacy full terrain groups, reflection samplers, scene-capture sampler and canopy sampler remain fail-closed |
-| `[x]` | Multi-page atlas via Harmony bind hook | L4 | degrades to vanilla with a log line if the hook fails; terrain recovery exercises the primary and secondary material pages only |
+| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`; wind-mode vegetation is bypassed back to vanilla; reflection, scene-capture and canopy per-draw resources remain fail-closed |
+| `[x]` | Multi-page atlas via Harmony bind hook | L4 | material page rebinding is restored with active-texture restoration; auxiliary scene/world/canopy per-draw binds stay disabled until their own binding-plan checkpoint |
 | `[~]` | `CloudTileReader` — the game's own cloud placement | L4 | found in a 1.22.7 client with FluffyClouds; sub-tile `windOffsetX/Z` remains unapplied |
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
 | `[x]` | **Emissive materials** from vanilla's own `glowLevel` | L2 | hot rather than bright, dimmer in daylight, position-seeded flicker, feeds vanilla's bloom |
