@@ -87,7 +87,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Wrapped animation clock | L2 | unbounded clocks collapse phase in float32 |
 | `[x]` | Material identity from `EnumBlockMaterial` | L3 | 14090 blocks classified, 0 fallbacks; covers modded blocks |
 | `[x]` | Derived normal / roughness / specular / metal atlas | L4 | cached to disk, multi-page |
-| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`; the legacy full terrain groups, reflection samplers, scene-capture sampler and canopy sampler remain fail-closed |
+| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`; wind-mode vegetation is bypassed back to vanilla; the legacy full terrain groups, reflection samplers, scene-capture sampler and canopy sampler remain fail-closed |
 | `[x]` | Multi-page atlas via Harmony bind hook | L4 | degrades to vanilla with a log line if the hook fails; terrain recovery exercises the primary and secondary material pages only |
 | `[~]` | `CloudTileReader` — the game's own cloud placement | L4 | found in a 1.22.7 client with FluffyClouds; sub-tile `windOffsetX/Z` remains unapplied |
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
@@ -120,8 +120,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 
 | | Feature | Level | Notes |
 |---|---|---|---|
-| `[~]` | Surface relief in `chunkopaque.fsh` | L2 | restored through the staged modular terrain path; the old full `pseudopbr` terrain group remains disabled |
-| `[~]` | **Production vegetation lighting model** | L2 | Dedicated flora path: reduced atlas-normal sparkle, class-specific tissue transmission, pigment from current albedo, weather-aware optics, broad cuticle specular and distance simplification. Runtime tuning still required |
+| `[~]` | Surface relief in `chunkopaque.fsh` | L2 | restored through the staged modular terrain path for non-flora terrain; vanilla wind-mode vegetation is excluded after runtime blackening |
+| `[ ]` | **Production vegetation lighting model** | — | Disabled in the active terrain material checkpoint. The previous dedicated flora path exists in legacy shader code and tests, but it is not currently active because opaque terrain cavity/relief caused black alpha-card foliage |
 | `[~]` | **World canopy context texture** | L1 | CPU world scan can upload a 128 x 128 leaf-density/leaf-colour texture, but terrain binding is fail-closed until the 1.22.7 sampler map and active texture state are audited |
 | `[x]` | **Flora taxonomy from vanilla's wind modes** | **L4** | 11 plant classes plus a base-to-tip gradient, read from `renderFlags`. **Seen in a world**: debug view 44 shows leaves, grass, herbs and reeds as distinct flat colours, with soil and stone black. First runtime-validated flora feature |
 | `[x]` | Understory receives canopy dapple | L2 | The forest-floor regression: dapple used to reject every plant, so undergrowth stayed evenly lit while the soil beside it was dappled |

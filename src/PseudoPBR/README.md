@@ -13,6 +13,11 @@ the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
 `pseudopbrtopsoil` terrain groups remain fail-closed after the terrain
 corruption regression.
 
+The active terrain material checkpoint deliberately skips vanilla wind-mode
+vegetation. Leaves, grass, vines, fruit, crops and similar alpha-cut plant
+surfaces return the vanilla colour in this path until the dedicated foliage
+lighting model is restored safely.
+
 Not yet verified in game — see [Verification](#verification) below for exactly
 what that means and what is still unconfirmed.
 
@@ -29,10 +34,10 @@ what that means and what is still unconfirmed.
 | Atlas uploaded to the GPU | done, level 2 (compiles) |
 | `pbrterrainbase` zero-sampler terrain baseline | active, level 2 (compiles) |
 | `pbrterrainmaterial` material samplers | active, level 2 (compiles), `vv_materialTex` and `vv_materialTex2` only |
-| `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response |
+| `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response for non-flora terrain |
 | Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
-| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial`; legacy `pseudopbrtopsoil` remains disabled |
+| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; wind-mode vegetation is bypassed; legacy `pseudopbrtopsoil` remains disabled |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 

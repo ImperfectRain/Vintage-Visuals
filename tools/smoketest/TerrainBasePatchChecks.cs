@@ -216,6 +216,15 @@ void main()
                 resolved.Contains("diffuseEnergy") &&
                 resolved.Contains("(1.0 - m.metalness)"),
                 "terrain material response must stay energy-aware and metalness-aware");
+            check("Stage C terrain material skips vanilla wind-mode vegetation",
+                resolved.Contains("bool vvTerrainIsFlora()") &&
+                resolved.Contains("if (vvTerrainIsFlora()) return litColor;") &&
+                resolved.Contains("if (vvTerrainIsFlora()) return color;"),
+                "alpha-cut plants must not receive opaque terrain cavity/relief");
+            check("Stage C diffuse energy is not view-angle blackening",
+                resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);") &&
+                !resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - fresnel)"),
+                "dielectric terrain diffuse must not collapse merely because the camera is grazing it");
             check("Stage C terrain material has no scene-capture, world-reflection or canopy reads",
                 !resolved.Contains("texture(vv_reflect") &&
                 !resolved.Contains("textureLod(vv_reflect") &&

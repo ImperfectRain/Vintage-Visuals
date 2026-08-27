@@ -32,6 +32,18 @@ const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 const float VV_DIELECTRIC_F0 = 0.04;
 const float VV_PI = 3.14159265;
 
+bool vvTerrainIsFlora()
+{
+    if ((renderFlags & WindModeBitMask) == 0) return false;
+
+    int mode = (renderFlags >> WindModePosition) & 0xF;
+
+    // Vanilla uses 6 and 12 for liquid-oriented modes, not plant tissue. Every
+    // other wind mode is alpha-cut vegetation and must not receive opaque
+    // terrain cavity/relief until the dedicated foliage path is restored.
+    return mode != 6 && mode != 12;
+}
+
 struct VvTerrainMaterial
 {
     vec3 baseColor;
@@ -235,6 +247,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                               vec3 blockLight)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
+    if (vvTerrainIsFlora()) return litColor;
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(litColor, baseColor, faceNormal,
                                                   materialUv, cameraRelativePos);
@@ -248,11 +261,10 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     vec3 dielectricF0 = vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor);
     vec3 f0 = mix(dielectricF0, m.baseColor, m.metalness);
-    vec3 fresnel = vvFresnelSchlickTerrain(max(dot(m.normal, viewDir), 0.0), f0);
-    vec3 diffuseEnergy = (vec3(1.0) - fresnel) * (1.0 - m.metalness);
+    vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);
 
     vec3 diffuse = litColor.rgb * diffuseEnergy * relief;
-    diffuse *= mix(1.0, indirectAo, 0.55);
+    diffuse *= mix(1.0, max(indirectAo, 0.82), 0.35);
     diffuse = vvTerrainApplySurfaceLayers(m, diffuse);
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness);
@@ -290,6 +302,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode == 0) return color;
+    if (vvTerrainIsFlora()) return color;
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(color, baseColor, faceNormal,
                                                   materialUv, cameraRelativePos);
