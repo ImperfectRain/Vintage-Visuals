@@ -79,6 +79,7 @@ namespace VintageVisuals.PseudoPBR
         private static volatile int _canopyContextTextureId;
         private static ILogger _logger;
         private static volatile bool _active;
+        private static volatile bool _reportedMissingActiveTextureGuard;
 
         /// <summary>
         /// Guards against the postfix seeing its own BindTexture2D call. Thread
@@ -308,6 +309,19 @@ namespace VintageVisuals.PseudoPBR
 
             int previousActiveTexture;
             bool restoreActiveTexture = TryGetActiveTexture(out previousActiveTexture);
+            if (!restoreActiveTexture)
+            {
+                _active = false;
+                if (!_reportedMissingActiveTextureGuard && _logger != null)
+                {
+                    _reportedMissingActiveTextureGuard = true;
+                    _logger.Warning("[VintageVisuals] pseudopbr: active texture state could not be read, so " +
+                        "per-draw material page rebinding is disabled for this session. Single-page material " +
+                        "PBR can still run from the frame-level bind; multi-page terrain falls back rather than " +
+                        "risking render-state corruption.");
+                }
+                return;
+            }
 
             _reentrant = true;
             try

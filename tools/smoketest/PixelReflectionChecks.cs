@@ -358,6 +358,7 @@ namespace VintageVisuals.SmokeTest
             check("terrain material page binds restore active texture state",
                 interceptor.Contains("PerDrawMaterialBindingEnabled = true") &&
                 Regex.IsMatch(interceptor, @"TryGetActiveTexture\(out previousActiveTexture\)") &&
+                Regex.IsMatch(interceptor, @"if \(!restoreActiveTexture\)[\s\S]*?return;") &&
                 Regex.IsMatch(interceptor, @"if \(restoreActiveTexture\) RestoreActiveTexture\(previousActiveTexture\);"),
                 "extra binds inside vanilla terrainTex binding must not leave a different active texture unit");
 
