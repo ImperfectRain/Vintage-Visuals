@@ -190,6 +190,18 @@ void main()
                 emissionBody != null && emissionBody.Contains("vvEmission(m.baseColor, glowLevel, cameraRelativePos)"),
                 emissionBody ?? "vvTerrainEmission not found");
 
+            // Wood grain stretches only the direct lobe, and a slider at 0 must
+            // leave the isotropic lobe untouched rather than "nearly" so.
+            string grainBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainGrainAnisotropy(");
+            string directBody = GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainDirectSpecular(");
+            check("terrain wood grain is exactly off at a slider of zero",
+                grainBody != null && grainBody.Contains("if (vv_pbrGrain <= 0.001) return 0.0;") &&
+                directBody != null && directBody.Contains("if (vv_pbrGrain > 0.001)"),
+                grainBody ?? "vvTerrainGrainAnisotropy not found");
+            check("terrain wood grain reaches the direct specular lobe",
+                directBody != null && directBody.Contains("vvDistributionGGXAnisotropic("),
+                "");
+
             check("pbrterrainmaterial.yaml parsed into twenty patches",
                 patches.Count == 20,
                 patches.Count.ToString());

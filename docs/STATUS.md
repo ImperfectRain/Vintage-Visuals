@@ -145,7 +145,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | **Metalness from the second atlas** | L2 | real `f0` from metalness rather than the specular-mask stand-in |
 | `[~]` | **Multi-scatter GGX compensation** | L2 | Kulla-Conty with the Karis analytic fit; only ever adds, only to rough surfaces |
 | `[~]` | **Specular occlusion** | L2 | Lagarde's fit, clamped below by the plain occlusion where it inverts at grazing angles |
-| `[~]` | **Anisotropic highlight along measured grain** | L2 | structure tensor on the material normal; collapses exactly to the isotropic lobe at zero |
+| `[~]` | **Anisotropic highlight along measured grain** | L2 | structure tensor on the material normal; collapses exactly to the isotropic lobe at zero. Back on terrain in the modular path (2026-11-22): five extra primary-atlas taps per terrain pixel while the slider is above zero, not measured; debug view 24 |
 | `[~]` | **Emission masks** | L2 | atlas 2 channel A; multiplicative, so it can only ever remove emission from a block vanilla already lights |
 | `[~]` | **Baked AO** | L2 | atlas 2 channel B |
 | `[~]` | Specular lobe energy limit (`VV_GGX_MIN_ALPHA`) | L2 | display limit, not physical - see DECISIONS D14 |

@@ -166,8 +166,57 @@ float vvDirectionalShadeTerrain(vec3 n)
     return max(0.0, 0.5 + 0.5 * dot(n, lightPosition));
 }
 
+// Which way the grain runs, and how sure we are, measured from the texture.
+//
+// Ported from the legacy terrain shader unchanged in method: the atlas normal's
+// xy IS the height gradient, the structure tensor of five taps gives its
+// principal axis without the two sides of a grain line cancelling, and the
+// normalised eigenvalue difference is a measured coherence - 1 on a clean plank
+// line, near 0 on mottled stone. That coherence is what gates the effect, so
+// nothing has to know which block it is looking at.
+//
+// Returns (direction.x, direction.y, coherence) in tangent space. Reads only
+// the primary atlas that is already bound: no new sampler, no new unit.
+vec3 vvTerrainGrainDirection(vec2 materialUv)
+{
+    vec2 texel = 1.0 / max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+
+    vec2 c = vvTerrainPrimaryTexel(materialUv).rg - 0.5;
+    vec2 l = vvTerrainPrimaryTexel(materialUv - vec2(texel.x, 0.0)).rg - 0.5;
+    vec2 r = vvTerrainPrimaryTexel(materialUv + vec2(texel.x, 0.0)).rg - 0.5;
+    vec2 d = vvTerrainPrimaryTexel(materialUv - vec2(0.0, texel.y)).rg - 0.5;
+    vec2 u = vvTerrainPrimaryTexel(materialUv + vec2(0.0, texel.y)).rg - 0.5;
+
+    float jxx = c.x * c.x + l.x * l.x + r.x * r.x + d.x * d.x + u.x * u.x;
+    float jyy = c.y * c.y + l.y * l.y + r.y * r.y + d.y * d.y + u.y * u.y;
+    float jxy = c.x * c.y + l.x * l.y + r.x * r.y + d.x * d.y + u.x * u.y;
+
+    float trace = jxx + jyy;
+    if (trace < 1e-6) return vec3(1.0, 0.0, 0.0);
+
+    float diff = jxx - jyy;
+    float root = sqrt(max(0.0, diff * diff + 4.0 * jxy * jxy));
+    float major = 0.5 * (trace + root);
+    float minor = 0.5 * (trace - root);
+    float coherence = clamp((major - minor) / max(1e-6, trace), 0.0, 1.0);
+
+    vec2 across = vvTerrainSafeNormalize(vec3(jxy, major - jxx, 0.0), vec3(1.0, 0.0, 0.0)).xy;
+    return vec3(-across.y, across.x, coherence);
+}
+
+// How much this texel's highlight is stretched along its grain: measured
+// coherence x the Wood grain slider x the texel's own reflectance, so a matte
+// surface has no highlight to stretch however striated its texture is. Exactly
+// 0 when the slider is 0, which keeps the isotropic lobe bit-for-bit.
+float vvTerrainGrainAnisotropy(VvTerrainMaterial m, vec3 grain)
+{
+    if (vv_pbrGrain <= 0.001) return 0.0;
+    return clamp(grain.z, 0.0, 1.0) * clamp(vv_pbrGrain, 0.0, 1.0)
+         * clamp(m.specularFactor * 2.0, 0.0, 1.0);
+}
+
 vec3 vvTerrainDirectSpecular(VvTerrainMaterial m, vec3 viewDir, float shadowBrightness,
-                             float fogAmount, float murkiness)
+                             float fogAmount, float murkiness, vec2 materialUv)
 {
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
     vec3 h = vvTerrainSafeNormalize(l + viewDir, m.normal);
@@ -180,6 +229,23 @@ vec3 vvTerrainDirectSpecular(VvTerrainMaterial m, vec3 viewDir, float shadowBrig
     vec3 f0 = mix(dielectricF0, m.baseColor, m.metalness);
     vec3 f = vvFresnelSchlickTerrain(vdoth, f0);
     float d = vvDistributionGGXTerrain(ndoth, m.alphaRoughness);
+
+    // Only the DIRECT lobe takes the grain: the ambient and block-light terms
+    // are hemispherical approximations with no lobe shape to stretch.
+    if (vv_pbrGrain > 0.001)
+    {
+        vec3 grain = vvTerrainGrainDirection(materialUv);
+        float anisotropy = vvTerrainGrainAnisotropy(m, grain);
+        if (anisotropy > 0.001)
+        {
+            vec3 tangent = vvTerrainSafeNormalize(vvTerrainFrame(m.faceNormal) * vec3(grain.xy, 0.0),
+                                                  vec3(1.0, 0.0, 0.0));
+            vec3 bitangent = cross(m.normal, tangent);
+            d = vvDistributionGGXAnisotropic(ndoth, dot(tangent, h), dot(bitangent, h),
+                                             m.perceptualRoughness, anisotropy);
+        }
+    }
+
     float g = vvGeometrySmithTerrain(ndotv, ndotl, m.perceptualRoughness);
     vec3 spec = (d * g * f) / max(4.0 * ndotv * ndotl, 0.08);
 
@@ -282,7 +348,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     diffuse *= mix(1.0, max(indirectAo, 0.82), 0.35);
     diffuse = vvTerrainApplySurfaceLayers(m, diffuse);
 
-    vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness);
+    vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
     vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight);
     vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, environmentColor);
 
@@ -324,7 +390,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 2) return vec4(vec3(m.perceptualRoughness), color.a);
     if (mode == 3) return vec4(vec3(m.specularFactor), color.a);
     if (mode == 4) return vec4(vec3(0.5 + 0.5 * (vvDirectionalShadeTerrain(m.normal) - vvDirectionalShadeTerrain(m.faceNormal))), color.a);
-    if (mode == 5) return vec4(vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness), color.a);
+    if (mode == 5) return vec4(vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv), color.a);
     if (mode == 6) return vec4(m.normal * 0.5 + 0.5, color.a);
     if (mode == 7) return vec4(f0, color.a);
     if (mode == 8) return vec4(vec3(m.alphaRoughness), color.a);
@@ -336,6 +402,11 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 21) return vec4(vec3(m.ao), color.a);
     if (mode == 22) return vec4(vec3(m.emissionMask), color.a);
     if (mode == 23) return vec4(f0, color.a);
+    if (mode == 24)
+    {
+        vec3 grain = vvTerrainGrainDirection(materialUv);
+        return vec4(grain.xy * 0.5 + 0.5, grain.z * clamp(m.specularFactor * 2.0, 0.0, 1.0), color.a);
+    }
     if (mode == 33) return vec4(vvTerrainPrimaryGrid(materialUv), color.a);
     if (mode == 52)
     {
