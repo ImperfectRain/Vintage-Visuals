@@ -1950,3 +1950,91 @@ it. Removing the `+=` while leaving the matching `-=` kept the check green -
 which is precisely the defect it exists for. It now requires an actual `+=`.
 
 **Status.** 55 mutations, 55 caught, 0 missed - up from 49 caught with 6 holes.
+
+## D47. The Tuning Studio shows what the config holds and what the build runs
+
+Found reading the studio against the 1.22 API rather than in game, so every
+point below is a code fact; none has been seen on screen yet.
+
+**Stale rows.** The value text, a toggle's ON/OFF and the per-row Reset were
+built from the value at compose time, and slider/toggle callbacks suppressed the
+refresh and never touched them. The thumb moved; the number and Reset did not.
+Every row now keeps the keys of its widgets, and after each edit the dialog
+re-reads the config - after the controller's clamp - and updates thumb, value,
+toggle, dropdown and Reset together. A slider never recomposes, so the composer
+outlives the drag.
+
+**Refresh suppression.** `_ignoreNextConfigRefresh` was set BEFORE the write,
+and the controller sends no notification for a no-op or clamped-away change, so
+the flag stayed armed and swallowed the next real ConfigLib or disk reload.
+`ConfigManager.ConfigChanged` is raised synchronously, so the dialog now counts
+its own controller calls (`_localEditDepth`, closed in a `finally`) and ignores
+notifications only while one is running. An external change with the same rows
+updates them in place; one that changes which rows exist recomposes.
+
+**Scrolling, three faults.**
+1. `GuiComposer.OnMouseWheel` offers the wheel to every interactive element
+   regardless of the pointer, so the scrollbar scrolled from anywhere and then
+   the dialog scrolled again, and a slider under the pointer - even clipped out
+   of view - took the wheel as a value change. The dialog no longer calls the
+   native path: an open dropdown owns the wheel; inside the viewport or over
+   its scrollbar the wheel scrolls; elsewhere in the dialog it is consumed.
+2. `GuiElementScrollbar.SetScrollbarPosition` takes HANDLE PIXELS and then
+   reports a scroll of 0 to the callback; it was being given content units.
+   Combined with `SetHeights` echoing the old handle position, the list snapped
+   back and per-tab positions were lost on recompose. The handle is now set
+   through `CurrentYPosition` (content units) with the echo ignored.
+3. Static elements are painted once into the composer's static texture, and
+   the clip is a scissor applied only at interactive render time. Labels,
+   descriptions and section headings inside the scroll child therefore neither
+   moved with it nor clipped. They are dynamic text now; `tools/smoketest`
+   fails if a static element appears in row code.
+
+**Availability.** The registry exposes every config property, but with the
+legacy terrain gate off nothing reads foliage translucency, sun dapple, sun
+shafts, canopy scale, wood grain, emissive glow, scene reflections or
+reflection strength, and the two atmosphere FOUNDATION ONLY sliders do nothing
+by declaration. `SettingAvailabilityRules` separates **unavailable in this
+build** (hidden; disabled with the reason under Advanced), **parent off** (no
+control; "Turn on X") and **active only in some scenes** (a working control
+with a note on where to look). The build facts come from the runtime gates. The
+smoke check derives the rest independently: it maps each PseudoPBR property to
+its uniform through the binder, traces which snippet functions the active patch
+files actually reach, and fails if a setting nothing reachable reads is shown as
+working, or a read one is hidden. Emissive strength, warmth and flicker survive
+that trace through the entity and particle programs and stay as conditional
+controls; emissive glow does not, because only the legacy terrain patch calls
+`vvEmissiveGlow`.
+
+**First in-game run (same day): a crash and a half-fix.** The wheel crashed the
+game with a NullReferenceException in `ElementBounds.PointInside`: the
+scrollbar's bounds were remembered even when the list fit and no scrollbar was
+added, so they had no parent. They are now kept only once the scrollbar exists,
+and the hit test refuses an unattached bounds. The screenshot also showed that
+point 3 above was only half the story: slider tracks, switch backgrounds and
+dropdown boxes are the static parts of interactive elements, and they too were
+baked into the composer texture at their compose-time positions - tracks floated
+over the title bar and a dropdown box was drawn outside the dialog. Rows now go
+into a native `GuiElementContainer`, which paints its children's static parts
+into its own texture and draws it at its current bounds inside the clip, the way
+vanilla scroll lists do. Row widgets are held by reference, since the container's
+children are not in the composer's keyed table.
+
+**Audit follow-up (same day).** The disabled-systems audit found three more
+controls presented as live: rain ripples and the shelter threshold (on terrain
+only `pseudopbr.glsl` reads `vv_weatherRipples` and `vv_weatherRainCover`), and
+both godray sliders (`vvAtmosGodrayLevel` is called only from atmosphere debug
+view 9). All four are now unavailable. The reachability trace no longer walks
+through functions named `*Debug*`, since a value read only on the way to a
+diagnostic is still dead in play, and it now traces those four settings through
+a stated code-to-uniform table. Separately, `ReflectionsSubsystem` no longer
+starts the scene capture while the legacy terrain gate is off: nothing else
+samples it, so it was the most expensive setting in the mod producing no pixel.
+
+**Not done here.** The panel is still the centred 860 x 610 layout; rows got a
+wider slider, a fixed Reset slot and a real Advanced switch, but the side-anchored
+narrow panel is a separate change. Hover help stays off (the existing check and
+its reason stand). Weather and atmosphere rows are not traced to their shaders,
+only gated on their parents. (The scene capture
+running unsampled was fixed afterwards; see the audit follow-up above.)
+

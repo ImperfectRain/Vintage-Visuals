@@ -57,9 +57,14 @@ namespace VintageVisuals.Reflections
         {
             if (_capi == null) return;
 
+            // Only pseudopbr.glsl samples the capture. While the legacy terrain
+            // gate keeps that shader out, a capture would copy the frame every
+            // frame for nothing - the most expensive setting in the mod,
+            // producing no pixel.
             bool wanted = _mod.ConfigManager.Config.Reflections.SceneReflections
                        && _mod.ConfigManager.Config.PseudoPBR.Enabled
-                       && _mod.ConfigManager.Config.PseudoPBR.PixelReflection > 0.001f;
+                       && _mod.ConfigManager.Config.PseudoPBR.PixelReflection > 0.001f
+                       && VintageVisuals.PseudoPBR.PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
 
             if (wanted) Start(); else Stop();
         }

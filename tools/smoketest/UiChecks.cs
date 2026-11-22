@@ -143,7 +143,180 @@ namespace VintageVisuals.SmokeTest
             ControllerBoundary(repo, check);
             DebugViews(repo, check);
             NativeDialog(repo, check);
+            Availability(repo, check);
             AgainstConfigLib(repo, check);
+        }
+
+        /// <summary>
+        /// The studio may present a setting as a working control only if a
+        /// shader that is actually compiled in this build reads it.
+        ///
+        /// Derived, not listed: the binder's own SetIfPresent calls map each
+        /// PseudoPBR property to its uniform, and a uniform counts as read when
+        /// an active patch, or a function an active patch reaches, uses it. A
+        /// uniform used only by a function nothing calls is not read - pbrcore
+        /// defines vvEmissiveGlow for the legacy terrain path, and its bloom
+        /// uniform is dead in this build even though the file is injected.
+        /// pseudopbr.glsl and its two patch files are active only while the
+        /// legacy terrain gate is on.
+        /// Checking both directions is what makes this a reachability check:
+        /// a dead slider shown as live fails, and so does a live one hidden.
+        /// </summary>
+        static void Availability(string repo, Action<string, bool, string> check)
+        {
+            var unknown = SettingAvailabilityRules.NamedCodes()
+                .Where(c => VisualSettingRegistry.ByCode(c) == null).Distinct().ToList();
+            check("every code the availability rules name is a real setting",
+                  unknown.Count == 0, string.Join(", ", unknown));
+
+            var badParents = SettingAvailabilityRules.ParentPaths()
+                .Where(p => !ConfigAccess.Exists(p)).Distinct().ToList();
+            check("every parent switch the availability rules name is a real config property",
+                  badParents.Count == 0, string.Join(", ", badParents));
+
+            string binder = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+            var uniformByConst = Regex.Matches(binder, @"const string (\w+) = ""(vv_\w+)""")
+                .Cast<Match>()
+                .GroupBy(m => m.Groups[1].Value)
+                .ToDictionary(g => g.Key, g => g.First().Groups[2].Value, StringComparer.Ordinal);
+            var uniformByProperty = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (Match m in Regex.Matches(binder, @"SetIfPresent\(program, (\w+), _look\.(\w+)\)"))
+            {
+                string uniform;
+                if (uniformByConst.TryGetValue(m.Groups[1].Value, out uniform))
+                {
+                    uniformByProperty[m.Groups[2].Value] = uniform;
+                }
+            }
+
+            bool legacyOn = VintageVisuals.PseudoPBR.PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
+            bool IsActive(string file)
+            {
+                string name = Path.GetFileName(file);
+                return legacyOn || (name != "pseudopbr.glsl" && name != "pseudopbr.yaml" && name != "pseudopbrtopsoil.yaml");
+            }
+
+            var snippetTexts = Directory.GetFiles(Path.Combine(repo, "assets/vintagevisuals/shadersnippets"), "*.glsl")
+                .Where(IsActive).Select(File.ReadAllText).ToList();
+            var rootTexts = Directory.GetFiles(Path.Combine(repo, "assets/vintagevisuals/shaderpatches"), "*.yaml")
+                .Where(IsActive).Select(File.ReadAllText).ToList();
+
+            // Function bodies of the active snippets, by name. A definition is a
+            // line at column 0 that opens a parameter list and is not a
+            // prototype; the body runs to the next one. Coarse, and enough: the
+            // snippets are written one function per block at column 0.
+            var definition = new Regex(@"^[A-Za-z_]\w*\s+([A-Za-z_]\w*)\s*\([^;]*$", RegexOptions.Multiline);
+            var bodies = new Dictionary<string, string>(StringComparer.Ordinal);
+            var globals = new List<string>();
+            foreach (string text in snippetTexts)
+            {
+                var defs = definition.Matches(text).Cast<Match>().ToList();
+                globals.Add(defs.Count == 0 ? text : text.Substring(0, defs[0].Index));
+                for (int i = 0; i < defs.Count; i++)
+                {
+                    int end = i + 1 < defs.Count ? defs[i + 1].Index : text.Length;
+                    string fn = defs[i].Groups[1].Value;
+                    string body = text.Substring(defs[i].Index, end - defs[i].Index);
+                    bodies[fn] = bodies.TryGetValue(fn, out string prior) ? prior + body : body;
+                }
+            }
+
+            // Reachable = called from an active patch, or from a reachable function.
+            var reachable = new HashSet<string>(StringComparer.Ordinal);
+            var pending = new Queue<string>(rootTexts);
+            while (pending.Count > 0)
+            {
+                string code = pending.Dequeue();
+                foreach (string fn in bodies.Keys)
+                {
+                    if (reachable.Contains(fn)) continue;
+
+                    // A debug view is not the feature working. A uniform read
+                    // only on the way to a diagnostic is still dead in play.
+                    if (fn.IndexOf("Debug", StringComparison.Ordinal) >= 0) continue;
+                    if (!Regex.IsMatch(code, @"\b" + Regex.Escape(fn) + @"\s*\(")) continue;
+                    reachable.Add(fn);
+                    pending.Enqueue(bodies[fn]);
+                }
+            }
+
+            // Declarations and comments are not reads. A body runs to the next
+            // definition, so it can carry the uniform block that sits between
+            // two functions; without this, every uniform declared below a
+            // reachable function would count as read by it.
+            var noise = new Regex(@"^\s*uniform\s[^\n]*$|//[^\n]*", RegexOptions.Multiline);
+            var live = rootTexts.Concat(reachable.Select(fn => bodies[fn]))
+                .Select(text => noise.Replace(text, ""))
+                .ToList();
+
+            bool Read(string uniform)
+            {
+                var use = new Regex(@"\b" + Regex.Escape(uniform) + @"\b");
+                return live.Any(text => use.IsMatch(text));
+            }
+
+            check("the reachability trace found the terrain material entry points",
+                  reachable.Count >= 10 && bodies.Count > reachable.Count,
+                  reachable.Count + " of " + bodies.Count + " functions reachable");
+
+            var config = new VintageVisualsConfig();
+            var deadButShown = new List<string>();
+            var liveButHidden = new List<string>();
+            int mapped = 0;
+
+            foreach (VisualSetting s in VisualSettingRegistry.All.Where(x => x.Path.StartsWith("PseudoPBR.", StringComparison.Ordinal)))
+            {
+                string uniform;
+                if (!uniformByProperty.TryGetValue(s.Path.Substring("PseudoPBR.".Length), out uniform)) continue;
+                mapped++;
+
+                bool read = Read(uniform);
+                AvailabilityState state = SettingAvailabilityRules.Evaluate(s, config).State;
+
+                if (!read && state != AvailabilityState.Unavailable) deadButShown.Add(s.Code + " (" + uniform + ")");
+                if (read && state == AvailabilityState.Unavailable) liveButHidden.Add(s.Code + " (" + uniform + ")");
+            }
+
+            // Settings whose uniform is not a plain PseudoPBR property: their
+            // binders derive the upload, so the property-to-uniform link is
+            // stated here and only the reachability is computed.
+            var derived = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "weather_ripples", "vv_weatherRipples" },
+                { "weather_raincover", "vv_weatherRainCover" },
+                { "atmosphere_godrays", "vv_atmosGodray" },
+                { "atmosphere_godrayquality", "vv_atmosGodray" },
+            };
+            foreach (var pair in derived)
+            {
+                VisualSetting s = VisualSettingRegistry.ByCode(pair.Key);
+                if (s == null) { deadButShown.Add(pair.Key + " (not a setting)"); continue; }
+                mapped++;
+
+                bool read = Read(pair.Value);
+                AvailabilityState state = SettingAvailabilityRules.Evaluate(s, config).State;
+                if (!read && state != AvailabilityState.Unavailable) deadButShown.Add(s.Code + " (" + pair.Value + ")");
+                if (read && state == AvailabilityState.Unavailable) liveButHidden.Add(s.Code + " (" + pair.Value + ")");
+            }
+
+            check("the availability check found PseudoPBR settings to trace", mapped >= 15, mapped + " traced");
+            check("no setting is shown as a working control when no active shader reads it",
+                  deadButShown.Count == 0, string.Join(", ", deadButShown));
+            check("no setting is hidden as unavailable while an active shader reads it",
+                  liveButHidden.Count == 0, string.Join(", ", liveButHidden));
+
+            string reflections = File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"));
+            check("the scene capture stays off while no compiled shader samples it",
+                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainShaderPatchesEnabled\s*;"),
+                  "only pseudopbr.glsl samples the capture; with its gate off the capture copies every frame for nothing");
+
+            // Turning a parent off must say so rather than leave a live-looking row.
+            var off = new VintageVisualsConfig();
+            off.PseudoPBR.Enabled = false;
+            var relief = VisualSettingRegistry.ByCode("pbr_normalstrength");
+            check("a setting under a switched-off parent reports the parent",
+                  relief != null && SettingAvailabilityRules.Evaluate(relief, off).State == AvailabilityState.ParentOff,
+                  "Surface relief with Surface materials off");
         }
 
         static void ControllerBoundary(string repo, Action<string, bool, string> check)
@@ -339,7 +512,7 @@ namespace VintageVisuals.SmokeTest
 
             check("page title and setting labels share the content axis",
                   dialog.Contains("AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft") &&
-                  dialog.Contains("ElementBounds.Fixed(RowLeft + 18"),
+                  dialog.Contains("LabelX = RowLeft + 18"),
                   "clipped rows should use local coordinates under the content axis");
 
             check("clipped settings rows do not double-apply the content offset",
@@ -347,7 +520,7 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("clipBounds = ElementBounds.Fixed(0, 0, ContentWidth, bodyHeight)") &&
                   dialog.Contains("BeginChildElements(bodyBounds)") &&
                   dialog.Contains("BeginClip(clipBounds)") &&
-                  dialog.Contains("BeginChildElements(_scrollContentBounds)") &&
+                  dialog.Contains("AddContainer(_scrollContentBounds, RowsContainerKey)") &&
                   dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
                   dialog.Contains("_scrollContentBounds.fixedY = -_currentScroll") &&
                   dialog.Contains("double y = 0") &&
@@ -357,9 +530,9 @@ namespace VintageVisuals.SmokeTest
                   "BeginClip children are positioned inside the clip, not in dialog coordinates");
 
             check("toggle rows avoid duplicate state text",
-                  dialog.Contains("if (setting.Kind != SettingKind.Toggle)") &&
-                  dialog.Contains("AddToggle(setting, y)"),
-                  "toggle rows should not also print an On/Off value column");
+                  dialog.Contains("else if (setting.Kind == SettingKind.Toggle) AddToggle(setting, widgets, y)") &&
+                  Regex.Matches(dialog, @"\? ""ON"" : ""OFF""").Count == 1,
+                  "a toggle's state lives in the value column and nowhere else");
 
             check("settings scrolling moves native child bounds without recomposition",
                   dialog.Contains("BeginClip(") &&
@@ -385,15 +558,28 @@ namespace VintageVisuals.SmokeTest
 
             check("modified settings have a compact reset affordance",
                   dialog.Contains("\"Reset\"") &&
-                  dialog.Contains("if (modified)") &&
+                  dialog.Contains("ElementBounds.Fixed(ResetX") &&
+                  dialog.Contains("widgets.Reset.Visible = modified") &&
                   !dialog.Contains("string marker = modified"),
-                  "per-row reset should be explicit and only shown when useful");
+                  "per-row reset sits in a fixed slot and is shown only while the row is modified");
 
             check("overview rows have readable summaries and explicit navigation",
                   dialog.Contains("Open exposure, tonemap") &&
                   dialog.Contains("Open relief, roughness") &&
                   dialog.Contains(".AddButton(\"Open  >\""),
                   "overview cards should not depend on cramped multiline button text");
+
+            var overviewCodes = Regex.Matches(dialog, @"(?:ValueByCode|StateByCode)\(""([a-z_0-9]+)""\)")
+                .Cast<Match>().Select(m => m.Groups[1].Value).Distinct().ToList();
+            var missingOverview = overviewCodes.Where(c => VisualSettingRegistry.ByCode(c) == null).ToList();
+            check("every overview summary reads a real setting",
+                  overviewCodes.Count >= 6 && missingOverview.Count == 0,
+                  "missing: " + string.Join(", ", missingOverview) + " - an unknown code prints n/a on the card");
+
+            check("overview card text is cut to one line",
+                  dialog.Contains("ShortText(summary, OverviewChars)") &&
+                  dialog.Contains("ShortText(description, OverviewChars)"),
+                  "static text wraps past its bounds into the next card instead of clipping");
 
             check("overview rows navigate through explicit Open buttons",
                   dialog.Contains("AddOverviewRow") &&
@@ -452,8 +638,54 @@ namespace VintageVisuals.SmokeTest
                   !dialog.Contains("if (_controller.Set(setting, target)) ComposeDialog()") &&
                   !dialog.Contains("if (_controller.Set(setting, value ? 1f : 0f)) ComposeDialog()") &&
                   !dialog.Contains("if (_controller.SetString(setting, code)) ComposeDialog()") &&
-                  dialog.Contains("_ignoreNextConfigRefresh"),
-                  "slider/toggle/dropdown edits must not trigger full rebuilds");
+                  Regex.IsMatch(dialog, @"LocalEdit\(\(\) => _controller\.Set\(setting, target\)\);(?:\s|//[^\n]*)*AfterLocalEdit\(false\)"),
+                  "a slider edit updates its row in place and never recomposes mid-drag");
+
+            check("an edit updates its row from the effective config value",
+                  dialog.Contains("private void UpdateRow(RowWidgets widgets)") &&
+                  dialog.Contains("widgets.Value.SetNewText(RowValueText(setting))") &&
+                  dialog.Contains("widgets.Slider.GetValue() != index") &&
+                  dialog.Contains("widgets.Switch.On = _controller.Value(setting) >= 0.5f"),
+                  "value text, thumb, toggle and Reset must be re-read from the config after the controller clamps");
+
+            check("refresh suppression is scoped to the edit, not armed for the next notification",
+                  !dialog.Contains("_ignoreNextConfigRefresh") &&
+                  Regex.IsMatch(dialog, @"_localEditDepth\+\+;\s*try\s*\{\s*edit\(\);\s*\}\s*finally\s*\{\s*_localEditDepth--;") &&
+                  dialog.Contains("if (_localEditDepth > 0)"),
+                  "a no-op or rejected edit sends no notification, so a one-shot flag stays armed and swallows the next ConfigLib or disk reload");
+
+            int rowsStart = dialog.IndexOf("private void AddSection(", StringComparison.Ordinal);
+            int rowsEnd = dialog.IndexOf("private string Tooltip(", StringComparison.Ordinal);
+            string rowCode = rowsStart >= 0 && rowsEnd > rowsStart ? dialog.Substring(rowsStart, rowsEnd - rowsStart) : "";
+            int controlsStart = dialog.IndexOf("private void AddToggle(", StringComparison.Ordinal);
+            int controlsEnd = dialog.IndexOf("private int DropdownIndex(", StringComparison.Ordinal);
+            string controlCode = controlsStart >= 0 && controlsEnd > controlsStart ? dialog.Substring(controlsStart, controlsEnd - controlsStart) : "";
+            check("scrolled rows are drawn as interactive elements that move with the scroll child",
+                  rowCode.Length > 0 && controlCode.Length > 0 &&
+                  dialog.Contains("_rowsContainer.Add(element)") &&
+                  !rowCode.Contains("SingleComposer.") && !controlCode.Contains("SingleComposer."),
+                  "the composer bakes each element's static part (text, slider track, dropdown box) into one texture at compose time, which neither scrolls nor clips; rows go into the scroll container, which owns its own");
+
+            check("the scrollbar handle is positioned in content units",
+                  !dialog.Contains("SetScrollbarPosition(") &&
+                  dialog.Contains("scrollbar.CurrentYPosition = (float)_currentScroll") &&
+                  dialog.Contains("if (_syncingScrollbar) return;"),
+                  "SetScrollbarPosition takes handle pixels and reports a scroll of 0, which sent the list to the top");
+
+            check("the wheel handler hit-tests a bounds only once it is attached",
+                  dialog.Contains("bounds.ParentBounds != null && bounds.PointInside(mouseX, mouseY)") &&
+                  Regex.IsMatch(dialog, @"AddVerticalScrollbar\(OnScrollbarChanged, scrollbarBounds, ScrollbarKey\);\s*_scrollbarBounds = scrollbarBounds;"),
+                  "PointInside walks ParentBounds; the scrollbar's bounds has none when the list fits and no scrollbar was added, and the wheel crashed the game (NullReferenceException in ElementBounds.PointInside)");
+
+            int wheelStart = dialog.IndexOf("public override void OnMouseWheel(", StringComparison.Ordinal);
+            int wheelEnd = wheelStart < 0 ? -1 : dialog.IndexOf("private bool PointerInScrollRegion(", wheelStart, StringComparison.Ordinal);
+            string wheel = wheelStart >= 0 && wheelEnd > wheelStart ? dialog.Substring(wheelStart, wheelEnd - wheelStart) : "";
+            check("the settings viewport has one wheel handler",
+                  wheel.Length > 0 &&
+                  !wheel.Contains("base.OnMouseWheel(") &&
+                  wheel.Contains("OpenDropDown()") &&
+                  wheel.Contains("PointerInScrollRegion("),
+                  "the native composer offers the wheel to every element regardless of the pointer, so calling it first double-scrolls and lets clipped sliders take the wheel");
 
             check("native UI mutation calls ConfigManager.NotifyChanged",
                   mod.Contains("new VisualTuningStudioController") &&
