@@ -40,13 +40,21 @@ vec4 vvTerrainReflectDebug(vec4 color)
     {
         if (vv_reflectValid < 0.5) return vec4(0.0, 0.0, 0.35, color.a);
 
+        // The colour alone. Alpha holds linear depth in blocks, and the
+        // legacy view mixed it in as blue: past a few blocks that saturated
+        // and hid the image this view exists to show (seen in game,
+        // 2026-11-22). The capture freezes while any debug view is active,
+        // so walking makes this image slide off the geometry - which is the
+        // proof it is the capture and not the live frame.
         vec2 screen = gl_FragCoord.xy / max(vec2(1.0), vv_reflectFrameSize);
         vec4 cap = texture(vv_reflectScene, clamp(screen, 0.0, 1.0));
-        return vec4(mix(cap.rgb, vec3(0.0, 0.0, cap.a), 0.35), color.a);
+        return vec4(cap.rgb, color.a);
     }
 
-    // 42: how far the player has moved since the capture, per axis. Black
-    // while standing still; should flicker with movement and never freeze.
+    // 42: how far the player has moved since the capture, per axis, a
+    // quarter block to full brightness. The capture freezes while a debug
+    // view is active, so this measures movement since leaving normal
+    // rendering: black if you have not moved since, brightening as you walk.
     if (mode == 42)
     {
         return vec4(abs(vv_reflectCameraDelta) * 4.0, color.a);

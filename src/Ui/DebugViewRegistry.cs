@@ -191,8 +191,8 @@ namespace VintageVisuals.Ui
             Pbr(38, "Captured-frame coordinate", "Where on the captured frame each texel is reading.", Bridge);
             Pbr(39, "Validity traffic light", "Green means this pixel really is reflecting the world. Read this one first.", Bridge);
             Pbr(40, "Raw scene sample", "The captured colour before any material response.", Bridge);
-            Pbr(41, "The capture itself", "Last frame, shrunk. Should look like the world, not like a texture atlas.", Bridge);
-            Pbr(42, "Camera movement", "How far the camera has moved since the capture.", Bridge);
+            Pbr(41, "The capture itself", "The last normal frame, frozen while debug views are on. Should look like the world and slide off it as you walk.", Bridge);
+            Pbr(42, "Camera movement", "How far you have moved since leaving normal rendering. Black until you walk.", Bridge);
             Pbr(43, "Capture coordinate", "Red is U, green is V. The view that exposes a wrong reprojection.", Bridge);
 
             const string Flora = "Flora taxonomy";
