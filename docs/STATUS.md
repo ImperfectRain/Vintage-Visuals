@@ -68,6 +68,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[-]` | **Total shader-delivery loss at runtime** | — | regression at `bd988bd` closed at `8b318ea` ([D41](DECISIONS.md)); the active guard is the shader census and delivery table above |
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
+| `[~]` | **Texture slot report** (`RuntimeShaderIntrospector`) | L2 | logs every active sampler of chunkopaque and chunktopsoil with its unit, after link and again 8 s later once binders have uploaded, and warns on a unit shared by two sampler types. The first version matched a StringBuilder overload OpenTK does not have and printed no samplers; smoke now resolves every query against the game's own OpenTK.Graphics.dll. Not yet read from a real log |
 | `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |
 | `[ ]` | GPU/VRAM detection suggesting a tier | — | suggest, never force |
 | `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; a HUD does not |
