@@ -2006,6 +2006,20 @@ that trace through the entity and particle programs and stay as conditional
 controls; emissive glow does not, because only the legacy terrain patch calls
 `vvEmissiveGlow`.
 
+**First in-game run (same day): a crash and a half-fix.** The wheel crashed the
+game with a NullReferenceException in `ElementBounds.PointInside`: the
+scrollbar's bounds were remembered even when the list fit and no scrollbar was
+added, so they had no parent. They are now kept only once the scrollbar exists,
+and the hit test refuses an unattached bounds. The screenshot also showed that
+point 3 above was only half the story: slider tracks, switch backgrounds and
+dropdown boxes are the static parts of interactive elements, and they too were
+baked into the composer texture at their compose-time positions - tracks floated
+over the title bar and a dropdown box was drawn outside the dialog. Rows now go
+into a native `GuiElementContainer`, which paints its children's static parts
+into its own texture and draws it at its current bounds inside the clip, the way
+vanilla scroll lists do. Row widgets are held by reference, since the container's
+children are not in the composer's keyed table.
+
 **Not done here.** The panel is still the centred 860 x 610 layout; rows got a
 wider slider, a fixed Reset slot and a real Advanced switch, but the side-anchored
 narrow panel is a separate change. Hover help stays off (the existing check and

@@ -59,6 +59,7 @@ namespace VintageVisuals.Ui
         private const double WheelStep = 48;
         private const string ScrollbarKey = "settings-scrollbar";
         private const string AdvancedSwitchKey = "advanced-switch";
+        private const string RowsContainerKey = "settings-rows";
 
         private readonly VisualTuningStudioController _controller;
         private readonly Dictionary<SettingTab, double> _scrollByTab = new Dictionary<SettingTab, double>();
@@ -96,6 +97,16 @@ namespace VintageVisuals.Ui
         private ElementBounds _scrollContentBounds;
         private ElementBounds _viewportBounds;
         private ElementBounds _scrollbarBounds;
+
+        /// <summary>
+        /// The native scroll container every row element lives in. Not on the
+        /// composer: the container paints its children's static parts (slider
+        /// tracks, switch backgrounds, dropdown boxes, button faces) into its OWN
+        /// texture and draws it at its bounds inside the clip, so they move and
+        /// clip with the rows. Elements added to the composer directly are
+        /// painted into the composer's static texture once and stay there.
+        /// </summary>
+        private GuiElementContainer _rowsContainer;
         private int _eventSequence;
         private int _composerGeneration;
 
@@ -215,8 +226,16 @@ namespace VintageVisuals.Ui
 
         private bool PointerInScrollRegion(int mouseX, int mouseY)
         {
-            return (_viewportBounds != null && _viewportBounds.PointInside(mouseX, mouseY)) ||
-                   (_scrollbarBounds != null && _scrollbarBounds.PointInside(mouseX, mouseY));
+            // A bounds is only usable once it is attached to the composed tree:
+            // PointInside walks ParentBounds, and a bounds for a scrollbar that
+            // was never added (the list fits) has none.
+            return IsAttachedAndInside(_viewportBounds, mouseX, mouseY) ||
+                   IsAttachedAndInside(_scrollbarBounds, mouseX, mouseY);
+        }
+
+        private static bool IsAttachedAndInside(ElementBounds bounds, int mouseX, int mouseY)
+        {
+            return bounds != null && bounds.ParentBounds != null && bounds.PointInside(mouseX, mouseY);
         }
 
         private GuiElementDropDown OpenDropDown()
@@ -224,6 +243,11 @@ namespace VintageVisuals.Ui
             foreach (string key in _dropdownKeys)
             {
                 GuiElementDropDown dropdown = SingleComposer.GetDropDown(key);
+                if (dropdown != null && dropdown.listMenu != null && dropdown.listMenu.IsOpened) return dropdown;
+            }
+            foreach (RowWidgets widgets in _rows.Values)
+            {
+                GuiElementDropDown dropdown = widgets.Dropdown;
                 if (dropdown != null && dropdown.listMenu != null && dropdown.listMenu.IsOpened) return dropdown;
             }
             return null;
@@ -253,6 +277,7 @@ namespace VintageVisuals.Ui
             _scrollContentBounds = null;
             _viewportBounds = null;
             _scrollbarBounds = null;
+            _rowsContainer = null;
             _rows.Clear();
             _dropdownKeys.Clear();
             _composedLayout = LayoutSignature();
@@ -515,13 +540,13 @@ namespace VintageVisuals.Ui
             SaveScroll();
             _currentBodyY = bodyY;
             _viewportBounds = bodyBounds;
-            _scrollbarBounds = scrollbarBounds;
             _scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll, ContentWidth,
                 Math.Max(bodyHeight, _currentContentHeight));
 
             SingleComposer.BeginChildElements(bodyBounds);
             SingleComposer.BeginClip(clipBounds);
-            SingleComposer.BeginChildElements(_scrollContentBounds);
+            SingleComposer.AddContainer(_scrollContentBounds, RowsContainerKey);
+            _rowsContainer = SingleComposer.GetContainer(RowsContainerKey);
 
             double y = 0;
             foreach (RowItem row in rows)
@@ -538,30 +563,36 @@ namespace VintageVisuals.Ui
                 }
             }
 
-            SingleComposer.EndChildElements();
             SingleComposer.EndClip();
             SingleComposer.EndChildElements();
 
             if (_currentContentHeight > bodyHeight)
             {
                 SingleComposer.AddVerticalScrollbar(OnScrollbarChanged, scrollbarBounds, ScrollbarKey);
+                _scrollbarBounds = scrollbarBounds;
             }
         }
 
-        // EVERYTHING INSIDE THE SCROLL CHILD IS AN INTERACTIVE ELEMENT.
+        // EVERY ROW ELEMENT GOES INTO THE SCROLL CONTAINER, never onto the composer.
         //
-        // A static element (AddStaticText, AddInset) is painted once into the
-        // composer's static texture at compose time. Moving the scroll child's
-        // bounds afterwards moves the interactive elements and leaves every
-        // static one where it was painted - and the clip is a scissor applied at
-        // interactive render time, so static rows below the viewport were
-        // painted over the footer. Dynamic text renders from its bounds every
-        // frame, inside the scissor, so it scrolls and clips with its row.
+        // The composer paints the static part of each element it owns (text,
+        // slider track, switch background, dropdown box) into one texture at
+        // compose time, at the position the element had then, and does not
+        // scissor it. Moving the scroll child afterwards moved only the
+        // interactive parts: slider tracks and dropdown boxes stayed behind,
+        // over the title bar, the footer and outside the dialog. The container
+        // owns its own texture and draws it at its current bounds, inside the
+        // clip, so the whole row moves and clips together.
+
+        private void AddRowElement(GuiElement element)
+        {
+            _rowsContainer.Add(element);
+        }
 
         private void AddSection(string label, double y)
         {
-            SingleComposer.AddDynamicText(label, SectionFont(), ElementBounds.Fixed(RowLeft, y + 4, ContentWidth - 20, 20),
-                "section-" + y.ToString("0", CultureInfo.InvariantCulture));
+            AddRowElement(new GuiElementDynamicText(capi, label, SectionFont(),
+                ElementBounds.Fixed(RowLeft, y + 4, ContentWidth - 20, 20)));
         }
 
         private void AddSettingRow(VisualSetting setting, double y)
@@ -580,36 +611,43 @@ namespace VintageVisuals.Ui
                 ? ShortText(availability.Reason, InfoChars)
                 : ShortDescription(setting);
 
-            SingleComposer
-                .AddDynamicText(setting.DisplayName, nameFont, ElementBounds.Fixed(LabelX, y + LineOneY, LabelWidth, 22),
-                    "name-" + setting.Code)
-                .AddDynamicText(info, infoFont, ElementBounds.Fixed(InfoX, y + LineOneY + 3, InfoTextWidth, 18),
-                    "info-" + setting.Code);
+            AddRowElement(new GuiElementDynamicText(capi, setting.DisplayName, nameFont,
+                ElementBounds.Fixed(LabelX, y + LineOneY, LabelWidth, 22)));
+            AddRowElement(new GuiElementDynamicText(capi, info, infoFont,
+                ElementBounds.Fixed(InfoX, y + LineOneY + 3, InfoTextWidth, 18)));
 
             // Reset always exists and always sits in the same slot; it is shown
             // only while the row differs from its default. Unavailable rows get
             // none, since resetting a value nothing reads is not an action.
             if (availability.State != AvailabilityState.Unavailable)
             {
-                SingleComposer.AddButton("Reset", () => ResetSetting(setting), ElementBounds.Fixed(ResetX, y + LineTwoY, ResetWidth, 24),
-                    CairoFont.WhiteSmallText(), EnumButtonStyle.Small, widgets.ResetKey);
-                widgets.HasReset = true;
+                CairoFont resetFont = CairoFont.WhiteSmallText();
+                var reset = new GuiElementTextButton(capi, "Reset", resetFont,
+                    resetFont.Clone().WithColor(GuiStyle.ActiveButtonTextColor),
+                    () => ResetSetting(setting), ElementBounds.Fixed(ResetX, y + LineTwoY, ResetWidth, 24), EnumButtonStyle.Small);
+                reset.SetOrientation(resetFont.Orientation);
+                AddRowElement(reset);
+                widgets.Reset = reset;
             }
 
             if (!working)
             {
                 // No control at all: a disabled-looking slider that still moves
                 // is exactly the thing this row is trying not to be.
-                SingleComposer
-                    .AddDynamicText(availability.Reason, DisabledFont(CairoFont.WhiteDetailText()),
-                        ElementBounds.Fixed(ControlX, y + LineTwoY + 4, ControlWidth, 18), "reason-" + setting.Code)
-                    .AddDynamicText(RowValueText(setting), DisabledFont(CairoFont.WhiteSmallText()),
-                        ElementBounds.Fixed(ValueX, y + LineTwoY + 2, ValueWidth, 22), widgets.ValueKey);
-                widgets.HasValue = true;
+                AddRowElement(new GuiElementDynamicText(capi, availability.Reason, DisabledFont(CairoFont.WhiteDetailText()),
+                    ElementBounds.Fixed(ControlX, y + LineTwoY + 4, ControlWidth, 18)));
+                AddValueText(widgets, DisabledFont(CairoFont.WhiteSmallText()), y);
             }
             else if (setting.Kind == SettingKind.Toggle) AddToggle(setting, widgets, y);
             else if (setting.Kind == SettingKind.Dropdown) AddDropdown(setting, widgets, y);
             else AddSlider(setting, widgets, y);
+        }
+
+        private void AddValueText(RowWidgets widgets, CairoFont font, double y)
+        {
+            widgets.Value = new GuiElementDynamicText(capi, RowValueText(widgets.Setting), font,
+                ElementBounds.Fixed(ValueX, y + LineTwoY + 2, ValueWidth, 22));
+            AddRowElement(widgets.Value);
         }
 
         private static CairoFont DisabledFont(CairoFont font)
@@ -660,23 +698,20 @@ namespace VintageVisuals.Ui
             bool on = _controller.Value(setting) >= 0.5f;
             int generation = _composerGeneration;
 
-            SingleComposer.AddSwitch(value =>
+            widgets.Switch = new GuiElementSwitch(capi, value =>
             {
                 if (!IsCurrentGeneration(generation, "ToggleChanged " + setting.Code)) return;
                 Log("ENTER ToggleChanged " + setting.Code);
                 LocalEdit(() => _controller.Set(setting, value ? 1f : 0f));
                 AfterLocalEdit(true);
                 Log("EXIT ToggleChanged " + setting.Code);
-            }, ElementBounds.Fixed(ControlX, y + LineTwoY - 2, 30, 30), widgets.ControlKey, 24);
+            }, ElementBounds.Fixed(ControlX, y + LineTwoY - 2, 30, 30), 24);
+            widgets.Switch.On = on;
+            AddRowElement(widgets.Switch);
 
             // The toggle's ON/OFF lives in the value column like every other
             // row's value, so there is one place to read state from.
-            SingleComposer.AddDynamicText(on ? "ON" : "OFF", CairoFont.WhiteSmallText(),
-                ElementBounds.Fixed(ValueX, y + LineTwoY + 2, ValueWidth, 22), widgets.ValueKey);
-            widgets.HasValue = true;
-
-            GuiElementSwitch sw = SingleComposer.GetSwitch(widgets.ControlKey);
-            if (sw != null) sw.On = on;
+            AddValueText(widgets, CairoFont.WhiteSmallText(), y);
         }
 
         private void AddSlider(VisualSetting setting, RowWidgets widgets, double y)
@@ -684,7 +719,7 @@ namespace VintageVisuals.Ui
             int generation = _composerGeneration;
             int steps = SliderSteps(setting);
 
-            SingleComposer.AddSlider(newValue =>
+            var slider = new GuiElementSlider(capi, newValue =>
             {
                 if (!IsCurrentGeneration(generation, "SliderChanged " + setting.Code)) return false;
                 Log("ENTER SliderChanged " + setting.Code);
@@ -697,21 +732,17 @@ namespace VintageVisuals.Ui
                 AfterLocalEdit(false);
                 Log("EXIT SliderChanged " + setting.Code);
                 return true;
-            }, ElementBounds.Fixed(ControlX, y + LineTwoY, ControlWidth, 24), widgets.ControlKey);
+            }, ElementBounds.Fixed(ControlX, y + LineTwoY, ControlWidth, 24));
 
-            SingleComposer.AddDynamicText(_controller.DisplayValue(setting), CairoFont.WhiteSmallText(),
-                ElementBounds.Fixed(ValueX, y + LineTwoY + 2, ValueWidth, 22), widgets.ValueKey);
-            widgets.HasValue = true;
+            slider.SetValues(SliderIndex(setting), 0, steps, 1, "");
 
-            GuiElementSlider slider = SingleComposer.GetSlider(widgets.ControlKey);
-            if (slider != null)
-            {
-                slider.SetValues(SliderIndex(setting), 0, steps, 1, "");
+            // The slider counts in steps, not in the setting's units. Left to
+            // itself its tooltip would print the step index.
+            slider.OnSliderTooltip = index => setting.Format(setting.Min + index * setting.Step);
+            AddRowElement(slider);
+            widgets.Slider = slider;
 
-                // The slider counts in steps, not in the setting's units. Left to
-                // itself its tooltip would print the step index.
-                slider.OnSliderTooltip = index => setting.Format(setting.Min + index * setting.Step);
-            }
+            AddValueText(widgets, CairoFont.WhiteSmallText(), y);
         }
 
         private static int SliderSteps(VisualSetting setting)
@@ -729,7 +760,7 @@ namespace VintageVisuals.Ui
         {
             int generation = _composerGeneration;
 
-            SingleComposer.AddDropDown(setting.Choices, setting.Choices, DropdownIndex(setting),
+            widgets.Dropdown = new GuiElementDropDown(capi, setting.Choices, setting.Choices, DropdownIndex(setting),
                 (code, selectedValue) =>
                 {
                     if (!selectedValue) return;
@@ -739,8 +770,9 @@ namespace VintageVisuals.Ui
                     AfterLocalEdit(true);
                     Log("EXIT DropdownChanged " + setting.Code);
                 },
-                ElementBounds.Fixed(ControlX, y + LineTwoY, Math.Min(ControlWidth, 240), 24), widgets.ControlKey);
-            _dropdownKeys.Add(widgets.ControlKey);
+                ElementBounds.Fixed(ControlX, y + LineTwoY, Math.Min(ControlWidth, 240), 24),
+                CairoFont.WhiteSmallText(), false);
+            AddRowElement(widgets.Dropdown);
         }
 
         private int DropdownIndex(VisualSetting setting)
@@ -850,47 +882,30 @@ namespace VintageVisuals.Ui
         {
             VisualSetting setting = widgets.Setting;
 
-            if (widgets.HasValue)
+            if (widgets.Value != null) widgets.Value.SetNewText(RowValueText(setting));
+
+            if (widgets.Reset != null)
             {
-                GuiElementDynamicText value = SingleComposer.GetDynamicText(widgets.ValueKey);
-                if (value != null) value.SetNewText(RowValueText(setting));
+                bool modified = _controller.IsModified(setting);
+                widgets.Reset.Visible = modified;
+                widgets.Reset.Enabled = modified;
             }
 
-            if (widgets.HasReset)
+            if (widgets.Slider != null)
             {
-                GuiElementTextButton reset = SingleComposer.GetButton(widgets.ResetKey);
-                if (reset != null)
-                {
-                    bool modified = _controller.IsModified(setting);
-                    reset.Visible = modified;
-                    reset.Enabled = modified;
-                }
-            }
-
-            if (widgets.State != AvailabilityState.Active && widgets.State != AvailabilityState.Conditional) return;
-
-            if (setting.Kind == SettingKind.Slider)
-            {
-                GuiElementSlider slider = SingleComposer.GetSlider(widgets.ControlKey);
                 int index = SliderIndex(setting);
 
                 // Only when they disagree: during a drag the thumb already sits
                 // where the config does, and re-seating it would fight the mouse.
-                if (slider != null && slider.GetValue() != index) slider.SetValues(index, 0, SliderSteps(setting), 1, "");
+                if (widgets.Slider.GetValue() != index) widgets.Slider.SetValues(index, 0, SliderSteps(setting), 1, "");
             }
-            else if (setting.Kind == SettingKind.Toggle)
+
+            if (widgets.Switch != null) widgets.Switch.On = _controller.Value(setting) >= 0.5f;
+
+            if (widgets.Dropdown != null && widgets.Dropdown.listMenu != null)
             {
-                GuiElementSwitch sw = SingleComposer.GetSwitch(widgets.ControlKey);
-                if (sw != null) sw.On = _controller.Value(setting) >= 0.5f;
-            }
-            else if (setting.Kind == SettingKind.Dropdown)
-            {
-                GuiElementDropDown dropdown = SingleComposer.GetDropDown(widgets.ControlKey);
                 int index = DropdownIndex(setting);
-                if (dropdown != null && dropdown.listMenu != null && dropdown.listMenu.SelectedIndex != index)
-                {
-                    dropdown.SetSelectedIndex(index);
-                }
+                if (widgets.Dropdown.listMenu.SelectedIndex != index) widgets.Dropdown.SetSelectedIndex(index);
             }
         }
 
@@ -1210,20 +1225,19 @@ namespace VintageVisuals.Ui
         {
             public readonly VisualSetting Setting;
             public readonly AvailabilityState State;
-            public readonly string ValueKey;
-            public readonly string ResetKey;
-            public readonly string ControlKey;
-            public bool HasValue;
-            public bool HasReset;
+
+            // Held directly: row elements live in the scroll container, not in
+            // the composer's keyed element table.
+            public GuiElementDynamicText Value;
+            public GuiElementTextButton Reset;
+            public GuiElementSlider Slider;
+            public GuiElementSwitch Switch;
+            public GuiElementDropDown Dropdown;
 
             public RowWidgets(VisualSetting setting, AvailabilityState state)
             {
                 Setting = setting;
                 State = state;
-                ValueKey = "value-" + setting.Code;
-                ResetKey = "reset-" + setting.Code;
-                ControlKey = (setting.Kind == SettingKind.Toggle ? "switch-" :
-                              setting.Kind == SettingKind.Dropdown ? "dropdown-" : "slider-") + setting.Code;
             }
         }
 

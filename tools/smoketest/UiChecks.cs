@@ -489,7 +489,7 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("clipBounds = ElementBounds.Fixed(0, 0, ContentWidth, bodyHeight)") &&
                   dialog.Contains("BeginChildElements(bodyBounds)") &&
                   dialog.Contains("BeginClip(clipBounds)") &&
-                  dialog.Contains("BeginChildElements(_scrollContentBounds)") &&
+                  dialog.Contains("AddContainer(_scrollContentBounds, RowsContainerKey)") &&
                   dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
                   dialog.Contains("_scrollContentBounds.fixedY = -_currentScroll") &&
                   dialog.Contains("double y = 0") &&
@@ -500,7 +500,7 @@ namespace VintageVisuals.SmokeTest
 
             check("toggle rows avoid duplicate state text",
                   dialog.Contains("else if (setting.Kind == SettingKind.Toggle) AddToggle(setting, widgets, y)") &&
-                  Regex.Matches(dialog, @"\? ""ON"" : ""OFF""").Count == 2,
+                  Regex.Matches(dialog, @"\? ""ON"" : ""OFF""").Count == 1,
                   "a toggle's state lives in the value column and nowhere else");
 
             check("settings scrolling moves native child bounds without recomposition",
@@ -528,7 +528,7 @@ namespace VintageVisuals.SmokeTest
             check("modified settings have a compact reset affordance",
                   dialog.Contains("\"Reset\"") &&
                   dialog.Contains("ElementBounds.Fixed(ResetX") &&
-                  dialog.Contains("reset.Visible = modified") &&
+                  dialog.Contains("widgets.Reset.Visible = modified") &&
                   !dialog.Contains("string marker = modified"),
                   "per-row reset sits in a fixed slot and is shown only while the row is modified");
 
@@ -600,9 +600,9 @@ namespace VintageVisuals.SmokeTest
 
             check("an edit updates its row from the effective config value",
                   dialog.Contains("private void UpdateRow(RowWidgets widgets)") &&
-                  dialog.Contains("value.SetNewText(RowValueText(setting))") &&
-                  dialog.Contains("slider.GetValue() != index") &&
-                  dialog.Contains("sw.On = _controller.Value(setting) >= 0.5f"),
+                  dialog.Contains("widgets.Value.SetNewText(RowValueText(setting))") &&
+                  dialog.Contains("widgets.Slider.GetValue() != index") &&
+                  dialog.Contains("widgets.Switch.On = _controller.Value(setting) >= 0.5f"),
                   "value text, thumb, toggle and Reset must be re-read from the config after the controller clamps");
 
             check("refresh suppression is scoped to the edit, not armed for the next notification",
@@ -619,15 +619,20 @@ namespace VintageVisuals.SmokeTest
             string controlCode = controlsStart >= 0 && controlsEnd > controlsStart ? dialog.Substring(controlsStart, controlsEnd - controlsStart) : "";
             check("scrolled rows are drawn as interactive elements that move with the scroll child",
                   rowCode.Length > 0 && controlCode.Length > 0 &&
-                  !rowCode.Contains("AddStaticText(") && !rowCode.Contains("AddInset(") &&
-                  !controlCode.Contains("AddStaticText(") && !controlCode.Contains("AddInset("),
-                  "static elements are baked into the composer texture at compose time: they neither scroll nor clip");
+                  dialog.Contains("_rowsContainer.Add(element)") &&
+                  !rowCode.Contains("SingleComposer.") && !controlCode.Contains("SingleComposer."),
+                  "the composer bakes each element's static part (text, slider track, dropdown box) into one texture at compose time, which neither scrolls nor clips; rows go into the scroll container, which owns its own");
 
             check("the scrollbar handle is positioned in content units",
                   !dialog.Contains("SetScrollbarPosition(") &&
                   dialog.Contains("scrollbar.CurrentYPosition = (float)_currentScroll") &&
                   dialog.Contains("if (_syncingScrollbar) return;"),
                   "SetScrollbarPosition takes handle pixels and reports a scroll of 0, which sent the list to the top");
+
+            check("the wheel handler hit-tests a bounds only once it is attached",
+                  dialog.Contains("bounds.ParentBounds != null && bounds.PointInside(mouseX, mouseY)") &&
+                  Regex.IsMatch(dialog, @"AddVerticalScrollbar\(OnScrollbarChanged, scrollbarBounds, ScrollbarKey\);\s*_scrollbarBounds = scrollbarBounds;"),
+                  "PointInside walks ParentBounds; the scrollbar's bounds has none when the list fits and no scrollbar was added, and the wheel crashed the game (NullReferenceException in ElementBounds.PointInside)");
 
             int wheelStart = dialog.IndexOf("public override void OnMouseWheel(", StringComparison.Ordinal);
             int wheelEnd = wheelStart < 0 ? -1 : dialog.IndexOf("private bool PointerInScrollRegion(", wheelStart, StringComparison.Ordinal);

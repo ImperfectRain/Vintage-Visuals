@@ -112,9 +112,11 @@ control (most of the width)                      value   [Reset]
 Reset has a fixed slot and is shown only while the row is modified. After every
 edit the row is re-read from the config - after clamping - so the thumb, value,
 toggle label, dropdown and Reset always agree with what the renderer receives.
-Everything inside the scroll region is an interactive element: a static element
-is baked into the composer texture at compose time and would neither scroll nor
-clip.
+Every row element lives in a native `GuiElementContainer`, not on the composer.
+The composer bakes the static part of each element it owns - text, slider track,
+switch background, dropdown box - into one texture at compose time and does not
+clip it; the container owns its own texture and draws it at its current bounds
+inside the clip, so whole rows scroll and clip together.
 
 Rows report one of four availability states (`SettingAvailability.cs`): active;
 active only in some scenes (a working control with a note on where to look);
