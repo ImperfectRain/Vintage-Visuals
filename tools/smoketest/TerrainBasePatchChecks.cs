@@ -211,8 +211,8 @@ void main()
             check("terrain wetness and snow need the sky to see the surface",
                 // Every wetness return, plant and block alike, not just one.
                 wetBody != null &&
-                GlslEval.Statements(wetBody).Where(st => st.StartsWith("return clamp(vv_sceneWetness", StringComparison.Ordinal)).Count() >= 2 &&
-                GlslEval.Statements(wetBody).Where(st => st.StartsWith("return clamp(vv_sceneWetness", StringComparison.Ordinal))
+                GlslEval.Statements(wetBody).Where(st => st.Contains("return clamp(vv_sceneWetness")).Count() >= 2 &&
+                GlslEval.Statements(wetBody).Where(st => st.Contains("return clamp(vv_sceneWetness"))
                     .All(st => st.Contains("vvTerrainSkyExposure()")) &&
                 snowBody != null && snowBody.Contains("vvTerrainSkyExposure()"),
                 "");
