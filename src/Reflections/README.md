@@ -42,6 +42,13 @@ AfterPostProcessing  ---> capture ---> reflection ray
 The consuming code is `vvSceneReflection` in
 `../../assets/vintagevisuals/shadersnippets/pseudopbr.glsl`.
 
+**The capture runs only while something can sample it.** Only `pseudopbr.glsl`
+reads it, and that shader is gated off by
+`PseudoPbrSubsystem.TerrainShaderPatchesEnabled` during the staged terrain
+recovery. `ReflectionsSubsystem.Apply` therefore keeps the capture stopped while
+that gate is off, whatever the config says, and the Tuning Studio shows both
+reflection rows as unavailable.
+
 ## What the capture holds
 
 | Channel | Content |

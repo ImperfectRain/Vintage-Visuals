@@ -2020,11 +2020,21 @@ into its own texture and draws it at its current bounds inside the clip, the way
 vanilla scroll lists do. Row widgets are held by reference, since the container's
 children are not in the composer's keyed table.
 
+**Audit follow-up (same day).** The disabled-systems audit found three more
+controls presented as live: rain ripples and the shelter threshold (on terrain
+only `pseudopbr.glsl` reads `vv_weatherRipples` and `vv_weatherRainCover`), and
+both godray sliders (`vvAtmosGodrayLevel` is called only from atmosphere debug
+view 9). All four are now unavailable. The reachability trace no longer walks
+through functions named `*Debug*`, since a value read only on the way to a
+diagnostic is still dead in play, and it now traces those four settings through
+a stated code-to-uniform table. Separately, `ReflectionsSubsystem` no longer
+starts the scene capture while the legacy terrain gate is off: nothing else
+samples it, so it was the most expensive setting in the mod producing no pixel.
+
 **Not done here.** The panel is still the centred 860 x 610 layout; rows got a
 wider slider, a fixed Reset slot and a real Advanced switch, but the side-anchored
 narrow panel is a separate change. Hover help stays off (the existing check and
 its reason stand). Weather and atmosphere rows are not traced to their shaders,
-only gated on their parents. Scene reflections still start the capture when
-switched on, although nothing in this build samples it - that is a renderer
-change, not a UI one.
+only gated on their parents. (The scene capture
+running unsampled was fixed afterwards; see the audit follow-up above.)
 

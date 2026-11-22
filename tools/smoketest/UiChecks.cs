@@ -230,6 +230,10 @@ namespace VintageVisuals.SmokeTest
                 foreach (string fn in bodies.Keys)
                 {
                     if (reachable.Contains(fn)) continue;
+
+                    // A debug view is not the feature working. A uniform read
+                    // only on the way to a diagnostic is still dead in play.
+                    if (fn.IndexOf("Debug", StringComparison.Ordinal) >= 0) continue;
                     if (!Regex.IsMatch(code, @"\b" + Regex.Escape(fn) + @"\s*\(")) continue;
                     reachable.Add(fn);
                     pending.Enqueue(bodies[fn]);
@@ -273,11 +277,38 @@ namespace VintageVisuals.SmokeTest
                 if (read && state == AvailabilityState.Unavailable) liveButHidden.Add(s.Code + " (" + uniform + ")");
             }
 
+            // Settings whose uniform is not a plain PseudoPBR property: their
+            // binders derive the upload, so the property-to-uniform link is
+            // stated here and only the reachability is computed.
+            var derived = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "weather_ripples", "vv_weatherRipples" },
+                { "weather_raincover", "vv_weatherRainCover" },
+                { "atmosphere_godrays", "vv_atmosGodray" },
+                { "atmosphere_godrayquality", "vv_atmosGodray" },
+            };
+            foreach (var pair in derived)
+            {
+                VisualSetting s = VisualSettingRegistry.ByCode(pair.Key);
+                if (s == null) { deadButShown.Add(pair.Key + " (not a setting)"); continue; }
+                mapped++;
+
+                bool read = Read(pair.Value);
+                AvailabilityState state = SettingAvailabilityRules.Evaluate(s, config).State;
+                if (!read && state != AvailabilityState.Unavailable) deadButShown.Add(s.Code + " (" + pair.Value + ")");
+                if (read && state == AvailabilityState.Unavailable) liveButHidden.Add(s.Code + " (" + pair.Value + ")");
+            }
+
             check("the availability check found PseudoPBR settings to trace", mapped >= 15, mapped + " traced");
             check("no setting is shown as a working control when no active shader reads it",
                   deadButShown.Count == 0, string.Join(", ", deadButShown));
             check("no setting is hidden as unavailable while an active shader reads it",
                   liveButHidden.Count == 0, string.Join(", ", liveButHidden));
+
+            string reflections = File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"));
+            check("the scene capture stays off while no compiled shader samples it",
+                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainShaderPatchesEnabled\s*;"),
+                  "only pseudopbr.glsl samples the capture; with its gate off the capture copies every frame for nothing");
 
             // Turning a parent off must say so rather than leave a live-looking row.
             var off = new VintageVisualsConfig();

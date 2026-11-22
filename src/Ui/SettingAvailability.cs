@@ -97,6 +97,11 @@ namespace VintageVisuals.Ui
             "pbr_emissivebloom",
             "reflections_scene",
             "pbr_pixelreflect",
+
+            // Uploaded by the PBR binder, but on terrain only pseudopbr.glsl
+            // reads vv_weatherRipples and vv_weatherRainCover.
+            "weather_ripples",
+            "weather_raincover",
         };
 
         /// <summary>Declared FOUNDATION ONLY in their own descriptions and in src/Atmosphere/README.md.</summary>
@@ -104,6 +109,21 @@ namespace VintageVisuals.Ui
         {
             "atmosphere_cloudedge",
             "atmosphere_dapple",
+        };
+
+        private const string DebugOnlyReason =
+            "Not wired yet: only an atmosphere debug view uses it.";
+
+        /// <summary>
+        /// Uploaded and declared, but the one function that reads the value is
+        /// called only from a debug view. vvAtmosGodrayLevel feeds atmosphere
+        /// debug view 9 and nothing else, so neither slider reaches the
+        /// game's crepuscular ray pass in this build.
+        /// </summary>
+        public static readonly HashSet<string> DebugViewOnly = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "atmosphere_godrays",
+            "atmosphere_godrayquality",
         };
 
         /// <summary>
@@ -122,7 +142,6 @@ namespace VintageVisuals.Ui
             { "pbr_emissiveflicker", "Glowing creatures, items and particles only." },
             { "pbr_blocklightdir", "Creatures, items and particles only in this build." },
             { "weather_wetness", "Shows while it rains and while surfaces dry." },
-            { "weather_ripples", "Shows only while it is raining." },
             { "weather_fogstrength", "Shows only while it is raining." },
             { "weather_fogtint", "Shows only while it is raining." },
             { "weather_frost", "Shows only in freezing weather." },
@@ -150,6 +169,11 @@ namespace VintageVisuals.Ui
             if (FoundationOnly.Contains(setting.Code))
             {
                 return new SettingAvailability(AvailabilityState.Unavailable, FoundationReason);
+            }
+
+            if (DebugViewOnly.Contains(setting.Code))
+            {
+                return new SettingAvailability(AvailabilityState.Unavailable, DebugOnlyReason);
             }
 
             if (setting.Code == "pbr_blocklight" || setting.Code == "pbr_blocklightdir")
@@ -198,6 +222,7 @@ namespace VintageVisuals.Ui
         {
             foreach (string code in LegacyTerrainOnly) yield return code;
             foreach (string code in FoundationOnly) yield return code;
+            foreach (string code in DebugViewOnly) yield return code;
             foreach (string code in Conditions.Keys) yield return code;
             foreach (string code in Parents.Keys) yield return code;
         }
