@@ -209,7 +209,11 @@ void main()
             string wetBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainWetness(");
             string snowBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSnow(");
             check("terrain wetness and snow need the sky to see the surface",
-                wetBody != null && wetBody.Contains("vvTerrainSkyExposure()") &&
+                // Every wetness return, plant and block alike, not just one.
+                wetBody != null &&
+                GlslEval.Statements(wetBody).Where(st => st.StartsWith("return clamp(vv_sceneWetness", StringComparison.Ordinal)).Count() >= 2 &&
+                GlslEval.Statements(wetBody).Where(st => st.StartsWith("return clamp(vv_sceneWetness", StringComparison.Ordinal))
+                    .All(st => st.Contains("vvTerrainSkyExposure()")) &&
                 snowBody != null && snowBody.Contains("vvTerrainSkyExposure()"),
                 "");
             string rippleBody = GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainRippleField(");
