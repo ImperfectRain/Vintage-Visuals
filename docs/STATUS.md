@@ -66,7 +66,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[-]` | Hooking every `LoadShader` overload | — | shipped as a total regression and reverted; [D41](DECISIONS.md) |
 | `[-]` | Per-group source sentinel | — | existed only for multi-hook delivery; removed with it |
 | `[-]` | **Total shader-delivery loss at runtime** | — | regression at `bd988bd` closed at `8b318ea` ([D41](DECISIONS.md)); the active guard is the shader census and delivery table above |
-| `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations |
+| `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations. The all-groups pass now splits on mutually exclusive groups and verifies each set the game can apply; it used to skip chunkopaque and chunktopsoil outright, which hid a `pbrterrainbase` anchor collision (anchor text quoted in a shared snippet's comment) that the game log caught on 2026-11-22 |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[~]` | **Texture slot report** (`RuntimeShaderIntrospector`) | L2 | logs every active sampler of chunkopaque and chunktopsoil with its unit, after link and again 8 s later once binders have uploaded, and warns on a unit shared by two sampler types. The first version matched a StringBuilder overload OpenTK does not have and printed no samplers; smoke now resolves every query against the game's own OpenTK.Graphics.dll. Not yet read from a real log |
 | `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |

@@ -5,8 +5,8 @@
 // secondary material atlases. Scene/world reflection resources remain absent
 // from this module until their sampler map has been runtime validated again.
 //
-// The same group injects scene.glsl (at `in vec4 rgbaFog;`) and pbrcore.glsl
-// (at `uniform vec3 lightPosition;`) above this file, exactly as the entity and
+// The same group injects scene.glsl (at vanilla's rgbaFog input) and pbrcore.glsl
+// (at vanilla's lightPosition uniform) above this file, exactly as the entity and
 // particle groups do. Their declarations - the scene lanes, the shared look
 // controls, the emission model and the environment layers - are therefore NOT
 // repeated here: GLSL rejects a second declaration of the same uniform, and a

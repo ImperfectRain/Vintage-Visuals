@@ -15,8 +15,10 @@
 // be able to roll back to vanilla without taking another group's declarations
 // with it, and two groups sharing one injection cannot do that.
 //
-// The anchor is `uniform vec3 lightPosition;`, which all three target shaders
-// declare and this file needs. Replacement content is literal, never a regex
+// The anchor is vanilla's lightPosition uniform declaration, which all three
+// target shaders declare and this file needs. (Never quote an anchor verbatim
+// in a comment: other groups match tokens in comments too, and a quoted copy
+// made pbrterrainbase's anchor match three times.) Replacement content is literal, never a regex
 // template, so the anchor is pasted back below or the declaration would be
 // deleted along with the match.
 

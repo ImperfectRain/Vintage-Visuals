@@ -17,7 +17,7 @@
 // evaluation of the lighting maths, this is the one description of the
 // conditions it runs in.
 //
-// The anchor is `in vec4 rgbaFog;`, which all three target shaders declare and
+// The anchor is vanilla's rgbaFog input declaration, which all three target shaders declare and
 // which sits above every other injection this mod makes into them. Replacement
 // content is literal rather than a regex template, so the anchor is pasted back
 // below or the declaration goes with the match.
