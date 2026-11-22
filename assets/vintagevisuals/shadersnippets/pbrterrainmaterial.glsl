@@ -534,6 +534,20 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode == 0) return color;
+
+    // Shading path: which code is actually shading each terrain fragment.
+    // Blue is plant tissue left to vanilla until the foliage path returns,
+    // orange is a block shaded without the second material atlas, green is
+    // the full modular material. Read this before blaming a material view.
+    if (mode == 63)
+    {
+        float luma = clamp(dot(color.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+        vec3 path = vvTerrainIsFlora() ? vec3(0.10, 0.40, 1.00)
+                  : vv_material2Valid < 0.5 ? vec3(1.00, 0.55, 0.05)
+                  : vec3(0.10, 0.85, 0.25);
+        return vec4(path * mix(0.45, 1.0, luma), color.a);
+    }
+
     if (vvTerrainIsFlora()) return color;
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(color, baseColor, faceNormal,
@@ -547,7 +561,6 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 3) return vec4(vec3(m.specularFactor), color.a);
     if (mode == 4) return vec4(vec3(0.5 + 0.5 * (vvDirectionalShadeTerrain(m.normal) - vvDirectionalShadeTerrain(m.faceNormal))), color.a);
     if (mode == 5) return vec4(vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv), color.a);
-    if (mode == 6) return vec4(m.normal * 0.5 + 0.5, color.a);
     if (mode == 7) return vec4(f0, color.a);
     if (mode == 8) return vec4(vec3(m.alphaRoughness), color.a);
     if (mode == 10) return vec4(vec3(m.wetness), color.a);
@@ -563,7 +576,6 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 20) return vec4(vec3(m.height), color.a);
     if (mode == 21) return vec4(vec3(m.ao), color.a);
     if (mode == 22) return vec4(vec3(m.emissionMask), color.a);
-    if (mode == 23) return vec4(f0, color.a);
     if (mode == 24)
     {
         vec3 grain = vvTerrainGrainDirection(materialUv);

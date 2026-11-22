@@ -663,6 +663,19 @@ namespace VintageVisuals.SmokeTest
 
             check("the shader implements debug views", modes.Count > 0, "");
 
+            // The modular terrain path numbers its views in the same space and
+            // may implement views the legacy patch never had, so the slider
+            // has to reach the highest view either terrain shader draws.
+            string modular = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            Match modularView = Regex.Match(modular, @"vec4 vvTerrainMaterialPrimaryDebug\((.*)", RegexOptions.Singleline);
+            check("vvTerrainMaterialPrimaryDebug exists", modularView.Success, "");
+            if (modularView.Success)
+            {
+                foreach (Match m in Regex.Matches(modularView.Value, @"mode == (\d+)"))
+                    modes.Add(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+            }
+
             using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(
                 Path.Combine(repo, "assets/vintagevisuals/config/configlib-patches.json")));
 

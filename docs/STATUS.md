@@ -134,7 +134,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
 | `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
-| `[~]` | Per-layer debug views (0–62) | L3 | Registry and slider range remain pinned by `tools/smoketest`; terrain currently exposes modular material views 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 19, 20, 21, 22, 23, 33 and 52 while reflection/canopy/full-legacy terrain groups are disabled |
+| `[~]` | Per-layer debug views (0–63) | L3 | Registry and slider range remain pinned by `tools/smoketest`. Each terrain view is tagged with the terrain path that draws it, and the Studio lists only the active path's set; smoke compares each tag set to that shader's mode arms in both directions. The modular path draws 1-5, 7, 8, 10-12, 14, 16, 19-22, 24, 33, 52 and 63 (shading path, new, L2). 6 and 23 were dropped from the modular path as exact duplicates of 1 and 7 there; they remain in the legacy patch, where they differ. Canopy, reflection, flora, march, world-proof and forest views are legacy-only until those features return |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |

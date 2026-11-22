@@ -73,6 +73,13 @@ What does change is that nobody has to know the number. "Debug View 13" is not a
 user interface — it is a number to look up in a JSON comment, usable only by
 someone who already knows the answer.
 
+The two terrain shaders share one number space but not one set of views. Each
+terrain entry says which path draws it (`TerrainPaths`: legacy patch, modular
+material path, or both), and the Studio offers only the set the active path
+implements. `tools/smoketest` compares each set to its own shader's `mode == N`
+arms, so the list in the dropdown is read from the registry rather than from a
+second hand-kept list in the dialog.
+
 ## The duplication with ConfigLib, declared
 
 `assets/vintagevisuals/config/configlib-patches.json` already carries labels,

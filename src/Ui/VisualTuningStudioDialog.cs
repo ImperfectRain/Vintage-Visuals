@@ -1054,14 +1054,16 @@ namespace VintageVisuals.Ui
         private bool IsDebugViewAvailable(int value)
         {
             if (_debugOwnerPath != DebugViewRegistry.PbrPath) return true;
-            if (FullTerrainDebugAvailable()) return true;
-            if (!PrimaryTerrainMaterialDebugAvailable()) return value == 0;
+            if (value == 0) return true;
 
-            return value == 0 || value == 1 || value == 2 || value == 3 ||
-                   value == 4 || value == 5 || value == 6 || value == 7 ||
-                   value == 8 || value == 10 || value == 12 || value == 14 ||
-                   value == 19 || value == 20 || value == 21 || value == 22 ||
-                   value == 23 || value == 33 || value == 52;
+            // Which views exist is read from the registry, which tools/smoketest
+            // ties to the mode arms of each terrain shader. A hand-kept list
+            // here drifted from the shader as soon as a view was added.
+            DebugView view = DebugViewRegistry.Current(DebugViewRegistry.PbrPath, value);
+            if (view == null) return false;
+            if (FullTerrainDebugAvailable()) return view.InLegacyTerrain;
+            if (!PrimaryTerrainMaterialDebugAvailable()) return false;
+            return view.InModularTerrain;
         }
 
         private static bool FullTerrainDebugAvailable()

@@ -400,9 +400,10 @@ namespace VintageVisuals.SmokeTest
             string Snippet(string n) => File.ReadAllText(
                 Path.Combine(repo, "assets/vintagevisuals/shadersnippets", n));
 
-            void Compare(string label, string ownerPath, string function, string source)
+            void Compare(string label, string ownerPath, string function, string source,
+                         Func<DebugView, bool> drawnHere = null)
             {
-                var named = DebugViewRegistry.For(ownerPath).ToList();
+                var named = DebugViewRegistry.For(ownerPath).Where(drawnHere ?? (_ => true)).ToList();
                 check("the " + label + " diagnostics have names", named.Count > 1, named.Count + " named");
 
                 string body;
@@ -411,6 +412,7 @@ namespace VintageVisuals.SmokeTest
 
                 var inShader = new HashSet<int>(
                     Regex.Matches(body, @"mode\s*==\s*(\d+)").Select(m => int.Parse(m.Groups[1].Value)));
+                inShader.Remove(0);
 
                 // 0 is "off" and is a UI concept: the shader reaches its debug
                 // function only when the value is non-zero, so it has no arm.
@@ -431,7 +433,13 @@ namespace VintageVisuals.SmokeTest
                 check("no two " + label + " diagnostics share a name", sameName.Count == 0, string.Join(" | ", sameName));
             }
 
-            Compare("material", DebugViewRegistry.PbrPath, "vec4 vvDebugView(", Snippet("pseudopbr.glsl"));
+            Compare("material", DebugViewRegistry.PbrPath, "vec4 vvDebugView(", Snippet("pseudopbr.glsl"),
+                    v => v.InLegacyTerrain);
+            // The modular terrain path draws its own subset under the same
+            // numbers. The Studio offers exactly the views marked Modular, so
+            // this comparison is what keeps that list honest.
+            Compare("modular terrain", DebugViewRegistry.PbrPath, "vec4 vvTerrainMaterialPrimaryDebug(",
+                    Snippet("pbrterrainmaterial.glsl"), v => v.InModularTerrain);
             Compare("entity", DebugViewRegistry.EntityPath, "vec4 vvEntityDebugView(", Snippet("pbrentity.glsl"));
             Compare("atmosphere", DebugViewRegistry.AtmospherePath, "vec4 vvAtmosDebug(", Snippet("atmosphere.glsl"));
 
@@ -598,9 +606,8 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("PbrTerrainDebugLimited()") &&
                   dialog.Contains("Safe terrain path: material and secondary atlas masks are available.") &&
                   dialog.Contains("blocked unavailable terrain debug view") &&
-                  dialog.Contains("value == 0 || value == 1 || value == 2 || value == 3") &&
-                  dialog.Contains("value == 19 || value == 20 || value == 21 || value == 22") &&
-                  dialog.Contains("value == 33 || value == 52"),
+                  dialog.Contains("view.InModularTerrain") &&
+                  dialog.Contains("view.InLegacyTerrain"),
                   "only debug views backed by the current modular terrain shader should be selectable");
 
             check("dialog lifecycle logging is high-granularity",
