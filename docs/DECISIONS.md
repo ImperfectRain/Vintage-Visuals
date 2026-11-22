@@ -2065,3 +2065,29 @@ view 41 has been seen to show the world.
 
 Supersedes nothing; extends D13 (reflection through the existing BRDF), which
 still describes how stage two must consume the hit.
+
+## D49. Plant lighting on the modular path reads the shadow map, not `b`
+
+The first foliage pass (f72bc9d) took sun visibility from vanilla's
+`getBrightnessFromShadowMap()` result `b`, rescaled as
+`1 - (1 - b) / shadowIntensity`. That rescale assumed a fully shadowed `b` of
+`1 - shadowIntensity`. The real function subtracts `shadowIntensity * 0.5`, and
+then adds `blockBrightness`, so a leaf in full shade read as half lit and a
+torch under a tree read as sunlight. The smoke check passed because its fixture
+used the same wrong assumption about where the floor sits.
+
+`vvTerrainSunVisibility` is now the legacy patch's geometric visibility: the
+same 3x3 comparison taps vanilla takes, cascade-weighted, without
+`shadowIntensity` and without block light, and 1 with shadows off. Transmission,
+front scatter, the cuticle highlight and the canopy gate all read it. It costs
+up to 18 more shadow taps per flora fragment; dapple on opaque terrain takes them
+only after its cheap early-outs (slider, receiver, distance, sun presence). Not
+measured.
+
+Canopy dapple comes across in the same pass with the legacy constants. Its one
+deliberate change is on plants: the legacy branch tinted the shade by the leaf's
+own pigment, and this one uses the same green tint as the ground, so one
+function applies the canopy everywhere.
+
+Supersedes the sun-visibility choice in the f72bc9d foliage commit; extends D7
+(dapple reads vanilla's shadow map).

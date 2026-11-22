@@ -100,6 +100,7 @@ from the source texture.
 | Shafts collapse under overcast | x | x | x | x | – | – | – | – | x |
 | Block-light specular | x | x | x | x | x | – | – | x | x |
 | Sun dapple | x | x | x | x | x | – | – | – | x |
+| Modular plant lighting and canopy dapple (`pbrterrainmaterial`, D49) | x | x | x | x | – | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
 
 ---

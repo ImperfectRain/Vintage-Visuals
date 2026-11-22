@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using VintageVisuals.Common.Patching;
 
 namespace VintageVisuals.SmokeTest
@@ -298,7 +299,8 @@ void main()
                 foliageBody.Contains("* vv_pbrFoliage"),
                 "");
             check("terrain foliage transmission adds to vanilla's lit leaf rather than replacing it",
-                floraShadeBody.Contains("litColor.rgb + through"),
+                floraShadeBody.Contains("vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet);") &&
+                floraShadeBody.Contains("+ through) * clearAir;"),
                 "");
 
             // The translucency sign has inverted the whole effect once: it fired
@@ -326,22 +328,78 @@ void main()
                 backlit > 0.3 && frontlit < 0.01,
                 "backlit " + backlit.ToString("0.000") + ", front-lit " + frontlit.ToString("0.000"));
 
-            // Sun visibility comes from vanilla's sun-only shadow brightness,
-            // rescaled so a fully shadowed leaf reads zero rather than 1 - intensity.
-            string visBody = GlslEval.StripComments(
-                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFloraSunVisibility(") ?? "");
-            double shadowed = -1, lit = -1;
+            // Sun visibility is read from the shadow map, not from vanilla's `b`.
+            // `b` bottoms out at 1 - shadowIntensity/2 and has blockBrightness
+            // added, so a shadowed leaf read half lit and a torch read as sun.
+            string sunVisBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSunVisibility(") ?? "");
+            string floraShadeCode = GlslEval.StripComments(floraShadeBody);
+            check("terrain sun visibility is geometric and sun-only",
+                sunVisBody.Contains("texture(shadowMapFar") &&
+                !sunVisBody.Contains("shadowIntensity") && !sunVisBody.Contains("blockBrightness") &&
+                floraShadeCode.Contains("float sunVisibility = vvTerrainSunVisibility();") &&
+                Regex.IsMatch(GlslEval.StripComments(foliageBody), @"\*\s*clamp\(sunVisibility, 0\.0, 1\.0\)") &&
+                !floraShadeCode.Contains("shadowBrightness"),
+                "flora must not read vanilla's combined brightness as sun visibility");
+
+            // Canopy dapple on the modular path: off at zero, darken-only, and
+            // never on the canopy itself.
+            string dappleBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainCanopyDapple(") ?? "");
+            string applyCanopy = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainApplyCanopy(") ?? "");
+            check("terrain canopy dapple is exactly off at a slider of zero",
+                dappleBody.Contains("if (vv_pbrDapple < 0.001) return 0.0;") &&
+                dappleBody.Contains("if (!vvTerrainIsCanopyReceiver()) return 0.0;"),
+                "");
+            check("terrain canopy dapple only darkens and spares local light",
+                applyCanopy.Contains("color * (1.0 - canopy)") &&
+                applyCanopy.Contains("(1.0 - vvTerrainLocalLightShare())") &&
+                !Regex.IsMatch(applyCanopy, @"color\s*\+"),
+                "");
+            check("terrain canopy dapple reaches opaque blocks and plants",
+                GlslEval.StripComments(primaryBody).Contains("diffuse = vvTerrainApplyCanopy(diffuse, vvTerrainCanopyDapple(") &&
+                floraShadeCode.Contains("vvTerrainApplyCanopy(result, vvTerrainCanopyDapple("),
+                "");
+            // INTERACTION: the canopy term composed with the colour it is
+            // applied to, evaluated from the shipped body. It may only take
+            // light, never add any in any channel, and must leave a fragment
+            // whose light is all local exactly as vanilla lit it.
             try
             {
-                string ret = GlslEval.Statement(visBody, "return");
-                string expr = ret.Substring(ret.IndexOf("return", StringComparison.Ordinal) + 6).TrimEnd(';', ' ');
-                shadowed = GlslEval.Scalar(expr, GlslEval.Syms("shadowBrightness", 0.4, "shadowIntensity", 0.6));
-                lit = GlslEval.Scalar(expr, GlslEval.Syms("shadowBrightness", 1.0, "shadowIntensity", 0.6));
+                string canopyExpr = GlslEval.StubCall(GlslEval.Rhs(GlslEval.Statement(applyCanopy, "float canopy")),
+                                                      "vvTerrainLocalLightShare", "local");
+                string tintExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "float tint"));
+                string outExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "return color *"));
+                double maxShade = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_SHADE") * 2.0;
+                GlslEval.Val Apply(double shaded, double local, double cap)
+                {
+                    var syms = GlslEval.Syms("shaded", shaded, "local", local, "cap", cap,
+                                             "VV_TERRAIN_DAPPLE_GREEN", GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_GREEN"));
+                    double canopy = GlslEval.Scalar(canopyExpr, syms);
+                    if (canopy <= 0.0) return GlslEval.Vec(1, 1, 1);
+                    syms["canopy"] = new GlslEval.Val(canopy);
+                    syms["tint"] = new GlslEval.Val(GlslEval.Scalar(tintExpr, syms));
+                    syms["color"] = GlslEval.Vec(1, 1, 1);
+                    return GlslEval.Eval(outExpr, syms);
+                }
+                var full = Apply(maxShade, 0.0, 0.85);
+                var torch = Apply(maxShade, 1.0, 0.85);
+                var leaf = Apply(maxShade, 0.0, 0.55);
+                check("I-terrain canopy only takes light, in every channel, and spares local light",
+                    full.X <= 1.0 && full.Y <= 1.0 && full.Z <= 1.0 && full.Y < 0.99 &&
+                    Math.Abs(torch.X - 1.0) < 1e-9 && Math.Abs(torch.Y - 1.0) < 1e-9 && Math.Abs(torch.Z - 1.0) < 1e-9 &&
+                    leaf.Y >= 0.45 - 1e-9 && full.Y >= 0.15 - 1e-9 &&
+                    // The green is a tint on the shade, not a light: every
+                    // channel stays within 5% of plain darkening.
+                    new[] { full.X, full.Y, full.Z }.All(c => Math.Abs(c / (1.0 - Math.Min(maxShade, 0.85)) - 1.0) <= 0.05),
+                    "full " + full + ", torch " + torch + ", leaf " + leaf);
             }
-            catch (Exception ex) { check("terrain flora sun visibility is evaluable", false, ex.Message); }
-            check("a fully shadowed leaf transmits no sun",
-                Math.Abs(shadowed) < 1e-6 && Math.Abs(lit - 1.0) < 1e-6,
-                "shadowed " + shadowed.ToString("0.000") + ", lit " + lit.ToString("0.000"));
+            catch (Exception ex) { check("I-terrain canopy composition is readable", false, ex.Message); }
+            check("terrain leaf sheen is exactly off at a specular strength of zero",
+                GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCuticleSpecular(") ?? "")
+                    .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),
+                "");
             check("Stage C diffuse energy is not view-angle blackening",
                 resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);") &&
                 !resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - fresnel)"),

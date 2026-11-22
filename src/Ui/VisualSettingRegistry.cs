@@ -225,7 +225,7 @@ namespace VintageVisuals.Ui
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
             Slider("pbr_foliage", "PseudoPBR.FoliageTranslucency", "Foliage translucency",
-                   "Light coming THROUGH leaves rather than off them. Strongest with a low sun behind the canopy, and it needs a clear sky - an overcast one has no beam to shine through.",
+                   "Light coming THROUGH leaves, plus a faint glow on their sunlit side. Strongest with a low sun behind the canopy, and it needs a clear sky - an overcast one has no beam to shine through.",
                    M, "Foliage", 0f, 2f, 0.05f);
 
             Slider("pbr_dapple", "PseudoPBR.SunDapple", "Sun dapple",

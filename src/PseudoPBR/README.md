@@ -13,10 +13,9 @@ the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
 `pseudopbrtopsoil` terrain groups remain fail-closed after the terrain
 corruption regression.
 
-The active terrain material checkpoint deliberately skips vanilla wind-mode
-vegetation. Leaves, grass, vines, fruit, crops and similar alpha-cut plant
-surfaces return the vanilla colour in this path until the dedicated foliage
-lighting model is restored safely.
+The active terrain material checkpoint never sends vanilla wind-mode vegetation
+through the opaque material. Leaves, grass, vines, fruit, crops and similar
+alpha-cut plant surfaces take the separate flora branch described below.
 
 Not yet verified in game — see [Verification](#verification) below for exactly
 what that means and what is still unconfirmed.
@@ -38,7 +37,7 @@ what that means and what is still unconfirmed.
 | Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
 | `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; legacy `pseudopbrtopsoil` remains disabled |
-| Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves on a separate flora branch that never decodes the opaque material. Still legacy-only: canopy dapple, sun shafts, pixel and scene reflections |
+| Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves, wet leaves, a leaf highlight and canopy dapple on a separate flora branch that never decodes the opaque material, with dapple also on opaque blocks and topsoil. Still legacy-only: sun shafts and pixel reflections; scene reflections are at stage one (D48) |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 
@@ -184,8 +183,12 @@ terrain program by this group, so the lighting model and scene vocabulary are
 the shared ones rather than local copies.
 
 Wind-mode vegetation branches off before the material is decoded
-(`vvTerrainFloraShade`): it keeps vanilla's lit colour and adds only light
-transmitted through the leaf. Sending alpha-cut plants through the opaque
+(`vvTerrainFloraShade`): it keeps vanilla's lit colour, darkens it when wet and
+under a broken canopy, and adds light through the leaf, a faint front scatter
+and a cuticle highlight. Sun visibility on this path is read from the shadow map
+(`vvTerrainSunVisibility`), never from vanilla's `b`, which carries a floor and
+block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
+diffuse term only. Sending alpha-cut plants through the opaque
 material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
 which is acceptable as a recovery step but weaker than capturing the original
