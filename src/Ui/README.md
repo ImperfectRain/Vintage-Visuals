@@ -34,6 +34,7 @@ debugging rounds.
 | `ConfigAccess.cs` | Reading and writing one config property named by a dotted path. |
 | `DebugViewRegistry.cs` | Friendly names for every numbered diagnostic the shaders implement. |
 | `VisualTuningStudioController.cs` | The live mutation boundary: set, reset, debug select, notify once. |
+| `SettingAvailability.cs` | Whether a setting can change the picture in this build and config, and if not, why not. |
 | `VisualTuningStudioDialog.cs` | The native Vintage Story dialog shell and row composition. |
 
 ## Values live in the config; presentation lives here
@@ -100,19 +101,35 @@ question and stays one.
 ## UX shape
 
 The studio is tuned for scan-first editing, not permanent documentation density.
-Subsystems live in a fixed vertical navigation rail. Setting pages use one-line
+Subsystems live in a fixed vertical navigation rail. Setting pages use two-line
 rows with stable columns:
 
 ```
-modified  label  info  value  control  reset
+label            description, or where to look / why it is off
+control (most of the width)                      value   [Reset]
 ```
+
+Reset has a fixed slot and is shown only while the row is modified. After every
+edit the row is re-read from the config - after clamping - so the thumb, value,
+toggle label, dropdown and Reset always agree with what the renderer receives.
+Everything inside the scroll region is an interactive element: a static element
+is baked into the composer texture at compose time and would neither scroll nor
+clip.
+
+Rows report one of four availability states (`SettingAvailability.cs`): active;
+active only in some scenes (a working control with a note on where to look);
+parent off (no control, "Turn on X"); and unavailable in this build (hidden; shown
+disabled with the reason when **Show advanced and unavailable settings** is on).
 
 Short descriptions are visible on each row because hover-only help is still too
 easy to miss and too hard to validate from screenshots. The setting name and
 current value remain visible at all times. Rows are clipped inside a native
-scroll region with mouse-wheel handling and a draggable vertical scrollbar; the
-scroll operation moves the child bounds instead of rebuilding the composer, so
-the navigation rail and footer stay fixed.
+scroll region with a draggable vertical scrollbar; the scroll operation moves the
+child bounds instead of rebuilding the composer, so the navigation rail and footer
+stay fixed. The dialog has ONE wheel handler and does not pass the wheel to the
+native composer first, because that offers it to every element regardless of the
+pointer: an open dropdown owns the wheel, the viewport and its scrollbar scroll,
+and anywhere else in the dialog the wheel is consumed.
 
 The Overview page is a set of subsystem cards with status, summary, description
 and an explicit Open action. The Debug page is a tool surface: choose a debug
@@ -122,7 +139,12 @@ change.
 
 ## Status
 
-**L3 — production lifecycle simplification.** The crash-isolation footer and
+**L2 — live row feedback, scoped refresh, one wheel owner, availability
+([D47](../../docs/DECISIONS.md)).** Built against the 1.22 API and covered by
+`tools/smoketest` and `tools/mutate`; not yet opened in a running game. The
+acceptance tests at the end of this file are what moves it on.
+
+Earlier, and still true: **production lifecycle simplification.** The crash-isolation footer and
 deferred recomposition scheduler are removed. This build keeps the stable shaded
 background and compact layout, but scroll/wheel handling now updates the native
 scroll child bounds in place. Live setting edits do not rebuild the whole
@@ -143,3 +165,27 @@ The sidebar uses a full-width button stack instead of native `AddVerticalTabs`
 because the native element sizes its rendered tabs from text width. It has not
 been re-opened in a running game from this environment, so presets,
 import/export and persistence remain blocked.
+
+## In-game acceptance tests
+
+Nothing below has been run. The build, `tools/smoketest` and `tools/mutate` say
+the code has the shape described above; only these say it works.
+
+1. **Scroll every tab at two UI scales.** Wheel over labels, gaps, sliders and an
+   open dropdown. Drag the scrollbar, reach the last row, switch tabs and come
+   back. The list and handle agree, each tab keeps its own position, a clipped
+   row never takes a click or the wheel, and an open dropdown scrolls its own
+   list instead of the page. Wheel over a slider must scroll, not change it.
+2. **Prove the edit reaches the screen.** In one daylight scene drag Exposure:
+   the number and Reset follow the thumb during the drag, and the image changes.
+   Then sweep Surface relief on close stone or planks with light across them
+   (not grass or leaves, which this build excludes). If the number moves and the
+   image does not, trace the shader and its uniform before touching the UI.
+3. **Stress refresh and availability.** Make a no-op edit (drag a slider and
+   return it), then change a setting through ConfigLib or edit the JSON and
+   reload: the open studio must show the new value. Reset one row, switch tabs
+   repeatedly, close and reopen. Foliage, sun shafts, emissive glow and the
+   reflection rows must not appear as working controls; with Advanced on they
+   appear disabled with a reason. Turn Surface materials off: its rows say
+   "Turn on Surface materials".
+
