@@ -158,10 +158,10 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 |---|---|---|---|
 | `[x]` | Wetness model, temperature-gated, asymmetric drying | L4 | confirmed in game |
 | `[x]` | Wet surface response (roughness, specular, albedo darkening) | L4 | rides the PBR path; owns no shader patch |
-| `[x]` | Sky-exposure varying so rain cannot reach covered ground | L4 | lives in `pseudopbr.yaml` — a varying belongs to one group |
+| `[x]` | Sky-exposure varying so rain cannot reach covered ground | L4 | lives in `pseudopbr.yaml` — a varying belongs to one group. The modular terrain path (`pbrterrainmaterial.yaml`) now declares its own copy inside its own group; that copy is **L2**, not yet seen in game |
 | `[~]` | Rain fog (terrain only, never the sky) | L2 | |
 | `[~]` | Cloud shadows from the game's own cloud tiles | L2 | **reported broken three times**; see §9 |
-| `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured |
+| `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured. Restored in the modular terrain path (2026-11-22, L2): gated on the sky-exposure varying, exactly off at a strength of zero or when dry |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | consumed by the material snow film; real accumulated depth remains vanilla snow blocks |
 | `[~]` | **Snow film as a material response** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |

@@ -202,8 +202,30 @@ void main()
                 directBody != null && directBody.Contains("vvDistributionGGXAnisotropic("),
                 "");
 
-            check("pbrterrainmaterial.yaml parsed into twenty patches",
-                patches.Count == 20,
+            // Rain cannot wet what the sky cannot see. The modular path first
+            // shipped with one global wetness, so floors under a roof darkened
+            // in rain exactly like the lawn outside.
+            string wetBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainWetness(");
+            string snowBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSnow(");
+            check("terrain wetness and snow need the sky to see the surface",
+                wetBody != null && wetBody.Contains("vvTerrainSkyExposure()") &&
+                snowBody != null && snowBody.Contains("vvTerrainSkyExposure()"),
+                "");
+            string rippleBody = GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainRippleField(");
+            check("terrain ripples are exactly off at a strength of zero and when dry",
+                rippleBody != null && rippleBody.Contains("if (vv_weatherRipples < 0.001 || wetness < 0.001) return vec2(0.0);"),
+                "");
+            // The sky-exposure varying: both halves in THIS group, so they apply
+            // or roll back together. A fragment input with no vertex writer is
+            // a link failure that costs the world, not the feature.
+            check("the terrain sky-exposure varying is written and read inside one group",
+                patches.Count(p => p.Content.Contains("out float vv_sunExposure;")) == 2 &&
+                patches.Count(p => p.Content.Contains("vv_sunExposure = rgbaLightIn.a;")) == 2 &&
+                patches.Count(p => p.Content.Contains("in float vv_sunExposure;")) == 2,
+                "");
+
+            check("pbrterrainmaterial.yaml parsed into twenty-four patches",
+                patches.Count == 24,
                 patches.Count.ToString());
             check("pbrterrainmaterial group is isolated",
                 patches.All(p => p.Group == "pbrterrainmaterial"),
@@ -224,8 +246,8 @@ void main()
                 "");
             check("pbrterrainmaterial declares deterministic compiler phases",
                 patches.Count(p => p.Phase == "Assertions") == 12 &&
-                patches.Count(p => p.Phase == "Declarations") == 6 &&
-                patches.Count(p => p.Phase == "Material") == 2,
+                patches.Count(p => p.Phase == "Declarations") == 8 &&
+                patches.Count(p => p.Phase == "Material") == 4,
                 string.Join(", ", patches.Select(p => p.Phase)));
 
             string resolved = string.Join("\n", patches.Select(p => p.Content));

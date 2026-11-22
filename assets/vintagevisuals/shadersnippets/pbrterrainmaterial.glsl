@@ -25,6 +25,18 @@ uniform float vv_pbrDetailDistance;
 uniform float vv_pbrCavity;
 uniform float vv_pbrSpecOcclusion;
 
+// Weather on terrain. Every zero is the harmless value: no ripples, and a rain
+// cover threshold of 0 lets rain reach anything the sky can see at all.
+uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
+uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
+uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
+uniform vec3 vv_pbrOrigin;           // camera world position, wrapped to VV_TERRAIN_ORIGIN_PERIOD on the CPU
+
+// Vanilla's per-vertex sun light level (rgbaLightIn.a), 0 under a roof and 1 in
+// the open. This group writes it in the vertex shader of the same program, so
+// both halves of the varying apply or roll back together.
+in float vv_sunExposure;
+
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 
 bool vvTerrainIsFlora()
@@ -52,6 +64,9 @@ struct VvTerrainMaterial
     float ao;
     float emissionMask;
     float detailFade;
+    float wetness;
+    float snow;
+    float frost;
 };
 
 vec3 vvTerrainSafeNormalize(vec3 v, vec3 fallback)
@@ -110,6 +125,145 @@ float vvTerrainFilteredRoughness(float perceptualRoughness, vec3 n)
                  VV_TERRAIN_MIN_ROUGHNESS, 1.0);
 }
 
+// --- Weather on terrain -------------------------------------------------------
+//
+// Ported from the legacy terrain shader. Rain falls downward and cannot reach
+// what the sky cannot see; snow likewise, and slides off slopes harder than rain
+// runs off them. The exposure test is a THRESHOLD on vanilla's soft sun light,
+// because read linearly it only dries fully enclosed rooms and leaves a porch
+// as wet as the lawn beside it.
+
+const float VV_TERRAIN_RIPPLE_DEPTH = 1.2;
+const float VV_TERRAIN_RIPPLE_BAND = 14.0;
+const float VV_TERRAIN_RIPPLE_WAVE = 30.0;
+const float VV_TERRAIN_RIPPLE_JITTER = 0.5;
+// Must divide the CPU wrap period (EnvironmentState.CameraPeriod) exactly, so
+// the coordinate wrap lands on a ripple cell and texel boundary.
+const float VV_TERRAIN_ORIGIN_PERIOD = 4096.0;
+const float VV_TERRAIN_RIPPLE_TEXELS = 32.0;
+
+float vvTerrainSkyExposure()
+{
+    return smoothstep(vv_weatherRainCover - 0.12, vv_weatherRainCover + 0.06,
+                      clamp(vv_sunExposure, 0.0, 1.0));
+}
+
+float vvTerrainWetness(vec3 faceNormal)
+{
+    if (vv_sceneWetness < 0.001) return 0.0;
+    float facing = clamp(faceNormal.y * 0.5 + 0.5, 0.0, 1.0);
+    return clamp(vv_sceneWetness * facing * facing * vvTerrainSkyExposure(), 0.0, 1.0);
+}
+
+float vvTerrainSnow(vec3 faceNormal)
+{
+    if (vv_sceneSnow < 0.001) return 0.0;
+    float facing = clamp(faceNormal.y, 0.0, 1.0);
+    return clamp(vv_sceneSnow * facing * facing * facing * vvTerrainSkyExposure(), 0.0, 1.0);
+}
+
+// Integer hash: exact at any coordinate, which matters because every earlier
+// ripple defect was a float32 precision problem rather than a bad hash.
+uint vvTerrainHashU(uint x)
+{
+    x ^= x >> 16; x *= 0x7feb352du;
+    x ^= x >> 15; x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+vec4 vvTerrainCellRandom(vec2 cell)
+{
+    uvec2 c = uvec2(ivec2(cell));
+    uint h = vvTerrainHashU(c.x * 0x9e3779b9u ^ vvTerrainHashU(c.y + 0x85ebca6bu));
+    return vec4(float(vvTerrainHashU(h)),
+                float(vvTerrainHashU(h ^ 0x68bc21ebu)),
+                float(vvTerrainHashU(h ^ 0x02e5be93u)),
+                float(vvTerrainHashU(h ^ 0x9c8f2d3bu))) / 4294967295.0;
+}
+
+// One drop impact per cell, returned as a slope. The coordinate MUST arrive
+// pre-wrapped: on a raw world position a float32 holds about sixteen positions
+// per ripple cell half a million blocks out.
+vec2 vvTerrainRippleSlope(vec2 p, float t, float density)
+{
+    vec2 cell = floor(p);
+    vec2 local = fract(p);
+    vec4 rnd = vvTerrainCellRandom(cell);
+    if (rnd.x > density) return vec2(0.0);
+
+    vec2 centre = vec2(0.5) + (rnd.yz - 0.5) * VV_TERRAIN_RIPPLE_JITTER;
+    float reach = 0.5 - VV_TERRAIN_RIPPLE_JITTER * 0.5;
+    vec2 offset = local - centre;
+    float r = length(offset);
+    if (r > reach) return vec2(0.0);
+
+    // Whole drops per wrap of the 0..1 clock, so the wrap cannot jump.
+    float rate = 1.0 + floor(rnd.w * 3.0);
+    float age = fract(t * rate + rnd.y * 0.61 + rnd.z * 0.39);
+    float front = age * reach;
+    float band = exp(-abs(r - front) * VV_TERRAIN_RIPPLE_BAND);
+    float decay = (1.0 - age) * (1.0 - age);
+
+    vec2 dir = offset / max(r, 1e-5);
+    return dir * sin((r - front) * VV_TERRAIN_RIPPLE_WAVE) * band * decay;
+}
+
+// Two scales at unrelated rates, the second offset by a non-integer so its cell
+// boundaries do not sit on the first's. Snapped to the texture's pixel grid in
+// space only, never in time.
+vec2 vvTerrainRainRipples(vec2 worldXZ, float t, float density)
+{
+    vec2 p = floor(worldXZ * VV_TERRAIN_RIPPLE_TEXELS) / VV_TERRAIN_RIPPLE_TEXELS;
+    return vvTerrainRippleSlope(p * 2.0, t, density)
+         + vvTerrainRippleSlope(p + vec2(31.43, 17.61), t * 0.5 + 0.37, density) * 0.7;
+}
+
+// Rain landing in standing water: only where it is wet AND the face points up,
+// faded with the relief so the finest thing this shader draws does not alias.
+vec2 vvTerrainRippleField(vec3 faceNormal, vec3 cameraRelativePos, float wetness, float fade)
+{
+    if (vv_weatherRipples < 0.001 || wetness < 0.001) return vec2(0.0);
+    float pooling = clamp(faceNormal.y, 0.0, 1.0);
+    float amount = clamp(vv_weatherRipples, 0.0, 1.0) * wetness * pooling * pooling * fade;
+    if (amount < 0.001) return vec2(0.0);
+
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    return vvTerrainRainRipples(world.xz, vv_weatherRippleTime, clamp(vv_weatherRipples, 0.0, 1.0)) * amount;
+}
+
+// Applies the weather to a decoded material: the ripple normal, then the shared
+// environment layer stack from pbrcore.glsl for roughness and specular (wet is
+// glossier, snow and frost are rough). Albedo is darkened later, in
+// vvTerrainApplySurfaceLayers, on the lit colour.
+VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelativePos)
+{
+    m.wetness = vvTerrainWetness(m.faceNormal);
+    m.snow = vvTerrainSnow(m.faceNormal);
+    m.frost = clamp(vv_sceneFrost, 0.0, 1.0);
+
+    vec2 slope = vvTerrainRippleField(m.faceNormal, cameraRelativePos, m.wetness, m.detailFade);
+    if (dot(slope, slope) > 0.0)
+    {
+        m.normal = vvTerrainSafeNormalize(m.normal + vec3(slope.x, 0.0, slope.y) * VV_TERRAIN_RIPPLE_DEPTH,
+                                          m.normal);
+    }
+
+    if (m.wetness + m.snow + m.frost > 0.001)
+    {
+        VvSurface base;
+        base.albedo = m.baseColor;
+        base.roughness = m.perceptualRoughness;
+        base.specular = m.specularFactor;
+        VvSurface layered = vvApplyEnvironmentLayers(base, m.wetness, m.snow, m.frost, 0.0);
+        m.perceptualRoughness = clamp(layered.roughness, VV_TERRAIN_MIN_ROUGHNESS, 1.0);
+        m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
+                               m.perceptualRoughness * m.perceptualRoughness);
+        m.specularFactor = clamp(layered.specular, 0.0, 1.0);
+    }
+    return m;
+}
+
 VvTerrainMaterial vvDecodeTerrainMaterial(vec4 litColor, vec3 baseColor,
                                           vec3 faceNormal, vec2 materialUv,
                                           vec3 cameraRelativePos)
@@ -132,7 +286,10 @@ VvTerrainMaterial vvDecodeTerrainMaterial(vec4 litColor, vec3 baseColor,
     m.ao = clamp(secondary.b, 0.18, 1.0);
     m.emissionMask = vv_material2Valid < 0.5 ? 1.0 : clamp(secondary.a, 0.0, 1.0);
     m.detailFade = detailFade;
-    return m;
+    m.wetness = 0.0;
+    m.snow = 0.0;
+    m.frost = 0.0;
+    return vvTerrainApplyWeather(m, cameraRelativePos);
 }
 
 float vvDistributionGGXTerrain(float ndoth, float alphaRoughness)
@@ -291,13 +448,12 @@ vec3 vvTerrainAmbientSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 environmen
 
 vec3 vvTerrainApplySurfaceLayers(VvTerrainMaterial m, vec3 diffuse)
 {
-    float wet = clamp(vv_sceneWetness, 0.0, 1.0) * clamp(1.0 - vv_sceneSnow, 0.0, 1.0);
-    float snow = clamp(vv_sceneSnow, 0.0, 1.0);
-    float frost = clamp(vv_sceneFrost, 0.0, 1.0);
+    // Snow and frost displace water, as in the shared layer stack.
+    float wet = m.wetness * clamp(1.0 - m.snow - m.frost, 0.0, 1.0);
 
-    diffuse *= mix(1.0, 0.72, wet * (1.0 - m.metalness));
-    diffuse = mix(diffuse, vec3(dot(diffuse, vec3(0.299, 0.587, 0.114))) * 1.22, snow * 0.7);
-    diffuse = mix(diffuse, diffuse * vec3(0.86, 0.92, 1.0), frost * 0.45);
+    diffuse *= mix(1.0, VV_LAYER_WET_DARKEN, wet * (1.0 - m.metalness));
+    diffuse = mix(diffuse, vec3(dot(diffuse, vec3(0.299, 0.587, 0.114))) * 1.22, m.snow * 0.7);
+    diffuse = mix(diffuse, diffuse * vec3(0.86, 0.92, 1.0), m.frost * 0.45);
     return diffuse;
 }
 
@@ -394,7 +550,13 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 6) return vec4(m.normal * 0.5 + 0.5, color.a);
     if (mode == 7) return vec4(f0, color.a);
     if (mode == 8) return vec4(vec3(m.alphaRoughness), color.a);
-    if (mode == 10) return vec4(vec3(vv_sceneWetness), color.a);
+    if (mode == 10) return vec4(vec3(m.wetness), color.a);
+    if (mode == 11)
+    {
+        vec2 slope = vvTerrainRippleField(m.faceNormal, cameraRelativePos, m.wetness, m.detailFade);
+        return vec4(slope * 0.5 + 0.5, m.wetness, color.a);
+    }
+    if (mode == 16) return vec4(vec3(clamp(vv_sunExposure, 0.0, 1.0)), color.a);
     if (mode == 12) return vec4(vec3(m.ao * mix(0.92, 1.06, m.height)), color.a);
     if (mode == 14) return vec4(vvTerrainEmission(m, glowLevel, cameraRelativePos), color.a);
     if (mode == 19) return vec4(vec3(m.metalness), color.a);

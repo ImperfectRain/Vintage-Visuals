@@ -126,3 +126,42 @@
     outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);
+
+# --- vertex shaders: sky exposure for the weather on terrain ------------------
+#
+# In THIS group because the fragment half (`in float vv_sunExposure;` in
+# pbrterrainmaterial.glsl) belongs to it: a varying is a contract between the
+# .vsh and .fsh of one program, and if the vertex half could roll back alone
+# the program would not link and the world would stop drawing. A group fails
+# as a unit, so both halves apply or neither does.
+#
+# rgbaLightIn.a is vanilla's per-vertex sun light level, 0 under a roof and 1 in
+# the open. It just never reaches the fragment stage on its own.
+
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.vsh
+  tokens: out vec3 blockLight;
+  content: |
+    out float vv_sunExposure; // vintagevisuals: sky exposure for weather on terrain
+
+- type: insert_after
+  phase: Material
+  filename: chunkopaque.vsh
+  tokens: rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, camPos);
+  content: |
+    vv_sunExposure = rgbaLightIn.a; // chunkopaque
+
+- type: insert_after
+  phase: Declarations
+  filename: chunktopsoil.vsh
+  tokens: out vec3 blockLight;
+  content: |
+    out float vv_sunExposure; // vintagevisuals: sky exposure for weather on terrain
+
+- type: insert_after
+  phase: Material
+  filename: chunktopsoil.vsh
+  tokens: rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, cameraPos);
+  content: |
+    vv_sunExposure = rgbaLightIn.a; // chunktopsoil

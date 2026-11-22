@@ -95,11 +95,6 @@ namespace VintageVisuals.Ui
             "pbr_canopyradius",
             "reflections_scene",
             "pbr_pixelreflect",
-
-            // Uploaded by the PBR binder, but on terrain only pseudopbr.glsl
-            // reads vv_weatherRipples and vv_weatherRainCover.
-            "weather_ripples",
-            "weather_raincover",
         };
 
         /// <summary>Declared FOUNDATION ONLY in their own descriptions and in src/Atmosphere/README.md.</summary>
@@ -142,6 +137,8 @@ namespace VintageVisuals.Ui
             { "pbr_emissivebloom", "Shows as bloom around glowing blocks, such as torches and lava." },
             { "pbr_blocklightdir", "Creatures, items and particles only in this build." },
             { "weather_wetness", "Shows while it rains and while surfaces dry." },
+            { "weather_ripples", "Shows on flat ground open to the sky while it rains." },
+            { "weather_raincover", "Decides which sheltered spots stay dry in rain." },
             { "weather_fogstrength", "Shows only while it is raining." },
             { "weather_fogtint", "Shows only while it is raining." },
             { "weather_frost", "Shows only in freezing weather." },
