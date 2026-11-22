@@ -60,6 +60,7 @@ namespace VintageVisuals.Ui
         private const string ScrollbarKey = "settings-scrollbar";
         private const string AdvancedSwitchKey = "advanced-switch";
         private const string RowsContainerKey = "settings-rows";
+        private const string NotInThisBuild = "Not in this build";
 
         private readonly VisualTuningStudioController _controller;
         private readonly Dictionary<SettingTab, double> _scrollByTab = new Dictionary<SettingTab, double>();
@@ -394,35 +395,47 @@ namespace VintageVisuals.Ui
             Log("EXIT TitleBarClose");
         }
 
+        // Overview cards. Each line is one line: static text wraps past its
+        // bounds instead of clipping, so every string is cut to fit
+        // (OverviewChars) and the card is tall enough for three lines.
+        private const double OverviewCardHeight = 80;
+        private const double OverviewCardGap = 8;
+        private const double OverviewCardWidth = ContentWidth - 34;
+        private const double OverviewButtonWidth = 76;
+        private const double OverviewTextWidth = OverviewCardWidth - OverviewButtonWidth - 46;
+        private const int OverviewChars = 58;
+
         private void AddOverview()
         {
-            double y = BodyY + 6;
-            SingleComposer.AddStaticText("Systems", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 180, 22));
-            y += 34;
+            double y = BodyY + 2;
+            double step = OverviewCardHeight + OverviewCardGap;
 
             AddOverviewRow("COLOR & EXPOSURE", "ColorGrade.Enabled", SettingTab.Color,
                 "Exposure " + ValueByCode("colorgrade_exposure") + " · Eye adaptation " + OnOff("AdaptiveExposure.Enabled"),
-                "Open exposure, tonemap, colour style and adaptive grading controls.", y);
-            y += 78;
+                "Open exposure, tonemap, colour style and grading controls.", y);
+            y += step;
 
             AddOverviewRow("MATERIALS", "PseudoPBR.Enabled", SettingTab.Materials,
-                "Surface Relief " + ValueByCode("pbr_normalstrength") + " · Reflections " + StateByCode("reflections_scene"),
-                "Open relief, roughness, specular response, foliage light and emissive controls.", y);
-            y += 78;
+                "Surface relief " + ValueByCode("pbr_normalstrength") + " · Roughness bias " + ValueByCode("pbr_roughnessbias"),
+                "Open relief, roughness, specular and emissive controls.", y);
+            y += step;
 
             AddOverviewRow("WEATHER", "Weather.Enabled", SettingTab.Weather,
-                "Wetness " + ValueByCode("weather_wetness") + " · Cloud Shadows " + ValueByCode("weather_cloudshadow"),
-                "Open wet surfaces, puddle ripples, rain response and cloud shadow controls.", y);
-            y += 78;
+                "Wetness " + ValueByCode("weather_wetness") + " · Cloud shadows " + ValueByCode("weather_cloudshadow"),
+                "Open wetness, ripples, rain fog and cloud shadow controls.", y);
+            y += step;
 
             AddOverviewRow("ATMOSPHERE", "Atmosphere.Enabled", SettingTab.Atmosphere,
-                "Scattering " + ValueByCode("atmosphere_scattering") + " · Ground Haze " + ValueByCode("atmosphere_groundhaze"),
-                "Open air scattering, extinction, aerial perspective and haze controls.", y);
-            y += 78;
+                "Aerial perspective " + ValueByCode("atmosphere_aerial") + " · Ground haze " + ValueByCode("atmosphere_heighthaze"),
+                "Open scattering, aerial perspective and haze controls.", y);
+            y += step;
 
+            bool reflectionsUnavailable = StateByCode("reflections_scene") == NotInThisBuild;
             AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
-                "Scene reflections " + StateByCode("reflections_scene") + " · Pixel strength " + StateByCode("pbr_pixelreflect"),
-                "Open screen-space reflections, edge fading, stride and debug controls.", y);
+                reflectionsUnavailable
+                    ? "Needs the legacy terrain shader, which is off."
+                    : "Scene reflections " + StateByCode("reflections_scene") + " · Strength " + StateByCode("pbr_pixelreflect"),
+                "Open scene reflection controls.", y);
         }
 
         private void AddOverviewRow(string label, string path, SettingTab target, string summary, string description, double y)
@@ -431,19 +444,23 @@ namespace VintageVisuals.Ui
             VisualSetting master = VisualSettingRegistry.All.FirstOrDefault(v => v.Path == path);
             bool unavailable = master != null && Availability(master).State == AvailabilityState.Unavailable;
             int generation = _composerGeneration;
+            double textX = ContentLeft + 14;
 
             SingleComposer
-                .AddInset(ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 68), 2, 0.42f)
-                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 14, y + 8, 230, 20))
-                .AddStaticText(unavailable ? "Not in this build" : on ? "● On" : "○ Off", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 256, y + 8, 160, 20))
-                .AddStaticText(summary, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 31, 300, 18))
-                .AddStaticText(description, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 49, 430, 18))
+                .AddInset(ElementBounds.Fixed(ContentLeft, y, OverviewCardWidth, OverviewCardHeight), 2, 0.42f)
+                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(textX, y + 8, 220, 20))
+                .AddStaticText(unavailable ? NotInThisBuild : on ? "● On" : "○ Off", CairoFont.WhiteSmallText(),
+                    ElementBounds.Fixed(textX + 230, y + 8, OverviewTextWidth - 230, 20))
+                .AddStaticText(ShortText(summary, OverviewChars), CairoFont.WhiteDetailText(),
+                    ElementBounds.Fixed(textX, y + 33, OverviewTextWidth, 18))
+                .AddStaticText(ShortText(description, OverviewChars), CairoFont.WhiteDetailText(),
+                    ElementBounds.Fixed(textX, y + 55, OverviewTextWidth, 18))
                 .AddButton("Open  >", () =>
                 {
                     if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
                     SelectTab(target);
                     return true;
-                }, ElementBounds.Fixed(ContentLeft + ContentWidth - 122, y + 20, 76, 28),
+                }, ElementBounds.Fixed(ContentLeft + OverviewCardWidth - OverviewButtonWidth - 14, y + (OverviewCardHeight - 28) / 2, OverviewButtonWidth, 28),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "overview-" + target);
         }
 
@@ -457,7 +474,7 @@ namespace VintageVisuals.Ui
         {
             VisualSetting setting = VisualSettingRegistry.ByCode(code);
             if (setting == null) return "n/a";
-            if (Availability(setting).State == AvailabilityState.Unavailable) return "not in this build";
+            if (Availability(setting).State == AvailabilityState.Unavailable) return NotInThisBuild;
             return _controller.DisplayValue(setting);
         }
 

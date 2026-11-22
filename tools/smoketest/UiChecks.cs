@@ -538,6 +538,18 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains(".AddButton(\"Open  >\""),
                   "overview cards should not depend on cramped multiline button text");
 
+            var overviewCodes = Regex.Matches(dialog, @"(?:ValueByCode|StateByCode)\(""([a-z_0-9]+)""\)")
+                .Cast<Match>().Select(m => m.Groups[1].Value).Distinct().ToList();
+            var missingOverview = overviewCodes.Where(c => VisualSettingRegistry.ByCode(c) == null).ToList();
+            check("every overview summary reads a real setting",
+                  overviewCodes.Count >= 6 && missingOverview.Count == 0,
+                  "missing: " + string.Join(", ", missingOverview) + " - an unknown code prints n/a on the card");
+
+            check("overview card text is cut to one line",
+                  dialog.Contains("ShortText(summary, OverviewChars)") &&
+                  dialog.Contains("ShortText(description, OverviewChars)"),
+                  "static text wraps past its bounds into the next card instead of clipping");
+
             check("overview rows navigate through explicit Open buttons",
                   dialog.Contains("AddOverviewRow") &&
                   dialog.Contains(".AddButton(\"Open  >\""),
