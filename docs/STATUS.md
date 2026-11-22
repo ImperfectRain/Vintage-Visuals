@@ -87,11 +87,11 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Wrapped animation clock | L2 | unbounded clocks collapse phase in float32 |
 | `[x]` | Material identity from `EnumBlockMaterial` | L3 | 14090 blocks classified, 0 fallbacks; covers modded blocks |
 | `[x]` | Derived normal / roughness / specular / metal atlas | L4 | cached to disk, multi-page |
-| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`; wind-mode vegetation is bypassed back to vanilla; reflection, scene-capture and canopy per-draw resources remain fail-closed |
+| `[~]` | Material atlases on terrain | L2 | staged recovery path: `pbrterrainmaterial` adds only `vv_materialTex` and `vv_materialTex2` to `chunkopaque`/`chunktopsoil`, and now injects `scene.glsl` and `pbrcore.glsl` like the entity and particle groups (2026-11-22); wind-mode vegetation is bypassed back to vanilla; reflection, scene-capture and canopy per-draw resources remain fail-closed |
 | `[x]` | Multi-page atlas via Harmony bind hook | L4 | material page rebinding is restored with active-texture restoration; auxiliary scene/world/canopy per-draw binds stay disabled until their own binding-plan checkpoint |
 | `[~]` | `CloudTileReader` — the game's own cloud placement | L4 | found in a 1.22.7 client with FluffyClouds; sub-tile `windOffsetX/Z` remains unapplied |
 | `[ ]` | Persistent `MaterialDefinition` per block, incl. subsurface | — | today's atlas is four channels; the idea is a full record |
-| `[x]` | **Emissive materials** from vanilla's own `glowLevel` | L2 | hot rather than bright, dimmer in daylight, position-seeded flicker, feeds vanilla's bloom |
+| `[x]` | **Emissive materials** from vanilla's own `glowLevel` | L2 | hot rather than bright, dimmer in daylight, position-seeded flicker, feeds vanilla's bloom. Back on terrain through `pbrcore.glsl` in the modular path (2026-11-22); before that the terrain bloom was glowLevel x mask with no slider in the loop |
 | `[ ]` | Camera state (velocity, FOV, underwater depth) as shared state | — | needed by motion effects and underwater |
 | `[x]` | **Scene intent channels** between state and subsystems | L2 | named 0..1 vocabulary (wetness, cold, heat, haze, readability...) so ten subsystems share one reading. See [INSPIRATION.md](INSPIRATION.md) §1 |
 | `[x]` | **Per-contribution caps and contribution records** | L2 | `GradeStack` clamps only the final result, so a saturated grade cannot say which of nine influences did it. §2 |
@@ -138,7 +138,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
 | `[ ]` | Lighting reach: held items | — | `helditem.fsh` has no `worldPos`, `blockLight` or `rgbaFog`; much thinner, much less to gain |
-| `[x]` | One shared lighting snippet (`pbrcore.glsl`) | L2 | injected into all three programs; a smoke check asserts Cook-Torrance is defined exactly once |
+| `[x]` | One shared lighting snippet (`pbrcore.glsl`) | L2 | injected into all three programs (terrain through `pbrterrainmaterial` since 2026-11-22; that file still carries its own GGX helpers, to be folded into the core in a later pass); a smoke check asserts Cook-Torrance is defined exactly once |
 | `[~]` | Crevice shading from the material normal's curvature | L2 | divergence of the stored gradient - a real cavity estimate, not an edge detector |
 | `[ ]` | Screen-space contact shadows | — | **blocked.** Needs the depth buffer, which is being written during the opaque pass, not readable |
 | `[ ]` | Separate local contrast from albedo level before the Sobel pass | — | "dark is deep" is the known weakness; belongs in `tools/pbrgen` first |

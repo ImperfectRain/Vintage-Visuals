@@ -175,8 +175,23 @@ void main()
             var patches = ShaderPatchLoader.ParsePatchFile(
                 yaml, "pbrterrainmaterial", "test", resolveSnippet).ToList();
 
-            check("pbrterrainmaterial.yaml parsed into sixteen patches",
-                patches.Count == 16,
+            // Terrain emission goes through the ONE emission model, so every
+            // emissive slider reaches it and Emissive strength 0 is vanilla.
+            // The first restoration checkpoint added glowLevel * mask straight
+            // to the bloom with no slider in the loop.
+            string terrainSnippet = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string glowBody = GlslEval.FunctionBody(terrainSnippet, "float vvTerrainEmissiveGlow(");
+            string emissionBody = GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainEmission(");
+            check("terrain bloom from glowing blocks is scaled by the emissive sliders",
+                glowBody != null && glowBody.Contains("vvEmissiveGlow(glowLevel)"),
+                glowBody ?? "vvTerrainEmissiveGlow not found");
+            check("terrain emission colour comes from the shared emission model",
+                emissionBody != null && emissionBody.Contains("vvEmission(m.baseColor, glowLevel, cameraRelativePos)"),
+                emissionBody ?? "vvTerrainEmission not found");
+
+            check("pbrterrainmaterial.yaml parsed into twenty patches",
+                patches.Count == 20,
                 patches.Count.ToString());
             check("pbrterrainmaterial group is isolated",
                 patches.All(p => p.Group == "pbrterrainmaterial"),
@@ -184,11 +199,20 @@ void main()
             check("pbrterrainmaterial uses only safe explicit operations",
                 patches.All(p => p.Kind == ShaderPatchKind.Assert ||
                                  p.Kind == ShaderPatchKind.InsertAfter ||
-                                 p.Kind == ShaderPatchKind.InsertBefore),
+                                 p.Kind == ShaderPatchKind.InsertBefore ||
+                                 (p.Kind == ShaderPatchKind.Replace &&
+                                  (p.Content.Contains("in vec4 rgbaFog;") || p.Content.Contains("uniform vec3 lightPosition;")))),
                 string.Join(", ", patches.Select(p => p.Kind).Distinct()));
+            // The only replaces are the shared snippets, and both paste their
+            // anchor back - a replace that dropped it would delete a vanilla
+            // declaration the rest of the shader needs.
+            check("pbrterrainmaterial injects scene.glsl and pbrcore.glsl once per terrain program",
+                patches.Count(p => p.Kind == ShaderPatchKind.Replace && p.Content.Contains("float vvSceneVisibilityDampen()")) == 2 &&
+                patches.Count(p => p.Kind == ShaderPatchKind.Replace && p.Content.Contains("vec3 vvEmission(vec3 albedo, float glow, vec3 cameraRelativePos)")) == 2,
+                "");
             check("pbrterrainmaterial declares deterministic compiler phases",
                 patches.Count(p => p.Phase == "Assertions") == 12 &&
-                patches.Count(p => p.Phase == "Declarations") == 2 &&
+                patches.Count(p => p.Phase == "Declarations") == 6 &&
                 patches.Count(p => p.Phase == "Material") == 2,
                 string.Join(", ", patches.Select(p => p.Phase)));
 
@@ -241,18 +265,18 @@ void main()
 
             check("pbrterrainmaterial group healthy", patcher.IsGroupHealthy("pbrterrainmaterial"), "");
             check("chunkopaque receives primary material operation before outGlow",
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >= 0 &&
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) &&
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >= 0 &&
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) &&
                 opaque.IndexOf("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));", StringComparison.Ordinal) >
-                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal),
+                opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal),
                 "");
             check("chunktopsoil receives primary material operation before outGlow",
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >= 0 &&
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) >
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal) &&
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >= 0 &&
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) &&
                 topsoil.IndexOf("outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);", StringComparison.Ordinal) >
-                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);", StringComparison.Ordinal),
+                topsoil.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal),
                 "");
             check("Stage B preserves vanilla glow contracts",
                 opaque.Contains("outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));") &&

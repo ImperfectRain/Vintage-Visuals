@@ -1,8 +1,9 @@
 # Vintage Visuals - one-sampler terrain material restoration checkpoint.
 #
-# This is deliberately separate from pseudopbr/pseudopbrtopsoil. It restores
-# only the primary material atlas path and the debug views that can be answered
-# by that one resource.
+# This is deliberately separate from pseudopbr/pseudopbrtopsoil. It owns the
+# two material atlas samplers, the shared scene and lighting snippets, and the
+# terrain features restored on top of them. Features that need a resource of
+# their own (a sampler, a varying) get a patch group of their own.
 
 - type: assert
   phase: Assertions
@@ -34,6 +35,22 @@
   filename: chunkopaque.fsh
   tokens: uniform vec3 lightPosition;
 
+# The shared scene vocabulary and the shared lighting core, injected the way
+# the entity and particle groups inject them: once per program, by this group,
+# so this group can still roll back to vanilla on its own. Both snippets paste
+# their anchor back, which is why these are explicit replaces.
+- type: replace
+  phase: Declarations
+  filename: chunkopaque.fsh
+  tokens: in vec4 rgbaFog;
+  snippet: scene.glsl
+
+- type: replace
+  phase: Declarations
+  filename: chunkopaque.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
 - type: insert_after
   phase: Declarations
   filename: chunkopaque.fsh
@@ -45,8 +62,8 @@
   filename: chunkopaque.fsh
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
-    outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
-    outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);
 
 - type: assert
@@ -79,6 +96,22 @@
   filename: chunktopsoil.fsh
   tokens: uniform vec3 lightPosition;
 
+# The shared scene vocabulary and the shared lighting core, injected the way
+# the entity and particle groups inject them: once per program, by this group,
+# so this group can still roll back to vanilla on its own. Both snippets paste
+# their anchor back, which is why these are explicit replaces.
+- type: replace
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  tokens: in vec4 rgbaFog;
+  snippet: scene.glsl
+
+- type: replace
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
 - type: insert_after
   phase: Declarations
   filename: chunktopsoil.fsh
@@ -90,6 +123,6 @@
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
-    outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);
-    outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight);
+    outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
+    outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);

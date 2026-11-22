@@ -4,6 +4,13 @@
 // monolith. The core material renderer is allowed to use the primary and
 // secondary material atlases. Scene/world reflection resources remain absent
 // from this module until their sampler map has been runtime validated again.
+//
+// The same group injects scene.glsl (at `in vec4 rgbaFog;`) and pbrcore.glsl
+// (at `uniform vec3 lightPosition;`) above this file, exactly as the entity and
+// particle groups do. Their declarations - the scene lanes, the shared look
+// controls, the emission model and the environment layers - are therefore NOT
+// repeated here: GLSL rejects a second declaration of the same uniform, and a
+// second copy of a formula is how two programs stop agreeing.
 
 uniform sampler2D vv_materialTex;
 uniform sampler2D vv_materialTex2;
@@ -14,23 +21,11 @@ uniform float vv_pbrDebugView;
 uniform float vv_pbrNormalStrength;
 uniform float vv_pbrRoughnessBias;
 uniform float vv_pbrSpecularStrength;
-uniform float vv_pbrAmbient;
-uniform float vv_pbrSpecularAA;
 uniform float vv_pbrDetailDistance;
 uniform float vv_pbrCavity;
 uniform float vv_pbrSpecOcclusion;
-uniform float vv_pbrMetalResponse;
-uniform float vv_pbrEnergyCompensation;
-uniform float vv_sceneDayLight;
-uniform float vv_sceneWetness;
-uniform float vv_sceneOvercast;
-uniform float vv_sceneArtificialLight;
-uniform float vv_sceneFrost;
-uniform float vv_sceneSnow;
 
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
-const float VV_DIELECTRIC_F0 = 0.04;
-const float VV_PI = 3.14159265;
 
 bool vvTerrainIsFlora()
 {
@@ -240,11 +235,31 @@ vec3 vvTerrainApplySurfaceLayers(VvTerrainMaterial m, vec3 diffuse)
     return diffuse;
 }
 
+// Emission on terrain, through the ONE emission model in pbrcore.glsl.
+//
+// The atlas mask can only remove emission from a block vanilla already lights
+// (glowLevel is the game's own answer to "does this glow"), and every slider
+// reaches it: Emissive strength 0 makes both of these return exactly 0. The
+// first restoration checkpoint added glowLevel * mask to the bloom with no
+// slider in the loop, so glowing blocks bloomed at up to twice vanilla's level
+// and nothing could turn it down.
+vec3 vvTerrainEmission(VvTerrainMaterial m, float glowLevel, vec3 cameraRelativePos)
+{
+    if (vv_pbrEnabled < 0.5 || glowLevel <= 0.0) return vec3(0.0);
+    return vvEmission(m.baseColor, glowLevel, cameraRelativePos) * m.emissionMask;
+}
+
+float vvTerrainEmissiveGlow(float glowLevel, vec2 materialUv)
+{
+    if (vv_pbrEnabled < 0.5 || glowLevel <= 0.0) return 0.0;
+    return vvEmissiveGlow(glowLevel) * vvTerrainSecondaryTexel(materialUv).a;
+}
+
 vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                               vec2 materialUv, vec3 cameraRelativePos,
                               float shadowBrightness, float fogAmount,
                               float murkiness, vec3 environmentColor,
-                              vec3 blockLight)
+                              vec3 blockLight, float glowLevel)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
     if (vvTerrainIsFlora()) return litColor;
@@ -273,13 +288,8 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     float energyCap = mix(1.0, 1.18, clamp(vv_pbrEnergyCompensation, 0.0, 1.0));
     vec3 color = diffuse + (directSpec + blockSpec + ambientSpec) * energyCap;
+    color += vvTerrainEmission(m, glowLevel, cameraRelativePos);
     return vec4(clamp(color, 0.0, 8.0), litColor.a);
-}
-
-float vvTerrainEmissiveGlow(float glowLevel, vec2 materialUv)
-{
-    if (vv_pbrEnabled < 0.5 || glowLevel <= 0.0) return 0.0;
-    return glowLevel * vvTerrainSecondaryTexel(materialUv).a;
 }
 
 vec3 vvTerrainPrimaryGrid(vec2 materialUv)
@@ -298,7 +308,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
                                    vec2 materialUv, vec3 cameraRelativePos,
                                    float shadowBrightness, float fogAmount,
                                    float murkiness, vec3 environmentColor,
-                                   vec3 blockLight)
+                                   vec3 blockLight, float glowLevel)
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode == 0) return color;
@@ -320,7 +330,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 8) return vec4(vec3(m.alphaRoughness), color.a);
     if (mode == 10) return vec4(vec3(vv_sceneWetness), color.a);
     if (mode == 12) return vec4(vec3(m.ao * mix(0.92, 1.06, m.height)), color.a);
-    if (mode == 14) return vec4(vec3(vvTerrainEmissiveGlow(1.0, materialUv)), color.a);
+    if (mode == 14) return vec4(vvTerrainEmission(m, glowLevel, cameraRelativePos), color.a);
     if (mode == 19) return vec4(vec3(m.metalness), color.a);
     if (mode == 20) return vec4(vec3(m.height), color.a);
     if (mode == 21) return vec4(vec3(m.ao), color.a);
