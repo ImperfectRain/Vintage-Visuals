@@ -329,8 +329,10 @@ SceneCaptureRenderer   src/Reflections/
         |                                        |
         +----------------- unit 13 -------------->
                                                  |
-                                    vvSceneReflection  (pseudopbr.glsl)
-                                      ray from texel centre
+                                    vvSceneReflection  (pseudopbr.glsl, legacy, gated off)
+                                    vvTerrainReflectDebug (pbrterrainreflect, modular:
+                                      views 41/42 only; rebound per terrain draw)
+                                      ray from texel centre (legacy)
                                       screen-space march
                                       crossing + bisection
                                                  |
@@ -424,6 +426,7 @@ quietly invalidate one of these.
 | Canopy structure | ring of taps | returns 0 | shadows off | no dapple |
 | Cloud shadows | game's cloud tiles | **off**, not substituted | invented clouds correspond to nothing | vanilla sky lighting |
 | Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
+| Capture bridge (`pbrterrainreflect`) | own group, asserts `pbrterrainmaterial` tokens | group absent: vanilla material-path source | `SceneReflections` off, material group rolled back, or anchor missing | material path unaffected; views 41/42 hidden in the Studio |
 | Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
 | World reflection volume | local scanned volume | `vv_worldReflectValid` 0 | scan or upload failed | scene hit or analytic fallback only |
 | Canopy context | disabled during terrain recovery | compiled out of terrain shader | sampler/state contract not proven | no forest ambient context; shadow-map flecks still work |

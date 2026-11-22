@@ -223,7 +223,7 @@ and DECISIONS D8-D13.
 
 | | Feature | Level | Notes |
 |---|---|---|---|
-| `[~]` | Scene capture (previous frame, half res, depth in alpha) | **L2** | `SceneCaptureRenderer`. Source selection and diagnostics are in place, but debug view 41 must still prove the capture contains terrain RGB correctly in game |
+| `[~]` | Scene capture (previous frame, half res, depth in alpha) | **L2** | `SceneCaptureRenderer`. Source selection and diagnostics are in place, but debug view 41 must still prove the capture contains terrain RGB correctly in game. Stage one on the modular path (2026-11-22, L2): `pbrterrainreflect` declares the capture, rebinds it per terrain draw with the active unit restored, and draws views 41/42 only, under `SceneReflections` (default off). Cost while on: one half-res frame copy per frame plus one extra bind per terrain draw, not measured |
 | `[x]` | Screen-space march, crossing detection, bisection | **L2** | Uniform sampling in the image. Two earlier world-space marches produced rings and smears - D11 |
 | `[x]` | Texel-quantised reflection | **L2** | Ray starts at the texel centre, so one colour per texel is structural - D10 |
 | `[x]` | Analytic sky/horizon/ground fallback | **L2** | Used where the ray leaves the screen, hits nothing, or points at the camera |

@@ -41,7 +41,34 @@ namespace VintageVisuals.Common.Patching
                 // owns them alone.
                 new[] { "pbrterrainmaterial", "pseudopbr" },
                 new[] { "pbrterrainmaterial", "pseudopbrtopsoil" },
+
+                // The capture bridge rides the modular path, and declares the
+                // same capture uniforms the legacy shader does. It requires
+                // pbrterrainmaterial, which already excludes pseudopbr; this
+                // says so where the patcher and verifypatches can read it.
+                new[] { "pbrterrainreflect", "pseudopbr" },
             };
+
+        /// <summary>
+        /// Groups that patch ON TOP OF another group's injections, and assert
+        /// that group's tokens so they fail closed without it. afterGroups
+        /// orders them; this states the dependency where verifypatches can
+        /// read it, so a lone dependent group failing its assert is checked as
+        /// the intended fail-closed outcome rather than reported as a broken
+        /// anchor, and the real combination is what gets compiled.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string[]> Requires =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                { "pbrterrainreflect", new[] { "pbrterrainmaterial" } },
+            };
+
+        /// <summary>The groups a group requires, or none.</summary>
+        public static string[] RequiredBy(string group)
+        {
+            string[] required;
+            return group != null && Requires.TryGetValue(group, out required) ? required : new string[0];
+        }
 
         /// <summary>Whether these two groups are declared mutually exclusive.</summary>
         public static bool AreExclusive(string a, string b)

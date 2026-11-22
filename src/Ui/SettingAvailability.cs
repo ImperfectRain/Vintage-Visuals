@@ -103,6 +103,9 @@ namespace VintageVisuals.Ui
             "atmosphere_dapple",
         };
 
+        private const string CaptureBridgeReason =
+            "Not drawn yet: this only turns on the scene capture so Debug views 41 and 42 can check it.";
+
         private const string DebugOnlyReason =
             "Not wired yet: only an atmosphere debug view uses it.";
 
@@ -160,6 +163,13 @@ namespace VintageVisuals.Ui
 
             if (!PseudoPbrSubsystem.TerrainShaderPatchesEnabled && LegacyTerrainOnly.Contains(setting.Code))
             {
+                // The modular path already consumes the scene capture, but only
+                // in debug views 41 and 42 (pbrterrainreflect, stage one), so
+                // the switch is still not a working reflection control.
+                if (setting.Code == "reflections_scene" && PseudoPbrSubsystem.TerrainReflectPatchEnabled)
+                {
+                    return new SettingAvailability(AvailabilityState.Unavailable, CaptureBridgeReason);
+                }
                 return new SettingAvailability(AvailabilityState.Unavailable, LegacyTerrainReason);
             }
 

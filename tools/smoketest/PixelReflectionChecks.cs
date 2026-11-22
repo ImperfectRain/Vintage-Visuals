@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
 using VintageVisuals.Reflections;
 
@@ -366,6 +367,42 @@ namespace VintageVisuals.SmokeTest
                 interceptor.Contains("PerDrawAuxiliaryBindingEnabled = false") &&
                 Regex.IsMatch(interceptor, @"if \(PerDrawAuxiliaryBindingEnabled\)"),
                 "scene/world/canopy resources are not part of the base material PBR checkpoint");
+
+            // Stage one of the reflection restoration: the capture alone is
+            // rebound per terrain draw, inside the same active-texture
+            // save/restore as the material pages, and only into a program
+            // that declares it. The world volume stays fenced off.
+            int reentrantAt = interceptor.IndexOf("_reentrant = true;", StringComparison.Ordinal);
+            int finallyAt = reentrantAt < 0 ? -1 : interceptor.IndexOf("finally", reentrantAt, StringComparison.Ordinal);
+            int sceneBindAt = interceptor.IndexOf("BindTexture2D(PbrShaderBinder.ReflectSceneUniform", StringComparison.Ordinal);
+            check("the capture is rebound per terrain draw inside the active-texture restore",
+                interceptor.Contains("PerDrawSceneCaptureBindingEnabled = true") &&
+                interceptor.Contains("if (PerDrawSceneCaptureBindingEnabled || PerDrawAuxiliaryBindingEnabled)") &&
+                interceptor.Contains("program.HasUniform(PbrShaderBinder.ReflectSceneUniform)") &&
+                reentrantAt >= 0 && sceneBindAt > reentrantAt && finallyAt > sceneBindAt,
+                "a per-frame bind does not survive to the terrain draw; one outside the restore leaves the wrong active unit");
+
+            string reflectYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainreflect.yaml"));
+            string reflectGlsl = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainreflect.glsl"));
+            var reflectPatches = ShaderPatchLoader.ParsePatchFile(reflectYaml, "pbrterrainreflect", "pbrterrainreflect.yaml",
+                n => File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets", n))).ToList();
+            var samplerPatch = reflectPatches.FirstOrDefault(p => p.Content.Contains("uniform sampler2D vv_reflectScene;"));
+            check("the modular capture sampler is declared directly above main, below every vanilla sampler",
+                samplerPatch != null && samplerPatch.Kind == ShaderPatchKind.InsertBefore &&
+                samplerPatch.Filename == "chunkopaque.fsh" &&
+                samplerPatch.AnchorDescription.Contains("void main()"),
+                "a sampler above vanilla's shifts every unit below it at link time");
+            check("the modular capture group cannot apply without the material path",
+                reflectPatches.Any(p => p.Kind == ShaderPatchKind.Assert && p.AnchorDescription.Contains("vvTerrainMaterialPrimaryDebug(")) &&
+                ShaderPatchGroups.RequiredBy("pbrterrainreflect").Contains("pbrterrainmaterial"),
+                "");
+            string bridgeBody = GlslEval.FunctionBody(reflectGlsl, "vec4 vvTerrainReflectDebug(") ?? "";
+            check("the capture bridge changes no pixel outside its debug views",
+                bridgeBody.Contains("if (mode == 0) return color;") &&
+                bridgeBody.TrimEnd().EndsWith("return color;", StringComparison.Ordinal) &&
+                Regex.Matches(GlslEval.StripComments(bridgeBody), @"texture\(").Count == 1 &&
+                Regex.IsMatch(GlslEval.StripComments(bridgeBody), @"if \(mode == 41\)\s*\{\s*if \(vv_reflectValid < 0\.5\) return"),
+                "the bridge samples the capture only inside view 41, and only once the capture is valid");
 
             check("canopy context sampler is compiled out during recovery",
                 !_pbr.Contains("uniform sampler2D vv_canopyContext") &&

@@ -37,6 +37,13 @@ namespace VintageVisuals.PseudoPBR
         public const string TerrainMaterialGroupName = "pbrterrainmaterial";
 
         /// <summary>
+        /// The scene-capture bridge on the modular terrain path. Its own group
+        /// because it owns a sampler (unit 13); it asserts the material group's
+        /// tokens, so it cannot apply where the material path did not.
+        /// </summary>
+        public const string TerrainReflectGroupName = "pbrterrainreflect";
+
+        /// <summary>
         /// Grass and soil tops are drawn by their own program, so they get their
         /// own patch group. Groups succeed or fail as a unit, and one shared
         /// group would mean a reworded chunktopsoil line switching relief off
@@ -70,6 +77,25 @@ namespace VintageVisuals.PseudoPBR
         /// pseudopbr/topsoil branches.
         /// </summary>
         public const bool TerrainMaterialPrimaryPatchEnabled = true;
+
+        /// <summary>
+        /// Stage one of the reflection restoration: the capture sampler and its
+        /// bridge debug views (41, 42) on the modular path, and the per-draw
+        /// bind of the capture texture only. Applied only while the player has
+        /// Reflections.SceneReflections on, which defaults to off. The world
+        /// volume and canopy textures stay unbound.
+        /// </summary>
+        public const bool TerrainReflectPatchEnabled = true;
+
+        /// <summary>Whether any terrain shader that samples the scene capture can be live.</summary>
+        public static bool TerrainSceneCaptureConsumerPossible
+        {
+            get
+            {
+                return TerrainShaderPatchesEnabled ||
+                       (TerrainMaterialPrimaryPatchEnabled && TerrainReflectPatchEnabled);
+            }
+        }
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";

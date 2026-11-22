@@ -2038,3 +2038,30 @@ its reason stand). Weather and atmosphere rows are not traced to their shaders,
 only gated on their parents. (The scene capture
 running unsampled was fixed afterwards; see the audit follow-up above.)
 
+
+
+## D48. Reflections come back in stages, starting with the bridge
+
+The legacy reflection stack was never seen working: debug view 41, the proof
+that the captured frame reaching terrain contains the world, was still open
+when the terrain gate closed in August, and the probable cause of that
+corruption was auxiliary samplers rebound per draw without restoring the
+active texture unit.
+
+So the modular path restores it in stages, each its own patch group with its
+own switch. **Stage one** (`pbrterrainreflect`) is only the bridge: the capture
+sampler on unit 13, declared directly above `main` (below every vanilla
+sampler), its uniforms, and debug views 41 and 42. The capture is rebound per
+terrain draw inside the same active-texture save/restore the material pages
+use, and only into a program that declares it. The world volume and canopy
+textures stay unbound. The group asserts the material group's debug entry
+point and is declared in `ShaderPatchGroups.Requires`, so it fails closed
+without the material path, and `tools/verifypatches` checks that it does.
+
+The texture slot report read from a 1.22.7 client before this landed showed
+vanilla terrain on units 0..6, the material atlases on 15 and 14, and no
+shared unit. **Stage two** - the march and the material response - waits until
+view 41 has been seen to show the world.
+
+Supersedes nothing; extends D13 (reflection through the existing BRDF), which
+still describes how stage two must consume the hit.

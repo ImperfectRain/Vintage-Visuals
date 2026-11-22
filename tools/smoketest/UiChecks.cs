@@ -306,9 +306,15 @@ namespace VintageVisuals.SmokeTest
                   liveButHidden.Count == 0, string.Join(", ", liveButHidden));
 
             string reflections = File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"));
+            string pbrSubsystem = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PseudoPbrSubsystem.cs"));
+            string modSystem = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
             check("the scene capture stays off while no compiled shader samples it",
-                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainShaderPatchesEnabled\s*;"),
-                  "only pseudopbr.glsl samples the capture; with its gate off the capture copies every frame for nothing");
+                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainSceneCaptureConsumerPossible\s*;") &&
+                  pbrSubsystem.Contains("return TerrainShaderPatchesEnabled ||") &&
+                  pbrSubsystem.Contains("(TerrainMaterialPrimaryPatchEnabled && TerrainReflectPatchEnabled)") &&
+                  modSystem.Contains("ConfigManager.Config.Reflections.SceneReflections;"),
+                  "the capture copies the frame every frame; it may run only while pseudopbr.glsl or pbrterrainreflect " +
+                  "can sample it, and pbrterrainreflect must be gated on the same SceneReflections switch");
 
             // Turning a parent off must say so rather than leave a live-looking row.
             var off = new VintageVisualsConfig();
@@ -438,8 +444,27 @@ namespace VintageVisuals.SmokeTest
             // The modular terrain path draws its own subset under the same
             // numbers. The Studio offers exactly the views marked Modular, so
             // this comparison is what keeps that list honest.
-            Compare("modular terrain", DebugViewRegistry.PbrPath, "vec4 vvTerrainMaterialPrimaryDebug(",
-                    Snippet("pbrterrainmaterial.glsl"), v => v.InModularTerrain);
+            // Two groups draw modular terrain views: the material path, and the
+            // capture bridge (pbrterrainreflect), which appends its own debug
+            // function after the material one. The set is their union.
+            string modularDebug;
+            try
+            {
+                modularDebug = "vec4 vvModularDebug() {\n" +
+                    GlslEval.FunctionBody(Snippet("pbrterrainmaterial.glsl"), "vec4 vvTerrainMaterialPrimaryDebug(") + "\n" +
+                    GlslEval.FunctionBody(Snippet("pbrterrainreflect.glsl"), "vec4 vvTerrainReflectDebug(") + "\n}\n";
+            }
+            catch (Exception ex) { modularDebug = ""; check("the modular debug functions are readable", false, ex.Message); }
+            Compare("modular terrain", DebugViewRegistry.PbrPath, "vec4 vvModularDebug(",
+                    modularDebug, v => v.InModularTerrain);
+            var bridgeOnly = new HashSet<int>(
+                Regex.Matches(Snippet("pbrterrainreflect.glsl"), @"mode\s*==\s*(\d+)").Select(m => int.Parse(m.Groups[1].Value))
+                    .Where(n => n != 0 && !Regex.IsMatch(Snippet("pbrterrainmaterial.glsl"), @"mode\s*==\s*" + n + @"\b")));
+            var gated = new HashSet<int>(DebugViewRegistry.All.Where(v => v.RequiresSceneCapture).Select(v => v.Value));
+            check("the capture views are offered only while their group can be applied",
+                  bridgeOnly.Count > 0 && bridgeOnly.SetEquals(gated),
+                  "drawn only by pbrterrainreflect: " + string.Join(",", bridgeOnly.OrderBy(n => n)) +
+                  "; gated on SceneReflections: " + string.Join(",", gated.OrderBy(n => n)));
             Compare("entity", DebugViewRegistry.EntityPath, "vec4 vvEntityDebugView(", Snippet("pbrentity.glsl"));
             Compare("atmosphere", DebugViewRegistry.AtmospherePath, "vec4 vvAtmosDebug(", Snippet("atmosphere.glsl"));
 

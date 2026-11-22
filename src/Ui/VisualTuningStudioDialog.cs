@@ -1063,6 +1063,9 @@ namespace VintageVisuals.Ui
             if (view == null) return false;
             if (FullTerrainDebugAvailable()) return view.InLegacyTerrain;
             if (!PrimaryTerrainMaterialDebugAvailable()) return false;
+            if (view.RequiresSceneCapture &&
+                !(PseudoPbrSubsystem.TerrainReflectPatchEnabled && _controller.Config.Reflections.SceneReflections))
+                return false;
             return view.InModularTerrain;
         }
 

@@ -37,6 +37,16 @@ namespace VintageVisuals.Ui
             Paths = paths;
         }
 
+        /// <summary>
+        /// Drawn on the modular path only by pbrterrainreflect, which exists in
+        /// source only while Reflections.SceneReflections is on. The Studio
+        /// hides such a view otherwise rather than offer one that draws nothing.
+        /// </summary>
+        public bool RequiresSceneCapture
+        {
+            get { return OwnerPath == DebugViewRegistry.PbrPath && (Value == 41 || Value == 42); }
+        }
+
         public bool InLegacyTerrain { get { return (Paths & TerrainPaths.Legacy) != 0; } }
         public bool InModularTerrain { get { return (Paths & TerrainPaths.Modular) != 0; } }
 
@@ -115,7 +125,7 @@ namespace VintageVisuals.Ui
                 6, 9, 15, 17, 18, 23,
                 25, 26, 27, 28, 29, 30, 31,
                 32, 34, 35, 36, 37,
-                38, 39, 40, 41, 42, 43,
+                38, 39, 40, 43,
                 45, 46, 47,
                 48, 49, 50, 51,
                 53, 54, 55, 56, 57, 58,

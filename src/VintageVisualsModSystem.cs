@@ -232,6 +232,17 @@ namespace VintageVisuals
                        ConfigManager.Config.PseudoPBR.Enabled;
             }
 
+            // The capture sampler exists in source only while the player wants
+            // scene reflections, so "off" is vanilla's material-path source
+            // rather than a declared, bound and muted sampler.
+            if (group == PseudoPbrSubsystem.TerrainReflectGroupName)
+            {
+                return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled &&
+                       PseudoPbrSubsystem.TerrainReflectPatchEnabled &&
+                       ConfigManager.Config.PseudoPBR.Enabled &&
+                       ConfigManager.Config.Reflections.SceneReflections;
+            }
+
             if (group == PseudoPbrSubsystem.GroupName || group == PseudoPbrSubsystem.TopsoilGroupName)
             {
                 return PseudoPbrSubsystem.TerrainShaderPatchesEnabled &&
@@ -286,6 +297,8 @@ namespace VintageVisuals
                    (PseudoPbrSubsystem.TerrainBasePatchEnabled ? "B" : "-") +
                    (PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled ? "M" : "-") +
                    (PseudoPbrSubsystem.TerrainShaderPatchesEnabled ? "T" : "-") +
+                   (PseudoPbrSubsystem.TerrainReflectPatchEnabled ? "F" : "-") +
+                   (ConfigManager.Config.Reflections.SceneReflections ? "S" : "-") +
                    (ConfigManager.Config.PseudoPBR.EntityLighting ? "E" : "-") +
                    (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
