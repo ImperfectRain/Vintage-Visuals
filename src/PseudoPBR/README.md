@@ -37,7 +37,8 @@ what that means and what is still unconfirmed.
 | `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response for non-flora terrain |
 | Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
-| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; wind-mode vegetation is bypassed; legacy `pseudopbrtopsoil` remains disabled |
+| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; legacy `pseudopbrtopsoil` remains disabled |
+| Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves on a separate flora branch that never decodes the opaque material. Still legacy-only: canopy dapple, sun shafts, pixel and scene reflections |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 
@@ -178,7 +179,14 @@ The current material operation derives a tangent-frame normal from the primary
 atlas, snaps material lookups to texel centers, widens roughness for geometric
 specular antialiasing, and uses local GGX/Smith/Schlick terms for direct sun,
 block-light and ambient specular. Wetness, snow and frost are material layers,
-not extra samplers. `chunkopaque` uses vanilla's `texColor.rgb` as the base
+not extra samplers. `scene.glsl` and `pbrcore.glsl` are injected into each
+terrain program by this group, so the lighting model and scene vocabulary are
+the shared ones rather than local copies.
+
+Wind-mode vegetation branches off before the material is decoded
+(`vvTerrainFloraShade`): it keeps vanilla's lit colour and adds only light
+transmitted through the leaf. Sending alpha-cut plants through the opaque
+material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
 which is acceptable as a recovery step but weaker than capturing the original
 topsoil albedo before lighting.
