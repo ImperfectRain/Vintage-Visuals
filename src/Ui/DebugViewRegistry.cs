@@ -112,11 +112,11 @@ namespace VintageVisuals.Ui
             // Views only the legacy terrain patch draws. Everything else is
             // drawn by both terrain paths unless marked otherwise.
             var legacyOnly = new HashSet<int> {
-                6, 9, 13, 15, 17, 18, 23,
+                6, 9, 15, 17, 18, 23,
                 25, 26, 27, 28, 29, 30, 31,
                 32, 34, 35, 36, 37,
                 38, 39, 40, 41, 42, 43,
-                44, 45, 46, 47,
+                45, 46, 47,
                 48, 49, 50, 51,
                 53, 54, 55, 56, 57, 58,
                 59, 60, 61, 62,
@@ -212,7 +212,7 @@ namespace VintageVisuals.Ui
             Pbr(62, "Vegetation LOD", "How much foliage transmission and cuticle detail survive at this distance.", Forest);
 
             const string Path = "Terrain path";
-            ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue left to vanilla. Read this one first.", Path);
+            ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue on the foliage path. Read this one first.", Path);
 
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));

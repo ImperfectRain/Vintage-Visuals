@@ -89,7 +89,6 @@ namespace VintageVisuals.Ui
         /// <summary>Read only by pseudopbr.glsl, which is gated off with the legacy terrain path.</summary>
         public static readonly HashSet<string> LegacyTerrainOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "pbr_foliage",
             "pbr_dapple",
             "pbr_shafts",
             "pbr_canopyradius",
@@ -129,6 +128,7 @@ namespace VintageVisuals.Ui
             { "pbr_normalstrength", "Judge on close stone or planks, not grass or leaves." },
             { "pbr_cavity", "Judge on close stone or planks, not grass or leaves." },
             { "pbr_grain", "Judge on close planks and log sides in sunlight." },
+            { "pbr_foliage", "Shows on leaves and grass with a low clear sun behind them." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
             { "pbr_blocklight", "Creatures, items and particles only in this build." },
             { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },

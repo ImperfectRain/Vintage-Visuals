@@ -274,11 +274,74 @@ void main()
                 resolved.Contains("diffuseEnergy") &&
                 resolved.Contains("(1.0 - m.metalness)"),
                 "terrain material response must stay energy-aware and metalness-aware");
+            // Plant tissue has its own path. It may add light through the leaf,
+            // but it must branch off BEFORE the opaque material is decoded, so
+            // relief, cavity and atlas specular never reach alpha-cut plants.
+            string primaryBody = GlslEval.FunctionBody(terrainSnippet, "vec4 vvTerrainMaterialPrimary(") ?? "";
+            string floraShadeBody = GlslEval.FunctionBody(terrainSnippet, "vec4 vvTerrainFloraShade(") ?? "";
+            int floraBranch = primaryBody.IndexOf("if (vvTerrainIsFlora())", StringComparison.Ordinal);
+            int decode = primaryBody.IndexOf("vvDecodeTerrainMaterial(", StringComparison.Ordinal);
             check("Stage C terrain material skips vanilla wind-mode vegetation",
                 resolved.Contains("bool vvTerrainIsFlora()") &&
-                resolved.Contains("if (vvTerrainIsFlora()) return litColor;") &&
+                floraBranch >= 0 && decode > floraBranch &&
+                primaryBody.Substring(floraBranch, decode - floraBranch).Contains("return vvTerrainFloraShade(") &&
+                floraShadeBody.Length > 0 &&
+                !floraShadeBody.Contains("vvDecodeTerrainMaterial") &&
+                !floraShadeBody.Contains("vvDirectionalShadeTerrain") &&
                 resolved.Contains("if (vvTerrainIsFlora()) return color;"),
                 "alpha-cut plants must not receive opaque terrain cavity/relief");
+
+            // Foliage transmission, ported from the legacy patch.
+            string foliageBody = GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainFoliageTransmission(") ?? "";
+            check("terrain foliage transmission is exactly off at a slider of zero",
+                foliageBody.Contains("if (vv_pbrFoliage < 0.001) return vec3(0.0);") &&
+                foliageBody.Contains("* vv_pbrFoliage"),
+                "");
+            check("terrain foliage transmission adds to vanilla's lit leaf rather than replacing it",
+                floraShadeBody.Contains("litColor.rgb + through"),
+                "");
+
+            // The translucency sign has inverted the whole effect once: it fired
+            // on front-lit leaves and went dark on backlit ones. Evaluate the
+            // shipped body for both cases.
+            string transBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainTranslucency(") ?? "")
+                .Replace("vvTerrainSafeNormalize", "vvSafeNormalize");
+            double Translucency(GlslEval.Val l)
+            {
+                var syms = GlslEval.Syms("l", l, "n", GlslEval.Vec(0, 0, 1), "v", GlslEval.Vec(0, 0, 1));
+                string through = GlslEval.Rhs(GlslEval.Statement(transBody, "vec3 through"));
+                syms["through"] = GlslEval.Eval(through, syms);
+                string ret = GlslEval.Statement(transBody, "return");
+                return GlslEval.Scalar(ret.Substring(ret.IndexOf("return", StringComparison.Ordinal) + 6).TrimEnd(';', ' '), syms);
+            }
+            double backlit = -1, frontlit = -1;
+            try
+            {
+                backlit = Translucency(GlslEval.Vec(0, 0.196, -0.981));
+                frontlit = Translucency(GlslEval.Vec(0, 0.196, 0.981));
+            }
+            catch (Exception ex) { check("terrain translucency is evaluable", false, ex.Message); }
+            check("terrain leaves glow with the sun behind them and not in front",
+                backlit > 0.3 && frontlit < 0.01,
+                "backlit " + backlit.ToString("0.000") + ", front-lit " + frontlit.ToString("0.000"));
+
+            // Sun visibility comes from vanilla's sun-only shadow brightness,
+            // rescaled so a fully shadowed leaf reads zero rather than 1 - intensity.
+            string visBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFloraSunVisibility(") ?? "");
+            double shadowed = -1, lit = -1;
+            try
+            {
+                string ret = GlslEval.Statement(visBody, "return");
+                string expr = ret.Substring(ret.IndexOf("return", StringComparison.Ordinal) + 6).TrimEnd(';', ' ');
+                shadowed = GlslEval.Scalar(expr, GlslEval.Syms("shadowBrightness", 0.4, "shadowIntensity", 0.6));
+                lit = GlslEval.Scalar(expr, GlslEval.Syms("shadowBrightness", 1.0, "shadowIntensity", 0.6));
+            }
+            catch (Exception ex) { check("terrain flora sun visibility is evaluable", false, ex.Message); }
+            check("a fully shadowed leaf transmits no sun",
+                Math.Abs(shadowed) < 1e-6 && Math.Abs(lit - 1.0) < 1e-6,
+                "shadowed " + shadowed.ToString("0.000") + ", lit " + lit.ToString("0.000"));
             check("Stage C diffuse energy is not view-angle blackening",
                 resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);") &&
                 !resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - fresnel)"),
