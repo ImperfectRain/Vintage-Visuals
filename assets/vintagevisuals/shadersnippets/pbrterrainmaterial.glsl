@@ -565,7 +565,7 @@ const float VV_TERRAIN_FLECK_SATURATION = 1.08;
 // about half a degree of sun.
 const float VV_TERRAIN_FLECK_BOUNCE = 0.07;
 // Lit share of the cells outside a cluster: specks and a rare lone gap.
-const float VV_TERRAIN_FLECK_SCATTER = 0.08;
+const float VV_TERRAIN_FLECK_SCATTER = 0.12;
 // How far the pool threshold wanders, which ragges the outline.
 const float VV_TERRAIN_FLECK_RAGGED = 0.36;
 // Lobe noise on the pool outline: 0.512-block cells, tiling the 4096-block
@@ -946,7 +946,7 @@ vec3 vvTerrainFleckField(vec2 src, vec2 az, float stretch, float density, float 
     // under thin patches of crown and leaves wide plain shade between them,
     // instead of an even scatter of coins (v5, seen in game).
     float dataThin = clamp(0.6 * (1.0 - clamp(density, 0.0, 1.0)) + 0.4 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
-    float cluster = smoothstep(0.42, 0.72, noise);
+    float cluster = smoothstep(0.32, 0.6, noise);
     float open = (VV_TERRAIN_FLECK_SCATTER + cluster) * (0.55 + 0.6 * dataThin);
     stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
     float turn = 6.28318530718 * vv_sceneBreeze;
