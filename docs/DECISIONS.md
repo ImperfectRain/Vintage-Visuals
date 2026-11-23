@@ -2187,3 +2187,17 @@ than it should, not as cuts. Moving between forests eases the plane, so flecks
 drift for a couple of seconds.
 
 Amends D50's pattern and its cost; D50's gate is unchanged.
+
+**Amendment, same day (third pattern).** The second pattern was seen in game
+and read as stains: too sparse, small and dim, a flat tan, random confetti on a
+flat shade. Lobes alone cannot make pools, because the 3x3 search bounds a gap
+to about half a block. So a third layer, POOLS: two octaves of value noise on
+the fleck grid (2.048 and 1.024 blocks, both tiling the wrap), thresholded at a
+level the coarse thin-crown noise lowers, so light runs together into patches a
+few blocks wide under a thin crown and the leaves cut it up. The same noise
+drives gap count and size, and a smooth WASH (`VV_TERRAIN_FLECK_WASH`, not
+stepped, since contour bands would show) lifts thin-crown shade so the shade
+varies. `VV_TERRAIN_FLECK_GAIN` 1.6 lets the default slider reach a full gap.
+Lit patches go through `vvTerrainSunlitTint`: 1.2x saturation and a warm shift
+at the same luminance, checked as an interaction, so the sunlit cap holds.
+Cost: eight more hashes per shaded receiver. Not measured.

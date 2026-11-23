@@ -512,6 +512,31 @@ void main()
                 check("I-terrain a sunfleck restores vanilla's sunlit level exactly and never exceeds it", ok, detail);
             }
             catch (Exception ex) { check("I-terrain sunfleck relight is readable", false, ex.Message); }
+            // INTERACTION: the sunlit tint shifts hue and saturation only. A
+            // fleck at vanilla's sunlit level must stay at that luminance, or
+            // the relight's cap above means nothing.
+            try
+            {
+                string tintBody = GlslEval.StripComments(
+                    GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainSunlitTint(") ?? "");
+                string yExpr = GlslEval.Rhs(GlslEval.Statement(tintBody, "float y"));
+                string warmExpr = GlslEval.Rhs(GlslEval.Statement(tintBody, "vec3 warm"));
+                string outExpr = GlslEval.Rhs(GlslEval.Statement(tintBody, "return"));
+                double sat = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_SATURATION");
+                double Luma(GlslEval.Val v) => GlslEval.Scalar("dot(c, vec3(0.2126, 0.7152, 0.0722))", GlslEval.Syms("c", v));
+                bool ok = sat > 1.0 && resolveBody.Contains("vec3 lit = vvTerrainSunlitTint(color * vvTerrainSunRelight(sunVisibility));");
+                string detail = "";
+                foreach (var c in new[] { GlslEval.Vec(0.37, 0.29, 0.20), GlslEval.Vec(0.25, 0.45, 0.12), GlslEval.Vec(0.5, 0.5, 0.5), GlslEval.Vec(0.9, 0.85, 0.6) })
+                {
+                    var syms = GlslEval.Syms("c", c, "VV_TERRAIN_FLECK_SATURATION", sat);
+                    syms["y"] = new GlslEval.Val(GlslEval.Scalar(yExpr, syms));
+                    syms["warm"] = GlslEval.Eval(warmExpr, syms);
+                    double before = Luma(c), after = Luma(GlslEval.Eval(outExpr, syms));
+                    if (Math.Abs(after - before) > before * 0.01) { ok = false; detail += $" {before:0.000}->{after:0.000}"; }
+                }
+                check("I-terrain the sunfleck tint keeps vanilla's sunlit luminance", ok, detail);
+            }
+            catch (Exception ex) { check("I-terrain sunfleck tint is readable", false, ex.Message); }
             check("terrain leaf sheen is exactly off at a specular strength of zero",
                 GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCuticleSpecular(") ?? "")
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),
