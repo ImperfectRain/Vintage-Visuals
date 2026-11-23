@@ -57,6 +57,35 @@ namespace VintageVisuals.SmokeTest
             }
 
             check("shader assets were found to scan", scanned > 0, scanned + " file(s)");
+
+            // GLSL RESERVED WORDS. A local named `packed` compiled cleanly in
+            // glslangValidator across every define combination and was
+            // rejected by NVIDIA's frontend, which took the world render with
+            // it (2026-11-23, the leaf map's decode). The words below are
+            // reserved for future use in GLSL 3.30, and a driver is entitled to
+            // refuse any of them as an identifier.
+            string[] reserved =
+            {
+                "common", "partition", "active", "asm", "class", "union", "enum", "typedef",
+                "template", "this", "packed", "resource", "goto", "inline", "noinline",
+                "public", "static", "extern", "external", "interface", "long", "short",
+                "half", "fixed", "unsigned", "superp", "input", "output", "filter",
+                "sizeof", "cast", "namespace", "using", "row_major", "volatile",
+            };
+            var declaration = new Regex(@"\b(?:float|int|uint|bool|[iu]?vec[234]|mat[234]|sampler\w*)\s+(" +
+                                        string.Join("|", reserved) + @")\b");
+            foreach (string directory in directories)
+            {
+                if (!Directory.Exists(directory)) continue;
+                foreach (string file in Directory.GetFiles(directory))
+                {
+                    string code = Regex.Replace(File.ReadAllText(file), @"//[^\n]*|/\*.*?\*/", "",
+                                                RegexOptions.Singleline);
+                    Match hit = declaration.Match(code);
+                    check(Path.GetFileName(file) + " uses no GLSL reserved word as a name", !hit.Success,
+                          hit.Success ? hit.Value : "");
+                }
+            }
         }
 
         private static int FirstNonAscii(string text)

@@ -433,7 +433,7 @@ void main()
                 terrainSnippet.Contains("uniform vec4 vv_canopyMap[128];") &&
                 cellBody.Contains("ivec2(floor(worldXZ / 2.0))") &&
                 cellBody.Contains("int i = iz * 32 + ix;") &&
-                cellBody.Contains("(i & 1) == 0 ? mod(packed, 4096.0) : floor(packed / 4096.0)") &&
+                cellBody.Contains("(i & 1) == 0 ? mod(cellPair, 4096.0) : floor(cellPair / 4096.0)") &&
                 cellBody.Contains("vec2(floor(code / 512.0) / 7.0, mod(code, 512.0))") &&
                 VintageVisuals.Common.Scene.CanopyMap.Index(-1, -1) == 31 * 32 + 31 &&
                 VintageVisuals.Common.Scene.CanopyMap.Index(4096 + 2, 0) == VintageVisuals.Common.Scene.CanopyMap.Index(2, 0) &&

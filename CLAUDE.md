@@ -155,6 +155,11 @@ hierarchy, the budgets, and what this project deliberately does not build.
   passing validator proves nothing here. `ShaderPatchLoader` now refuses
   non-ASCII patch content at load time, and `tools/smoketest` scans the shipped
   assets.
+- **Never name anything with a GLSL reserved word.** A local called `packed`
+  compiled cleanly in `glslangValidator` in all 48 combinations and NVIDIA
+  refused the shader, so `chunkopaque.fsh` failed and the world disappeared
+  into fog (2026-11-23). `tools/smoketest` scans the shipped GLSL for the 3.30
+  reserved list (`packed`, `input`, `output`, `filter`, `common`, `half`, ...).
 - **Never declare a sampler above vanilla's.** Sampler texture units are
   assigned at LINK time from the program's active sampler list, so inserting one
   above vanilla's shifts every sampler below it. In `chunkopaque.fsh` that

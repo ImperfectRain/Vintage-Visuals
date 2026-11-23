@@ -746,8 +746,8 @@ vec2 vvTerrainCanopyCell(vec2 worldXZ)
     int ix = ((c.x % 32) + 32) % 32;
     int iz = ((c.y % 32) + 32) % 32;
     int i = iz * 32 + ix;
-    float packed = vv_canopyMap[i >> 3][(i >> 1) & 3];
-    float code = (i & 1) == 0 ? mod(packed, 4096.0) : floor(packed / 4096.0);
+    float cellPair = vv_canopyMap[i >> 3][(i >> 1) & 3];
+    float code = (i & 1) == 0 ? mod(cellPair, 4096.0) : floor(cellPair / 4096.0);
     return vec2(floor(code / 512.0) / 7.0, mod(code, 512.0));
 }
 
