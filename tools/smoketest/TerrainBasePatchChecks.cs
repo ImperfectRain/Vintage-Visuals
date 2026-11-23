@@ -421,9 +421,54 @@ void main()
                 "");
             check("terrain sunflecks need the leaf map and stay inside it",
                 overheadBody.Contains("if (vv_canopyMapValid < 0.5) return vec2(0.0);") &&
-                Regex.IsMatch(overheadBody, @"max\(abs\(rel\.x\), abs\(rel\.z\)\) > 30\.0\) break;") &&
-                VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks / 2 > 30,
+                overheadBody.Contains("float reach = max(abs(rel.x), abs(rel.z));") &&
+                overheadBody.Contains("if (reach > 28.0) break;") &&
+                // The march blends the next cell too, so its reach plus one
+                // cell must stay inside half the map's span.
+                VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks / 2
+                    >= 28 + VintageVisuals.Common.Scene.CanopyMap.CellBlocks,
                 "the march must stop inside half the map's span, or the toroidal map returns another place's leaves");
+            // Every way a fleck used to be cut by a straight line: a lobe
+            // reaching past the 3x3 cells searched, flecks still drawing where
+            // the leaf map's reach ends, and the canopy shade cut at the
+            // fleck distance.
+            try
+            {
+                string patternBody = GlslEval.StripComments(
+                    GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFleckPattern(") ?? "");
+                double minStretch = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_MIN_STRETCH");
+                // A gap: main radius up to 0.28 cell, a side lobe up to 1.1
+                // of that away and 0.8 of it across, grown 7.5% by the ragged
+                // edge. A leaf: half-length up to 0.4 cell plus its 0.03 soft
+                // edge. Both sway 0.04. Against the 1.2 cells from the
+                // furthest centre in a cell to the next ring.
+                double reach = Math.Max(0.28 * (1.1 + 0.8 * 1.075) + 0.04, 0.40 + 0.03 + 0.04) / minStretch;
+                double fleckEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_RANGE");
+                double dappleEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_RANGE");
+                check("I-terrain no sunfleck is clipped by its search, the leaf map's reach, or the shade's early exit",
+                    patternBody.Contains("stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);") &&
+                    patternBody.Contains("(cell + vec2(0.2) + r.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL") &&
+                    patternBody.Contains("(cell + vec2(0.2) + q.xy * 0.6 + sway) * VV_TERRAIN_FLECK_CELL") &&
+                    patternBody.Contains("float gapRadius = VV_TERRAIN_FLECK_CELL * mix(0.07, 0.28, size);") &&
+                    patternBody.Contains("gapRadius * (0.7 + 0.4 * s.z)") &&
+                    patternBody.Contains("gapRadius * (k == 0 ? 1.0 : mix(0.45, 0.8, s.w))") &&
+                    patternBody.Contains("(ragged - 0.5) * rr * 0.15") &&
+                    patternBody.Contains("VV_TERRAIN_FLECK_CELL * mix(0.22, 0.40, q.w)") &&
+                    patternBody.Contains("smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL)") &&
+                    Regex.Matches(patternBody, @"\* 0\.04;").Count == 2 &&
+                    reach < 1.2 && fleckEnd <= 28.0 && fleckEnd <= dappleEnd &&
+                    resolveBody.Contains("if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;"),
+                    $"lobe reach {reach:0.00} cells (< 1.2), flecks end at {fleckEnd} (<= 28 and <= {dappleEnd})");
+            }
+            catch (Exception ex) { check("I-terrain sunfleck extent is readable", false, ex.Message); }
+            check("terrain sunflecks step at the block texel and project from one canopy plane",
+                fleckBody.Contains("vvTerrainIsFlora() ? vec3(0.0) : step(vec3(0.5), abs(faceNormal))") &&
+                fleckBody.Contains("world = mix((texel + 0.5) / VV_TERRAIN_FLECK_TEXELS, world, across);") &&
+                fleckBody.Contains("float rise = max(vv_canopyPlaneY - world.y, 1.0);") &&
+                Math.Abs(GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_TEXELS") - 16.0) < 1e-9 &&
+                double.IsNaN(VintageVisuals.Common.Scene.CanopyMap.MeanCanopyY(new int[4])) &&
+                Math.Abs(VintageVisuals.Common.Scene.CanopyMap.MeanCanopyY(new[] { 0, VintageVisuals.Common.Scene.CanopyMap.Encode(3, 100), VintageVisuals.Common.Scene.CanopyMap.Encode(7, 110) }) - 106.5) < 1e-9,
+                "a per-cell projection height cuts flecks at cell edges; snapping across a face speckles it");
             // CPU and GPU must agree on the cell, the index and the encoding.
             check("leaf map encoding agrees between CanopyMap and the shader",
                 VintageVisuals.Common.Scene.CanopyMap.Encode(5, 300) == 5 * 512 + 300 &&
@@ -438,7 +483,8 @@ void main()
                 VintageVisuals.Common.Scene.CanopyMap.Index(-1, -1) == 31 * 32 + 31 &&
                 VintageVisuals.Common.Scene.CanopyMap.Index(4096 + 2, 0) == VintageVisuals.Common.Scene.CanopyMap.Index(2, 0) &&
                 4096 % (VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks) == 0 &&
-                Math.Abs(GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CELL") * GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_PERIOD") - 4096.0) < 1e-6,
+                Math.Abs(GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CELL") * GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_PERIOD") - 4096.0) < 1e-6 &&
+                Math.Abs(GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CLUSTER_CELL") * GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CLUSTER_PERIOD") - 4096.0) < 1e-6,
                 "");
 
             // INTERACTION: a fleck lifts shade back to vanilla's sunlit level

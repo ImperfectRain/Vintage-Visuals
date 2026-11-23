@@ -2136,3 +2136,54 @@ refreshes in about a second, so a tree felled in view keeps its flecks briefly.
 
 Partly supersedes D7: D7's count stays the gate for broken shade; this adds the
 leaf map for solid shade and a pattern D7 had removed, with the gate it lacked.
+
+## D51. Sunfleck shapes: leaf-bitten gaps, stepped at the block texel
+
+**Problem.** Seen in game on 2026-11-23, after D50 shipped: the player called
+the flecks a good foundation, but too mathematically soft and regular for the
+look they want, and some were cut by long straight edges. The reference photos
+show irregular, broken patches of varied size, not a field of ovals.
+
+**Chosen.**
+
+- **Shape.** A gap is one to three overlapping lobes of varied size, and a
+  small gap is dimmer, as a pinhole smaller than the sun's disc is. Two
+  pointed leaf lenses per cell bite into the gaps, which turns ovals into the
+  concave, broken shapes of light through a crown. A coarse value noise
+  (8.192-block cells) bunches gaps where a crown is thin. Gaps and leaves sway
+  on different wind phases.
+- **Edge.** Evaluated once per block texel (1/16 block) along the receiving
+  face and posterised to four levels, so a fleck has the stepped edge of the
+  game's own textures rather than a smooth gradient nothing else in the world
+  has. Plant cards snap on all three axes, block faces only along the face,
+  because snapping across a face that lies on a texel boundary speckles it.
+- **Projection.** From ONE canopy plane for the scene, `vv_canopyPlaneY` (the
+  mean lowest leaf on the map + 1.5, eased over about two seconds), not from
+  each cell's own lowest leaf.
+
+**The straight cuts had three causes**, each now an interaction check with a
+mutation: a lobe stretched by a low sun reached past the 3x3 cells searched
+(the reach is now bounded against `VV_TERRAIN_FLECK_MIN_STRETCH`); the
+per-cell projection height shifted the pattern at every 2-block cell edge; and
+the leaf map itself stopped on 2-block lines, at its cells and at the
+30-block edge of the march. The map is now blended across its four nearest
+cells, eased out between 20 and 28 blocks, and flecks finish fading by 26.
+The scan reads both diagonal columns of each cell, because one column missed
+crowns that left that corner open and each miss was a square hole.
+
+**Rejected.** Smoother and larger ovals (tried offline first: still read as a
+regular field); inverting to "light wherever no leaf covers" (needs about four
+leaves per cell for realistic cover, and loses the gap-size control); a
+per-cell plane height (the cuts).
+
+**Cost.** CPU: the scan reads twice the blocks D50 did (two columns per cell).
+GPU: per shaded receiver within 26 blocks, 18 leaf tests and up to 27 lobe tests
+over nine cells, plus four leaf-map reads per march step. Not measured.
+
+**Limits.** The pattern is still invented (DATA GAP, as D50). One plane for the
+scene means a forest of very mixed heights projects some flecks from the wrong
+height; that shows as a pattern that slides slightly more or less with the sun
+than it should, not as cuts. Moving between forests eases the plane, so flecks
+drift for a couple of seconds.
+
+Amends D50's pattern and its cost; D50's gate is unchanged.

@@ -36,7 +36,7 @@ namespace VintageVisuals.Common.Scene
         public const int PackedFloats = Cells / 2;
         public const int PackedVectors = PackedFloats / 4;
 
-        /// <summary>Columns scanned per call to <see cref="Scan"/>. A full refresh takes Cells / this calls.</summary>
+        /// <summary>Cells scanned per call to <see cref="Scan"/>. A full refresh takes Cells / this calls.</summary>
         public const int ColumnsPerScan = 128;
 
         /// <summary>Blocks below and above the player searched for leaves.</summary>
@@ -48,6 +48,8 @@ namespace VintageVisuals.Common.Scene
         private int _cursor;
         private int _scanned;
         private long _requestedAtMs = long.MinValue;
+        private double _planeTarget = double.NaN;
+        private double _plane = double.NaN;
 
         /// <summary>The packed uniform array, <see cref="PackedVectors"/> vec4s.</summary>
         public float[] Packed { get { return _packed; } }
@@ -57,6 +59,18 @@ namespace VintageVisuals.Common.Scene
 
         /// <summary>Bumped whenever <see cref="Packed"/> changes.</summary>
         public int Version { get; private set; }
+
+        /// <summary>
+        /// The world Y the sunfleck pattern is projected from: the mean lowest
+        /// leaf of every leafy cell, plus a block and a half into the crown.
+        /// ONE height for the scene, eased over a couple of seconds, because a
+        /// per-cell height shifts the pattern at every cell edge and a jump in
+        /// this one slides every fleck at once. 0 until a leaf is seen.
+        /// </summary>
+        public float PlaneY { get { return double.IsNaN(_plane) ? 0f : (float)_plane; } }
+
+        /// <summary>Weight of one scan step in easing <see cref="PlaneY"/> toward its target.</summary>
+        public const double PlaneEase = 0.05;
 
         /// <summary>
         /// Called by a consumer every frame it wants the map. Scanning stops two
@@ -82,7 +96,7 @@ namespace VintageVisuals.Common.Scene
         /// <summary>
         /// Scans the next <see cref="ColumnsPerScan"/> cells of the window
         /// centred on the player. Render thread only; block reads are cheap but
-        /// not free, about 50 per column.
+        /// not free: two columns of about 50 blocks per cell.
         /// </summary>
         public void Scan(ICoreClientAPI capi, EntityPos player)
         {
@@ -105,23 +119,29 @@ namespace VintageVisuals.Common.Scene
 
                 int cx = baseCx + i % Grid;
                 int cz = baseCz + i / Grid;
-                // One column per cell, alternating corner by cell parity so a
-                // two-block tree trunk gap is not always missed the same way.
-                int x = cx * CellBlocks + (cz & 1);
-                int z = cz * CellBlocks + (cx & 1);
+                // Both diagonal columns of the cell. One column missed every
+                // crown that happened to leave that corner open, and each miss
+                // showed as a square hole in the canopy, two blocks wide.
+                int x = cx * CellBlocks;
+                int z = cz * CellBlocks;
 
                 int leaves = 0;
                 int lowest = -1;
-                for (int y = py - SearchBelow; y <= py + SearchAbove; y++)
+                for (int corner = 0; corner < 2; corner++)
                 {
-                    if (y < 0) continue;
-                    pos.Set(x, y, z);
-                    Block block = blocks.GetBlock(pos);
-                    if (block != null && block.BlockMaterial == EnumBlockMaterial.Leaves)
+                    int columnLeaves = 0;
+                    for (int y = py - SearchBelow; y <= py + SearchAbove; y++)
                     {
-                        leaves++;
-                        if (lowest < 0) lowest = y;
+                        if (y < 0) continue;
+                        pos.Set(x + corner, y, z + corner);
+                        Block block = blocks.GetBlock(pos);
+                        if (block != null && block.BlockMaterial == EnumBlockMaterial.Leaves)
+                        {
+                            columnLeaves++;
+                            if (lowest < 0 || y < lowest) lowest = y;
+                        }
                     }
+                    leaves = Math.Max(leaves, columnLeaves);
                 }
 
                 // Four leaf blocks in a column is a full crown; one is a
@@ -143,7 +163,29 @@ namespace VintageVisuals.Common.Scene
                 for (int f = 0; f < PackedFloats; f++)
                     _packed[f] = _cells[f * 2] + _cells[f * 2 + 1] * 4096f;
                 Version++;
+                _planeTarget = MeanCanopyY(_cells);
             }
+            EasePlane();
+        }
+
+        /// <summary>Mean lowest leaf Y plus 1.5 over the leafy cells, or NaN when there are none.</summary>
+        public static double MeanCanopyY(int[] cells)
+        {
+            double sum = 0;
+            int count = 0;
+            foreach (int code in cells)
+            {
+                if (code < 512) continue;
+                sum += code % 512;
+                count++;
+            }
+            return count == 0 ? double.NaN : sum / count + 1.5;
+        }
+
+        private void EasePlane()
+        {
+            if (double.IsNaN(_planeTarget)) return;
+            _plane = double.IsNaN(_plane) ? _planeTarget : _plane + (_planeTarget - _plane) * PlaneEase;
         }
 
         public void Reset()
@@ -152,6 +194,8 @@ namespace VintageVisuals.Common.Scene
             Array.Clear(_packed, 0, _packed.Length);
             _cursor = 0;
             _scanned = 0;
+            _planeTarget = double.NaN;
+            _plane = double.NaN;
             Version++;
         }
 

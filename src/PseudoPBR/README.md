@@ -191,7 +191,10 @@ block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
 diffuse term only. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
-vanilla's sunlit level in hashed pinhole spots projected along the sun. Sending alpha-cut plants through the opaque
+vanilla's sunlit level. The fleck shapes (D51) are gaps of one to three lobes
+bitten by pointed leaf shapes, evaluated once per block texel and posterised to
+four levels so they share the game's pixel-art edge, and projected along the sun
+from one canopy plane for the whole scene (`vv_canopyPlaneY`). Sending alpha-cut plants through the opaque
 material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
 which is acceptable as a recovery step but weaker than capturing the original

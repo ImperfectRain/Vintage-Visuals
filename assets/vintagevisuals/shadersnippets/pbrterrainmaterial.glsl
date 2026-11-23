@@ -49,6 +49,7 @@ uniform float vv_pbrSunflecks;     // sunflecks inside canopy shade; 0 is vanill
 // vv_canopyMapValid 0 means "no map" and every consumer draws vanilla.
 uniform vec4 vv_canopyMap[128];
 uniform float vv_canopyMapValid;
+uniform float vv_canopyPlaneY;   // world Y the fleck pattern is projected from
 
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 
@@ -537,12 +538,19 @@ const float VV_TERRAIN_DAPPLE_FADE_RANGE = 22.0;
 // How much of the dapple's full shade a solid crown takes, known only from the
 // leaf map. Below 1 so the measured broken shade stays the stronger reading.
 const float VV_TERRAIN_LEAF_SHADE = 0.7;
-// Sunflecks: the gap grid on the canopy plane (must divide the 4096 world
-// wrap exactly: 4096 / 1.6 = 2560 cells) and the distance they dissolve over.
-const float VV_TERRAIN_FLECK_CELL = 1.6;
-const float VV_TERRAIN_FLECK_PERIOD = 2560.0;
-const float VV_TERRAIN_FLECK_FADE_START = 30.0;
-const float VV_TERRAIN_FLECK_FADE_RANGE = 18.0;
+// Sunflecks: the gap grid and the coarser grid gaps cluster on, on the canopy
+// plane (both must divide the 4096 world wrap exactly: 4096 / 2.048 = 2000,
+// 4096 / 8.192 = 500), the least stretch a low sun may apply (see
+// vvTerrainFleckPattern), texels per block, and the distance flecks dissolve
+// over - finished before the leaf map's 28-block reach runs out.
+const float VV_TERRAIN_FLECK_CELL = 2.048;
+const float VV_TERRAIN_FLECK_PERIOD = 2000.0;
+const float VV_TERRAIN_FLECK_CLUSTER_CELL = 8.192;
+const float VV_TERRAIN_FLECK_CLUSTER_PERIOD = 500.0;
+const float VV_TERRAIN_FLECK_MIN_STRETCH = 0.5;
+const float VV_TERRAIN_FLECK_TEXELS = 16.0;
+const float VV_TERRAIN_FLECK_FADE_START = 16.0;
+const float VV_TERRAIN_FLECK_FADE_RANGE = 10.0;
 
 // How much of the SUN reaches this fragment, geometrically: 1 unoccluded, 0
 // fully blocked.
@@ -751,10 +759,22 @@ vec2 vvTerrainCanopyCell(vec2 worldXZ)
     return vec2(floor(code / 512.0) / 7.0, mod(code, 512.0));
 }
 
+// One cell's leaves as a sun ray at height rayY sees them: its density and
+// lowest leaf when that leaf is at or below the ray and above the receiver.
+vec2 vvTerrainCanopyLeafAt(vec2 worldXZ, float rayY, float floorY)
+{
+    vec2 cell = vvTerrainCanopyCell(worldXZ);
+    return (cell.x > 0.0 && cell.y <= rayY + 1.0 && cell.y > floorY + 0.5) ? cell : vec2(0.0);
+}
+
 // The leaves the sun ray from this point passes through: x density, y their
 // height above the point. Zero when there are none, when the map is absent, or
 // when the ray leaves the map (which is toroidal, so reading past its edge
 // would return another place's leaves).
+//
+// The four nearest cells are blended, and the density eases out before the
+// map's edge, so a crown's outline fades over a cell rather than stopping on
+// a 2-block line: both were visible as straight cuts through the flecks.
 vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
 {
     if (vv_canopyMapValid < 0.5) return vec2(0.0);
@@ -766,49 +786,135 @@ vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
     {
         float t = float(k) * 2.0 / l.y;
         vec3 rel = cameraRelativePos + l * t;
-        if (max(abs(rel.x), abs(rel.z)) > 30.0) break;
+        float reach = max(abs(rel.x), abs(rel.z));
+        if (reach > 28.0) break;
         vec3 p = world + l * t;
-        vec2 cell = vvTerrainCanopyCell(p.xz);
-        if (cell.x > 0.0 && cell.y <= p.y + 1.0 && cell.y > world.y + 0.5)
-            return vec2(cell.x, cell.y - world.y);
+
+        vec2 g = p.xz / 2.0 - 0.5;
+        vec2 f = fract(g);
+        vec2 o = (floor(g) + 0.5) * 2.0;
+        vec2 a = vvTerrainCanopyLeafAt(o, p.y, world.y);
+        vec2 b = vvTerrainCanopyLeafAt(o + vec2(2.0, 0.0), p.y, world.y);
+        vec2 c = vvTerrainCanopyLeafAt(o + vec2(0.0, 2.0), p.y, world.y);
+        vec2 d = vvTerrainCanopyLeafAt(o + vec2(2.0, 2.0), p.y, world.y);
+        vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+        float density = dot(w, vec4(a.x, b.x, c.x, d.x));
+        if (density > 0.0)
+        {
+            vec4 has = w * step(vec4(0.0001), vec4(a.x, b.x, c.x, d.x));
+            float lowest = dot(has, vec4(a.y, b.y, c.y, d.y)) / max(dot(has, vec4(1.0)), 0.0001);
+            return vec2(density * (1.0 - smoothstep(20.0, 28.0, reach)), max(lowest - world.y, 0.5));
+        }
     }
     return vec2(0.0);
 }
 
-// Soft pinhole images of the sun on the canopy plane, 0..1. `along` is the sun
-// azimuth; a ground offset along it counts for less, by sin(elevation), which
-// is what stretches a low sun's flecks into ovals.
-float vvTerrainFleckPattern(vec2 src, vec2 az, float sinElevation, float density, float height)
+// Coarse value noise on the canopy plane, 0..1, tiling the world wrap: where a
+// crown is thin and its gaps bunch together, and where it is closed.
+float vvTerrainFleckCluster(vec2 src)
+{
+    vec2 g = src / VV_TERRAIN_FLECK_CLUSTER_CELL;
+    vec2 i = floor(g);
+    vec2 f = fract(g);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = vvTerrainCellRandom(mod(i, VV_TERRAIN_FLECK_CLUSTER_PERIOD) + vec2(17.0, 5.0)).x;
+    float b = vvTerrainCellRandom(mod(i + vec2(1.0, 0.0), VV_TERRAIN_FLECK_CLUSTER_PERIOD) + vec2(17.0, 5.0)).x;
+    float c = vvTerrainCellRandom(mod(i + vec2(0.0, 1.0), VV_TERRAIN_FLECK_CLUSTER_PERIOD) + vec2(17.0, 5.0)).x;
+    float d = vvTerrainCellRandom(mod(i + vec2(1.0, 1.0), VV_TERRAIN_FLECK_CLUSTER_PERIOD) + vec2(17.0, 5.0)).x;
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// The offset from a feature on the canopy plane to `src`, with the part along
+// the sun azimuth shortened by `stretch` (sin elevation), which lengthens
+// everything a low sun projects.
+vec2 vvTerrainFleckOffset(vec2 src, vec2 feature, vec2 az, float stretch)
+{
+    vec2 d = src - feature;
+    return d - az * dot(d, az) * (1.0 - stretch);
+}
+
+// Sun images through the gaps on the canopy plane, 0..1.
+//
+// Two layers on one world grid. GAPS are one to three overlapping lobes - one
+// opening or a few chinks together - of varied size, and a small gap is a dim
+// image, as a pinhole smaller than the sun's disc is. LEAVES, two pointed
+// lenses per cell, then bite into the gaps, which is what turns a row of ovals
+// into the concave, broken shapes light through a real crown makes. Both sway
+// with the game's wind, on different phases, so the shapes shift as well as
+// the positions.
+//
+// Nothing reaches past the 3x3 cells searched: a feature's centre sits within
+// 0.3 cell of its cell's middle, so anything reaching under 1.2 cells from its
+// centre, after a low sun's stretch, is found. A gap reaches at most 0.59
+// cell and a leaf 0.47, against a stretch of at least
+// VV_TERRAIN_FLECK_MIN_STRETCH. A fleck that reached further was clipped by
+// the search, which drew the long straight edges seen in the first version.
+float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, float ragged)
 {
     vec2 base = floor(src / VV_TERRAIN_FLECK_CELL);
-    float gapChance = mix(0.50, 0.16, clamp(density, 0.0, 1.0));
-    float radius = clamp(0.30 + 0.04 * height, 0.30, 0.75);
+    float open = mix(0.85, 0.45, clamp(density, 0.0, 1.0)) * mix(0.3, 1.5, vvTerrainFleckCluster(src));
+    stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
+    float breeze = 6.28318530718 * vv_sceneBreeze * 3.0;
 
-    float best = 0.0;
+    float light = 0.0;
+    float leaf = 0.0;
     for (int dy = -1; dy <= 1; dy++)
     for (int dx = -1; dx <= 1; dx++)
     {
         vec2 cell = base + vec2(float(dx), float(dy));
-        vec4 r = vvTerrainCellRandom(mod(cell, VV_TERRAIN_FLECK_PERIOD) + vec2(911.0, 3301.0));
-        if (r.x > gapChance) continue;
+        vec2 key = mod(cell, VV_TERRAIN_FLECK_PERIOD);
 
-        // Leaves sway, so the gaps do. Periodic in the wind clock, so its wrap
-        // is invisible.
-        float phase = 6.28318530718 * (vv_sceneBreeze * 3.0 + r.w);
-        vec2 sway = vec2(sin(phase), cos(phase * 2.0 + r.y * 6.28318530718)) * 0.06;
-        vec2 centre = (cell + vec2(0.1) + r.yz * 0.8 + sway) * VV_TERRAIN_FLECK_CELL;
+        // Two leaves per cell, pointed at both ends.
+        for (int j = 0; j < 2; j++)
+        {
+            vec4 q = vvTerrainCellRandom(key + (j == 0 ? vec2(271.0, 613.0) : vec2(4421.0, 1999.0)));
+            vec2 sway = vec2(sin(breeze + q.w * 6.28318530718), cos(breeze * 1.3 + q.z * 6.28318530718)) * 0.04;
+            vec2 d = vvTerrainFleckOffset(src, (cell + vec2(0.2) + q.xy * 0.6 + sway) * VV_TERRAIN_FLECK_CELL, az, stretch);
+            float ang = 3.14159265359 * q.z;
+            vec2 uv = vec2(dot(d, vec2(cos(ang), sin(ang))), dot(d, vec2(-sin(ang), cos(ang))));
+            float halfLength = VV_TERRAIN_FLECK_CELL * mix(0.22, 0.40, q.w);
+            float halfWidth = halfLength * mix(0.3, 0.5, q.x);
+            float inside = abs(uv.y) - halfWidth * clamp(1.0 - (uv.x / halfLength) * (uv.x / halfLength), 0.0, 1.0);
+            leaf = max(leaf, 1.0 - smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL));
+        }
 
-        vec2 d = src - centre;
-        float along = dot(d, az);
-        float dist = length(d - az * along + az * along * sinElevation);
-        float rr = radius * mix(0.6, 1.15, r.w);
-        best = max(best, (1.0 - smoothstep(rr * 0.35, rr, dist)) * mix(0.65, 1.0, r.y));
+        vec4 r = vvTerrainCellRandom(key + vec2(911.0, 3301.0));
+        // Faded in and out across the threshold, so a gap opens as the
+        // crown thins instead of popping on.
+        float present = smoothstep(r.x - 0.06, r.x + 0.06, open);
+        if (present <= 0.0) continue;
+        vec4 s = vvTerrainCellRandom(key + vec2(5113.0, 77.0));
+
+        float phase = breeze + 6.28318530718 * r.w;
+        vec2 sway = vec2(sin(phase), cos(phase * 2.0 + r.y * 6.28318530718)) * 0.04;
+        vec2 centre = (cell + vec2(0.2) + r.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL;
+
+        float size = pow(r.w, 1.5);
+        float bright = mix(0.45, 1.0, size);
+        float gapRadius = VV_TERRAIN_FLECK_CELL * mix(0.07, 0.28, size);
+        int lobes = 1 + int(s.x > 0.45) + int(s.x > 0.8);
+        for (int k = 0; k < 3; k++)
+        {
+            if (k >= lobes) break;
+            float ang = 6.28318530718 * (s.y + float(k) * 0.37);
+            float off = k == 0 ? 0.0 : gapRadius * (0.7 + 0.4 * s.z);
+            float rr = gapRadius * (k == 0 ? 1.0 : mix(0.45, 0.8, s.w));
+            vec2 d = vvTerrainFleckOffset(src, centre + vec2(cos(ang), sin(ang)) * off, az, stretch);
+            float dist = length(d) + (ragged - 0.5) * rr * 0.15;
+            light = max(light, present * bright * (1.0 - smoothstep(rr * 0.75, rr, dist)));
+        }
     }
-    return best;
+    return light * (1.0 - leaf);
 }
 
 // How much of the sun this fragment gets back from a fleck, 0..1.
-float vvTerrainSunfleck(vec3 cameraRelativePos, vec2 overhead, float shadowed, float facing)
+//
+// Evaluated once per block texel (1/16 block) and posterised to four levels,
+// so a fleck has the stepped edge of the game's own pixel art instead of a
+// smooth gradient no texture in the world has. Only the axes along the face
+// are snapped: snapping across it would flip a face lying on a texel boundary
+// between two texels and speckle it.
+float vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, float shadowed, float facing)
 {
     if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return 0.0;
 
@@ -816,13 +922,27 @@ float vvTerrainSunfleck(vec3 cameraRelativePos, vec2 overhead, float shadowed, f
                                    / VV_TERRAIN_FLECK_FADE_RANGE, 0.0, 1.0);
     if (resolvable < 0.004) return 0.0;
 
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    // A plant card crosses texel boundaries everywhere, so it snaps on all
+    // three axes.
+    vec3 across = vvTerrainIsFlora() ? vec3(0.0) : step(vec3(0.5), abs(faceNormal));
+    vec3 texel = floor(world * VV_TERRAIN_FLECK_TEXELS);
+    world = mix((texel + 0.5) / VV_TERRAIN_FLECK_TEXELS, world, across);
+    float ragged = vvTerrainCellRandom(vec2(mod(texel.x + texel.y * 131.0, 65536.0), mod(texel.z, 65536.0))).x;
+
+    // Projected from one canopy plane for the whole scene, not from each
+    // cell's own lowest leaf: a per-cell height shifts the pattern at every
+    // cell boundary, which cut flecks in two.
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
-    vec3 src = cameraRelativePos + vv_pbrOrigin + l * (overhead.y / max(l.y, 0.06));
+    float rise = max(vv_canopyPlaneY - world.y, 1.0);
+    vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    float pattern = vvTerrainFleckPattern(src.xz, az, clamp(l.y, 0.25, 1.0), overhead.x, overhead.y);
+    float pattern = vvTerrainFleckPattern(src, az, l.y, overhead.x, ragged);
+    pattern = floor(pattern * 3.0 + 0.5) / 3.0;
     float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
 
     return clamp(pattern * clamp(shadowed, 0.0, 1.0) * resolvable * clamp(facing, 0.0, 1.0)
+                 * smoothstep(0.0, 0.3, overhead.x)
                  * vvTerrainSunPresence() * mix(1.0, VV_OVERCAST_DIRECT, overcast)
                  * vv_pbrSunflecks, 0.0, 1.0);
 }
@@ -843,7 +963,7 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
 {
     if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;
     if (!vvTerrainIsCanopyReceiver()) return color;
-    if (length(cameraRelativePos) > VV_TERRAIN_FLECK_FADE_START + VV_TERRAIN_FLECK_FADE_RANGE) return color;
+    if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;
     if (vvTerrainSunPresence() < 0.01) return color;
 
     if (sunVisibility < 0.0) sunVisibility = vvTerrainSunVisibility();
@@ -857,7 +977,7 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     // cards always may.
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
     float facing = vvTerrainIsFlora() ? 1.0 : smoothstep(0.0, 0.25, dot(faceNormal, l));
-    float fleck = vvTerrainSunfleck(cameraRelativePos, overhead, shadowed, facing);
+    float fleck = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, shadowed, facing);
     if (fleck <= 0.0) return shaded;
 
     vec3 lit = color * vvTerrainSunRelight(sunVisibility);
@@ -1178,7 +1298,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     {
         float vis = vvTerrainSunVisibility();
         vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
-        float f = vvTerrainSunfleck(cameraRelativePos, overhead, 1.0 - vis, 1.0);
+        float f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0);
         return vec4(mix(vec3(overhead.x > 0.0 ? 0.35 : 0.0, 0.0, 0.0), vec3(1.0), f), color.a);
     }
     // 65: the leaf map. Green is leaf density along the sun ray, blue its

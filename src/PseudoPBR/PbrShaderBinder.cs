@@ -76,6 +76,7 @@ namespace VintageVisuals.PseudoPBR
         public const string SunflecksUniform = "vv_pbrSunflecks";
         public const string CanopyMapUniform = "vv_canopyMap";
         public const string CanopyMapValidUniform = "vv_canopyMapValid";
+        public const string CanopyPlaneUniform = "vv_canopyPlaneY";
         public const string PixelReflectUniform = "vv_pbrPixelReflect";
 
         // The render-stage bridge. See SceneCaptureRenderer.
@@ -481,6 +482,7 @@ namespace VintageVisuals.PseudoPBR
             bool valid = map != null && wanted && map.Valid;
             SetIfPresent(program, CanopyMapValidUniform, valid ? 1f : 0f);
             if (!valid) return;
+            SetIfPresent(program, CanopyPlaneUniform, map.PlaneY);
 
             // A binder that silently skips is indistinguishable from one that
             // works, so a missing array name is said once rather than skipped.
