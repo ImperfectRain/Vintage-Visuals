@@ -619,10 +619,15 @@ const float VV_TERRAIN_SHAFT_GAIN = 2.5;
 // any sun height. The beam march integrates that along the view ray: REACH
 // blocks of air in STEPS samples, SCATTER the light a block of full beam adds
 // (as a share of the sunlit colour), MAX the most any fragment takes.
-const float VV_TERRAIN_BEAM_REACH = 26.0;
-const int VV_TERRAIN_BEAM_STEPS = 12;
-const float VV_TERRAIN_BEAM_SCATTER = 0.06;
-const float VV_TERRAIN_BEAM_MAX = 0.3;
+// v12: v11 took 12 full fleck-field evaluations per step budget (about 500
+// hashes a fragment) on every overlapping leaf layer and dropped the game
+// below 30 fps looking at the beams; and at the default slider they were
+// hard to see. Eight steps over 20 blocks, a two-read beam pattern
+// (vvTerrainBeamDensity), and a stronger scatter.
+const float VV_TERRAIN_BEAM_REACH = 20.0;
+const int VV_TERRAIN_BEAM_STEPS = 8;
+const float VV_TERRAIN_BEAM_SCATTER = 0.2;
+const float VV_TERRAIN_BEAM_MAX = 0.32;
 // Past this distance a leaf texel is under a pixel, and the hole-rim test
 // that places shaft sources would sparkle.
 const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
@@ -1310,10 +1315,10 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
 // A beam IS the column of air above a bright sunfleck, along the sun: the
 // light that makes the fleck crosses that air on its way down. So a point in
 // the air is in a beam exactly when the sun ray through it reaches the canopy
-// plane at a `src` where the fleck field is bright - the same field, the same
-// projection and the same `lands` test the flecks and the leaf-rim sources
-// use, so every beam ends on a bright patch on the floor and starts at a gap
-// in the crown above it. Nothing here is a second pattern.
+// plane at a `src` where the fleck field's bright patches are - the same
+// projection the flecks and the leaf-rim sources use, and the two layers of
+// the same field that place the bright patches (vvTerrainBeamDensity), so
+// every beam ends on a bright fleck and starts at a gap in the crown above.
 //
 // Visible from the side at any sun height, brightest looking toward the sun
 // (forward scattering), strongest in humid air, scaled by how strongly the
@@ -1321,9 +1326,26 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
 // dampen. Only air under the canopy plane and under leaves takes a beam;
 // open air above the crown is just daylight. World-anchored except for where
 // the samples fall, which a per-pixel offset spreads so the beams do not
-// band. Twelve field evaluations per terrain fragment within the reach (cost
-// not measured). Beams in front of open sky are not drawn: the sky is not a
+// band. v12 cost: eight steps, each one leaf-map read and at most two noise
+// reads (one outside beam groups); measured by the player at v11 as below
+// 30 fps with the full field, v12 not yet measured. Beams in front of open sky are not drawn: the sky is not a
 // terrain fragment (DATA GAP).
+// Where a beam stands on the canopy plane, 0..1, from the two layers of the
+// fleck field that decide where its BRIGHT patches are: the beam-group noise
+// (same grid and key as the field's) and its coarse octave (same key), cut
+// high. Two noise reads, against about eleven for the whole field, so the
+// march can afford it at every step; the field's warp, streak taps and fine
+// octave move a patch's outline by a fraction of a block and are left out,
+// so a beam lands on the heart of a bright fleck rather than tracing its
+// edge. Zero outside beam groups after one read.
+float vvTerrainBeamDensity(vec2 src)
+{
+    float group = smoothstep(0.5, 0.8, vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_BEAM_CELL, VV_TERRAIN_FLECK_BEAM_PERIOD, vec2(53.0, 37.0)));
+    if (group <= 0.0) return 0.0;
+    float n = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(23.0, 3.0));
+    return group * smoothstep(0.55, 0.8, n);
+}
+
 float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
 {
     if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;
@@ -1342,9 +1364,6 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     // Interleaved gradient noise: a fixed per-pixel offset of the samples,
     // so twelve steps read as a smooth integral rather than bands.
     float offset = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    float shimmer = vvTerrainFleckShimmer();
-
     float beam = 0.0;
     for (int i = 0; i < VV_TERRAIN_BEAM_STEPS; i++)
     {
@@ -1357,8 +1376,7 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
         vec2 src = p.xz + l.xz * (rise / l.y);
         float crown = vvTerrainCanopyCell(src).x;
         if (crown < 0.15) continue;
-        vec3 field = vvTerrainFleckField(src, az, l.y, crown, shimmer);
-        beam += smoothstep(VV_TERRAIN_FLECK_DIM + 0.25, 1.0, field.x) * smoothstep(0.15, 0.4, crown);
+        beam += vvTerrainBeamDensity(src) * smoothstep(0.15, 0.4, crown);
     }
     if (beam <= 0.0) return 0.0;
 

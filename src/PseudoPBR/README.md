@@ -204,7 +204,7 @@ screen. And since v11 `vvTerrainBeamInscatter` marches the view ray through
 the air in front of each terrain fragment, adding the sunlight the air inside
 each beam scatters toward the camera, so beams show from the side at any sun
 height. A beam is the column of air above a bright fleck along the sun, read
-from the same fleck field. Debug view 68. Sunflecks (D50) come through the same entry point,
+from the same fleck field (its beam-group noise and coarse octave, two reads per step since v12). Debug view 68. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
 vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a

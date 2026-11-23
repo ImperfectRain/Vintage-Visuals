@@ -941,16 +941,26 @@ void main()
                     GlslEval.Scalar(GlslEval.StubCall(levelExpr2, "vvSceneVisibilityDampen", "dampen"),
                         GlslEval.Syms("beam", crossing, "ds", 1.0, "VV_TERRAIN_BEAM_SCATTER", scatter, "phase", phase,
                                       "humid", humid, "clearSky", 1.0, "sun", 1.0, "vv_pbrShafts", slider, "dampen", 1.0));
-                string landsShaft = GlslEval.Rhs(GlslEval.Statement(shaftBody2, "float lands"));
+                string densityBody = GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainBeamDensity(") ?? "");
+                string fieldBody2 = GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainFleckField(") ?? "");
                 string beamYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainmaterial.yaml"));
-                double sideNoon = Level(6.0, Phase(0.0), 0.6, 0.45);
-                double towardRain = Level(6.0, Phase(1.0), 1.0, 0.45);
+                double sideNoon = Level(2.0, Phase(0.0), 0.6, 0.45);   // a typical crossing: about two block-lengths of full beam (v12 pattern)
+                double towardRain = Level(2.0, Phase(1.0), 1.0, 0.45);
                 bool ok = beamBody.Contains("if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;") &&
                           beamBody.Contains("if (clearSky < 0.004) return 0.0;") &&
                           beamBody.Contains("if (rise < 0.5) continue;") &&
                           beamBody.Contains("vec2 src = p.xz + l.xz * (rise / l.y);") &&
-                          beamBody.Contains("vec3 field = vvTerrainFleckField(src, az, l.y, crown, shimmer);") &&
-                          beamBody.Contains("beam += " + landsShaft + " *") &&
+                          // same field: the beam-group noise and the coarse octave, same grids and keys
+                          beamBody.Contains("beam += vvTerrainBeamDensity(src) * smoothstep(0.15, 0.4, crown);") &&
+                          densityBody.Contains("smoothstep(0.5, 0.8, vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_BEAM_CELL, VV_TERRAIN_FLECK_BEAM_PERIOD, vec2(53.0, 37.0)))") &&
+                          fieldBody2.Contains("smoothstep(0.5, 0.8, vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_BEAM_CELL, VV_TERRAIN_FLECK_BEAM_PERIOD, vec2(53.0, 37.0)))") &&
+                          densityBody.Contains("vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(23.0, 3.0))") &&
+                          fieldBody2.Contains("VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(23.0, 3.0)") &&
+                          densityBody.Contains("if (group <= 0.0) return 0.0;") &&
+                          // v12 cost: v11 dropped the game below 30 fps with the full field per step
+                          !beamBody.Contains("vvTerrainFleckField(") &&
+                          Regex.Matches(densityBody, @"vvTerrainFleckNoise\(").Count <= 2 &&
+                          Regex.IsMatch(terrainSnippet, @"const int VV_TERRAIN_BEAM_STEPS = [1-8];") &&
                           beamBody.Contains("if (max(abs(srcRel.x), abs(srcRel.y)) > 28.0) continue;") &&
                           beamBody.Contains("return clamp(level, 0.0, VV_TERRAIN_BEAM_MAX);") &&
                           Phase(0.0) >= 0.4 && Phase(1.0) >= Phase(0.0) * 2.0 && Phase(-1.0) == Phase(0.0) &&

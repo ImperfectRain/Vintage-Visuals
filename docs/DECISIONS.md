@@ -2532,3 +2532,19 @@ not measured. No pass, no render target, no sampler, no uniform.
 Interaction-checked (shared projection and bright-patch test, side and
 toward-sun strength, the cap, slider zero, both call sites), six mutations.
 Not yet seen in game.
+
+**Amendment (v12): cost and default strength.** In game at v11 the beams
+looked right at the slider's maximum and were hard to see at the default, and
+looking at them took the game from 60 to about 20 fps. The march evaluated
+the whole fleck field at each of twelve steps - about eleven noise reads,
+some 500 hashes, per terrain fragment - and leaves, alpha-tested and layered,
+run the fragment shader once per surviving layer. Now eight steps over 20
+blocks, each one leaf-map read and at most two noise reads through
+`vvTerrainBeamDensity`: the field's beam-group noise and its coarse octave,
+same grids and keys, cut high, so a beam still stands on the heart of a
+bright fleck while the field's warp, streak taps and fine octave (fractions
+of a block on the outline) are left out. Outside beam groups a step costs one
+read. About an eighth of v11's work per fragment; not measured. Scatter
+raised from 0.06 to 0.2 per block of full beam, cap 0.32, so the default
+reads without maxing the slider. Three more mutations.
+
