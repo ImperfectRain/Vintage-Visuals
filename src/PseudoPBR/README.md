@@ -189,7 +189,10 @@ under a broken canopy, and adds light through the leaf, a faint front scatter
 and a cuticle highlight. Sun visibility on this path is read from the shadow map
 (`vvTerrainSunVisibility`), never from vanilla's `b`, which carries a floor and
 block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
-diffuse term only. Sunflecks (D50) come through the same entry point,
+diffuse term only. The shade it leaves is skylit (v9): cooler and moved toward
+its own luminance in proportion to the canopy term, never brighter than vanilla
+in any channel, so a fleck differs from the shade around it in hue as well as
+level. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
 vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a

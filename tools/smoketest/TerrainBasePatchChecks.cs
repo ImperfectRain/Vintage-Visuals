@@ -374,36 +374,64 @@ void main()
             // INTERACTION: the canopy term composed with the colour it is
             // applied to, evaluated from the shipped body. It may only take
             // light, never add any in any channel, and must leave a fragment
-            // whose light is all local exactly as vanilla lit it.
+            // whose light is all local exactly as vanilla lit it. v9: on the
+            // autumn floor the shade must come out COOLER and LESS SATURATED
+            // than plain darkening (skylit, not a dim copy of the sunlit
+            // colour), and that shift must vanish with the canopy term.
             try
             {
                 string canopyExpr = GlslEval.StubCall(GlslEval.Rhs(GlslEval.Statement(applyCanopy, "float canopy")),
                                                       "vvTerrainLocalLightShare", "local");
+                string darkExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "vec3 dark"));
+                string yExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "float y"));
+                string muteExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "dark = mix(dark"));
                 string tintExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "float tint"));
-                string outExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "return color *"));
+                string outExpr = GlslEval.Rhs(GlslEval.Statement(applyCanopy, "return", "tint"));
                 double maxShade = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_SHADE") * 2.0;
-                GlslEval.Val Apply(double shaded, double local, double cap)
+                GlslEval.Val Apply(GlslEval.Val color, double shaded, double local, double cap)
                 {
                     var syms = GlslEval.Syms("shaded", shaded, "local", local, "cap", cap,
-                                             "VV_TERRAIN_DAPPLE_GREEN", GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_GREEN"));
+                                             "VV_TERRAIN_DAPPLE_SKY", GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_SKY"),
+                                             "VV_TERRAIN_DAPPLE_MUTE", GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_MUTE"));
+                    syms["color"] = color;
                     double canopy = GlslEval.Scalar(canopyExpr, syms);
-                    if (canopy <= 0.0) return GlslEval.Vec(1, 1, 1);
+                    if (canopy <= 0.0) return color;
                     syms["canopy"] = new GlslEval.Val(canopy);
+                    var dark = GlslEval.Eval(darkExpr, syms);
+                    syms["dark"] = dark;
+                    syms["y"] = new GlslEval.Val(GlslEval.Scalar(yExpr, syms));
+                    syms["dark"] = GlslEval.Eval(muteExpr, syms);
                     syms["tint"] = new GlslEval.Val(GlslEval.Scalar(tintExpr, syms));
-                    syms["color"] = GlslEval.Vec(1, 1, 1);
                     return GlslEval.Eval(outExpr, syms);
                 }
-                var full = Apply(maxShade, 0.0, 0.85);
-                var torch = Apply(maxShade, 1.0, 0.85);
-                var leaf = Apply(maxShade, 0.0, 0.55);
+                var white = GlslEval.Vec(1, 1, 1);
+                var olive = GlslEval.Vec(0.46, 0.42, 0.14);   // autumn grass, vanilla-lit
+                var full = Apply(white, maxShade, 0.0, 0.85);
+                var torch = Apply(olive, maxShade, 1.0, 0.85);
+                var leaf = Apply(white, maxShade, 0.0, 0.55);
+                var floor = Apply(olive, 0.4, 0.0, 0.85);
+                var faint = Apply(olive, 0.01, 0.0, 0.85);
+                var yellow = GlslEval.Vec(0.5, 0.5, 0.0);     // no blue at all: the fill must not invent any
+                var yellowShade = Apply(yellow, 0.2, 0.0, 0.85);
+                double Sat(GlslEval.Val c) => (Math.Max(c.X, Math.Max(c.Y, c.Z)) - Math.Min(c.X, Math.Min(c.Y, c.Z)))
+                                              / Math.Max(c.X, Math.Max(c.Y, c.Z));
+                bool takesOnly(GlslEval.Val o, GlslEval.Val c) => o.X <= c.X + 1e-9 && o.Y <= c.Y + 1e-9 && o.Z <= c.Z + 1e-9;
                 check("I-terrain canopy only takes light, in every channel, and spares local light",
-                    full.X <= 1.0 && full.Y <= 1.0 && full.Z <= 1.0 && full.Y < 0.99 &&
-                    Math.Abs(torch.X - 1.0) < 1e-9 && Math.Abs(torch.Y - 1.0) < 1e-9 && Math.Abs(torch.Z - 1.0) < 1e-9 &&
-                    leaf.Y >= 0.45 - 1e-9 && full.Y >= 0.15 - 1e-9 &&
-                    // The green is a tint on the shade, not a light: every
-                    // channel stays within 5% of plain darkening.
-                    new[] { full.X, full.Y, full.Z }.All(c => Math.Abs(c / (1.0 - Math.Min(maxShade, 0.85)) - 1.0) <= 0.05),
+                    takesOnly(full, white) && takesOnly(floor, olive) && takesOnly(faint, olive) && takesOnly(yellowShade, yellow) && full.Y < 0.99 &&
+                    Math.Abs(torch.X - olive.X) < 1e-9 && Math.Abs(torch.Y - olive.Y) < 1e-9 && Math.Abs(torch.Z - olive.Z) < 1e-9 &&
+                    leaf.Y >= 0.45 * 0.95 - 1e-9 && full.Y >= 0.15 - 1e-9 &&
+                    // The skylight is a tint on the shade, not a light: on a
+                    // grey surface every channel stays within 10% of plain darkening.
+                    new[] { full.X, full.Y, full.Z }.All(c => Math.Abs(c / (1.0 - Math.Min(maxShade, 0.85)) - 1.0) <= 0.10),
                     "full " + full + ", torch " + torch + ", leaf " + leaf);
+                check("I-terrain canopy shade is skylit: cooler and less saturated than the sunlit floor, and only where it shades",
+                    Sat(floor) < Sat(olive) - 0.05 &&
+                    full.Z > full.X + 0.01 &&
+                    floor.Z / floor.X > olive.Z / olive.X * 1.05 &&
+                    Math.Abs(Sat(faint) - Sat(olive)) < 0.01 &&
+                    // still darker overall than the sunlit colour, by about the canopy term
+                    floor.Y < olive.Y * 0.7,
+                    $"olive sat {Sat(olive):0.000} -> shade {Sat(floor):0.000}, b/r {olive.Z / olive.X:0.000} -> {floor.Z / floor.X:0.000}, faint sat {Sat(faint):0.000}");
             }
             catch (Exception ex) { check("I-terrain canopy composition is readable", false, ex.Message); }
             // Sunflecks (v5). Off at zero, absent without a leaf map, never

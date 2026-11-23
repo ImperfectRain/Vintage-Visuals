@@ -531,7 +531,7 @@ vec3 vvTerrainApplySurfaceLayers(VvTerrainMaterial m, vec3 diffuse)
 
 const float VV_TERRAIN_SUN_PRESENCE_DAWN = 0.18;
 // How much light the canopy takes from the shade between flecks at full
-// slider, the green that light picks up on the way through, and the distance
+// slider, the colour of what lights that shade instead, and the distance
 // over which the shadow-map count stops resolving canopy structure.
 const float VV_TERRAIN_DAPPLE_SHADE = 0.28;
 // How much deeper canopy shade is under a sun near the horizon: the floor of
@@ -539,7 +539,18 @@ const float VV_TERRAIN_DAPPLE_SHADE = 0.28;
 // read (the player's reference photographs). Still bounded by the caller's
 // cap, so the shade cannot pass it however low the sun.
 const float VV_TERRAIN_DAPPLE_LOW_SUN = 1.6;
-const float VV_TERRAIN_DAPPLE_GREEN = 0.055;
+// v9: the shade between flecks is lit by the SKY, not by the sun that cast
+// it, so it is cooler and less saturated than the sunlit floor. Vanilla's
+// shadow only halves the sunlit colour, keeping the sun's warmth, and v8 then
+// pushed it green: on the autumn palette the shade read murky olive and the
+// flecks, the same hue only brighter, read as yellow paint rather than light
+// (in-game screenshot, 13:00, 2026-11-23). SKY cools the shaded fraction;
+// MUTE moves it toward its own luminance, as a broad sky fill does. Both
+// scale with the canopy term, so they vanish with it - at zero slider, under
+// overcast and in the open - and the result is clamped to the colour vanilla
+// lit, so no channel is ever brighter than it was.
+const float VV_TERRAIN_DAPPLE_SKY = 0.10;
+const float VV_TERRAIN_DAPPLE_MUTE = 0.8;
 const float VV_TERRAIN_DAPPLE_FADE_START = 22.0;
 const float VV_TERRAIN_DAPPLE_FADE_RANGE = 22.0;
 // How much of the dapple's full shade a solid crown takes, known only from the
@@ -791,14 +802,18 @@ float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibil
          * mix(1.0, VV_TERRAIN_DAPPLE_LOW_SUN, lowSun) * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
-// Applies the canopy term: darker, and green on the shaded fraction only.
-// Torchlight did not come through a leaf, so the local share is spared.
+// Applies the canopy term: darker, and on the shaded fraction only, cooler
+// and muted toward skylight. Torchlight did not come from the sky, so the
+// local share is spared.
 vec3 vvTerrainApplyCanopy(vec3 color, float shaded, float cap)
 {
     float canopy = clamp(shaded, 0.0, cap) * (1.0 - vvTerrainLocalLightShare());
     if (canopy <= 0.0) return color;
-    float tint = canopy * VV_TERRAIN_DAPPLE_GREEN;
-    return color * (1.0 - canopy) * vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
+    vec3 dark = color * (1.0 - canopy);
+    float y = dot(dark, vec3(0.2126, 0.7152, 0.0722));
+    dark = mix(dark, vec3(y), clamp(canopy * VV_TERRAIN_DAPPLE_MUTE, 0.0, 0.5));
+    float tint = canopy * VV_TERRAIN_DAPPLE_SKY;
+    return min(dark * vec3(1.0 - tint, 1.0 - tint * 0.4, 1.0 + tint * 0.3), color);
 }
 
 // ---------------------------------------------------------------------------

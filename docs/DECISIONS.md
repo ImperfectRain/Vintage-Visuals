@@ -2353,6 +2353,23 @@ restores exactly nb. Canopy shade also deepens toward a low sun
 (`VV_TERRAIN_DAPPLE_LOW_SUN` 1.6, under the existing caps), so a golden-hour
 floor is dark enough for flecks and beams to read.
 
+**Amendment (v9): canopy shade is skylit, not green.** (Belongs to D51's
+pattern; recorded here beside the v8 relight it completes.) The v8 screenshot
+at 13:00 showed a linked, organic fleck field whose lit patches still read
+olive-yellow over murky green shade, while the session log showed a near
+neutral grade. Vanilla's shadow halves the sunlit colour without changing its
+hue, and `vvTerrainApplyCanopy` pushed that green (`VV_TERRAIN_DAPPLE_GREEN`
+0.055). A fleck was then the shade's own hue made brighter, which reads as
+paint, and on a yellow autumn albedo as yellow paint. Shade under a canopy is
+lit by the sky: cooler and less saturated than the sunlit floor, which is what
+lets a fleck read as light. The shaded fraction now moves toward its own
+luminance by `canopy * VV_TERRAIN_DAPPLE_MUTE` (0.8, at most 0.5) and is cooled
+by `canopy * VV_TERRAIN_DAPPLE_SKY` (0.10), then clamped to vanilla's colour so
+no channel is brightened. Both vanish with the canopy term, so the open floor,
+an overcast forest and a zero slider are unchanged. The legacy `pseudopbr`
+path keeps its green; it is disabled. Interaction-checked on an autumn-olive
+colour and a blue-free yellow, four mutations. Not yet seen in game.
+
 ## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
 
 **Context.** In the 2026-11-23 in-game audit, a storm with every cloud tile
