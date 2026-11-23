@@ -423,6 +423,22 @@ void main()
                 dappleBody.Contains("float crown = mix(0.3, 1.0, smoothstep(0.1, 0.85, clamp(leafOverhead, 0.0, 1.0)));") &&
                 dappleBody.Contains("* under * crown * sun *"),
                 "canopy shade is a shadow of the direct sun, and a thin crown passes more sky than a closed one");
+            // INTERACTION: canopy shade deepens toward a low sun, so a golden-
+            // hour forest floor is dark enough for its flecks and beams to
+            // read, and the caller's cap still bounds it.
+            try
+            {
+                string lowExpr = GlslEval.Rhs(GlslEval.Statement(dappleBody, "float lowSun"));
+                double Low(double y) => GlslEval.Scalar(lowExpr, GlslEval.Syms("l", GlslEval.Vec(0, y, 0)));
+                double gainLow = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_LOW_SUN");
+                string applyBody = GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainApplyCanopy(") ?? "");
+                check("I-terrain canopy shade deepens toward a low sun and stays under its cap",
+                    Low(0.9) < 1e-9 && Low(0.1) > 0.99 && gainLow > 1.2 && gainLow <= 2.0 &&
+                    dappleBody.Contains("* mix(1.0, VV_TERRAIN_DAPPLE_LOW_SUN, lowSun) *") &&
+                    applyBody.Contains("float canopy = clamp(shaded, 0.0, cap)"),
+                    $"noon gain 1, low sun {gainLow}");
+            }
+            catch (Exception ex) { check("I-terrain low-sun canopy shade is readable", false, ex.Message); }
             check("terrain sunflecks are exactly off at a slider of zero",
                 fleckBody.Contains("if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return vec2(0.0);") &&
                 resolveBody.Contains("if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;"),
@@ -623,28 +639,41 @@ void main()
             {
                 string relightBody = GlslEval.StripComments(
                     GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSunRelight(") ?? "");
-                string vanillaExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "float vanilla"));
+                string normalExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "float normalShade"));
+                string shadowExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "float shadow"));
+                string shadedExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "float shaded"));
                 string relightExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "return"));
-                double Relight(double vis, double si)
+                string relightYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainmaterial.yaml"));
+                double Relight(double vis, double si, double nb)
                 {
-                    var syms = GlslEval.Syms("sunVisibility", vis, "shadowIntensity", si);
-                    syms["vanilla"] = new GlslEval.Val(GlslEval.Scalar(vanillaExpr, syms));
+                    var syms = GlslEval.Syms("sunVisibility", vis, "shadowIntensity", si, "vv_vanillaNormalShade", nb);
+                    syms["normalShade"] = new GlslEval.Val(GlslEval.Scalar(normalExpr, syms));
+                    syms["shadow"] = new GlslEval.Val(GlslEval.Scalar(shadowExpr, syms));
+                    syms["shaded"] = new GlslEval.Val(GlslEval.Scalar(shadedExpr, syms));
                     return GlslEval.Scalar(relightExpr, syms);
                 }
+                // Vanilla lights a fragment at min(shadow, nb): sunlit is nb,
+                // not 1. A fleck must land on nb exactly, for a plant whose
+                // per-vertex nb is well under 1 as much as for a top face
+                // (v7 lifted a plant at nb 0.6 to 1.7x its sunlit level).
                 bool ok = true; string detail = "";
+                foreach (double nb in new[] { 1.0, 0.95, 0.6, 0.3 })
                 foreach (double si in new[] { 0.3, 0.6, 1.0 })
                 foreach (double vis in new[] { 0.0, 0.5, 1.0 })
                 {
-                    double shadowedLevel = 1.0 - si * 0.5 * (1.0 - vis);
-                    double restored = shadowedLevel * Relight(vis, si);
-                    if (restored > 1.0 + 1e-9 || restored < 1.0 - 1e-9) { ok = false; detail += $" si={si} vis={vis} -> {restored:0.000}"; }
+                    double shadowedLevel = Math.Min(1.0 - si * 0.5 * (1.0 - vis), nb);
+                    double restored = shadowedLevel * Relight(vis, si, nb);
+                    if (Math.Abs(restored - nb) > 1e-9) { ok = false; detail += $" nb={nb} si={si} vis={vis} -> {restored:0.000}"; }
                 }
+                ok &= terrainSnippet.Contains("float vv_vanillaNormalShade = 1.0;") &&
+                      relightYaml.Contains("vv_vanillaNormalShade = nb;") &&
+                      relightYaml.Contains("vv_vanillaNormalShade = getBrightnessFromNormal(normal, 1, intensity);");
                 // The resolve may only ever mix TOWARD that level: fleck plus
                 // bounce clamped to one, and the bounce capped well under it.
                 ok &= resolveBody.Contains("return mix(shaded, lit, clamp(fleck.x + fleck.y, 0.0, 1.0) * local);") &&
                       fleckBody.Contains("float bounce = clamp(field.y * VV_TERRAIN_FLECK_BOUNCE * gate, 0.0, VV_TERRAIN_FLECK_BOUNCE);") &&
                       GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_BOUNCE") <= 0.1;
-                check("I-terrain a sunfleck restores vanilla's sunlit level exactly and never exceeds it", ok, detail);
+                check("I-terrain a sunfleck restores vanilla's sunlit level exactly, normal shade included, and never exceeds it", ok, detail);
             }
             catch (Exception ex) { check("I-terrain sunfleck relight is readable", false, ex.Message); }
             // INTERACTION: the sunlit tint shifts hue and saturation only, by
@@ -749,8 +778,14 @@ void main()
                           shaftBody.Contains("float crown = vvTerrainCanopyCell(world.xz).x;") &&
                           shaftBody.Contains("float clearSky = vvTerrainClearSky();") &&
                           shaftBody.Contains("float rim = vvTerrainLeafHoleRim();") &&
+                          // beams land on flecks: the same canopy-plane projection the flecks use
+                          shaftBody.Contains("vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));") &&
+                          fleckBody.Contains("vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));") &&
+                          shaftBody.Contains("float rise = vv_canopyPlaneY - world.y;") &&
+                          shaftBody.Contains("vvTerrainFleckField(src, az, l.y, crown,") &&
+                          shaftBody.Contains("if (lands <= 0.0) return 0.0;") &&
                           shaftBody.Contains("if (rim <= 0.0) return 0.0;") &&
-                          Regex.IsMatch(shaftBody, @"float level = [^;]*\* rim \* near \* gap \*") &&
+                          Regex.IsMatch(shaftBody, @"float level = [^;]*\* rim \* near \* gap \* lands \*") &&
                           rimBody.Contains("textureLod(terrainTex, uv + vec2(px.x, 0.0), 0.0).a") &&
                           rimBody.Contains("return holes * 0.25;") &&
                           GlslEval.Const(terrainSnippet, "VV_TERRAIN_SHAFT_RIM_FAR") <= 40.0 &&

@@ -99,6 +99,29 @@ namespace VintageVisuals.SmokeTest
                 motes.Contains("return gapDensity <= 2 && around >= 2;") &&
                 !motes.Contains("BlockAccessor") && !motes.Contains("WeatherSystem"),
                 "a mote outside a beam is snow, and a spawner that asks the world is a second tracker");
+            // INTERACTION: motes thicken where beams do. The spawner mirrors
+            // the shader's humid-air term; both are evaluated, the shader's
+            // from the shipped GLSL, and must agree.
+            try
+            {
+                string terrain = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+                string shaft = GlslEval.StripComments(GlslEval.FunctionBody(terrain, "float vvTerrainShaftLevel(") ?? "");
+                string lowExpr = GlslEval.Rhs(GlslEval.Statement(shaft, "float lowSun"));
+                string humidExpr = GlslEval.Rhs(GlslEval.Statement(shaft, "float humid"));
+                bool ok = motes.Contains("BeamHumidity(world.Wetness, sun.Y)");
+                string detail = "";
+                foreach (double wet in new[] { 0.0, 0.5, 1.0 })
+                foreach (double y in new[] { 0.1, 0.3, 0.45, 0.8 })
+                {
+                    var syms = GlslEval.Syms("l", GlslEval.Vec(0, y, 0), "vv_sceneWetness", wet, "fog", 0.0);
+                    syms["lowSun"] = new GlslEval.Val(GlslEval.Scalar(lowExpr, syms));
+                    double gpu = GlslEval.Scalar(humidExpr, syms);
+                    double cpu = VintageVisuals.PseudoPBR.DustMoteSpawner.BeamHumidity((float)wet, (float)y);
+                    if (Math.Abs(gpu - cpu) > 1e-4) { ok = false; detail += $" wet={wet} y={y}: shader {gpu:0.000}, motes {cpu:0.000}"; }
+                }
+                check("I-motes thicken with the beams: the spawner's humid air agrees with the shaft shader", ok, detail);
+            }
+            catch (Exception ex) { check("I-motes humid air is readable", false, ex.Message); }
         }
 
         /// <summary>

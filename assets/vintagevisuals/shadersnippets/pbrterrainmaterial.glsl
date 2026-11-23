@@ -534,6 +534,11 @@ const float VV_TERRAIN_SUN_PRESENCE_DAWN = 0.18;
 // slider, the green that light picks up on the way through, and the distance
 // over which the shadow-map count stops resolving canopy structure.
 const float VV_TERRAIN_DAPPLE_SHADE = 0.28;
+// How much deeper canopy shade is under a sun near the horizon: the floor of
+// a forest at golden hour is dark, which is what makes its flecks and beams
+// read (the player's reference photographs). Still bounded by the caller's
+// cap, so the shade cannot pass it however low the sun.
+const float VV_TERRAIN_DAPPLE_LOW_SUN = 1.6;
 const float VV_TERRAIN_DAPPLE_GREEN = 0.055;
 const float VV_TERRAIN_DAPPLE_FADE_START = 22.0;
 const float VV_TERRAIN_DAPPLE_FADE_RANGE = 22.0;
@@ -591,6 +596,9 @@ const float VV_TERRAIN_SHAFT_MAX = 0.35;
 // Past this distance a leaf texel is under a pixel, and the hole-rim test
 // that places shaft sources would sparkle.
 const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
+// Vanilla's normal shade (nb) at this fragment, set by the call site before
+// the material runs; see vvTerrainSunRelight. 1 means none, the old formula.
+float vv_vanillaNormalShade = 1.0;
 const float VV_TERRAIN_FLECK_FADE_START = 18.0;
 const float VV_TERRAIN_FLECK_FADE_RANGE = 8.0;
 // Past this straight-line distance a block texel is under a pixel and a
@@ -777,8 +785,10 @@ float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibil
     // diffuses it, exactly as the flecks do. Without this an overcast forest
     // took the weather's darkening and a full canopy shade on top of it.
     float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    float lowSun = 1.0 - smoothstep(0.15, 0.5, l.y);
     return VV_TERRAIN_DAPPLE_SHADE * resolvable * fade * under * crown * sun * mix(1.0, VV_OVERCAST_DIRECT, overcast)
-         * clamp(vv_pbrDapple, 0.0, 2.0);
+         * mix(1.0, VV_TERRAIN_DAPPLE_LOW_SUN, lowSun) * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
 // Applies the canopy term: darker, and green on the shaded fraction only.
@@ -1054,19 +1064,31 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, f
 vec3 vvTerrainSunlitTint(vec3 c, float golden, float night)
 {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    vec3 hue = mix(mix(vec3(1.02, 1.0, 0.96), vec3(1.10, 0.98, 0.80), clamp(golden, 0.0, 1.0)),
+    vec3 hue = mix(mix(vec3(1.02, 1.0, 0.96), vec3(1.08, 0.99, 0.86), clamp(golden, 0.0, 1.0)),
                    vec3(0.88, 0.95, 1.12), clamp(night, 0.0, 1.0));
     vec3 warm = (vec3(y) + (c - vec3(y)) * VV_TERRAIN_FLECK_SATURATION) * hue;
     return max(warm * (y / max(dot(warm, vec3(0.2126, 0.7152, 0.0722)), 0.0001)), vec3(0.0));
 }
 
-// The factor that undoes vanilla's sun shadow at this visibility: its shadow
-// takes shadowIntensity / 2 at full occlusion. Bounded, so a fleck can reach
-// vanilla's sunlit level and never pass it.
+// The factor that undoes vanilla's sun shadow at this visibility, so a fleck
+// reaches vanilla's sunlit level and never passes it.
+//
+// Vanilla does not apply its shadow alone: it takes min(shadow, nb), where nb
+// is its normal shade (a per-vertex value on plants in chunkopaque, and
+// getBrightnessFromNormal on topsoil). A sunlit fragment therefore sits at
+// nb, not at 1, and where nb is below 1 a shadow darkens it only from nb
+// down. v7 divided by the shadow alone, which lifted a plant with nb 0.6 to
+// 1.7x its own sunlit level: the flecks were brighter than the open grass
+// beside them, and on the autumn palette that read as a saturated yellow
+// (measured from the v7 screenshots: fleck luma 81-107, sunlit grass 61-64).
+// vv_vanillaNormalShade carries vanilla's nb in from the call site; it
+// defaults to 1, which is the old formula.
 float vvTerrainSunRelight(float sunVisibility)
 {
-    float vanilla = 1.0 - clamp(shadowIntensity, 0.0, 1.0) * 0.5 * (1.0 - clamp(sunVisibility, 0.0, 1.0));
-    return 1.0 / max(vanilla, 0.5);
+    float normalShade = clamp(vv_vanillaNormalShade, 0.05, 1.0);
+    float shadow = 1.0 - clamp(shadowIntensity, 0.0, 1.0) * 0.5 * (1.0 - clamp(sunVisibility, 0.0, 1.0));
+    float shaded = min(shadow, normalShade);
+    return normalShade / max(shaded, 0.05);
 }
 
 // Canopy shade and sunflecks applied to a sunlit term, the one entry point
@@ -1137,7 +1159,7 @@ float vvTerrainLeafHoleRim()
 // in, drawing one soft wedge instead of rays (seen in game at 16:30, v6).
 //
 // v7 keeps a leaf dark in the channel and marks only the texels that LINE a
-// hole - a backlit leaf edge, the bright rim around each chink of sky - so
+// hole, and v8 only where the fleck field is open below (see `lands`) - a backlit leaf edge, the bright rim around each chink of sky - so
 // every source sits on a real gap and adds to the comb instead of washing
 // it out. Only leaves, only where the leaf map says the crown is thin (a
 // hole in a closed crown shows more leaves, not sky), strongest looking
@@ -1168,6 +1190,22 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     vec3 world = cameraRelativePos + vv_pbrOrigin;
     float crown = vvTerrainCanopyCell(world.xz).x;
     float gap = 1.0 - smoothstep(0.4, 1.0, crown);
+    if (gap <= 0.0) return 0.0;
+
+    // A beam is the air between a gap and the fleck it lands on, so it
+    // starts only where the fleck field is open. The sun ray through this
+    // leaf meets the canopy plane at the same `src` the flecks below it are
+    // projected from, so a leaf marks a beam exactly when the floor that ray
+    // reaches is lit: every beam lands on a lit patch, and the beams come in
+    // the flecks' groups instead of a haze of sources across every thin
+    // crown. Placement uses the leaf map's cell density (vanilla's broken
+    // shadow is not known at a leaf), so beams are a subset of the patches.
+    float rise = vv_canopyPlaneY - world.y;
+    vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
+    vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
+    vec3 field = vvTerrainFleckField(src, az, l.y, crown, 0.0, vvTerrainFleckShimmer());
+    float lands = max(field.x, 0.5 * field.y);
+    if (lands <= 0.0) return 0.0;
 
     // Humid air carries a beam: wet ground after rain, a low sun at either
     // end of the day, and vanilla's own fog density (0.00125 by default,
@@ -1176,7 +1214,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
     float humid = 0.35 + 0.65 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
 
-    float level = clamp(vv_pbrShafts, 0.0, 2.0) * toward * rim * near * gap * humid * clearSky * sun
+    float level = clamp(vv_pbrShafts, 0.0, 2.0) * toward * rim * near * gap * lands * humid * clearSky * sun
                 * vvSceneVisibilityDampen();
     return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);
 }

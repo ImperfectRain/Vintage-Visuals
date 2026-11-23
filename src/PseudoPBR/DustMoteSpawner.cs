@@ -116,7 +116,10 @@ namespace VintageVisuals.PseudoPBR
             EntityPlayer player = _capi.World?.Player?.Entity;
             if (player == null) return;
 
-            int cap = (int)(MaxAlive * strength);
+            // Dust shows where a beam shows: the same humid-air weighting the
+            // shafts use in pbrterrainmaterial.glsl (vvTerrainShaftLevel), so
+            // motes and beams thicken together after rain and at a low sun.
+            int cap = (int)(MaxAlive * strength * BeamHumidity(world.Wetness, sun.Y));
             int tries = Math.Max(1, (int)(TriesPerTick * strength));
             int spawned = 0;
 
@@ -139,6 +142,19 @@ namespace VintageVisuals.PseudoPBR
                 _reported = true;
                 _capi.Logger.Notification("[VintageVisuals] pseudopbr: dust motes spawning in sun shafts under the canopy.");
             }
+        }
+
+        /// <summary>
+        /// How strongly humid air carries a beam, 0.35 dry at noon to 1: a
+        /// mirror of the `humid` term in vvTerrainShaftLevel (wet ground, or a
+        /// sun low between 0.55 and 0.15 of elevation). Fog is the shader's
+        /// third input and is not known here.
+        /// </summary>
+        public static float BeamHumidity(float wetness, float sunY)
+        {
+            float t = GameMath.Clamp((sunY - 0.15f) / 0.4f, 0f, 1f);
+            float lowSun = 1f - t * t * (3f - 2f * t);
+            return 0.35f + 0.65f * GameMath.Clamp(Math.Max(GameMath.Clamp(wetness, 0f, 1f), lowSun), 0f, 1f);
         }
 
         /// <summary>

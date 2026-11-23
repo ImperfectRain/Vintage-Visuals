@@ -62,6 +62,7 @@
   filename: chunkopaque.fsh
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
+    vv_vanillaNormalShade = nb;
     outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);
@@ -124,6 +125,7 @@
   filename: chunktopsoil.fsh
   tokens: outGlow = vec4(glowLevel + glow, 0, 0, outColor.a);
   content: |
+    vv_vanillaNormalShade = getBrightnessFromNormal(normal, 1, intensity);
     outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);

@@ -197,7 +197,8 @@ threshold the crown sets: a closed crown lights 4% of the floor in small holes,
 a thin one 55% with the shade broken into islands, and the lit parts link into a
 network in between. It is streaked along the sun's azimuth as the sun drops,
 evaluated once per block texel with one hard level so it shares the game's
-pixel-art edge, plain sunlight in colour at the same luminance, and projected along the sun
+pixel-art edge, plain sunlight in colour at the same luminance, restored to
+vanilla's own sunlit level including its normal shade (`vv_vanillaNormalShade`), and projected along the sun
 from one canopy plane for the whole scene (`vv_canopyPlaneY`). Sending alpha-cut plants through the opaque
 material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,

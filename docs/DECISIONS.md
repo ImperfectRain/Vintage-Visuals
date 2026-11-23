@@ -2335,6 +2335,24 @@ sources, as in vanilla. Rejected: patching the sky shader to brighten the
 gaps (the sky is not patched, see the Weather README); darkening leaves below
 zero (the channel is already zero there). Seen in game: sources sit on hole edges and the soft wedge is gone; no distinct beams yet.
 
+**Amendment (v8).** Sources everywhere along a thin crown blurred into a haze.
+A beam is the air between a gap and the fleck it lands on, so a leaf now marks
+the channel only where the sunfleck field is open at the canopy-plane point
+its sun ray crosses - the same `src` the flecks below are projected from. Each
+beam lands on a lit patch, and beams come in the flecks' groups. Placement
+reads the leaf map's cell density (vanilla's broken shadow is unknown at a
+leaf), so beams are a subset of patches. Dust motes thicken with the same
+humid-air term the beams use. Not yet seen in game.
+
+**Amendment (v8): the relight includes vanilla's normal shade.** Vanilla lights
+a fragment at min(shadow, nb), so a sunlit plant sits at its per-vertex nb.
+The relight divided by the shadow alone and lifted plants with low nb past
+their sunlit level (v7 screenshots: flecks brighter than open grass, read as
+yellow). The call sites now pass nb in `vv_vanillaNormalShade` and the relight
+restores exactly nb. Canopy shade also deepens toward a low sun
+(`VV_TERRAIN_DAPPLE_LOW_SUN` 1.6, under the existing caps), so a golden-hour
+floor is dark enough for flecks and beams to read.
+
 ## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
 
 **Context.** In the 2026-11-23 in-game audit, a storm with every cloud tile
