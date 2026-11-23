@@ -557,7 +557,7 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
                   dialog.Contains("_scrollContentBounds.fixedY = -_currentScroll") &&
                   dialog.Contains("double y = 0") &&
-                  dialog.Contains("AddSection(row.Section, y)") &&
+                  dialog.Contains("AddSection(row.Section, y, row.IsNote)") &&
                   dialog.Contains("AddSettingRow(row.Setting, y)") &&
                   !dialog.Contains("AddSettingRow(row.Setting, y, bodyY, bodyHeight)"),
                   "BeginClip children are positioned inside the clip, not in dialog coordinates");

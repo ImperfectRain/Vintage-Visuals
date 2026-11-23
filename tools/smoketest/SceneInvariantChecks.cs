@@ -1107,6 +1107,21 @@ namespace VintageVisuals.SmokeTest
                 check("I20 a cloud over open sun does darken" + tag,
                       Final(1.0, Lit(0.7, 0.6, 0.0)) < 0.9, Final(1.0, Lit(0.7, 0.6, 0.0)).ToString());
             }
+
+            // A solid sky has no cloud edge left to draw and vanilla's overcast
+            // dimming already took the sun: the shadow must be gone at full
+            // cover, whole at a broken one, and whole at cover 0 (unset).
+            try
+            {
+                string shadowBody = StripComments(FunctionBody(_weather, "float vvCloudShadow(vec3") ?? "");
+                string brokenExpr = Rhs(Statement(FunctionBody(_weather, "float vvCloudShadowBrokenSky("), "return"));
+                double Broken(double cover) => Scalar(brokenExpr, Syms("cover", cover));
+                bool applied = shadowBody.Contains("* vvCloudShadowBrokenSky(vv_cloudCover)");
+                check("I20 a solid storm sky casts no cloud shadow on top of vanilla's overcast",
+                      applied && Broken(1.0) < 1e-9 && Math.Abs(Broken(0.0) - 1.0) < 1e-9 && Math.Abs(Broken(0.4) - 1.0) < 1e-9,
+                      $"applied {applied}, cover 1 keeps {Broken(1.0):0.00}, cover 0 keeps {Broken(0.0):0.00}");
+            }
+            catch (Exception ex) { check("I20 the broken-sky fade is readable", false, ex.Message); }
         }
 
         static void I13_AToleranceIsNotFinerThanItsData(string repo, Action<string, bool, string> check)

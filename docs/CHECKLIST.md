@@ -103,6 +103,10 @@ from the source texture.
 | Modular plant lighting and canopy dapple (`pbrterrainmaterial`, D49) | x | x | x | x | – | – | – | – | x |
 | Sunflecks from the leaf map (D50, D51) | x | x | x | x | x | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
+| Sun shafts on the modular path (godrayLevel) | x | x | x | x | – | – | – | – | x |
+| Dust motes in sun shafts | x | x | x | x | – | – | – | – | x |
+| Moonlight flecks | x | x | x | x | – | – | – | – | x |
+| Cloud cover fused from the cloud tiles (D53) | x | x | x | x | – | – | – | – | x |
 
 ---
 

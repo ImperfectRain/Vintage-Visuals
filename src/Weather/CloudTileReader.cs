@@ -124,6 +124,15 @@ namespace VintageVisuals.Weather
         public float[] Density { get { return _density; } }
 
         /// <summary>
+        /// The mean of the tile window, 0 clear to 1 solid: how much of the
+        /// sky around the player the game's own cloud renderer is drawing.
+        /// Handed to the environment tracker as the cloud cover, because
+        /// Ambient.BlendedCloudDensity read 0 through a whole storm in 1.22
+        /// (in-game audit, 2026-11-23) while this read 0.74 to 1.
+        /// </summary>
+        public float MeanCover { get; private set; }
+
+        /// <summary>
         /// The height the game actually draws its clouds at, or 0 if unknown.
         ///
         /// Worth having rather than guessing: this decides how far a shadow is
@@ -211,6 +220,9 @@ namespace VintageVisuals.Weather
 
                 _side = side;
                 ReadWindow(tiles);
+                float sum = 0f;
+                for (int k = 0; k < _density.Length; k++) sum += _density[k];
+                MeanCover = _density.Length > 0 ? sum / _density.Length : 0f;
                 Available = true;
                 ReportFieldOnce();
             }

@@ -352,11 +352,24 @@ float vvCloudShadowLit(float occlusion, float sunShare, float blockLight)
     return clamp(1.0 - occlusion * sunShare * VV_CLOUD_SHADOW_DEPTH + blockLight, 0.0, 1.0);
 }
 
+// How much of a cloud shadow survives at this cover, 1 under a broken sky and
+// 0 under a solid one. A cloud shadow is the edge between sun and no sun; when
+// every tile is cloud there is no edge and no direct sun left to take, and
+// vanilla's own overcast lighting already says so. Without this a storm put
+// the whole world in full sun shade on top of vanilla's dimming, and a rainy
+// noon read as dusk (in-game audit, 2026-11-23). Cover 0 - also what an unset
+// uniform reads - keeps the shadow whole.
+float vvCloudShadowBrokenSky(float cover)
+{
+    return 1.0 - smoothstep(0.55, 0.85, clamp(cover, 0.0, 1.0));
+}
+
 float vvCloudShadow(vec3 cameraRelativePos)
 {
     if (vv_cloudShadowStrength < 0.001) return 1.0;
 
-    float occlusion = vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+    float occlusion = vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0)
+                    * vvCloudShadowBrokenSky(vv_cloudCover);
     return vvCloudShadowLit(occlusion, shadowIntensity, VV_CLOUD_BLOCK_LIGHT);
 }
 

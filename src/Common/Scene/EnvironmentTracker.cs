@@ -205,6 +205,32 @@ namespace VintageVisuals.Common.Scene
             Demand = new SceneDemand(rainFog, cloudShadow, overcast, Demand.HeightHaze);
         }
 
+        /// <summary>
+        /// The game's own cloud tiles, averaged over the window around the
+        /// player, as Weather read them.
+        ///
+        /// Ambient.BlendedCloudDensity read 0 through a whole storm in 1.22
+        /// (in-game audit, 2026-11-23: "cloud cover 0, precipitation 1"),
+        /// while the tile window read 0.74 to 1. Every overcast term in the
+        /// mod - flecks, canopy shade, shafts, the grade, VisualBudget's cloud
+        /// claims - was therefore running as if the sky were clear. The tiles
+        /// are derived from what the game's cloud renderer draws, the second
+        /// rung of the ladder, so the larger of the two wins while the tile
+        /// reading is fresh.
+        /// </summary>
+        public void ReportCloudField(float meanCover, long nowMs)
+        {
+            _tileCover = GameMath.Clamp(meanCover, 0f, 1f);
+            _tileCoverAtMs = nowMs;
+        }
+
+        /// <summary>A tile reading older than this is no longer the sky overhead.</summary>
+        private const long TileCoverFreshMs = 10000;
+
+        private float _tileCover;
+        private long _tileCoverAtMs = long.MinValue / 2;
+        private bool _reportedCoverSource;
+
         /// <summary>What Atmosphere wants, before arbitration. See <see cref="DemandFromWeather"/>.</summary>
         public void DemandFromAtmosphere(float heightHaze)
         {
@@ -524,7 +550,17 @@ namespace VintageVisuals.Common.Scene
 
                 if (_capi.Ambient != null)
                 {
-                    _cloudCover = GameMath.Clamp(_capi.Ambient.BlendedCloudDensity * CloudCoverGain, 0f, 1f);
+                    float ambient = GameMath.Clamp(_capi.Ambient.BlendedCloudDensity * CloudCoverGain, 0f, 1f);
+                    bool fresh = _capi.ElapsedMilliseconds - _tileCoverAtMs < TileCoverFreshMs;
+                    _cloudCover = fresh ? Math.Max(ambient, _tileCover) : ambient;
+
+                    if (fresh && !_reportedCoverSource && _tileCover - ambient > 0.3f)
+                    {
+                        _reportedCoverSource = true;
+                        _logger.Notification("[VintageVisuals] environment: cloud cover taken from the game's " +
+                            "cloud tiles (" + _tileCover.ToString("0.##") + ") rather than " +
+                            "Ambient.BlendedCloudDensity (" + ambient.ToString("0.##") + ").");
+                    }
                 }
             }
             catch (Exception)

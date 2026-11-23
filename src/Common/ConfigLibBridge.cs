@@ -193,6 +193,12 @@ namespace VintageVisuals.Common
                 case "pbr_sunflecks":
                     pbr.SunFlecks = tree.GetFloat("value", pbr.SunFlecks);
                     break;
+                case "pbr_moonflecks":
+                    pbr.MoonFlecks = tree.GetFloat("value", pbr.MoonFlecks);
+                    break;
+                case "pbr_motes":
+                    pbr.DustMotes = tree.GetFloat("value", pbr.DustMotes);
+                    break;
                 case "pbr_canopyradius":
                     pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
                     break;

@@ -76,6 +76,28 @@ namespace VintageVisuals.SmokeTest
             check("the light-level lookup stays out of the per-frame path",
                 !body.Contains("SampleObserver()") && observerBody.Contains("GetLightLevel"),
                 "SampleObserver does a chunk query and belongs on the tick");
+
+            // Ambient.BlendedCloudDensity read 0 through a whole storm in game
+            // (2026-11-23), so flecks drew under solid cloud. The cloud tiles
+            // the clouds are drawn from are the better witness while fresh.
+            string weather = File.ReadAllText(Path.Combine(repo, "src/Weather/WeatherSubsystem.cs"));
+            check("cloud cover takes the game's own cloud tiles when they are fresh",
+                source.Contains("_cloudCover = fresh ? Math.Max(ambient, _tileCover) : ambient;") &&
+                weather.Contains("ReportCloudField(_clouds.MeanCover"),
+                "a dead ambient cover figure would read a storm as clear sky");
+
+            // Dust motes are lit only inside a beam: spawned only where the
+            // leaf map says a real gap sends sun, only under a clear sky, and
+            // capped so they stay a hint of dust. No world query of their own.
+            string motes = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/DustMoteSpawner.cs"));
+            check("dust motes spawn only in real sun shafts, under a clear sky, capped and off at zero",
+                motes.Contains("if (!InShaft(map, x, y, z, sun)) continue;") &&
+                motes.Contains("world.CloudCover > CloudLimit") &&
+                motes.Contains("if (strength < 0.001f) return;") &&
+                motes.Contains("_alive < cap") &&
+                motes.Contains("return gapDensity <= 2 && around >= 2;") &&
+                !motes.Contains("BlockAccessor") && !motes.Contains("WeatherSystem"),
+                "a mote outside a beam is snow, and a spawner that asks the world is a second tracker");
         }
 
         /// <summary>

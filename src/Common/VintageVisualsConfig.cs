@@ -886,6 +886,20 @@ namespace VintageVisuals.Common
         public float SunFlecks { get; set; } = 0.6f;
 
         /// <summary>
+        /// The moon's faint, cool version of the sunflecks, through the same
+        /// gaps and vanilla's own moon shadow. Scaled by how bright the game
+        /// says the moon is, and capped well under the sun's. 0 is none.
+        /// </summary>
+        public float MoonFlecks { get; set; } = 0.5f;
+
+        /// <summary>
+        /// Dust motes drifting in the sun shafts under a canopy: a few small
+        /// particles spawned only where the leaf map has a gap the sun shines
+        /// through. Never under cloud, never at night. 0 spawns none.
+        /// </summary>
+        public float DustMotes { get; set; } = 0.5f;
+
+        /// <summary>
         /// Ring radius, in shadow-map texels, for the canopy test.
         ///
         /// A slider rather than a constant because it is a fact about the
@@ -1047,13 +1061,17 @@ namespace VintageVisuals.Common
                 "PseudoPBR.SunDapple", corrections);
             SunFlecks = ColorGradeConfig.Clamp(SunFlecks, 0.0f, 1.5f,
                 "PseudoPBR.SunFlecks", corrections);
+            MoonFlecks = ColorGradeConfig.Clamp(MoonFlecks, 0.0f, 1.0f,
+                "PseudoPBR.MoonFlecks", corrections);
+            DustMotes = ColorGradeConfig.Clamp(DustMotes, 0.0f, 1.0f,
+                "PseudoPBR.DustMotes", corrections);
             CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
                 "PseudoPBR.CanopyRadius", corrections);
             PixelReflection = ColorGradeConfig.Clamp(PixelReflection, 0.0f, 1.0f,
                 "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 65.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 67.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

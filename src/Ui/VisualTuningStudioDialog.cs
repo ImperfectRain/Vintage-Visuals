@@ -297,6 +297,16 @@ namespace VintageVisuals.Ui
                     .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
                         CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
+            // The forest light presets, on the tab whose sliders they move.
+            if (_tab == SettingTab.Materials)
+            {
+                SingleComposer
+                    .AddButton("Subtle", () => Guard(generation, "PresetSubtle", () => OnPresetClicked("Subtle")),
+                        ElementBounds.Fixed(DialogWidth - 270, 548, 60, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-subtle")
+                    .AddButton("Cinematic", () => Guard(generation, "PresetCinematic", () => OnPresetClicked("Cinematic")),
+                        ElementBounds.Fixed(DialogWidth - 206, 548, 66, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-cinematic");
+            }
+
             AddTabs(generation);
 
             if (_tab == SettingTab.Overview) AddOverview();
@@ -368,6 +378,15 @@ namespace VintageVisuals.Ui
             SaveScroll();
             _advanced = on;
             ComposeDialog();
+            return true;
+        }
+
+        private bool OnPresetClicked(string name)
+        {
+            Log("ENTER Preset " + name);
+            LocalEdit(() => _controller.ApplyPreset(name));
+            ComposeDialog();
+            Log("EXIT Preset " + name);
             return true;
         }
 
@@ -522,13 +541,18 @@ namespace VintageVisuals.Ui
             // dialog rather than as "nothing here works yet".
             if (!any && !_advanced)
             {
-                yield return RowItem.ForSection(EmptyTabLine1);
-                yield return RowItem.ForSection(EmptyTabLine2);
+                // Plain text, not a section header: the orange header style
+                // read as an error (in-game audit, 2026-11-23).
+                bool reflections = tab == SettingTab.Reflections;
+                yield return RowItem.ForNote(reflections ? ReflectionsTabLine1 : EmptyTabLine1);
+                yield return RowItem.ForNote(reflections ? ReflectionsTabLine2 : EmptyTabLine2);
             }
         }
 
-        public const string EmptyTabLine1 = "Nothing on this tab is active in this build.";
+        public const string EmptyTabLine1 = "Nothing on this tab changes the picture in this build.";
         public const string EmptyTabLine2 = "Tick Show advanced below to see why.";
+        public const string ReflectionsTabLine1 = "Reflections are at stage one: debug views 41 and 42";
+        public const string ReflectionsTabLine2 = "on the Debug tab. Tick Show advanced for the sliders.";
 
         private SettingAvailability Availability(VisualSetting setting)
         {
@@ -585,7 +609,7 @@ namespace VintageVisuals.Ui
             {
                 if (row.IsSection)
                 {
-                    AddSection(row.Section, y);
+                    AddSection(row.Section, y, row.IsNote);
                     y += HeaderHeight;
                 }
                 else
@@ -621,9 +645,9 @@ namespace VintageVisuals.Ui
             _rowsContainer.Add(element);
         }
 
-        private void AddSection(string label, double y)
+        private void AddSection(string label, double y, bool note = false)
         {
-            AddRowElement(new GuiElementDynamicText(capi, label, SectionFont(),
+            AddRowElement(new GuiElementDynamicText(capi, label, note ? CairoFont.WhiteSmallText() : SectionFont(),
                 ElementBounds.Fixed(RowLeft, y + 4, ContentWidth - 20, 20)));
         }
 
@@ -1283,12 +1307,20 @@ namespace VintageVisuals.Ui
             public readonly string Section;
             public readonly VisualSetting Setting;
 
+            public readonly bool IsNote;
+
             public bool IsSection { get { return Section != null; } }
 
-            private RowItem(string section, VisualSetting setting)
+            private RowItem(string section, VisualSetting setting, bool note = false)
             {
                 Section = section;
                 Setting = setting;
+                IsNote = note;
+            }
+
+            public static RowItem ForNote(string text)
+            {
+                return new RowItem(text, null, true);
             }
 
             public static RowItem ForSection(string section)

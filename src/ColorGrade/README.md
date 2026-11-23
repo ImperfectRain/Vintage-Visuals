@@ -173,7 +173,7 @@ moment it started raining.
 |---|---|---|
 | golden hour | daylight partway up | warms, saturates, softens contrast |
 | night | daylight down | drains colour, shifts blue, lifts exposure |
-| rain | precipitation now | drains colour and contrast, cools |
+| rain | precipitation now | cools and softens contrast, keeps exposure near neutral (2026-11-23: a storm read as dusk) |
 | overcast | cloud density | flattens contrast, mild desaturation |
 | enclosed | sunlight can't reach you | warms toward firelight, harder shadows |
 | depth | blocks below sea level | drains colour, cools |

@@ -38,6 +38,7 @@ what that means and what is still unconfirmed.
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
 | `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; legacy `pseudopbrtopsoil` remains disabled |
 | Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves, wet leaves, a leaf highlight and canopy dapple on a separate flora branch that never decodes the opaque material, with dapple also on opaque blocks and topsoil. Still legacy-only: sun shafts and pixel reflections; scene reflections are at stage one (D48) |
+| Sunlight v5 on the modular path (2026-11-23) | L2: sunflecks (fifth pattern, D51 fourth amendment), moonlight flecks (`pbr_moonflecks`), sun shafts into vanilla's `godrayLevel` from leaves at thin leaf-map cells (`chunkopaque` only), dust motes as game particles in those shafts (`DustMoteSpawner`, `pbr_motes`). Views 64, 66, 67. Not yet seen in game; cost not measured |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 

@@ -145,7 +145,12 @@ namespace VintageVisuals.PseudoPBR
             // time keeps renderer lifetime tied to subsystem lifetime, which is
             // the only pairing Dispose() can honour.
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Opaque, "vintagevisuals-pbr");
+
+            _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
+            mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
         }
+
+        private DustMoteSpawner _motes;
 
         public void Apply()
         {
@@ -222,6 +227,8 @@ namespace VintageVisuals.PseudoPBR
         /// a strength slider is a statement about what the player wants rather
         /// than about the world.
         /// </summary>
+        private static float Clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
+
         private SceneInputs ReadScene()
         {
             if (_mod.Environment == null) return SceneInputs.None;
@@ -239,7 +246,8 @@ namespace VintageVisuals.PseudoPBR
                                        intent[IntentChannel.ArtificialLight],
                                        intent[IntentChannel.Restraint],
                                        intent[IntentChannel.Readability],
-                                       world.Autumn, world.Winter, 0f, 0f);
+                                       world.Autumn, world.Winter, 0f, 0f,
+                                       Clamp01(world.CloudCover), Clamp01(world.WindSpeed), Clamp01(world.MoonLight));
             }
 
             return new SceneInputs(
@@ -271,7 +279,10 @@ namespace VintageVisuals.PseudoPBR
                 // A dry cold snap in winter should not frost the world over -
                 // vanilla's frostAlpha covers that case, and it covers it per
                 // block, knowing which of them can frost at all.
-                world.Snow * weather.SnowDusting);
+                world.Snow * weather.SnowDusting,
+                Clamp01(world.CloudCover),
+                Clamp01(world.WindSpeed),
+                Clamp01(world.MoonLight));
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)
@@ -614,6 +625,10 @@ namespace VintageVisuals.PseudoPBR
             if (_mod != null && _mod.Capi != null && _binder != null)
             {
                 _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Opaque);
+            }
+            if (_mod != null && _mod.Capi != null && _motes != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_motes, EnumRenderStage.Before);
             }
 
             if (_bindInterceptor != null)

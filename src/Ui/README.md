@@ -175,8 +175,16 @@ content offset, while attaching the local scroll child directly to the root lets
 rows escape the inset.
 The sidebar uses a full-width button stack instead of native `AddVerticalTabs`
 because the native element sizes its rendered tabs from text width. It has not
-been re-opened in a running game from this environment, so presets,
-import/export and persistence remain blocked.
+been re-opened in a running game from this environment, so import/export and
+persistence remain blocked.
+
+The Materials tab carries two sunlight presets, Subtle and Cinematic
+(`VisualTuningStudioController.SunlightPresets`). Each sets only the five
+sunlight sliders (sunflecks, dapple, shafts, motes, moon flecks); neither
+switches a feature on. A tab whose rows do nothing in this build shows a plain
+note in white small text rather than an orange heading; the Reflections tab's
+note points at debug views 41 and 42 and the Show advanced toggle. Not yet seen
+in game.
 
 ## In-game acceptance tests
 

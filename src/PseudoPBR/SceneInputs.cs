@@ -75,13 +75,30 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public readonly Vec3f Origin;
 
+        /// <summary>
+        /// How much of the sky the game's cloud tiles cover, 0..1, NOT
+        /// config-scaled. A fact about the sky, carried beside Overcast,
+        /// which is the player's softening applied to it.
+        /// </summary>
+        public readonly float SkyCover;
+
+        /// <summary>The game's wind where the player is, 0..1.</summary>
+        public readonly float Wind;
+
+        /// <summary>How bright the moon is, already 0 by day.</summary>
+        public readonly float MoonLight;
+
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
                            float rippleTime, float breeze, float overcast, Vec3f origin,
                            float enclosure = 0f, float artificialLight = 0f,
                            float restraint = 0f, float readability = 0f,
                            float autumn = 0f, float winter = 0f,
-                           float frost = 0f, float snow = 0f)
+                           float frost = 0f, float snow = 0f,
+                           float skyCover = 0f, float wind = 0f, float moonLight = 0f)
         {
+            SkyCover = skyCover;
+            Wind = wind;
+            MoonLight = moonLight;
             Autumn = autumn;
             Winter = winter;
             Frost = frost;

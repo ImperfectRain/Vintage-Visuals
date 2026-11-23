@@ -22,7 +22,8 @@ See DECISIONS D23.
 | Overcast light response | runtime evidence, not visually closed |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
 | Fog and tint by weather state | **moved to `src/Atmosphere/`** - decided here, rendered there |
-| Cloud shadows | runtime evidence, not visually closed; sub-tile drift still open |
+| Cloud shadows | runtime evidence, not visually closed; sub-tile drift still open. Fades out between 55% and 85% cover (a solid sky has no edge to draw, and vanilla already dims it), L2 |
+| Cloud cover reported to the tracker | `ReportCloudField` with the tile window's mean after each read; the tracker prefers it over `Ambient.BlendedCloudDensity`, which read 0 through a storm (D53), L2 |
 | Cloud shaping | **removed** - not possible from a cloud shader, see below |
 
 ## Wet surfaces

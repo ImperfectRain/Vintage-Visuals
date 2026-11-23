@@ -233,12 +233,20 @@ namespace VintageVisuals.Ui
                    M, "Foliage", 0f, 2f, 0.05f);
 
             Slider("pbr_sunflecks", "PseudoPBR.SunFlecks", "Sunflecks",
-                   "Soft spots of sunlight inside the shade under trees, following the real sun. Only under leaves, never under a roof, and never brighter than open sunlight. Needs shadows on.",
+                   "Spots and pools of sunlight inside the shade under trees, stretched by a low sun and swaying in the wind. Only under leaves, never under a roof or heavy cloud, and never brighter than open sunlight. Needs shadows on.",
                    M, "Foliage", 0f, 1.5f, 0.05f);
 
+            Slider("pbr_moonflecks", "PseudoPBR.MoonFlecks", "Moonlight flecks",
+                   "A faint, cool version of the sunflecks by moonlight, as bright as the game says the moon is and always far dimmer than the sun's.",
+                   M, "Foliage", 0f, 1f, 0.05f);
+
             Slider("pbr_shafts", "PseudoPBR.SunShafts", "Sun shafts",
-                   "Beams of light picked out where the sun breaks through a canopy.",
+                   "Beams of light from real gaps in a canopy, strongest looking toward the sun and in humid air. Needs god-rays on in the game's graphics settings.",
                    M, "Foliage", 0f, 2f, 0.05f);
+
+            Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
+                   "A few specks of dust drifting in the sun shafts under a canopy. None under cloud or at night.",
+                   M, "Foliage", 0f, 1f, 0.05f);
 
             Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
                    "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees.",

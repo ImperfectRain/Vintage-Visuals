@@ -89,7 +89,6 @@ namespace VintageVisuals.Ui
         /// <summary>Read only by pseudopbr.glsl, which is gated off with the legacy terrain path.</summary>
         public static readonly HashSet<string> LegacyTerrainOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "pbr_shafts",
             "reflections_scene",
             "pbr_pixelreflect",
         };
@@ -133,6 +132,9 @@ namespace VintageVisuals.Ui
             { "pbr_dapple", "Needs shadows on. Shows on the ground under trees in sun." },
             { "pbr_canopyradius", "Needs shadows on and Sun dapple above zero." },
             { "pbr_sunflecks", "Needs shadows on. Shows in shade under leaves in sun, within about 40 blocks." },
+            { "pbr_moonflecks", "Needs shadows on. Shows in shade under leaves at night with the moon up." },
+            { "pbr_shafts", "Needs god-rays on in the game's settings. Look toward the sun through a canopy." },
+            { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
             { "pbr_blocklight", "Creatures, items and particles only in this build." },
             { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },
@@ -293,7 +295,7 @@ namespace VintageVisuals.Ui
                 "pbr_normalstrength", "pbr_detaildistance", "pbr_cavity", "pbr_specularstrength",
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
-                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_shafts", "pbr_canopyradius",
+                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 

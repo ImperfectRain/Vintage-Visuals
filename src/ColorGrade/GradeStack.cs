@@ -164,11 +164,17 @@ namespace VintageVisuals.ColorGrade
             // Both gated on sky exposure: rain does not change the colour of a
             // room with no windows.
 
+            // Rain is COOL and soft, not dark. An overcast noon is a big dim
+            // light source the size of the sky: low contrast, a little blue,
+            // and not much darker than vanilla already draws it. The exposure
+            // cut used to be 7% for rain and 3% more for cloud, on top of
+            // vanilla's own dimming, and with the cloud shadows it made a
+            // rainy noon read as dusk (in-game audit, 2026-11-23).
             stack.Add(Clamp01(world.Rain) * weights.WeatherStrength * sky,
-                      0.93f, -0.14f, -0.28f, -0.16f, 0.98f, 1.00f, 1.03f);
+                      0.98f, -0.14f, -0.26f, -0.26f, 0.97f, 1.00f, 1.05f);
 
             stack.Add(Clamp01(world.CloudCover) * weights.WeatherStrength * sky,
-                      0.97f, -0.10f, -0.12f, -0.08f, 1.00f, 1.00f, 1.00f);
+                      1.00f, -0.10f, -0.12f, -0.10f, 0.99f, 1.00f, 1.01f);
 
             // --- Where the player is ----------------------------------------
 

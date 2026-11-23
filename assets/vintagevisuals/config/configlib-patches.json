@@ -664,7 +664,7 @@
       },
       "pbr_sunflecks": {
         "ingui": "Sunflecks in canopy shade",
-        "comment": "Soft round spots of sunlight inside the shade under trees, following the real sun direction and stretching when it is low. Only where the game's own leaf blocks are overhead, never under a roof or cliff, and never brighter than open sunlight. 0 is vanilla.",
+        "comment": "Spots and pools of sunlight inside the shade under trees, following the real sun direction and stretching into ovals when it is low. Only where the game's own leaf blocks are overhead, never under a roof or cliff, never under heavy cloud, and never brighter than open sunlight. 0 is vanilla.",
         "default": 0.6,
         "range": {
           "min": 0.0,
@@ -674,9 +674,33 @@
         "clientSide": true,
         "weight": 90
       },
+      "pbr_moonflecks": {
+        "ingui": "Moonlight flecks",
+        "comment": "A faint, cool version of the sunflecks by moonlight, through the same gaps in the leaves. Follows how bright the game says the moon is, and is always much dimmer than the sun's. 0 is none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 91
+      },
+      "pbr_motes": {
+        "ingui": "Dust motes in sun shafts",
+        "comment": "A few small specks of dust drifting in the beams of sun under a canopy, only where the game's own leaf blocks have a gap the sun shines through. None under cloud or at night. 0 spawns none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 92
+      },
       "pbr_shafts": {
         "ingui": "Sunbeams through the canopy",
-        "comment": "Visible beams of light through gaps in foliage. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings and follows the real position of the sun. 0 is vanilla.",
+        "comment": "Visible beams of light from gaps in the canopy, strongest looking toward the sun and in humid air after rain, at dawn and dusk, and in fog. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings. 0 is vanilla.",
         "default": 0.45,
         "range": {
           "min": 0.0,
@@ -742,7 +766,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 65.0,
+          "max": 67.0,
           "step": 1.0
         }
       },

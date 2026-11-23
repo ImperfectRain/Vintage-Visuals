@@ -97,6 +97,28 @@ namespace VintageVisuals.Common.Scene
             return GameMath.Clamp(density, 0, 7) * 512 + GameMath.Clamp(lowestY, 0, 511);
         }
 
+        private int _windowCx = int.MinValue / 2;
+        private int _windowCz = int.MinValue / 2;
+
+        /// <summary>
+        /// One cell's leaf density (0..7) and lowest leaf Y, for a world block
+        /// position. False outside the window last scanned, where the
+        /// toroidal map holds another place's leaves.
+        /// </summary>
+        public bool TryCell(int worldBlockX, int worldBlockZ, out int density, out int lowestY)
+        {
+            density = 0;
+            lowestY = 0;
+            if (!Valid) return false;
+            int cx = FloorDiv(worldBlockX, CellBlocks) - _windowCx;
+            int cz = FloorDiv(worldBlockZ, CellBlocks) - _windowCz;
+            if (cx < 0 || cz < 0 || cx >= Grid || cz >= Grid) return false;
+            int code = _cells[Index(worldBlockX, worldBlockZ)];
+            density = code / 512;
+            lowestY = code % 512;
+            return true;
+        }
+
         public static int Index(int worldBlockX, int worldBlockZ)
         {
             int cx = FloorDiv(worldBlockX, CellBlocks);
@@ -119,6 +141,8 @@ namespace VintageVisuals.Common.Scene
             int pz = (int)Math.Floor(player.Z);
             int baseCx = FloorDiv(px, CellBlocks) - Grid / 2;
             int baseCz = FloorDiv(pz, CellBlocks) - Grid / 2;
+            _windowCx = baseCx;
+            _windowCz = baseCz;
 
             var pos = new BlockPos(player.Dimension);
             bool changed = false;

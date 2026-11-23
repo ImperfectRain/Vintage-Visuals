@@ -2255,6 +2255,49 @@ in the player's world at noon and with a low sun.
 
 Seen in game before the fix, and again after it with a low sun: irregular pools with texel edges, no squares.
 
+**Fourth amendment, 2026-11-23 (fifth pattern, after an art-director audit).**
+The audit of the fourth pattern's screenshots asked for eighteen changes; all
+are in this pattern. Pools are now metaball kernels (`max(0, 1 - x^2)^2` summed
+over a 5x5 cell search, thresholded at 0.5) rather than a noise outline, because
+a kernel centred on a cell can be stretched along the sun azimuth where a noise
+domain anchored to the world would slide as the sun moves. Gap sizes are cubed
+uniform draws, so there are many small pools and a few large ones; the nearer
+3x3 cells add leaf cuts and faint specks. A half-bright rim
+(`soft = rise * 0.012`, clamped 0.04..0.3) stands in for the penumbra a higher
+crown throws. Flutter scales with `vv_sceneWind`, so calm air holds still. The
+wash is gone: lit patches take a hue (warm by day, golden near the horizon,
+cool by moonlight) at preserved luminance, and the relight cap still bounds
+them at vanilla's sunlit level. A faint warm bounce (at most 0.07) lifts the
+ground round a pool. Plants take double gain. Canopy shade is graded by crown
+thickness (0.6 under a thin crown). A clear-sky gate closes flecks between 45%
+and 65% cover, read from the fused cover of D53. Moonlight flecks reuse the
+same field at most 0.45 of a sunfleck, behind their own slider. All of it is
+invented pattern on real placement (DATA GAP, as D50), checked by evaluating the
+shipped GLSL, and not yet seen in game. Rejected: a second leaf-map read per
+kernel (the 5x5 loop already costs 25 hashes per fragment, not measured).
+
+## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
+
+**Context.** In the 2026-11-23 in-game audit, a storm with every cloud tile
+covered reported `Ambient.BlendedCloudDensity` as 0 throughout. Every consumer of
+`EnvironmentState.CloudCover` therefore saw clear sky: sunflecks drew under the
+storm and the overcast terms never engaged.
+
+**Decision.** `CloudTileReader` already reads the array the clouds are drawn
+from. It now computes the window's mean cover, and `WeatherSubsystem` reports it
+to `EnvironmentTracker.ReportCloudField` after each read. The tracker takes
+`max(ambient, tiles)` while the tile reading is under ten seconds old, and the
+ambient figure alone otherwise, so a Weather subsystem switched off falls back
+to the game's own figure rather than to a stale one. It logs once when the
+tiles disagree with the ambient figure by more than 0.3.
+
+**Consequences.** Weather writes a fact into the tracker, so data now flows
+Weather -> tracker -> every subsystem. The tracker is still the one place the
+mod asks the game: the tile array is game data the Weather subsystem already
+holds, not a second query. The mean is over the reader's window around the
+player, not the sky overhead. Not yet seen in game; cost is one pass over an
+array already read.
+
 ## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
 
 **Context.** `getBrightnessFromShadowMap` returned vanilla's brightness times
