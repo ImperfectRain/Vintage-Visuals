@@ -662,6 +662,18 @@
         "clientSide": true,
         "weight": 65
       },
+      "pbr_sunflecks": {
+        "ingui": "Sunflecks in canopy shade",
+        "comment": "Soft round spots of sunlight inside the shade under trees, following the real sun direction and stretching when it is low. Only where the game's own leaf blocks are overhead, never under a roof or cliff, and never brighter than open sunlight. 0 is vanilla.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.5,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 90
+      },
       "pbr_shafts": {
         "ingui": "Sunbeams through the canopy",
         "comment": "Visible beams of light through gaps in foliage. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings and follows the real position of the sun. 0 is vanilla.",
@@ -730,7 +742,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 63.0,
+          "max": 65.0,
           "step": 1.0
         }
       },

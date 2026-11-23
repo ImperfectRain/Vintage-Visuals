@@ -225,6 +225,7 @@ namespace VintageVisuals.PseudoPBR
         private SceneInputs ReadScene()
         {
             if (_mod.Environment == null) return SceneInputs.None;
+            if (_binder != null) _binder.Canopy = _mod.Environment.Canopy;
 
             EnvironmentState world = _mod.Environment.Current;
             SceneIntent intent = _mod.Environment.Intent;

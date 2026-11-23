@@ -261,7 +261,10 @@ void main()
                 resolved.CountSubstring("uniform sampler2D vv_materialTex2;") == 2 &&
                 !resolved.Contains("vv_reflectScene") &&
                 !resolved.Contains("vv_reflectWorld") &&
-                !resolved.Contains("vv_canopy"),
+                // The leaf map is a uniform ARRAY (vv_canopyMap), deliberately
+                // not a sampler; the legacy canopy texture must stay out.
+                !System.Text.RegularExpressions.Regex.IsMatch(resolved, @"sampler2D\s+vv_canopy") &&
+                resolved.CountSubstring("uniform sampler") == 4,
                 "Stage C is limited to primary and secondary material atlas samplers");
             check("Stage C terrain material decodes the primary and secondary atlas channels",
                 resolved.Contains("struct VvTerrainMaterial") &&
@@ -361,9 +364,12 @@ void main()
                 applyCanopy.Contains("(1.0 - vvTerrainLocalLightShare())") &&
                 !Regex.IsMatch(applyCanopy, @"color\s*\+"),
                 "");
+            string resolveBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCanopyResolve(") ?? "");
             check("terrain canopy dapple reaches opaque blocks and plants",
-                GlslEval.StripComments(primaryBody).Contains("diffuse = vvTerrainApplyCanopy(diffuse, vvTerrainCanopyDapple(") &&
-                floraShadeCode.Contains("vvTerrainApplyCanopy(result, vvTerrainCanopyDapple("),
+                GlslEval.StripComments(primaryBody).Contains("diffuse = vvTerrainCanopyResolve(diffuse,") &&
+                floraShadeCode.Contains("result = vvTerrainCanopyResolve(result,") &&
+                resolveBody.Contains("vvTerrainApplyCanopy(color, vvTerrainCanopyDapple("),
                 "");
             // INTERACTION: the canopy term composed with the colour it is
             // applied to, evaluated from the shipped body. It may only take
@@ -400,6 +406,66 @@ void main()
                     "full " + full + ", torch " + torch + ", leaf " + leaf);
             }
             catch (Exception ex) { check("I-terrain canopy composition is readable", false, ex.Message); }
+            // Sunflecks. Off at zero, absent without a leaf map, never reading
+            // past the toroidal map's edge, and never brighter than vanilla's
+            // own sunlit level.
+            string fleckBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSunfleck(") ?? "");
+            string overheadBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyOverhead(") ?? "");
+            string cellBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyCell(") ?? "");
+            check("terrain sunflecks are exactly off at a slider of zero",
+                fleckBody.Contains("if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return 0.0;") &&
+                resolveBody.Contains("if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;"),
+                "");
+            check("terrain sunflecks need the leaf map and stay inside it",
+                overheadBody.Contains("if (vv_canopyMapValid < 0.5) return vec2(0.0);") &&
+                Regex.IsMatch(overheadBody, @"max\(abs\(rel\.x\), abs\(rel\.z\)\) > 30\.0\) break;") &&
+                VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks / 2 > 30,
+                "the march must stop inside half the map's span, or the toroidal map returns another place's leaves");
+            // CPU and GPU must agree on the cell, the index and the encoding.
+            check("leaf map encoding agrees between CanopyMap and the shader",
+                VintageVisuals.Common.Scene.CanopyMap.Encode(5, 300) == 5 * 512 + 300 &&
+                VintageVisuals.Common.Scene.CanopyMap.Grid == 32 &&
+                VintageVisuals.Common.Scene.CanopyMap.CellBlocks == 2 &&
+                VintageVisuals.Common.Scene.CanopyMap.PackedVectors == 128 &&
+                terrainSnippet.Contains("uniform vec4 vv_canopyMap[128];") &&
+                cellBody.Contains("ivec2(floor(worldXZ / 2.0))") &&
+                cellBody.Contains("int i = iz * 32 + ix;") &&
+                cellBody.Contains("(i & 1) == 0 ? mod(packed, 4096.0) : floor(packed / 4096.0)") &&
+                cellBody.Contains("vec2(floor(code / 512.0) / 7.0, mod(code, 512.0))") &&
+                VintageVisuals.Common.Scene.CanopyMap.Index(-1, -1) == 31 * 32 + 31 &&
+                VintageVisuals.Common.Scene.CanopyMap.Index(4096 + 2, 0) == VintageVisuals.Common.Scene.CanopyMap.Index(2, 0) &&
+                4096 % (VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks) == 0 &&
+                Math.Abs(GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CELL") * GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_PERIOD") - 4096.0) < 1e-6,
+                "");
+
+            // INTERACTION: a fleck lifts shade back to vanilla's sunlit level
+            // and never past it. Evaluated from the shipped relight.
+            try
+            {
+                string relightBody = GlslEval.StripComments(
+                    GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSunRelight(") ?? "");
+                string vanillaExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "float vanilla"));
+                string relightExpr = GlslEval.Rhs(GlslEval.Statement(relightBody, "return"));
+                double Relight(double vis, double si)
+                {
+                    var syms = GlslEval.Syms("sunVisibility", vis, "shadowIntensity", si);
+                    syms["vanilla"] = new GlslEval.Val(GlslEval.Scalar(vanillaExpr, syms));
+                    return GlslEval.Scalar(relightExpr, syms);
+                }
+                bool ok = true; string detail = "";
+                foreach (double si in new[] { 0.3, 0.6, 1.0 })
+                foreach (double vis in new[] { 0.0, 0.5, 1.0 })
+                {
+                    double shadowedLevel = 1.0 - si * 0.5 * (1.0 - vis);
+                    double restored = shadowedLevel * Relight(vis, si);
+                    if (restored > 1.0 + 1e-9 || restored < 1.0 - 1e-9) { ok = false; detail += $" si={si} vis={vis} -> {restored:0.000}"; }
+                }
+                check("I-terrain a sunfleck restores vanilla's sunlit level exactly and never exceeds it", ok, detail);
+            }
+            catch (Exception ex) { check("I-terrain sunfleck relight is readable", false, ex.Message); }
             check("terrain leaf sheen is exactly off at a specular strength of zero",
                 GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCuticleSpecular(") ?? "")
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),
@@ -443,7 +509,7 @@ void main()
                 "");
             check("Stage B does not restore reflection or canopy resources",
                 !opaque.Contains("vv_reflect") && !topsoil.Contains("vv_reflect") &&
-                !opaque.Contains("vv_canopy") && !topsoil.Contains("vv_canopy"),
+                !Regex.IsMatch(opaque, @"sampler2D\s+vv_canopy") && !Regex.IsMatch(topsoil, @"sampler2D\s+vv_canopy"),
                 "");
 
             ShaderPatchManifestEntry opaqueManifest = patcher.Manifest["chunkopaque.fsh"];

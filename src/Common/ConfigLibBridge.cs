@@ -190,6 +190,9 @@ namespace VintageVisuals.Common
                 case "pbr_dapple":
                     pbr.SunDapple = tree.GetFloat("value", pbr.SunDapple);
                     break;
+                case "pbr_sunflecks":
+                    pbr.SunFlecks = tree.GetFloat("value", pbr.SunFlecks);
+                    break;
                 case "pbr_canopyradius":
                     pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
                     break;

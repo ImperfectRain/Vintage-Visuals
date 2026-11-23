@@ -878,6 +878,14 @@ namespace VintageVisuals.Common
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
+        /// Soft sunflecks inside canopy shade: round spots where sunlight gets
+        /// through the leaves, projected along the real sun direction. Gated on
+        /// the game's own leaf blocks overhead and its shadow map; only ever
+        /// restores the ground to vanilla's sunlit brightness. 0 is vanilla.
+        /// </summary>
+        public float SunFlecks { get; set; } = 0.6f;
+
+        /// <summary>
         /// Ring radius, in shadow-map texels, for the canopy test.
         ///
         /// A slider rather than a constant because it is a fact about the
@@ -1037,13 +1045,15 @@ namespace VintageVisuals.Common
                 "PseudoPBR.GrainAnisotropy", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
+            SunFlecks = ColorGradeConfig.Clamp(SunFlecks, 0.0f, 1.5f,
+                "PseudoPBR.SunFlecks", corrections);
             CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
                 "PseudoPBR.CanopyRadius", corrections);
             PixelReflection = ColorGradeConfig.Clamp(PixelReflection, 0.0f, 1.0f,
                 "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 63.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 65.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

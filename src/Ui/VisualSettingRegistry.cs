@@ -232,6 +232,10 @@ namespace VintageVisuals.Ui
                    "Sunflecks and green shade on the ground under trees, measured from the game's own shadow map. It leaves torchlight alone.",
                    M, "Foliage", 0f, 2f, 0.05f);
 
+            Slider("pbr_sunflecks", "PseudoPBR.SunFlecks", "Sunflecks",
+                   "Soft spots of sunlight inside the shade under trees, following the real sun. Only under leaves, never under a roof, and never brighter than open sunlight. Needs shadows on.",
+                   M, "Foliage", 0f, 1.5f, 0.05f);
+
             Slider("pbr_shafts", "PseudoPBR.SunShafts", "Sun shafts",
                    "Beams of light picked out where the sun breaks through a canopy.",
                    M, "Foliage", 0f, 2f, 0.05f);

@@ -40,6 +40,15 @@ in float vv_sunExposure;
 uniform float vv_pbrFoliage;   // light passing through leaves; 0 is vanilla
 uniform float vv_pbrDapple;        // canopy shade between sunflecks; 0 is vanilla
 uniform float vv_pbrCanopyRadius;  // shadow-map ring radius in texels; 0 disables the canopy test
+uniform float vv_pbrSunflecks;     // sunflecks inside canopy shade; 0 is vanilla
+
+// The leaf map: for each 2x2-block cell around the player, how much leaf is
+// overhead and the world Y of the lowest leaf, read from the world's own blocks
+// on the CPU (src/Common/Scene/CanopyMap.cs). A uniform array, not a sampler,
+// so it cannot shift vanilla's texture units. Two 12-bit cells per float.
+// vv_canopyMapValid 0 means "no map" and every consumer draws vanilla.
+uniform vec4 vv_canopyMap[128];
+uniform float vv_canopyMapValid;
 
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 
@@ -525,6 +534,15 @@ const float VV_TERRAIN_DAPPLE_SHADE = 0.28;
 const float VV_TERRAIN_DAPPLE_GREEN = 0.055;
 const float VV_TERRAIN_DAPPLE_FADE_START = 22.0;
 const float VV_TERRAIN_DAPPLE_FADE_RANGE = 22.0;
+// How much of the dapple's full shade a solid crown takes, known only from the
+// leaf map. Below 1 so the measured broken shade stays the stronger reading.
+const float VV_TERRAIN_LEAF_SHADE = 0.7;
+// Sunflecks: the gap grid on the canopy plane (must divide the 4096 world
+// wrap exactly: 4096 / 1.6 = 2560 cells) and the distance they dissolve over.
+const float VV_TERRAIN_FLECK_CELL = 1.6;
+const float VV_TERRAIN_FLECK_PERIOD = 2560.0;
+const float VV_TERRAIN_FLECK_FADE_START = 30.0;
+const float VV_TERRAIN_FLECK_FADE_RANGE = 18.0;
 
 // How much of the SUN reaches this fragment, geometrically: 1 unoccluded, 0
 // fully blocked.
@@ -673,7 +691,7 @@ float vvTerrainCanopyEvidence(float sunVisibility)
 //
 // Pass a sun visibility below zero to have it measured here, after the cheap
 // early-outs, so a fragment the dapple cannot reach costs no shadow taps.
-float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibility)
+float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibility, float leafOverhead)
 {
     if (vv_pbrDapple < 0.001) return 0.0;
     if (!vvTerrainIsCanopyReceiver()) return 0.0;
@@ -686,7 +704,11 @@ float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibil
     if (sun < 0.01) return 0.0;
 
     if (sunVisibility < 0.0) sunVisibility = vvTerrainSunVisibility();
-    float under = vvTerrainCanopyEvidence(sunVisibility);
+    // Two kinds of evidence that foliage casts this shadow: the shadow map
+    // broken at leaf scale (the ring count), and leaves on the leaf map along
+    // the sun ray. Under a solid crown only the second exists.
+    float under = max(vvTerrainCanopyEvidence(sunVisibility),
+                      clamp(leafOverhead, 0.0, 1.0) * (1.0 - clamp(sunVisibility, 0.0, 1.0)) * VV_TERRAIN_LEAF_SHADE);
     if (under < 0.001) return 0.0;
 
     return VV_TERRAIN_DAPPLE_SHADE * resolvable * fade * under * sun * clamp(vv_pbrDapple, 0.0, 2.0);
@@ -700,6 +722,146 @@ vec3 vvTerrainApplyCanopy(vec3 color, float shaded, float cap)
     if (canopy <= 0.0) return color;
     float tint = canopy * VV_TERRAIN_DAPPLE_GREEN;
     return color * (1.0 - canopy) * vec3(1.0 - tint, 1.0 + tint * 0.6, 1.0 - tint * 0.7);
+}
+
+// ---------------------------------------------------------------------------
+// Sunflecks inside canopy shade
+//
+// The GATE is game data: the fragment is in the sun's shadow (shadow map) AND
+// the sun ray from it passes through leaf blocks (leaf map). The PATTERN is
+// invented - DATA GAP: Vintage Story does not resolve the gaps inside a crown,
+// so where a fleck lands is a stable hash on the canopy plane, not a real gap.
+// It is projected along the real sun direction, so it slides as the sun moves,
+// stretches into ovals when the sun is low, and sways with the game's wind.
+//
+// A fleck only RESTORES what the shadow took: it lifts the fragment back to
+// vanilla's own sunlit level and never above, so it cannot blow out through
+// bloom or hide anything a player needs to see.
+// ---------------------------------------------------------------------------
+
+// x: leaf density 0..1 (0 no leaves), y: world Y of the lowest leaf.
+vec2 vvTerrainCanopyCell(vec2 worldXZ)
+{
+    ivec2 c = ivec2(floor(worldXZ / 2.0));
+    int ix = ((c.x % 32) + 32) % 32;
+    int iz = ((c.y % 32) + 32) % 32;
+    int i = iz * 32 + ix;
+    float packed = vv_canopyMap[i >> 3][(i >> 1) & 3];
+    float code = (i & 1) == 0 ? mod(packed, 4096.0) : floor(packed / 4096.0);
+    return vec2(floor(code / 512.0) / 7.0, mod(code, 512.0));
+}
+
+// The leaves the sun ray from this point passes through: x density, y their
+// height above the point. Zero when there are none, when the map is absent, or
+// when the ray leaves the map (which is toroidal, so reading past its edge
+// would return another place's leaves).
+vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
+{
+    if (vv_canopyMapValid < 0.5) return vec2(0.0);
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    if (l.y < 0.06) return vec2(0.0);
+
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    for (int k = 1; k <= 10; k++)
+    {
+        float t = float(k) * 2.0 / l.y;
+        vec3 rel = cameraRelativePos + l * t;
+        if (max(abs(rel.x), abs(rel.z)) > 30.0) break;
+        vec3 p = world + l * t;
+        vec2 cell = vvTerrainCanopyCell(p.xz);
+        if (cell.x > 0.0 && cell.y <= p.y + 1.0 && cell.y > world.y + 0.5)
+            return vec2(cell.x, cell.y - world.y);
+    }
+    return vec2(0.0);
+}
+
+// Soft pinhole images of the sun on the canopy plane, 0..1. `along` is the sun
+// azimuth; a ground offset along it counts for less, by sin(elevation), which
+// is what stretches a low sun's flecks into ovals.
+float vvTerrainFleckPattern(vec2 src, vec2 az, float sinElevation, float density, float height)
+{
+    vec2 base = floor(src / VV_TERRAIN_FLECK_CELL);
+    float gapChance = mix(0.50, 0.16, clamp(density, 0.0, 1.0));
+    float radius = clamp(0.30 + 0.04 * height, 0.30, 0.75);
+
+    float best = 0.0;
+    for (int dy = -1; dy <= 1; dy++)
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        vec2 cell = base + vec2(float(dx), float(dy));
+        vec4 r = vvTerrainCellRandom(mod(cell, VV_TERRAIN_FLECK_PERIOD) + vec2(911.0, 3301.0));
+        if (r.x > gapChance) continue;
+
+        // Leaves sway, so the gaps do. Periodic in the wind clock, so its wrap
+        // is invisible.
+        float phase = 6.28318530718 * (vv_sceneBreeze * 3.0 + r.w);
+        vec2 sway = vec2(sin(phase), cos(phase * 2.0 + r.y * 6.28318530718)) * 0.06;
+        vec2 centre = (cell + vec2(0.1) + r.yz * 0.8 + sway) * VV_TERRAIN_FLECK_CELL;
+
+        vec2 d = src - centre;
+        float along = dot(d, az);
+        float dist = length(d - az * along + az * along * sinElevation);
+        float rr = radius * mix(0.6, 1.15, r.w);
+        best = max(best, (1.0 - smoothstep(rr * 0.35, rr, dist)) * mix(0.65, 1.0, r.y));
+    }
+    return best;
+}
+
+// How much of the sun this fragment gets back from a fleck, 0..1.
+float vvTerrainSunfleck(vec3 cameraRelativePos, vec2 overhead, float shadowed, float facing)
+{
+    if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return 0.0;
+
+    float resolvable = clamp(1.0 - (length(cameraRelativePos) - VV_TERRAIN_FLECK_FADE_START)
+                                   / VV_TERRAIN_FLECK_FADE_RANGE, 0.0, 1.0);
+    if (resolvable < 0.004) return 0.0;
+
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    vec3 src = cameraRelativePos + vv_pbrOrigin + l * (overhead.y / max(l.y, 0.06));
+    vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
+    float pattern = vvTerrainFleckPattern(src.xz, az, clamp(l.y, 0.25, 1.0), overhead.x, overhead.y);
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+
+    return clamp(pattern * clamp(shadowed, 0.0, 1.0) * resolvable * clamp(facing, 0.0, 1.0)
+                 * vvTerrainSunPresence() * mix(1.0, VV_OVERCAST_DIRECT, overcast)
+                 * vv_pbrSunflecks, 0.0, 1.0);
+}
+
+// The factor that undoes vanilla's sun shadow at this visibility: its shadow
+// takes shadowIntensity / 2 at full occlusion. Bounded, so a fleck can reach
+// vanilla's sunlit level and never pass it.
+float vvTerrainSunRelight(float sunVisibility)
+{
+    float vanilla = 1.0 - clamp(shadowIntensity, 0.0, 1.0) * 0.5 * (1.0 - clamp(sunVisibility, 0.0, 1.0));
+    return 1.0 / max(vanilla, 0.5);
+}
+
+// Canopy shade and sunflecks applied to a sunlit term, the one entry point
+// for opaque blocks, the forest floor and plants alike.
+vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float fade,
+                            float sunVisibility, float cap)
+{
+    if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;
+    if (!vvTerrainIsCanopyReceiver()) return color;
+    if (length(cameraRelativePos) > VV_TERRAIN_FLECK_FADE_START + VV_TERRAIN_FLECK_FADE_RANGE) return color;
+    if (vvTerrainSunPresence() < 0.01) return color;
+
+    if (sunVisibility < 0.0) sunVisibility = vvTerrainSunVisibility();
+    float shadowed = 1.0 - clamp(sunVisibility, 0.0, 1.0);
+    if (shadowed < 0.01) return color;
+
+    vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+    vec3 shaded = vvTerrainApplyCanopy(color, vvTerrainCanopyDapple(cameraRelativePos, fade, sunVisibility, overhead.x), cap);
+
+    // A face turned away from the sun gets no fleck; a plant's two-sided
+    // cards always may.
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    float facing = vvTerrainIsFlora() ? 1.0 : smoothstep(0.0, 0.25, dot(faceNormal, l));
+    float fleck = vvTerrainSunfleck(cameraRelativePos, overhead, shadowed, facing);
+    if (fleck <= 0.0) return shaded;
+
+    vec3 lit = color * vvTerrainSunRelight(sunVisibility);
+    return mix(shaded, lit, fleck * (1.0 - vvTerrainLocalLightShare()));
 }
 
 // ---------------------------------------------------------------------------
@@ -870,7 +1032,7 @@ vec4 vvTerrainFloraShade(vec4 litColor, vec3 baseColor, vec3 faceNormal, vec3 ca
 
     // Vanilla's lit leaf is the base; a wet leaf is a darker leaf.
     vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet);
-    result = vvTerrainApplyCanopy(result, vvTerrainCanopyDapple(cameraRelativePos, lod, sunVisibility), 0.55);
+    result = vvTerrainCanopyResolve(result, cameraRelativePos, n, lod, sunVisibility, 0.55);
 
     vec3 through = vvTerrainFoliageTransmission(baseColor, faceNormal, cameraRelativePos, sunVisibility)
                  * mix(0.45, 1.0, lod);
@@ -919,7 +1081,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     vec3 diffuse = litColor.rgb * diffuseEnergy * relief;
     diffuse *= mix(1.0, max(indirectAo, 0.82), 0.35);
     diffuse = vvTerrainApplySurfaceLayers(m, diffuse);
-    diffuse = vvTerrainApplyCanopy(diffuse, vvTerrainCanopyDapple(cameraRelativePos, m.detailFade, -1.0), 0.85);
+    diffuse = vvTerrainCanopyResolve(diffuse, cameraRelativePos, m.faceNormal, m.detailFade, -1.0, 0.85);
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
     vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight);
@@ -989,7 +1151,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 15)
     {
         float fade = vvTerrainIsFlora() ? vvTerrainFloraLod(cameraRelativePos) : vvTerrainDetailFade(cameraRelativePos);
-        float d = vvTerrainCanopyDapple(cameraRelativePos, fade, -1.0);
+        float d = vvTerrainCanopyDapple(cameraRelativePos, fade, -1.0, vvTerrainCanopyOverhead(cameraRelativePos).x);
         return vec4(vec3(1.0 - d / VV_TERRAIN_DAPPLE_SHADE), color.a);
     }
     if (mode == 25) return vec4(vec3(vvTerrainSunVisibility()), color.a);
@@ -1009,6 +1171,23 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         if (count < 3.0) return vec4(1.0, 0.0, 0.0, color.a);
         if (count < 5.0) return vec4(0.0, 1.0, 0.0, color.a);
         return vec4(0.0, 0.4, 1.0, color.a);
+    }
+    // 64: sunflecks. White where a fleck lands, dim red where leaves are
+    // overhead along the sun ray but no fleck, black elsewhere.
+    if (mode == 64)
+    {
+        float vis = vvTerrainSunVisibility();
+        vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+        float f = vvTerrainSunfleck(cameraRelativePos, overhead, 1.0 - vis, 1.0);
+        return vec4(mix(vec3(overhead.x > 0.0 ? 0.35 : 0.0, 0.0, 0.0), vec3(1.0), f), color.a);
+    }
+    // 65: the leaf map. Green is leaf density along the sun ray, blue its
+    // height (white at 16 blocks); grey means the map is not uploaded.
+    if (mode == 65)
+    {
+        if (vv_canopyMapValid < 0.5) return vec4(vec3(0.5), color.a);
+        vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+        return vec4(0.0, overhead.x, clamp(overhead.y / 16.0, 0.0, 1.0), color.a);
     }
     // 47: optical role. Red is the canopy (the occluder), blue a surface that
     // does not take dapple, green one that does.

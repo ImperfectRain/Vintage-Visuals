@@ -222,6 +222,8 @@ namespace VintageVisuals.Ui
             Pbr(62, "Vegetation LOD", "How much foliage transmission and cuticle detail survive at this distance.", Forest);
 
             const string Path = "Terrain path";
+            ModularPbr(64, "Sunflecks", "White where a sunfleck lands in canopy shade, dim red where leaves are overhead but no fleck. Stand in shade under trees with the sun up.", Canopy);
+            ModularPbr(65, "Leaf map", "The leaves the sun ray passes through, read from the world's blocks: green is how dense, blue how high. Grey means the map is not loaded yet.", Canopy);
             ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue on the foliage path. Read this one first.", Path);
 
             void Entity(int n, string name, string desc)

@@ -2091,3 +2091,48 @@ function applies the canopy everywhere.
 
 Supersedes the sun-visibility choice in the f72bc9d foliage commit; extends D7
 (dapple reads vanilla's shadow map).
+
+## D50. Sunflecks inside a solid crown: a real gate, an invented pattern
+
+**Problem.** Seen in game on 2026-11-23: the dapple mask (view 15) was almost
+entirely white on a forest floor that was plainly in tree shade. D7 measures
+canopy from gaps in vanilla's shadow map, and under a solid crown at the
+player's shadow resolution there are none: one flat shadow, nothing to count.
+The player asked for broken, sunfleck-filled shade like the reference photos.
+
+**Chosen.** Two halves, deliberately unequal in authority.
+
+- **The gate is game data.** `CanopyMap` (in `EnvironmentTracker`) reads the
+  world's leaf blocks in a 32 x 32 grid of 2x2 cells around the player and
+  uploads density and lowest-leaf height as a 128-vec4 uniform array: no
+  sampler, so vanilla's texture units cannot move. A fragment is canopy-shaded
+  only if the shadow map says the sun is blocked AND the sun ray from it passes
+  through leaves on that map. A wall, roof or cliff shadow has no leaves on its
+  ray and gets nothing.
+- **The pattern is invented.** DATA GAP: the game does not resolve gaps inside
+  a crown, so fleck positions are a stable hash on the canopy plane. They are
+  projected along the real sun direction (slide as the sun moves, stretch by
+  1/sin(elevation)), sized by canopy height, and sway with the wind clock.
+
+A fleck only restores the shadow vanilla applied (`vvTerrainSunRelight`),
+exactly to vanilla's sunlit level and never past it, so it cannot reach bloom
+or hide anything. The dapple's shade now also accepts leaf-map evidence
+(`VV_TERRAIN_LEAF_SHADE` 0.7) so a solid crown deepens and greens like broken
+shade does.
+
+**Rejected.** Re-reading vanilla's shadow map at a finer radius (the gaps are
+not in it); a canopy sampler (two world-render losses from samplers in
+`chunkopaque`, see CLAUDE.md); reviving the deleted procedural field of D7 with
+its old `vv_sunExposure` gate, which measured ~1 under every crown.
+
+**Cost.** CPU: about 50 block reads per column, 128 columns per 0.1 s tick,
+only while Sun dapple or Sunflecks is above zero. GPU: up to ten uniform-array
+reads and nine hashes per shaded receiver fragment within 48 blocks. Not
+measured.
+
+**Limits.** Daytime only; moonlight flecks wait on checking how the game's
+night shadows behave. The map covers 64 x 64 blocks around the player and
+refreshes in about a second, so a tree felled in view keeps its flecks briefly.
+
+Partly supersedes D7: D7's count stays the gate for broken shade; this adds the
+leaf map for solid shade and a pattern D7 had removed, with the gate it lacked.

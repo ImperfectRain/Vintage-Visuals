@@ -73,6 +73,9 @@ namespace VintageVisuals.PseudoPBR
         public const string GrainUniform = "vv_pbrGrain";
         public const string DappleUniform = "vv_pbrDapple";
         public const string CanopyRadiusUniform = "vv_pbrCanopyRadius";
+        public const string SunflecksUniform = "vv_pbrSunflecks";
+        public const string CanopyMapUniform = "vv_canopyMap";
+        public const string CanopyMapValidUniform = "vv_canopyMapValid";
         public const string PixelReflectUniform = "vv_pbrPixelReflect";
 
         // The render-stage bridge. See SceneCaptureRenderer.
@@ -182,6 +185,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedNoSecond;
         private bool _secondAtlasReady;
         private bool _reportedMissingUniform;
+        private bool _reportedCanopyArray;
         private bool _reportedActive;
         private bool _reportedBusy;
         private bool _reportedEntities;
@@ -197,6 +201,14 @@ namespace VintageVisuals.PseudoPBR
         /// a validity of 0, which every consumer reads as "use the fallback".
         /// </summary>
         public SceneCaptureRenderer SceneCapture { get; set; }
+
+        /// <summary>
+        /// The leaf map, owned by the environment tracker. Null, or not yet
+        /// fully scanned, uploads a validity of 0 and the shader draws no
+        /// sunflecks - the vanilla answer.
+        /// </summary>
+        public VintageVisuals.Common.Scene.CanopyMap Canopy { get; set; }
+
 
         /// <summary>Debug-only nearby block volume for the isolated world-DDA proof.</summary>
         public WorldReflectionVolume WorldVolume { get; set; }
@@ -439,6 +451,8 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
             SetIfPresent(program, DappleUniform, _look.SunDapple);
             SetIfPresent(program, CanopyRadiusUniform, _look.CanopyRadius);
+            SetIfPresent(program, SunflecksUniform, _look.SunFlecks);
+            UploadCanopyMap(program);
             SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
@@ -451,6 +465,46 @@ namespace VintageVisuals.PseudoPBR
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// Uploads the leaf map as a uniform array: no texture unit, no
+        /// sampler, nothing that can shift vanilla's samplers. Asks the tracker
+        /// to keep scanning only while a canopy effect is on.
+        /// </summary>
+        private void UploadCanopyMap(IShaderProgram program)
+        {
+            var map = Canopy;
+            bool wanted = _look.SunFlecks > 0.001f || _look.SunDapple > 0.001f;
+            if (map != null && wanted) map.Request(_capi.ElapsedMilliseconds);
+
+            bool valid = map != null && wanted && map.Valid;
+            SetIfPresent(program, CanopyMapValidUniform, valid ? 1f : 0f);
+            if (!valid) return;
+
+            // A binder that silently skips is indistinguishable from one that
+            // works, so a missing array name is said once rather than skipped.
+            if (!program.HasUniform(CanopyMapUniform))
+            {
+                if (!_reportedCanopyArray && program.HasUniform(CanopyMapValidUniform))
+                {
+                    _reportedCanopyArray = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: the terrain shader declares " +
+                        CanopyMapValidUniform + " but the program does not list " + CanopyMapUniform +
+                        "; sunflecks and leaf-map shade will not draw.");
+                }
+                return;
+            }
+
+            // Every bind, not only on change: the array is per program and a
+            // shader reload starts it at zero. 128 vec4s is cheap.
+            program.Uniforms4(CanopyMapUniform, VintageVisuals.Common.Scene.CanopyMap.PackedVectors, map.Packed);
+            if (!_reportedCanopyArray)
+            {
+                _reportedCanopyArray = true;
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: leaf map uploaded to the terrain shader (" +
+                    VintageVisuals.Common.Scene.CanopyMap.PackedVectors + " vec4).");
+            }
         }
 
         /// <summary>

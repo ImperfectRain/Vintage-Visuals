@@ -132,6 +132,7 @@ namespace VintageVisuals.Ui
             { "pbr_foliage", "Shows on leaves and grass with a low clear sun behind them." },
             { "pbr_dapple", "Needs shadows on. Shows on the ground under trees in sun." },
             { "pbr_canopyradius", "Needs shadows on and Sun dapple above zero." },
+            { "pbr_sunflecks", "Needs shadows on. Shows in shade under leaves in sun, within about 40 blocks." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
             { "pbr_blocklight", "Creatures, items and particles only in this build." },
             { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },
@@ -292,7 +293,7 @@ namespace VintageVisuals.Ui
                 "pbr_normalstrength", "pbr_detaildistance", "pbr_cavity", "pbr_specularstrength",
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
-                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_shafts", "pbr_canopyradius",
+                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_shafts", "pbr_canopyradius",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 

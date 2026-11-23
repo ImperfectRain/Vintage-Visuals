@@ -188,7 +188,10 @@ under a broken canopy, and adds light through the leaf, a faint front scatter
 and a cuticle highlight. Sun visibility on this path is read from the shadow map
 (`vvTerrainSunVisibility`), never from vanilla's `b`, which carries a floor and
 block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
-diffuse term only. Sending alpha-cut plants through the opaque
+diffuse term only. Sunflecks (D50) come through the same entry point,
+`vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
+(`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
+vanilla's sunlit level in hashed pinhole spots projected along the sun. Sending alpha-cut plants through the opaque
 material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
 which is acceptable as a recovery step but weaker than capturing the original

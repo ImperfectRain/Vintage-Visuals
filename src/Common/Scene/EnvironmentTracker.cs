@@ -223,6 +223,14 @@ namespace VintageVisuals.Common.Scene
         /// </summary>
         public SceneGrants Grants { get; private set; } = SceneGrants.Full;
 
+        /// <summary>
+        /// Where the leaves are around the player. Scanned here, on the tick,
+        /// only while a consumer has asked for it in the last two seconds -
+        /// see <see cref="CanopyMap.Request"/>. World geometry, not a config
+        /// value, so it belongs with the rest of what the game says.
+        /// </summary>
+        public CanopyMap Canopy { get; } = new CanopyMap();
+
         /// <summary>The claim record behind Grants, for the log and for reports.</summary>
         public VisualBudget Budget { get; private set; }
 
@@ -279,6 +287,7 @@ namespace VintageVisuals.Common.Scene
 
             SampleObserver();
             SampleSky();
+            SampleCanopy();
 
             _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
             RippleClock = (float)_rippleClock;
@@ -565,6 +574,20 @@ namespace VintageVisuals.Common.Scene
             catch (Exception)
             {
                 // Held at the last reading, as everywhere else here.
+            }
+        }
+
+        private void SampleCanopy()
+        {
+            try
+            {
+                if (!Canopy.Wanted(_capi.ElapsedMilliseconds)) return;
+                Canopy.Scan(_capi, _capi.World?.Player?.Entity?.Pos);
+            }
+            catch (Exception)
+            {
+                // Held at the last scan; the shader reads a stale map rather
+                // than none, and a density of 0 is the harmless value anyway.
             }
         }
 
