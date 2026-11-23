@@ -78,13 +78,13 @@ namespace VintageVisuals.SmokeTest
                 "SampleObserver does a chunk query and belongs on the tick");
 
             // Ambient.BlendedCloudDensity read 0 through a whole storm in game
-            // (2026-11-23), so flecks drew under solid cloud. The cloud tiles
-            // the clouds are drawn from are the better witness while fresh.
-            string weather = File.ReadAllText(Path.Combine(repo, "src/Weather/WeatherSubsystem.cs"));
-            check("cloud cover takes the game's own cloud tiles when they are fresh",
-                source.Contains("_cloudCover = fresh ? Math.Max(ambient, _tileCover) : ambient;") &&
-                weather.Contains("ReportCloudField(_clouds.MeanCover"),
-                "a dead ambient cover figure would read a storm as clear sky");
+            // (2026-11-23), so flecks drew under it. Falling rain stands in.
+            // The cloud-tile mean must not: it read the same under a storm
+            // and under a sunny broken sky, and hid every fleck at noon.
+            check("cloud cover counts falling rain and not the cloud-tile mean",
+                source.Contains("_cloudCover = Math.Max(ambient, GameMath.Clamp(_precipitation, 0f, 1f));") &&
+                !source.Contains("Math.Max(ambient, _tileCover)"),
+                "a dead ambient figure reads a storm as clear; the tile mean reads a sunny noon as overcast");
 
             // Dust motes are lit only inside a beam: spawned only where the
             // leaf map says a real gap sends sun, only under a clear sky, and

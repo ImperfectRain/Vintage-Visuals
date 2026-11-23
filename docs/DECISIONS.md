@@ -2298,6 +2298,16 @@ holds, not a second query. The mean is over the reader's window around the
 player, not the sky overhead. Not yet seen in game; cost is one pass over an
 array already read.
 
+**Amendment, same day (seen in game, superseded in part).** The tile mean
+cannot tell weathers apart: it read 0.745 under the earlier storm and 0.745
+again at noon under a 70% cirrocumulus sky with the sun casting shadows, where
+it hid every sunfleck behind the clear-sky gate. The tiles say where cloud is,
+not how much sun gets through. Cover is now `max(ambient, precipitation)`:
+falling rain does not come from a clear sky, and a dry overcast without rain is
+an accepted DATA GAP (flecks may draw under a dry grey sky). `ReportCloudField`
+stays, and the tracker logs once when the tiles disagree with the cover by more
+than 0.3, so a future reader can see the two numbers side by side.
+
 ## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
 
 **Context.** `getBrightnessFromShadowMap` returned vanilla's brightness times

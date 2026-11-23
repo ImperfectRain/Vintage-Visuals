@@ -551,15 +551,21 @@ namespace VintageVisuals.Common.Scene
                 if (_capi.Ambient != null)
                 {
                     float ambient = GameMath.Clamp(_capi.Ambient.BlendedCloudDensity * CloudCoverGain, 0f, 1f);
-                    bool fresh = _capi.ElapsedMilliseconds - _tileCoverAtMs < TileCoverFreshMs;
-                    _cloudCover = fresh ? Math.Max(ambient, _tileCover) : ambient;
+                    // Ambient.BlendedCloudDensity reads 0 through a storm, so
+                    // falling precipitation stands in: rain does not fall from
+                    // a clear sky. The cloud-tile mean is NOT used - it read
+                    // 0.745 under a storm and 0.745 under a sunny cirrocumulus
+                    // sky in game (2026-11-23), so it cannot tell them apart
+                    // (D53 amendment). It is kept as a logged diagnostic.
+                    _cloudCover = Math.Max(ambient, GameMath.Clamp(_precipitation, 0f, 1f));
 
-                    if (fresh && !_reportedCoverSource && _tileCover - ambient > 0.3f)
+                    bool fresh = _capi.ElapsedMilliseconds - _tileCoverAtMs < TileCoverFreshMs;
+                    if (fresh && !_reportedCoverSource && Math.Abs(_tileCover - _cloudCover) > 0.3f)
                     {
                         _reportedCoverSource = true;
-                        _logger.Notification("[VintageVisuals] environment: cloud cover taken from the game's " +
-                            "cloud tiles (" + _tileCover.ToString("0.##") + ") rather than " +
-                            "Ambient.BlendedCloudDensity (" + ambient.ToString("0.##") + ").");
+                        _logger.Notification("[VintageVisuals] environment: cloud cover " + _cloudCover.ToString("0.##") +
+                            " (ambient " + ambient.ToString("0.##") + ", precipitation " + _precipitation.ToString("0.##") +
+                            "); the cloud tiles read " + _tileCover.ToString("0.##") + " and are not used for cover.");
                     }
                 }
             }
