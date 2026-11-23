@@ -129,6 +129,9 @@ Rows report one of four availability states (`SettingAvailability.cs`): active;
 active only in some scenes (a working control with a note on where to look);
 parent off (no control, "Turn on X"); and unavailable in this build (hidden; shown
 disabled with the reason when **Show advanced and unavailable settings** is on).
+A tab whose rows are all hidden says so in two lines instead of showing an empty
+panel: the Reflections tab looked broken in the 2026-11-23 audit because stage one
+is debug views only.
 
 Short descriptions are visible on each row because hover-only help is still too
 easy to miss and too hard to validate from screenshots. The setting name and

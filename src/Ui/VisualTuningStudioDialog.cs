@@ -433,7 +433,9 @@ namespace VintageVisuals.Ui
             bool reflectionsUnavailable = StateByCode("reflections_scene") == NotInThisBuild;
             AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
                 reflectionsUnavailable
-                    ? "Needs the legacy terrain shader, which is off."
+                    ? (PseudoPbrSubsystem.TerrainReflectPatchEnabled
+                        ? "Stage one: Debug views 41 and 42 only."
+                        : "Needs the legacy terrain shader, which is off.")
                     : "Scene reflections " + StateByCode("reflections_scene") + " · Strength " + StateByCode("pbr_pixelreflect"),
                 "Open scene reflection controls.", y);
         }
@@ -504,8 +506,10 @@ namespace VintageVisuals.Ui
         private IEnumerable<RowItem> RowsFor(SettingTab tab)
         {
             string currentSection = null;
+            bool any = false;
             foreach (VisualSetting setting in ShownSettings(tab))
             {
+                any = true;
                 if (!string.Equals(currentSection, setting.Section, StringComparison.Ordinal))
                 {
                     currentSection = setting.Section;
@@ -513,7 +517,18 @@ namespace VintageVisuals.Ui
                 }
                 yield return RowItem.ForSetting(setting);
             }
+            // A tab whose every row is unavailable used to open completely
+            // blank (Reflections, seen in game), which reads as a broken
+            // dialog rather than as "nothing here works yet".
+            if (!any && !_advanced)
+            {
+                yield return RowItem.ForSection(EmptyTabLine1);
+                yield return RowItem.ForSection(EmptyTabLine2);
+            }
         }
+
+        public const string EmptyTabLine1 = "Nothing on this tab is active in this build.";
+        public const string EmptyTabLine2 = "Tick Show advanced below to see why.";
 
         private SettingAvailability Availability(VisualSetting setting)
         {
