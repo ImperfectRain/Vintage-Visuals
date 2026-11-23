@@ -415,6 +415,11 @@ void main()
                 GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyOverhead(") ?? "");
             string cellBody = GlslEval.StripComments(
                 GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyCell(") ?? "");
+            check("terrain canopy shade fades with overcast, as the flecks do",
+                dappleBody.Contains("mix(1.0, VV_OVERCAST_DIRECT, overcast)") &&
+                dappleBody.Contains("float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);") &&
+                GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainSunfleck(") ?? "").Contains("mix(1.0, VV_OVERCAST_DIRECT, overcast)"),
+                "canopy shade is a shadow of the direct sun; at full overcast it stacked on the weather's darkening");
             check("terrain sunflecks are exactly off at a slider of zero",
                 fleckBody.Contains("if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return 0.0;") &&
                 resolveBody.Contains("if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;"),
@@ -439,10 +444,10 @@ void main()
                 double minStretch = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_MIN_STRETCH");
                 // A gap: main radius up to 0.28 cell, a side lobe up to 1.1
                 // of that away and 0.8 of it across, grown 7.5% by the ragged
-                // edge. A leaf: half-length up to 0.4 cell plus its 0.03 soft
+                // edge. A leaf: half-length up to 0.28 cell plus its 0.03 soft
                 // edge. Both sway 0.04. Against the 1.2 cells from the
                 // furthest centre in a cell to the next ring.
-                double reach = Math.Max(0.28 * (1.1 + 0.8 * 1.075) + 0.04, 0.40 + 0.03 + 0.04) / minStretch;
+                double reach = Math.Max(0.28 * (1.1 + 0.8 * 1.075) + 0.04, 0.28 + 0.03 + 0.04) / minStretch;
                 double fleckEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_RANGE");
                 double dappleEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_RANGE");
                 check("I-terrain no sunfleck is clipped by its search, the leaf map's reach, or the shade's early exit",
@@ -453,14 +458,40 @@ void main()
                     patternBody.Contains("gapRadius * (0.7 + 0.4 * s.z)") &&
                     patternBody.Contains("gapRadius * (k == 0 ? 1.0 : mix(0.45, 0.8, s.w))") &&
                     patternBody.Contains("(ragged - 0.5) * rr * 0.15") &&
-                    patternBody.Contains("VV_TERRAIN_FLECK_CELL * mix(0.22, 0.40, q.w)") &&
+                    patternBody.Contains("VV_TERRAIN_FLECK_CELL * mix(0.14, 0.28, q.w)") &&
                     patternBody.Contains("smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL)") &&
                     Regex.Matches(patternBody, @"\* 0\.04;").Count == 2 &&
                     reach < 1.2 && fleckEnd <= 28.0 && fleckEnd <= dappleEnd &&
+                    // The straight-line limit must finish before the resolve's
+                    // own early exit, or flying high cuts flecks at 44 blocks.
+                    GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_VIEW_LIMIT") <= dappleEnd &&
+                    fleckBody.Contains("float flatDistance = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));") &&
+                    fleckBody.Contains("smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, length(cameraRelativePos))") &&
                     resolveBody.Contains("if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;"),
                     $"lobe reach {reach:0.00} cells (< 1.2), flecks end at {fleckEnd} (<= 28 and <= {dappleEnd})");
             }
             catch (Exception ex) { check("I-terrain sunfleck extent is readable", false, ex.Message); }
+            // INTERACTION: a leaf covers nothing beyond its tips. Evaluated on
+            // the shipped profile and edge, on the leaf's own axis.
+            try
+            {
+                string patternBody = GlslEval.StripComments(
+                    GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFleckPattern(") ?? "");
+                string insideExpr = GlslEval.Rhs(GlslEval.Statement(patternBody, "float inside"));
+                double cell = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CELL");
+                bool ok = patternBody.Contains("leaf = max(leaf, 1.0 - smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL));");
+                string detail = "";
+                foreach (double past in new[] { 1.5, 2.0, 4.0 })
+                {
+                    double halfLength = 0.3, halfWidth = 0.12;
+                    var syms = GlslEval.Syms("halfLength", halfLength, "halfWidth", halfWidth);
+                    syms["uv"] = new GlslEval.Val(past * halfLength, 0.0, 0.0);
+                    double inside = GlslEval.Scalar(insideExpr, syms);
+                    if (inside / cell < 0.03) { ok = false; detail += $" {past}x tip -> inside {inside:0.000}"; }
+                }
+                check("I-terrain a sunfleck leaf covers nothing past its tips", ok, detail);
+            }
+            catch (Exception ex) { check("I-terrain sunfleck leaf profile is readable", false, ex.Message); }
             check("terrain sunflecks step at the block texel and project from one canopy plane",
                 fleckBody.Contains("vvTerrainIsFlora() ? vec3(0.0) : step(vec3(0.5), abs(faceNormal))") &&
                 fleckBody.Contains("world = mix((texel + 0.5) / VV_TERRAIN_FLECK_TEXELS, world, across);") &&
@@ -524,7 +555,7 @@ void main()
                 string outExpr = GlslEval.Rhs(GlslEval.Statement(tintBody, "return"));
                 double sat = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_SATURATION");
                 double Luma(GlslEval.Val v) => GlslEval.Scalar("dot(c, vec3(0.2126, 0.7152, 0.0722))", GlslEval.Syms("c", v));
-                bool ok = sat > 1.0 && resolveBody.Contains("vec3 lit = vvTerrainSunlitTint(color * vvTerrainSunRelight(sunVisibility));");
+                bool ok = sat >= 1.0 && sat <= 1.1 && resolveBody.Contains("vec3 lit = vvTerrainSunlitTint(color * vvTerrainSunRelight(sunVisibility));");
                 string detail = "";
                 foreach (var c in new[] { GlslEval.Vec(0.37, 0.29, 0.20), GlslEval.Vec(0.25, 0.45, 0.12), GlslEval.Vec(0.5, 0.5, 0.5), GlslEval.Vec(0.9, 0.85, 0.6) })
                 {

@@ -39,9 +39,20 @@ namespace VintageVisuals.Common.Scene
         /// <summary>Cells scanned per call to <see cref="Scan"/>. A full refresh takes Cells / this calls.</summary>
         public const int ColumnsPerScan = 128;
 
-        /// <summary>Blocks below and above the player searched for leaves.</summary>
-        public const int SearchBelow = 12;
-        public const int SearchAbove = 40;
+        /// <summary>
+        /// Blocks searched below and above each column's rain-map height, the
+        /// top of whatever stops rain there - the crown's top in a forest.
+        /// Anchored to the world, not the player: a search window around the
+        /// player's Y missed the whole canopy when the player flew above it.
+        /// Above as well as below, in case a leaf block lets rain through and
+        /// the rain map reads the ground under the tree instead.
+        /// </summary>
+        public const int SearchDepth = 20;
+        public const int SearchUp = 20;
+
+        /// <summary>The player-relative window used where a column's rain map reads 0.</summary>
+        public const int FallbackAbove = 40;
+        public const int FallbackBelow = 12;
 
         private readonly float[] _packed = new float[PackedFloats];
         private readonly int[] _cells = new int[Cells];
@@ -96,7 +107,7 @@ namespace VintageVisuals.Common.Scene
         /// <summary>
         /// Scans the next <see cref="ColumnsPerScan"/> cells of the window
         /// centred on the player. Render thread only; block reads are cheap but
-        /// not free: two columns of about 50 blocks per cell.
+        /// not free: two columns of SearchDepth blocks per cell.
         /// </summary>
         public void Scan(ICoreClientAPI capi, EntityPos player)
         {
@@ -130,9 +141,15 @@ namespace VintageVisuals.Common.Scene
                 for (int corner = 0; corner < 2; corner++)
                 {
                     int columnLeaves = 0;
-                    for (int y = py - SearchBelow; y <= py + SearchAbove; y++)
+                    // A column whose rain map is not loaded reads 0. Fall back
+                    // to the old window around the player rather than finding
+                    // no leaves, so a missing map degrades instead of erasing.
+                    int top = blocks.GetRainMapHeightAt(x + corner, z + corner);
+                    int depth = SearchDepth + SearchUp;
+                    if (top <= 0) { top = py + FallbackAbove; depth = FallbackAbove + FallbackBelow; }
+                    else top += SearchUp;
+                    for (int y = top; y > top - depth && y >= 0; y--)
                     {
-                        if (y < 0) continue;
                         pos.Set(x + corner, y, z + corner);
                         Block block = blocks.GetBlock(pos);
                         if (block != null && block.BlockMaterial == EnumBlockMaterial.Leaves)

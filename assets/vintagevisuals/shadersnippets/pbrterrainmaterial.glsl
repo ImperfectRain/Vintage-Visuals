@@ -552,12 +552,17 @@ const float VV_TERRAIN_FLECK_TEXELS = 16.0;
 // How hard the slider drives a fleck (the default 0.6 reaches a full gap at
 // 1.6), how much a thin crown lifts its whole shade (a smooth wash under the
 // flecks, so the shade between them is not one flat plane), and how much more
-// saturated a sunlit patch is than the shade around it.
+// saturated a sunlit patch is than the shade around it: 1, because more read
+// as neon beside open sunlit grass in game. The fleck distance is HORIZONTAL
+// (the leaf map's own measure), so flying above a forest does not fade it.
 const float VV_TERRAIN_FLECK_GAIN = 1.6;
-const float VV_TERRAIN_FLECK_WASH = 0.22;
-const float VV_TERRAIN_FLECK_SATURATION = 1.2;
-const float VV_TERRAIN_FLECK_FADE_START = 16.0;
-const float VV_TERRAIN_FLECK_FADE_RANGE = 10.0;
+const float VV_TERRAIN_FLECK_WASH = 0.15;
+const float VV_TERRAIN_FLECK_SATURATION = 1.0;
+const float VV_TERRAIN_FLECK_FADE_START = 18.0;
+const float VV_TERRAIN_FLECK_FADE_RANGE = 8.0;
+// Past this straight-line distance a block texel is under a pixel and a
+// stepped fleck would shimmer, whatever the horizontal distance says.
+const float VV_TERRAIN_FLECK_VIEW_LIMIT = 40.0;
 
 // How much of the SUN reaches this fragment, geometrically: 1 unoccluded, 0
 // fully blocked.
@@ -704,9 +709,11 @@ float vvTerrainCanopyEvidence(float sunVisibility)
 // additive version once blew the forest floor out through the bloom pass. The
 // flecks get their contrast by being the only thing that did not get darker.
 //
-// Pass a sun visibility below zero to have it measured here, after the cheap
-// early-outs, so a fragment the dapple cannot reach costs no shadow taps.
-float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibility, float leafOverhead)
+// Pass a sun visibility or evidence below zero to have it measured here,
+// after the cheap early-outs, so a fragment the dapple cannot reach costs no
+// shadow taps. The resolve measures the evidence once and shares it with the
+// flecks, which place their pools on it.
+float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibility, float leafOverhead, float evidence)
 {
     if (vv_pbrDapple < 0.001) return 0.0;
     if (!vvTerrainIsCanopyReceiver()) return 0.0;
@@ -722,11 +729,17 @@ float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibil
     // Two kinds of evidence that foliage casts this shadow: the shadow map
     // broken at leaf scale (the ring count), and leaves on the leaf map along
     // the sun ray. Under a solid crown only the second exists.
-    float under = max(vvTerrainCanopyEvidence(sunVisibility),
+    if (evidence < 0.0) evidence = vvTerrainCanopyEvidence(sunVisibility);
+    float under = max(evidence,
                       clamp(leafOverhead, 0.0, 1.0) * (1.0 - clamp(sunVisibility, 0.0, 1.0)) * VV_TERRAIN_LEAF_SHADE);
     if (under < 0.001) return 0.0;
 
-    return VV_TERRAIN_DAPPLE_SHADE * resolvable * fade * under * sun * clamp(vv_pbrDapple, 0.0, 2.0);
+    // Canopy shade is a shadow of the DIRECT sun, so it fades as the sky
+    // diffuses it, exactly as the flecks do. Without this an overcast forest
+    // took the weather's darkening and a full canopy shade on top of it.
+    float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);
+    return VV_TERRAIN_DAPPLE_SHADE * resolvable * fade * under * sun * mix(1.0, VV_OVERCAST_DIRECT, overcast)
+         * clamp(vv_pbrDapple, 0.0, 2.0);
 }
 
 // Applies the canopy term: darker, and green on the shaded fraction only.
@@ -854,16 +867,20 @@ vec2 vvTerrainFleckOffset(vec2 src, vec2 feature, vec2 az, float stretch)
 // Nothing reaches past the 3x3 cells searched: a feature's centre sits within
 // 0.3 cell of its cell's middle, so anything reaching under 1.2 cells from its
 // centre, after a low sun's stretch, is found. A gap reaches at most 0.59
-// cell and a leaf 0.47, against a stretch of at least
+// cell and a leaf 0.35, against a stretch of at least
 // VV_TERRAIN_FLECK_MIN_STRETCH. A fleck that reached further was clipped by
 // the search, which drew the long straight edges seen in the first version.
-float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, float ragged, out float thin)
+float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, float broken, float ragged, out float thin)
 {
     vec2 base = floor(src / VV_TERRAIN_FLECK_CELL);
     // Where the crown is thin, gaps are many and large and run together into
-    // pools; where it is closed, a few small faint ones.
-    thin = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
-    float open = mix(0.95, 0.55, clamp(density, 0.0, 1.0)) * mix(0.15, 2.0, thin * thin);
+    // pools; where it is closed, only the scatter of small faint ones. "Thin"
+    // is mostly game data: fewer leaf blocks in the column the sun ray
+    // crosses, and vanilla's own shadow already broken here (the ring count).
+    // The noise only breaks up what the 2-block leaf map cannot resolve.
+    float noise = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
+    thin = clamp(0.35 * noise + 0.45 * (1.0 - clamp(density, 0.0, 1.0)) + 0.5 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
+    float open = 0.35 + 1.4 * thin * thin;
     stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
     float breeze = 6.28318530718 * vv_sceneBreeze * 3.0;
 
@@ -883,9 +900,12 @@ float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, flo
             vec2 d = vvTerrainFleckOffset(src, (cell + vec2(0.2) + q.xy * 0.6 + sway) * VV_TERRAIN_FLECK_CELL, az, stretch);
             float ang = 3.14159265359 * q.z;
             vec2 uv = vec2(dot(d, vec2(cos(ang), sin(ang))), dot(d, vec2(-sin(ang), cos(ang))));
-            float halfLength = VV_TERRAIN_FLECK_CELL * mix(0.22, 0.40, q.w);
+            float halfLength = VV_TERRAIN_FLECK_CELL * mix(0.14, 0.28, q.w);
             float halfWidth = halfLength * mix(0.3, 0.5, q.x);
-            float inside = abs(uv.y) - halfWidth * clamp(1.0 - (uv.x / halfLength) * (uv.x / halfLength), 0.0, 1.0);
+            // Not clamped at the tips: a clamped profile is zero width past
+            // them, and its soft edge drew a faint line along the leaf's axis
+            // out to the edge of the search, crossing pools.
+            float inside = abs(uv.y) - halfWidth * (1.0 - (uv.x / halfLength) * (uv.x / halfLength));
             leaf = max(leaf, 1.0 - smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL));
         }
 
@@ -900,7 +920,7 @@ float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, flo
         vec2 sway = vec2(sin(phase), cos(phase * 2.0 + r.y * 6.28318530718)) * 0.04;
         vec2 centre = (cell + vec2(0.2) + r.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL;
 
-        float size = clamp(r.w * r.w * mix(0.6, 1.6, thin), 0.0, 1.0);
+        float size = clamp(r.w * r.w * mix(0.5, 1.6, thin), 0.0, 1.0);
         float bright = mix(0.55, 1.0, size);
         float gapRadius = VV_TERRAIN_FLECK_CELL * mix(0.07, 0.28, size);
         int lobes = 1 + int(s.x > 0.45) + int(s.x > 0.8);
@@ -918,10 +938,13 @@ float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, flo
     // Pools: where a finer noise clears a threshold that a thin crown lowers,
     // light runs together across cells into patches a few blocks wide, which
     // the leaves above then cut into the broken shapes of a real crown.
-    float pool = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(733.0, 4049.0)) * 0.65
-               + vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL * 0.5, VV_TERRAIN_FLECK_PERIOD * 2.0, vec2(1291.0, 88.0)) * 0.35;
-    float threshold = 0.80 - 0.32 * thin + 0.12 * clamp(density, 0.0, 1.0);
-    light = max(light, smoothstep(threshold - 0.03, threshold + 0.03, pool));
+    // A third, finer octave makes the outline lumpy, and the edge is a hard
+    // threshold: a wide one posterised into a soft ramp in game.
+    float pool = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(733.0, 4049.0)) * 0.55
+               + vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL * 0.5, VV_TERRAIN_FLECK_PERIOD * 2.0, vec2(1291.0, 88.0)) * 0.30
+               + vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CELL * 0.25, VV_TERRAIN_FLECK_PERIOD * 4.0, vec2(37.0, 2711.0)) * 0.15;
+    float threshold = 0.84 - 0.36 * thin;
+    light = max(light, step(threshold, pool));
     return light * (1.0 - leaf);
 }
 
@@ -932,12 +955,13 @@ float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, flo
 // smooth gradient no texture in the world has. Only the axes along the face
 // are snapped: snapping across it would flip a face lying on a texel boundary
 // between two texels and speckle it.
-float vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, float shadowed, float facing)
+float vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, float shadowed, float facing, float broken)
 {
     if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return 0.0;
 
-    float resolvable = clamp(1.0 - (length(cameraRelativePos) - VV_TERRAIN_FLECK_FADE_START)
-                                   / VV_TERRAIN_FLECK_FADE_RANGE, 0.0, 1.0);
+    float flatDistance = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));
+    float resolvable = clamp(1.0 - (flatDistance - VV_TERRAIN_FLECK_FADE_START) / VV_TERRAIN_FLECK_FADE_RANGE, 0.0, 1.0)
+                     * (1.0 - smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, length(cameraRelativePos)));
     if (resolvable < 0.004) return 0.0;
 
     vec3 world = cameraRelativePos + vv_pbrOrigin;
@@ -956,8 +980,8 @@ float vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, 
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
     float thin;
-    float pattern = vvTerrainFleckPattern(src, az, l.y, overhead.x, ragged, thin);
-    pattern = floor(pattern * 3.0 + 0.5) / 3.0;
+    float pattern = vvTerrainFleckPattern(src, az, l.y, overhead.x, broken, ragged, thin);
+    pattern = floor(pattern * 2.0 + 0.5) / 2.0;
     // The wash stays smooth: stepped at this scale it would draw contour
     // bands across the floor.
     pattern = max(pattern, VV_TERRAIN_FLECK_WASH * smoothstep(0.35, 0.95, thin) * (1.0 - 0.5 * clamp(overhead.x, 0.0, 1.0)));
@@ -970,13 +994,14 @@ float vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, 
 }
 
 // A sunlit patch's colour from the shaded colour lifted to vanilla's sunlit
-// level: a little more saturated and warmer than the shade, at the SAME
-// luminance, so a fleck reads as sunlight on the surface rather than a pale
-// stain, and still cannot pass vanilla's own sunlit brightness.
+// level: slightly warmer than the shade, at the SAME luminance, so a fleck
+// reads as sunlight on the surface rather than a pale stain, and still cannot
+// pass vanilla's own sunlit brightness. VV_TERRAIN_FLECK_SATURATION is 1: a
+// saturation boost made flecks more vivid than open sun beside them.
 vec3 vvTerrainSunlitTint(vec3 c)
 {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    vec3 warm = (vec3(y) + (c - vec3(y)) * VV_TERRAIN_FLECK_SATURATION) * vec3(1.07, 1.0, 0.86);
+    vec3 warm = (vec3(y) + (c - vec3(y)) * VV_TERRAIN_FLECK_SATURATION) * vec3(1.04, 1.0, 0.92);
     return max(warm * (y / max(dot(warm, vec3(0.2126, 0.7152, 0.0722)), 0.0001)), vec3(0.0));
 }
 
@@ -1004,13 +1029,17 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     if (shadowed < 0.01) return color;
 
     vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
-    vec3 shaded = vvTerrainApplyCanopy(color, vvTerrainCanopyDapple(cameraRelativePos, fade, sunVisibility, overhead.x), cap);
+    // Measured once: the dapple's shade and the flecks' placement both read it.
+    float evidence = vvTerrainCanopyEvidence(sunVisibility);
+    vec3 shaded = vvTerrainApplyCanopy(color, vvTerrainCanopyDapple(cameraRelativePos, fade, sunVisibility, overhead.x, evidence), cap);
 
-    // A face turned away from the sun gets no fleck; a plant's two-sided
-    // cards always may.
+    // A face turned away from the sun gets no fleck. A plant's card is
+    // two-sided, so it takes the sun on either face, falling off to about
+    // half edge-on: blades turned to the sun catch a fleck, the rest less.
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
-    float facing = vvTerrainIsFlora() ? 1.0 : smoothstep(0.0, 0.25, dot(faceNormal, l));
-    float fleck = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, shadowed, facing);
+    float facing = vvTerrainIsFlora() ? mix(0.55, 1.0, abs(dot(faceNormal, l)))
+                                      : smoothstep(0.0, 0.25, dot(faceNormal, l));
+    float fleck = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, shadowed, facing, evidence);
     if (fleck <= 0.0) return shaded;
 
     vec3 lit = vvTerrainSunlitTint(color * vvTerrainSunRelight(sunVisibility));
@@ -1304,7 +1333,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 15)
     {
         float fade = vvTerrainIsFlora() ? vvTerrainFloraLod(cameraRelativePos) : vvTerrainDetailFade(cameraRelativePos);
-        float d = vvTerrainCanopyDapple(cameraRelativePos, fade, -1.0, vvTerrainCanopyOverhead(cameraRelativePos).x);
+        float d = vvTerrainCanopyDapple(cameraRelativePos, fade, -1.0, vvTerrainCanopyOverhead(cameraRelativePos).x, -1.0);
         return vec4(vec3(1.0 - d / VV_TERRAIN_DAPPLE_SHADE), color.a);
     }
     if (mode == 25) return vec4(vec3(vvTerrainSunVisibility()), color.a);
@@ -1331,7 +1360,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     {
         float vis = vvTerrainSunVisibility();
         vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
-        float f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0);
+        float f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0, vvTerrainCanopyEvidence(vis));
         return vec4(mix(vec3(overhead.x > 0.0 ? 0.35 : 0.0, 0.0, 0.0), vec3(1.0), f), color.a);
     }
     // 65: the leaf map. Green is leaf density along the sun ray, blue its

@@ -2201,3 +2201,38 @@ varies. `VV_TERRAIN_FLECK_GAIN` 1.6 lets the default slider reach a full gap.
 Lit patches go through `vvTerrainSunlitTint`: 1.2x saturation and a warm shift
 at the same luminance, checked as an interaction, so the sunlit cap holds.
 Cost: eight more hashes per shaded receiver. Not measured.
+
+**Second amendment, same day (fourth pattern, with an audit).** The third
+pattern was seen in game: the scale and warmth were right, but the pools read
+as soft decals, some were rings, the tint was more vivid than open sun beside
+it, there were no small specks, nothing tied the pools to the crown, and from
+a flying camera at midday almost nothing showed.
+
+- Pools take a hard one-texel edge (`step`, not a 0.06-wide ramp that
+  posterised into a soft gradient), two brightness levels, and a third, finer
+  octave for a lumpy outline. Leaf cuts are smaller (0.14 to 0.28 cell) so they
+  cut edges rather than punching rings.
+- The leaf profile is no longer clamped at its tips. Clamped, it had zero width
+  past them and its soft edge drew a faint line along each leaf's axis to the
+  edge of the search, through every pool (now an interaction check).
+- `VV_TERRAIN_FLECK_SATURATION` is 1: warmth only, same luminance.
+- Plants take the sun on either face with a falloff to about half edge-on.
+- "Thin crown" is mostly game data now: 0.45 from fewer leaf blocks on the
+  leaf map along the sun ray, 0.5 from vanilla's shadow already broken here
+  (the D7 ring count, measured once per fragment and shared with the shade),
+  0.35 from noise. A constant scatter of small faint gaps runs under all of it.
+- The fleck distance is horizontal (the leaf map's measure, ending at 26), plus
+  a straight-line limit of 40 that finishes before the resolve's 44-block exit.
+- The leaf map searches 20 blocks either side of each column's rain-map height
+  instead of a window around the player's Y, which missed the whole canopy
+  from above. Where the rain map reads 0 it falls back to the old window. Up
+  as well as down, in case a leaf lets rain through.
+- Audit: canopy shade now fades with overcast as the flecks do. It is a shadow
+  of the direct sun; without this an overcast forest took the weather's
+  darkening and a full canopy shade on top of it, the stacking VisualBudget
+  exists to prevent. The shade stays out of the budget itself: it is local and
+  bounded by its cap, like a shadow, not a scene-wide wash.
+
+Cost: about 70 hashes, up to 40 uniform-array reads and the 12 shadow taps the
+shade already paid, per shadowed receiver within 26 blocks horizontally; the
+scan reads up to 80 blocks per cell. Not measured.
