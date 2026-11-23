@@ -2254,3 +2254,28 @@ in the player's world at noon and with a low sun.
   surfaces that can receive canopy light.
 
 Seen in game before the fix; the fix itself is L2 until seen.
+
+## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
+
+**Context.** `getBrightnessFromShadowMap` returned vanilla's brightness times
+`1 - coverage * strength`. Nothing bounded the product. In the 2026-11-23 audit,
+with the player's cloud shadow slider at 1 and a storm reporting 87% of tiles
+covered, a forest at noon kept about 13% of its light and was black. Switching
+Weather response off restored it, and switching Surface materials off did not.
+The multiply also dimmed block light, which vanilla adds back after its sun
+shadow and which no cloud can reach.
+
+**Decision.** A cloud occludes the sun as a tree does, so it is built the way
+vanilla builds its own shadowed brightness. That is
+`1 - occlusion * shadowIntensity * depth + blockBrightness`, where depth is 1
+with both shadow maps and 0.5 with one. It is then taken as a `min` with
+vanilla's value, never multiplied. A full cloud is exactly as dark as full sun
+shade, shade already present loses nothing more, and torchlight is untouched.
+`shadowIntensity` is vanilla's own, so the shadow weakens wherever the game
+weakens its sun shadows.
+
+**Consequences.** Cloud shadows are shallower than before at high strength, and
+cannot exceed what a tree's shade looks like. Under heavy overcast the whole
+world can sit at full-shade level; that is vanilla's shade, not darker. The
+invariant I20 and three mutations pin the floor, the min and the block light.
+

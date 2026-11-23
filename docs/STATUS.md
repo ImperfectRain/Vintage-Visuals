@@ -163,7 +163,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Wet surface response (roughness, specular, albedo darkening) | L4 | rides the PBR path; owns no shader patch |
 | `[x]` | Sky-exposure varying so rain cannot reach covered ground | L4 | lives in `pseudopbr.yaml` — a varying belongs to one group. The modular terrain path (`pbrterrainmaterial.yaml`) now declares its own copy inside its own group; that copy is **L2**, not yet seen in game |
 | `[~]` | Rain fog (terrain only, never the sky) | L2 | |
-| `[~]` | Cloud shadows from the game's own cloud tiles | L2 | **reported broken three times**; see §9 |
+| `[~]` | Cloud shadows from the game's own cloud tiles | L2 | **reported broken three times**; see §9. In-game audit 2026-11-23: at the player's strength 1 under a storm (87% of tiles covered) a forest at noon went black, and switching Weather response off brought it back. The shadow multiplied vanilla's brightness with no floor and dimmed torchlight too. Now a min against vanilla's own shadow, never deeper than a full sun shadow, block light kept ([D52](DECISIONS.md), invariant I20). Fix is L2 until seen |
 | `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured. Restored in the modular terrain path (2026-11-22, L2): gated on the sky-exposure varying, exactly off at a strength of zero or when dry |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | consumed by the material snow film; real accumulated depth remains vanilla snow blocks |

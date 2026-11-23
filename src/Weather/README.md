@@ -463,6 +463,10 @@ working, which is how three rounds were lost.
   to one side. Vanilla's clouds are far higher; using their real altitude moves
   the shadow the better part of a kilometre at a low sun, which reads as a bug
   rather than as evening.
+- **A cloud shadow is never deeper than vanilla's own sun shadow** (D52). It is
+  built like vanilla's shadowed brightness and taken as a `min` with it, so
+  shade already present loses nothing more and block light is kept. It used to
+  multiply, and a storm at strength 1 turned a forest black at noon.
 - **Strength is scaled by daylight on the CPU.** A cloud shadow is the sun being
   blocked; at night there is nothing to block. Folding it into the strength
   keeps that as one uniform whose zero already means vanilla, rather than a

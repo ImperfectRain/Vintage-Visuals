@@ -319,11 +319,45 @@ float vvCloudCoverage(vec3 cameraRelativePos)
     return vvCloudDensity(cameraRelativePos.xz + vv_cloudOrigin.xz + thrown, toSun);
 }
 
+// How deep a cloud's shadow may go: exactly as deep as vanilla's own sun
+// shadow at full occlusion, and no deeper. A cloud blocks the sun the way a
+// tree does, so standing under one should look like standing in a tree's
+// shade. vanilla takes half of shadowIntensity per shadow map, and the near
+// map only exists above shadow quality 1.
+//
+// It used to MULTIPLY vanilla's brightness by (1 - cover * strength), which
+// has no floor. At strength 1 under a storm the game reported 87% of tiles
+// covered, so every surface kept 13% of its light and a forest at noon was
+// black (seen in game 2026-11-23). It also dimmed torchlight, which a cloud
+// cannot reach.
+#if SHADOWQUALITY > 1
+#define VV_CLOUD_SHADOW_DEPTH 1.0
+#else
+#define VV_CLOUD_SHADOW_DEPTH 0.5
+#endif
+
+// Vanilla adds block light back after the sun shadow, so a torch-lit wall in
+// shade stays lit. The varying only exists when shadows are on.
+#if SHADOWQUALITY > 0
+#define VV_CLOUD_BLOCK_LIGHT blockBrightness
+#else
+#define VV_CLOUD_BLOCK_LIGHT 0.0
+#endif
+
+// What a surface keeps under a cloud, built the way vanilla builds its own
+// shadowed brightness. Taken as a min against vanilla's, never multiplied,
+// so a spot already in shade loses nothing more to the cloud overhead.
+float vvCloudShadowLit(float occlusion, float sunShare, float blockLight)
+{
+    return clamp(1.0 - occlusion * sunShare * VV_CLOUD_SHADOW_DEPTH + blockLight, 0.0, 1.0);
+}
+
 float vvCloudShadow(vec3 cameraRelativePos)
 {
     if (vv_cloudShadowStrength < 0.001) return 1.0;
 
-    return 1.0 - vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+    float occlusion = vvCloudCoverage(cameraRelativePos) * clamp(vv_cloudShadowStrength, 0.0, 1.0);
+    return vvCloudShadowLit(occlusion, shadowIntensity, VV_CLOUD_BLOCK_LIGHT);
 }
 
 // ---------------------------------------------------------------------------
@@ -426,7 +460,7 @@ float getBrightnessFromShadowMap()
     int debug = int(vv_cloudDebug + 0.5);
     if (debug > 0) return vvCloudDebug(debug, worldPos.xyz);
 
-    return vvVanillaShadowMap() * vvCloudShadow(worldPos.xyz);
+    return min(vvVanillaShadowMap(), vvCloudShadow(worldPos.xyz));
 }
 
 // The anchor line, pasted back RENAMED.
