@@ -316,7 +316,7 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | Tab changes rebuilding inside native callback dispatch | runtime crash report | `UiChecks` | x |
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**129 mutations, 129 caught, 0 missed** (127 on a clean tree at 1301bee, plus the two cover rows run singly) at `HEAD` when the mutation harness was
+**132 mutations, 132 caught, 0 missed** (127 on a clean tree at 1301bee; the cover rows and the v7 fleck and shaft rows run singly) at `HEAD` when the mutation harness was
 last run on a clean tree.
 
 **What this table does not say.** Every invariant above is arithmetic over source.

@@ -540,17 +540,27 @@ const float VV_TERRAIN_DAPPLE_FADE_RANGE = 22.0;
 // How much of the dapple's full shade a solid crown takes, known only from the
 // leaf map. Below 1 so the measured broken shade stays the stronger reading.
 const float VV_TERRAIN_LEAF_SHADE = 0.7;
-// Sunflecks: the gap grid and the coarser grid gaps cluster on, on the canopy
-// plane (both must divide the 4096 world wrap exactly: 4096 / 2.048 = 2000,
-// 4096 / 8.192 = 500), the least stretch a low sun may apply (see
-// vvTerrainFleckPattern), texels per block, and the distance flecks dissolve
-// over - finished before the leaf map's 28-block reach runs out.
-const float VV_TERRAIN_FLECK_CELL = 2.048;
-const float VV_TERRAIN_FLECK_PERIOD = 2000.0;
+// Sunflecks: the field's coarse octave and the regional grid thin patches
+// gather on, on the canopy plane (both must divide the 4096 world wrap
+// exactly: 4096 / 1.024 = 4000, 4096 / 8.192 = 500; the half and double
+// cells divide it too), the least stretch a low sun may apply, texels per
+// block, and the distance flecks dissolve over - finished before the leaf
+// map's 28-block reach runs out.
+const float VV_TERRAIN_FLECK_CELL = 1.024;
+const float VV_TERRAIN_FLECK_PERIOD = 4000.0;
 const float VV_TERRAIN_FLECK_CLUSTER_CELL = 8.192;
 const float VV_TERRAIN_FLECK_CLUSTER_PERIOD = 500.0;
 const float VV_TERRAIN_FLECK_MIN_STRETCH = 0.3;
 const float VV_TERRAIN_FLECK_TEXELS = 16.0;
+// The lit share of the floor under a closed and under an open crown.
+const float VV_TERRAIN_FLECK_COVER_CLOSED = 0.04;
+const float VV_TERRAIN_FLECK_COVER_OPEN = 0.55;
+// How far the summed noise is expanded before the cut, so the lit share
+// tracks the coverage asked for; how far the field is warped, in blocks;
+// how much of a coarse cell per unit of lost elevation a streak reaches.
+const float VV_TERRAIN_FLECK_CONTRAST = 2.2;
+const float VV_TERRAIN_FLECK_WARP = 0.4;
+const float VV_TERRAIN_FLECK_STREAK = 0.35;
 // How hard the slider drives a fleck (the default 0.6 reaches a full gap at
 // 1.6), and how much richer a sunlit patch is than the shade around it: a
 // touch, so it reads as grass in the sun rather than a pale stain (v4 read as
@@ -559,19 +569,16 @@ const float VV_TERRAIN_FLECK_TEXELS = 16.0;
 // distance is HORIZONTAL (the leaf map's own measure), so flying above a
 // forest does not fade it.
 const float VV_TERRAIN_FLECK_GAIN = 1.6;
-const float VV_TERRAIN_FLECK_SATURATION = 1.08;
-// Bounce light at a pool's edge, at most this share of the way to the lit
-// colour. Penumbra: field units of rim per block of rise above the floor,
-// about half a degree of sun.
+const float VV_TERRAIN_FLECK_SATURATION = 1.0;
+// Bounce light at a lit patch's edge, at most this share of the way to the
+// lit colour.
 const float VV_TERRAIN_FLECK_BOUNCE = 0.07;
-// Lit share of the cells outside a cluster: specks and a rare lone gap.
-const float VV_TERRAIN_FLECK_SCATTER = 0.12;
-// How far the pool threshold wanders, which ragges the outline.
-const float VV_TERRAIN_FLECK_RAGGED = 0.36;
-// Lobe noise on the pool outline: 0.512-block cells, tiling the 4096-block
-// world wrap in 8000 cells; per-texel jitter tiles it in 65536 texels.
-const float VV_TERRAIN_FLECK_LOBE_CELL = 0.512;
-const float VV_TERRAIN_FLECK_LOBE_PERIOD = 8000.0;
+// How far the threshold wanders per texel, which steps the edge.
+const float VV_TERRAIN_FLECK_RAGGED = 0.03;
+// The fine octave: quarter-block cells, tiling the 4096-block world wrap in
+// 16000 cells; per-texel jitter tiles it in 65536 texels.
+const float VV_TERRAIN_FLECK_LOBE_CELL = 0.256;
+const float VV_TERRAIN_FLECK_LOBE_PERIOD = 16000.0;
 const float VV_TERRAIN_FLECK_TEXEL_PERIOD = 65536.0;
 // Cloud cover over which the flecks close: an image of the sun needs the sun.
 const float VV_TERRAIN_FLECK_OVERCAST_START = 0.45;
@@ -581,6 +588,9 @@ const float VV_TERRAIN_MOON_FLECK = 0.45;
 // The most a shaft may mark vanilla's god-ray channel, so a beam can never
 // hide what is behind it.
 const float VV_TERRAIN_SHAFT_MAX = 0.35;
+// Past this distance a leaf texel is under a pixel, and the hole-rim test
+// that places shaft sources would sparkle.
+const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
 const float VV_TERRAIN_FLECK_FADE_START = 18.0;
 const float VV_TERRAIN_FLECK_FADE_RANGE = 8.0;
 // Past this straight-line distance a block texel is under a pixel and a
@@ -880,15 +890,6 @@ float vvTerrainFleckNoise(vec2 src, float cell, float period, vec2 key)
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// The offset from a feature on the canopy plane to `src`, with the part along
-// the sun azimuth shortened by `stretch` (sin elevation), which lengthens
-// everything a low sun projects.
-vec2 vvTerrainFleckOffset(vec2 src, vec2 feature, vec2 az, float stretch)
-{
-    vec2 d = src - feature;
-    return d - az * dot(d, az) * (1.0 - stretch);
-}
-
 // How far the sun is diffused, 1 a clear sky and 0 a solid one, from the
 // game's own cloud tiles. A sunfleck is an image of the sun's disc; once the
 // disc is gone behind cloud there is nothing to image, so the flecks close
@@ -908,108 +909,81 @@ float vvTerrainFleckShimmer()
     return clamp(vv_sceneWind, 0.0, 1.0);
 }
 
+// The lit share of the floor asked of the fleck field for a crown this thin,
+// 0 closed to 1 open. Kept away from both ends: a closed crown still has
+// holes, and an open one is still a crown.
+float vvTerrainFleckCoverage(float thin)
+{
+    return mix(VV_TERRAIN_FLECK_COVER_CLOSED, VV_TERRAIN_FLECK_COVER_OPEN, clamp(thin, 0.0, 1.0));
+}
+
 // The sun images through the gaps on the canopy plane.
 //
-// x: brightness, 0, 0.5 (a speck) or 1.
-// y: how close an unlit point is to a pool, 0..1, for the bounce light.
-// z: how thin the crown is here, 0..1.
+// x: brightness, 0 or 1.
+// y: how close an unlit point is to lit ground, 0..1, for the bounce light.
+// z: the lit share asked of the field here (its coverage), 0..1.
 //
-// GAPS are soft round kernels summed into one field and thresholded, so
-// neighbouring gaps run together into pools the way light through a thin
-// crown does. A cluster mask a few cells wide decides where gaps open at all,
-// so pools come in groups under thin patches of crown with plain shade
-// between them, and inside a group they grow until they merge. Each kernel is
-// stretched along the sun's azimuth by 1 / sin(elevation), so a low sun
-// draws ellipses pointing away from it. Most gaps are small; a cubic size
-// distribution leaves a few large. SPECKS, one in two cells, are a few texels
-// across and survive a closed crown. The threshold wanders with a lobe noise
-// and a per-texel jitter, so outlines are ragged and pixel-stepped rather
-// than circles. There is one hard level: the v5 half-lit rim and the leaf
-// bites read in game as blur and as coins with notches, and both are gone.
-// Everything sways and flickers with the game's wind.
+// ONE CONTINUOUS FIELD cut at a threshold, not a scatter of separate gaps
+// (v7, from the player's reference photographs). Under a real crown, light
+// and shade weave into one pattern: under a thin crown about half the floor
+// is lit and the shade breaks into islands, under a closed crown it is shade
+// with small holes, and in between the lit parts link into a network. A
+// threshold on one field does all three by moving one number, so the
+// threshold IS the crown: coverage runs from VV_TERRAIN_FLECK_COVER_CLOSED to
+// VV_TERRAIN_FLECK_COVER_OPEN with how thin the crown is, read from the leaf
+// map along the sun ray and vanilla's own broken shadow, with a slow regional
+// noise so thin patches come in groups.
 //
-// Nothing reaches past the cells searched. A gap's centre sits within 0.3
-// cell of its cell's middle; the 5x5 search finds anything reaching under 2.2
-// cells, and a gap reaches at most 0.3 + 0.546 cell / VV_TERRAIN_FLECK_MIN_STRETCH
-// plus its sway. Specks reach under 1.2 cells and use the 3x3
-// centre of the same search.
+// The field is three octaves of value noise (one, a half and a quarter
+// block) under a gentle domain warp, which keeps the value-noise lattice from
+// drawing axis-aligned edges. The two coarse octaves are averaged along the
+// sun's azimuth over a reach that grows as the sun drops, so a low sun draws
+// streaks pointing away from it, and the warp and the fine octave sway with
+// the game's wind. Summed noise piles up around its middle, so the sum is
+// expanded by VV_TERRAIN_FLECK_CONTRAST before the cut - measured so the lit
+// share matches the coverage asked for (see tools/smoketest) - and the
+// streak average, which narrows the sum further, is expanded a little more.
+// One hard level, texel-stepped by the caller, with a small per-texel jitter
+// on the threshold so the edge is a pixel-art line rather than a contour.
+//
+// Every grid tiles the 4096-block world wrap exactly. There is no cell
+// search, so nothing can be clipped by one.
 vec3 vvTerrainFleckField(vec2 src, vec2 az, float stretch, float density, float broken, float shimmer)
 {
-    vec2 base = floor(src / VV_TERRAIN_FLECK_CELL);
-    // Where the crown is thin, gaps are many and large and run together into
-    // pools; where it is closed, only specks. "Thin" is mostly game data:
-    // fewer leaf blocks in the column the sun ray crosses, and vanilla's own
-    // shadow already broken here (the ring count).
-    float noise = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
-    float thin = clamp(0.35 * noise + 0.45 * (1.0 - clamp(density, 0.0, 1.0)) + 0.25 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
-    // Pools come in groups: a cluster mask a few cells wide gathers the gaps
-    // under thin patches of crown and leaves wide plain shade between them,
-    // instead of an even scatter of coins (v5, seen in game).
-    float dataThin = clamp(0.6 * (1.0 - clamp(density, 0.0, 1.0)) + 0.4 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
-    float cluster = smoothstep(0.32, 0.6, noise);
-    float open = (VV_TERRAIN_FLECK_SCATTER + cluster) * (0.55 + 0.6 * dataThin);
     stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
     float turn = 6.28318530718 * vv_sceneBreeze;
-    float swayAmount = 0.02 + 0.04 * shimmer;
 
-    float field = 0.0;
-    float speck = 0.0;
-    for (int dy = -2; dy <= 2; dy++)
-    for (int dx = -2; dx <= 2; dx++)
+    float region = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
+    float dataThin = clamp(0.6 * (1.0 - clamp(density, 0.0, 1.0)) + 0.4 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
+    float thin = clamp(0.7 * dataThin + 0.3 * region, 0.0, 1.0);
+    // Wind opens and closes the crown a little as a whole, on whole turns
+    // of the breeze clock; still air holds it.
+    float breathe = 1.0 - 0.15 * shimmer * (0.5 + 0.5 * sin(turn * 5.0 + 6.28318530718 * region));
+    float coverage = vvTerrainFleckCoverage(thin) * breathe;
+
+    vec2 sway = vec2(sin(turn * 3.0), cos(turn * 2.0)) * (0.02 + 0.06 * shimmer);
+    vec2 warp = vec2(vvTerrainFleckNoise(src + sway, VV_TERRAIN_FLECK_CELL * 2.0, VV_TERRAIN_FLECK_PERIOD * 0.5, vec2(41.0, 7.0)),
+                     vvTerrainFleckNoise(src + sway, VV_TERRAIN_FLECK_CELL * 2.0, VV_TERRAIN_FLECK_PERIOD * 0.5, vec2(43.0, 13.0))) - 0.5;
+    vec2 p = src + VV_TERRAIN_FLECK_WARP * warp;
+
+    float reach = VV_TERRAIN_FLECK_CELL * (1.0 / stretch - 1.0) * VV_TERRAIN_FLECK_STREAK;
+    float n = 0.0;
+    for (int t = -1; t <= 1; t++)
     {
-        vec2 cell = base + vec2(float(dx), float(dy));
-        vec2 key = mod(cell, VV_TERRAIN_FLECK_PERIOD);
-
-        if (abs(dx) <= 1 && abs(dy) <= 1)
-        {
-            // A speck: a chink a few texels wide. One cell in two, under a
-            // closed crown as much as an open one, at half brightness.
-            vec4 k = vvTerrainCellRandom(key + vec2(3907.0, 1423.0));
-            if (k.x < 0.5)
-            {
-                vec2 sway = vec2(sin(turn * 5.0 + k.y * 6.28318530718), cos(turn * 3.0 + k.z * 6.28318530718)) * swayAmount;
-                vec2 d = vvTerrainFleckOffset(src, (cell + vec2(0.2) + k.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL, az, stretch);
-                float rs = VV_TERRAIN_FLECK_CELL * mix(0.035, 0.07, k.w);
-                speck = max(speck, 0.5 * step(length(d), rs));
-            }
-        }
-
-        vec4 r = vvTerrainCellRandom(key + vec2(911.0, 3301.0));
-        // Faded in and out across the threshold, so a gap opens as the
-        // crown thins instead of popping on.
-        float present = smoothstep(r.x - 0.06, r.x + 0.06, open);
-        if (present <= 0.0) continue;
-        vec4 s = vvTerrainCellRandom(key + vec2(5113.0, 77.0));
-
-        vec2 sway = vec2(sin(turn * 3.0 + 6.28318530718 * r.w), cos(turn * 2.0 + 6.28318530718 * r.y)) * swayAmount;
-        vec2 centre = (cell + vec2(0.2) + r.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL;
-
-        // Mostly small, a few large; inside a cluster they grow until they
-        // touch and merge into irregular patches.
-        float size = s.x * s.x * s.x;
-        float radius = VV_TERRAIN_FLECK_CELL * mix(0.08, 0.39, size) * mix(0.9, 1.4, cluster);
-        // Flutter: in wind a gap opens and closes as the leaves around it
-        // move. Two fixed rhythms, mixed by the wind's strength.
-        float flutter = mix(sin(turn * 5.0 + 6.28318530718 * s.y), sin(turn * 11.0 + 6.28318530718 * s.z), shimmer);
-        float weight = present * mix(0.8, 1.0, size) * (1.0 - 0.3 * shimmer * (0.5 + 0.5 * flutter));
-
-        vec2 d = vvTerrainFleckOffset(src, centre, az, stretch);
-        float x = length(d) / radius;
-        float kernel = max(0.0, 1.0 - x * x);
-        field += weight * kernel * kernel;
+        vec2 q = p + az * (float(t) * reach);
+        float w = t == 0 ? 0.5 : 0.25;
+        n += w * (0.55 * vvTerrainFleckNoise(q, VV_TERRAIN_FLECK_CELL, VV_TERRAIN_FLECK_PERIOD, vec2(23.0, 3.0))
+                + 0.45 * vvTerrainFleckNoise(q, VV_TERRAIN_FLECK_CELL * 0.5, VV_TERRAIN_FLECK_PERIOD * 2.0, vec2(31.0, 19.0)));
     }
+    n = 0.78 * n + 0.22 * vvTerrainFleckNoise(p + 2.0 * sway, VV_TERRAIN_FLECK_LOBE_CELL, VV_TERRAIN_FLECK_LOBE_PERIOD, vec2(29.0, 11.0));
 
-    // A ragged outline, not a circle: the threshold wanders with a lobe
-    // noise a quarter-block across and a per-texel jitter, so the edge is a
-    // stepped, bitten line. One hard level - no half-bright rim, which read
-    // as blur on the ground (v5, seen in game).
-    float lobe = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_LOBE_CELL, VV_TERRAIN_FLECK_LOBE_PERIOD, vec2(29.0, 11.0));
+    float streak = clamp(reach / VV_TERRAIN_FLECK_CELL, 0.0, 1.0);
+    float u = clamp(0.5 + (n - 0.5) * VV_TERRAIN_FLECK_CONTRAST * (1.0 + 0.6 * streak), 0.0, 1.0);
     float jitter = vvTerrainCellRandom(mod(floor(src * VV_TERRAIN_FLECK_TEXELS), VV_TERRAIN_FLECK_TEXEL_PERIOD) + vec2(613.0, 59.0)).x;
-    float threshold = 0.5 + VV_TERRAIN_FLECK_RAGGED * (lobe - 0.5) + 0.5 * VV_TERRAIN_FLECK_RAGGED * (jitter - 0.5);
-    float lit = step(threshold, field);
-    float level = max(lit, speck);
-    float halo = smoothstep(0.12, 0.5, field) * (1.0 - level);
-    return vec3(level, halo, thin);
+    float threshold = 1.0 - coverage + VV_TERRAIN_FLECK_RAGGED * (jitter - 0.5);
+    float level = step(threshold, u);
+    float halo = smoothstep(threshold - 0.12, threshold, u) * (1.0 - level);
+    return vec3(level, halo, coverage);
 }
 
 // How strongly the light source that makes flecks is up: the sun by day,
@@ -1061,11 +1035,9 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, f
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
     vec3 field = vvTerrainFleckField(src, az, l.y, overhead.x, broken, vvTerrainFleckShimmer());
-    // A blade of grass catches a speck as full light, which is what makes
-    // the lit part of a pool read as grass in the sun rather than a stain.
-    float pattern = vvTerrainIsFlora() ? min(1.0, field.x * 2.0) : field.x;
+    float pattern = field.x;
 
-    float gate = clamp(shadowed, 0.0, 1.0) * resolvable * smoothstep(0.0, 0.3, overhead.x)
+    float gate = clamp(shadowed, 0.0, 1.0) * resolvable * smoothstep(0.0, 0.12, overhead.x)
                * clearSky * light * vv_pbrSunflecks * VV_TERRAIN_FLECK_GAIN;
     float fleck = clamp(pattern * clamp(facing, 0.0, 1.0) * gate, 0.0, 1.0);
     float bounce = clamp(field.y * VV_TERRAIN_FLECK_BOUNCE * gate, 0.0, VV_TERRAIN_FLECK_BOUNCE);
@@ -1073,15 +1045,16 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, f
 }
 
 // A sunlit patch's colour from the shaded colour lifted to vanilla's sunlit
-// level: warmer than the shade and a touch richer, at the SAME luminance, so a
-// fleck reads as sunlight on the surface rather than a pale stain, and still
+// level: plain sunlight at noon, only a hair warmer than the shade, at the SAME
+// luminance (v7: the v5/v6 tint read as yellow discs painted on the ground,
+// where the reference photographs show plain sunlight), and still
 // cannot pass vanilla's own sunlit brightness. `golden` 1 near the horizon
 // shifts it toward the colour of an evening sun; by night the same patch is
 // the moon's, cool instead of warm.
 vec3 vvTerrainSunlitTint(vec3 c, float golden, float night)
 {
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    vec3 hue = mix(mix(vec3(1.04, 1.0, 0.92), vec3(1.10, 0.98, 0.80), clamp(golden, 0.0, 1.0)),
+    vec3 hue = mix(mix(vec3(1.02, 1.0, 0.96), vec3(1.10, 0.98, 0.80), clamp(golden, 0.0, 1.0)),
                    vec3(0.88, 0.95, 1.12), clamp(night, 0.0, 1.0));
     vec3 warm = (vec3(y) + (c - vec3(y)) * VV_TERRAIN_FLECK_SATURATION) * hue;
     return max(warm * (y / max(dot(warm, vec3(0.2126, 0.7152, 0.0722)), 0.0001)), vec3(0.0));
@@ -1137,19 +1110,41 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     return mix(shaded, lit, clamp(fleck.x + fleck.y, 0.0, 1.0) * local);
 }
 
+// How much of this leaf texel lines a hole in the leaf texture, 0..1: the
+// share of its four neighbouring texels that are cut away. A leaf's interior
+// reads 0. Read from vanilla's own terrainTex at vanilla's own uv, so it
+// needs no sampler of ours, and at the base level so the answer is the
+// texture's, not a mip's blur of it.
+float vvTerrainLeafHoleRim()
+{
+    vec2 px = 1.0 / max(vec2(1.0), vec2(textureSize(terrainTex, 0)));
+    float holes = step(textureLod(terrainTex, uv + vec2(px.x, 0.0), 0.0).a, 0.5)
+                + step(textureLod(terrainTex, uv - vec2(px.x, 0.0), 0.0).a, 0.5)
+                + step(textureLod(terrainTex, uv + vec2(0.0, px.y), 0.0).a, 0.5)
+                + step(textureLod(terrainTex, uv - vec2(0.0, px.y), 0.0).a, 0.5);
+    return holes * 0.25;
+}
+
 // How much this fragment marks vanilla's god-ray channel, 0 to
 // VV_TERRAIN_SHAFT_MAX.
 //
 // Vanilla's god-ray pass blurs that channel radially from the sun's screen
-// position, so a beam runs from its source AWAY from the sun on screen. The
-// source therefore has to be where the light ENTERS the forest - a leaf
-// lit from behind at a thin place in the crown - so the beam falls from the
-// crown toward the floor. The pools on the ground would draw beams running
-// the wrong way. Only leaves, only where the leaf map says the crown is thin
-// (a real gap, not an invented one), only where the sun reaches the leaf,
-// strongest looking toward the sun, stronger in humid air - after rain, at
-// dawn and dusk, in fog - and gone under cloud. fogDensity is vanilla's
-// fogDensityIn, passed in because only chunkopaque declares it.
+// position. Vanilla terrain writes ZERO to it; the beams come from the sky
+// showing through the holes cut in the leaf textures, which is what gives
+// real shafts their comb of thin rays with dark gaps between them (the
+// player's reference photographs). v5 and v6 marked whole leaf faces at thin
+// places in the crown, and those broad bright patches filled the dark gaps
+// in, drawing one soft wedge instead of rays (seen in game at 16:30, v6).
+//
+// v7 keeps a leaf dark in the channel and marks only the texels that LINE a
+// hole - a backlit leaf edge, the bright rim around each chink of sky - so
+// every source sits on a real gap and adds to the comb instead of washing
+// it out. Only leaves, only where the leaf map says the crown is thin (a
+// hole in a closed crown shows more leaves, not sky), strongest looking
+// toward the sun, stronger in humid air - after rain, at dawn and dusk, in
+// fog - and gone under cloud. Faded out by VV_TERRAIN_SHAFT_RIM_FAR, where a
+// texel is under a pixel and a rim test would sparkle. fogDensity is
+// vanilla's fogDensityIn, passed in because only chunkopaque declares it.
 float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
 {
     if (vv_pbrShafts < 0.001) return 0.0;
@@ -1165,15 +1160,14 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float clearSky = vvTerrainClearSky();
     if (clearSky < 0.004) return 0.0;
 
+    float near = 1.0 - smoothstep(VV_TERRAIN_SHAFT_RIM_FAR * 0.5, VV_TERRAIN_SHAFT_RIM_FAR, length(cameraRelativePos));
+    if (near < 0.004) return 0.0;
+    float rim = vvTerrainLeafHoleRim();
+    if (rim <= 0.0) return 0.0;
+
     vec3 world = cameraRelativePos + vv_pbrOrigin;
     float crown = vvTerrainCanopyCell(world.xz).x;
     float gap = 1.0 - smoothstep(0.4, 1.0, crown);
-    // The leaves seen when facing the sun are the crown's shaded side, so a
-    // shadow-map test on the fragment is near zero exactly where a beam would
-    // be seen (v5: view 66 showed no source at noon or at a low sun). A thin
-    // leaf-map cell is the evidence that light passes; the leaf's own
-    // visibility only raises it, never gates it.
-    float reached = mix(0.6, 1.0, vvTerrainSunVisibility());
 
     // Humid air carries a beam: wet ground after rain, a low sun at either
     // end of the day, and vanilla's own fog density (0.00125 by default,
@@ -1182,7 +1176,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
     float humid = 0.35 + 0.65 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
 
-    float level = clamp(vv_pbrShafts, 0.0, 2.0) * 0.5 * toward * gap * reached * humid * clearSky * sun
+    float level = clamp(vv_pbrShafts, 0.0, 2.0) * toward * rim * near * gap * humid * clearSky * sun
                 * vvSceneVisibilityDampen();
     return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);
 }

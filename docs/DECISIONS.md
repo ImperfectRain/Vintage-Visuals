@@ -2286,7 +2286,54 @@ outline is ragged and stepped rather than a circle. The half-lit rim and the
 leaf bites are removed: on the ground they read as blur and as notches. Canopy
 shade now grades from 0.3 under a thin crown to 1 under a closed one. Radii
 were reduced so the merged reach (0.546 cell / min stretch) still fits the 5x5
-search. Not yet seen in game.
+search. Seen in game 2026-11-23: ragged, texel-stepped pools, but still
+spread fairly evenly.
+
+**Sixth amendment, same day (seventh pattern, v7).** The player's reference
+photographs (two tree-lined roads, an autumn road, three backlit forests)
+were compared with the v5 and v6 screenshots. Under a real crown light and
+shade weave into ONE pattern whose lit share follows the crown: about half
+under a thin crown with the shade broken into islands, shade with small holes
+under a closed one, a linked network between, streaked along a low sun. v6
+lit 3-5% of the floor everywhere as separate pools on solid shade, and its
+tint read as yellow discs. Every pattern so far placed positive features and
+tuned their number; none could produce a network, because a network is what a
+threshold on a continuous field does at half coverage.
+
+Decision: the pattern is one continuous field (three octaves of value noise,
+1 / 0.5 / 0.25 block, under a 0.4-block warp that hides the lattice's axes),
+cut at `1 - coverage`, where coverage runs 0.04..0.55 with how thin the crown
+is (leaf map along the sun ray, vanilla's broken shadow, a regional noise).
+The summed noise is expanded (`VV_TERRAIN_FLECK_CONTRAST`) so the lit share
+equals the coverage asked for; a smoke check evaluates the shipped cut over a
+stand-in of the sum and fails if they part by more than 0.07. The coarse
+octaves are averaged along the sun azimuth over a reach that grows as the sun
+drops, which streaks the field without breaking the 4096-block tiling a
+rotated lattice would. One hard level; colour is plain sunlight. The cell
+search, kernels, cluster mask, specks and leaf bites are removed. Still an
+invented pattern on real placement (DATA GAP, as D50). Rejected: rotating the
+noise lattice to the sun (does not tile the world wrap); a stretched
+coordinate anchored near the player (the pattern jumps when the anchor moves).
+Seen in game the same day: linked shapes at noon, streaks toward a low sun.
+
+## D55. Shaft sources line the holes in the leaves
+
+**Context.** Vanilla's terrain writes zero to the god-ray channel; its beams
+come from the sky seen through the holes cut in leaf textures, which is why
+real shafts read as a comb of thin rays. v5 and v6 marked whole leaf faces at
+thin leaf-map cells. Broad bright patches in that channel fill the dark gaps
+between rays, and in game at 16:30 the result was one soft wedge.
+
+**Decision.** A leaf stays at zero in the channel except on texels that line a
+hole: `vvTerrainLeafHoleRim` reads the four neighbouring texels of vanilla's
+own `terrainTex` at vanilla's `uv` (base level) and counts the cut-away ones.
+The other gates stay (thin leaf-map cell, facing the sun, humid air, clear
+sky, cap 0.35) and the test fades out by 32 blocks, where a texel is under a
+pixel. It uses no sampler of ours, so no texture unit moves. It depends on the
+game's see-through leaves; with opaque leaves there are no holes and no
+sources, as in vanilla. Rejected: patching the sky shader to brighten the
+gaps (the sky is not patched, see the Weather README); darkening leaves below
+zero (the channel is already zero there). Seen in game: sources sit on hole edges and the soft wedge is gone; no distinct beams yet.
 
 ## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
 

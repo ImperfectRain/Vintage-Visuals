@@ -38,7 +38,7 @@ what that means and what is still unconfirmed.
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
 | `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; legacy `pseudopbrtopsoil` remains disabled |
 | Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves, wet leaves, a leaf highlight and canopy dapple on a separate flora branch that never decodes the opaque material, with dapple also on opaque blocks and topsoil. Still legacy-only: sun shafts and pixel reflections; scene reflections are at stage one (D48) |
-| Sunlight v5 on the modular path (2026-11-23) | L2: sunflecks (fifth pattern, D51 fourth amendment), moonlight flecks (`pbr_moonflecks`), sun shafts into vanilla's `godrayLevel` from leaves at thin leaf-map cells (`chunkopaque` only), dust motes as game particles in those shafts (`DustMoteSpawner`, `pbr_motes`). Views 64, 66, 67. Not yet seen in game; cost not measured |
+| Sunlight v5 on the modular path (2026-11-23) | L2: sunflecks (now the seventh pattern, D51 sixth amendment), moonlight flecks (`pbr_moonflecks`), sun shafts into vanilla's `godrayLevel` from leaf texels lining a hole in the leaves at thin leaf-map cells (`chunkopaque` only, v7), dust motes as game particles in those shafts (`DustMoteSpawner`, `pbr_motes`). Views 64, 66, 67. Not yet seen in game; cost not measured |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 
@@ -192,9 +192,12 @@ block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
 diffuse term only. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
-vanilla's sunlit level. The fleck shapes (D51) are noise pools and gaps of one to three lobes,
-bitten by pointed leaf shapes and tinted warm at the same luminance, evaluated once per block texel and posterised to
-four levels so they share the game's pixel-art edge, and projected along the sun
+vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a
+threshold the crown sets: a closed crown lights 4% of the floor in small holes,
+a thin one 55% with the shade broken into islands, and the lit parts link into a
+network in between. It is streaked along the sun's azimuth as the sun drops,
+evaluated once per block texel with one hard level so it shares the game's
+pixel-art edge, plain sunlight in colour at the same luminance, and projected along the sun
 from one canopy plane for the whole scene (`vv_canopyPlaneY`). Sending alpha-cut plants through the opaque
 material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
