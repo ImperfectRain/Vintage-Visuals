@@ -37,6 +37,7 @@ namespace VintageVisuals.SmokeTest
         {
             CheckCameraIsPerFrame(repo, check);
             CheckCloudCornerIsPerFrame(repo, check);
+            CheckCloudFieldContrast(repo, check);
         }
 
         /// <summary>
@@ -104,6 +105,30 @@ namespace VintageVisuals.SmokeTest
         /// The cloud window's corner must update on every Update, not only on
         /// the frames that re-read the tiles.
         /// </summary>
+        /// <summary>
+        /// A uniform cloud field casts no shadow; a broken one keeps its
+        /// clouds. Seen in game 2026-11-23: a sunny cirrocumulus noon read
+        /// every tile at 0.86 and the world sat in cloud shadow.
+        /// </summary>
+        private static void CheckCloudFieldContrast(string repo, Action<string, bool, string> check)
+        {
+            float[] uniform = new float[64];
+            for (int i = 0; i < uniform.Length; i++) uniform[i] = 0.86f;
+            VintageVisuals.Weather.CloudTileReader.ApplyFieldContrast(uniform);
+            float uniformMax = 0f;
+            foreach (float v in uniform) uniformMax = Math.Max(uniformMax, v);
+
+            float[] broken = new float[64];
+            for (int i = 0; i < broken.Length; i++) broken[i] = i % 2 == 0 ? 0.86f : 0f;
+            VintageVisuals.Weather.CloudTileReader.ApplyFieldContrast(broken);
+
+            string source = File.ReadAllText(Path.Combine(repo, "src/Weather/CloudTileReader.cs"));
+            check("a uniform cloud field casts no cloud shadow and a broken one keeps its clouds",
+                uniformMax < 1e-6f && Math.Abs(broken[0] - 0.86f) < 1e-4f && broken[1] == 0f &&
+                source.Contains("if (!clear) ApplyFieldContrast(_target);"),
+                "uniform " + uniformMax + ", broken cloud " + broken[0] + " gap " + broken[1]);
+        }
+
         private static void CheckCloudCornerIsPerFrame(string repo, Action<string, bool, string> check)
         {
             string source = File.ReadAllText(Path.Combine(repo, "src/Weather/CloudTileReader.cs"));

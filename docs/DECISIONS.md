@@ -2276,6 +2276,18 @@ invented pattern on real placement (DATA GAP, as D50), checked by evaluating the
 shipped GLSL, and not yet seen in game. Rejected: a second leaf-map read per
 kernel (the 5x5 loop already costs 25 hashes per fragment, not measured).
 
+**Fifth amendment, same day (sixth pattern).** The player's v5 screenshot read
+as evenly spread coins of one size, with notches, soft edges and flat shade.
+Gaps now open only where a cluster mask (the existing 8.192-block noise) is
+high, so pools gather in groups with plain shade between them, and grow up to
+1.4x inside a group until they merge. The threshold wanders with a 0.512-block
+lobe noise and a per-texel jitter (`VV_TERRAIN_FLECK_RAGGED` 0.36), so the
+outline is ragged and stepped rather than a circle. The half-lit rim and the
+leaf bites are removed: on the ground they read as blur and as notches. Canopy
+shade now grades from 0.3 under a thin crown to 1 under a closed one. Radii
+were reduced so the merged reach (0.546 cell / min stretch) still fits the 5x5
+search. Not yet seen in game.
+
 ## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
 
 **Context.** In the 2026-11-23 in-game audit, a storm with every cloud tile
@@ -2307,6 +2319,27 @@ falling rain does not come from a clear sky, and a dry overcast without rain is
 an accepted DATA GAP (flecks may draw under a dry grey sky). `ReportCloudField`
 stays, and the tracker logs once when the tiles disagree with the cover by more
 than 0.3, so a future reader can see the two numbers side by side.
+
+## D54. Cloud shadows from tile contrast, not tile value
+
+**Context.** `CloudTileReader` normalises tile thickness and opaqueness against
+the thickest tile recently seen, because their absolute units are unknown. A
+sky whose tiles are all alike therefore reads as solid cloud. In game on
+2026-11-23, a clear noon with sun shadows read every tile near 0.86 and the
+cloud shadows (the player's strength 1) put the whole world in shade; turning
+Weather response off brought the sun back.
+
+**Decision.** After the Beer-Lambert step, each tile keeps only the part that
+stands out from the window's mean: `t * clamp((t - mean) / max(peak - mean,
+0.3), 0, 1)`. A uniform field - clear, hazy or a solid storm deck - casts no
+cloud shadow; a broken sky keeps its clouds at full value. A shadow is an
+edge, and a relative measure can only say where the edges are.
+
+**Consequences.** Thin cloud that evenly dims the sun casts no mod shadow; that
+is left to vanilla's lighting (DATA GAP). A sky mostly covered with a few
+thicker tiles casts shadow only under those tiles. Checked by calling
+`ApplyFieldContrast` from the smoke suite, with two mutations. Not yet seen in
+game.
 
 ## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
 

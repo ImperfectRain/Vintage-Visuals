@@ -420,7 +420,7 @@ void main()
             check("terrain canopy shade fades with overcast and is graded by the crown",
                 dappleBody.Contains("mix(1.0, VV_OVERCAST_DIRECT, overcast)") &&
                 dappleBody.Contains("float overcast = clamp(vv_sceneOvercast, 0.0, 1.0);") &&
-                dappleBody.Contains("float crown = mix(0.6, 1.0, smoothstep(0.1, 0.85, clamp(leafOverhead, 0.0, 1.0)));") &&
+                dappleBody.Contains("float crown = mix(0.3, 1.0, smoothstep(0.1, 0.85, clamp(leafOverhead, 0.0, 1.0)));") &&
                 dappleBody.Contains("* under * crown * sun *"),
                 "canopy shade is a shadow of the direct sun, and a thin crown passes more sky than a closed one");
             check("terrain sunflecks are exactly off at a slider of zero",
@@ -458,14 +458,12 @@ void main()
             try
             {
                 double minStretch = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_MIN_STRETCH");
-                // A gap: radius up to 0.55 * 1.15 cell, swaying up to 0.06,
+                // A gap: radius up to 0.39 * 1.4 cell, swaying up to 0.06,
                 // against 2.2 cells from the furthest centre to the ring past
-                // the 5x5 search. A leaf: half-length up to 0.24 cell plus its
-                // 0.03 soft edge, and a speck up to 0.07, against 1.2 cells
-                // past the 3x3 centre they use.
+                // the 5x5 search. A speck up to 0.07, against 1.2 cells past
+                // the 3x3 centre it uses.
                 double sway = 0.06;
-                double gapReach = 0.55 * 1.15 / minStretch + sway;
-                double leafReach = (0.24 + 0.03) / minStretch + sway;
+                double gapReach = 0.39 * 1.4 / minStretch + sway;
                 double speckReach = 0.07 / minStretch + sway;
                 double fleckEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_FADE_RANGE");
                 double dappleEnd = GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_START") + GlslEval.Const(terrainSnippet, "VV_TERRAIN_DAPPLE_FADE_RANGE");
@@ -473,22 +471,19 @@ void main()
                     fieldBody.Contains("stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);") &&
                     fieldBody.Contains("for (int dy = -2; dy <= 2; dy++)") &&
                     fieldBody.Contains("for (int dx = -2; dx <= 2; dx++)") &&
-                    fieldBody.Contains("bool centre3 = abs(dx) <= 1 && abs(dy) <= 1;") &&
+                    fieldBody.Contains("if (abs(dx) <= 1 && abs(dy) <= 1)") &&
                     fieldBody.Contains("(cell + vec2(0.2) + r.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL") &&
-                    fieldBody.Contains("(cell + vec2(0.2) + q.xy * 0.6 + sway) * VV_TERRAIN_FLECK_CELL") &&
                     fieldBody.Contains("(cell + vec2(0.2) + k.yz * 0.6 + sway) * VV_TERRAIN_FLECK_CELL") &&
-                    fieldBody.Contains("float radius = VV_TERRAIN_FLECK_CELL * mix(0.10, 0.55, size) * mix(0.85, 1.15, thin);") &&
+                    fieldBody.Contains("float radius = VV_TERRAIN_FLECK_CELL * mix(0.08, 0.39, size) * mix(0.9, 1.4, cluster);") &&
                     fieldBody.Contains("float kernel = max(0.0, 1.0 - x * x);") &&
-                    fieldBody.Contains("VV_TERRAIN_FLECK_CELL * mix(0.12, 0.24, q.w)") &&
                     fieldBody.Contains("VV_TERRAIN_FLECK_CELL * mix(0.035, 0.07, k.w)") &&
-                    fieldBody.Contains("smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL)") &&
                     fieldBody.Contains("float swayAmount = 0.02 + 0.04 * shimmer;") &&
-                    gapReach < 2.2 && leafReach < 1.2 && speckReach < 1.2 && fleckEnd <= 28.0 && fleckEnd <= dappleEnd &&
+                    gapReach < 2.2 && speckReach < 1.2 && fleckEnd <= 28.0 && fleckEnd <= dappleEnd &&
                     GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_VIEW_LIMIT") <= dappleEnd &&
                     fleckBody.Contains("float flatDistance = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));") &&
                     fleckBody.Contains("smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, length(cameraRelativePos))") &&
                     resolveBody.Contains("if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;"),
-                    $"gap reach {gapReach:0.00} (< 2.2), leaf {leafReach:0.00} and speck {speckReach:0.00} (< 1.2) cells, flecks end at {fleckEnd} (<= 28 and <= {dappleEnd})");
+                    $"gap reach {gapReach:0.00} (< 2.2), speck {speckReach:0.00} (< 1.2) cells, flecks end at {fleckEnd} (<= 28 and <= {dappleEnd})");
             }
             catch (Exception ex) { check("I-terrain sunfleck extent is readable", false, ex.Message); }
             // INTERACTION: a low sun stretches a fleck along its azimuth and
@@ -520,46 +515,31 @@ void main()
             catch (Exception ex) { check("I-terrain sunfleck stretch is readable", false, ex.Message); }
             // INTERACTION: a leaf covers nothing beyond its tips. Evaluated on
             // the shipped profile and edge, on the leaf's own axis.
+            // INTERACTION (v6, after the v5 screenshot): pools gather in groups
+            // with plain shade between them, outlines are ragged and stepped,
+            // and there is one hard level - no half-lit rim and no leaf bites,
+            // which read in game as blur and as notched coins.
             try
             {
-                string insideExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float inside"));
-                double cell = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_CELL");
-                bool ok = fieldBody.Contains("leaf = max(leaf, 1.0 - smoothstep(-0.03, 0.03, inside / VV_TERRAIN_FLECK_CELL));");
-                string detail = "";
-                foreach (double past in new[] { 1.5, 2.0, 4.0 })
-                {
-                    double halfLength = 0.3, halfWidth = 0.12;
-                    var syms = GlslEval.Syms("halfLength", halfLength, "halfWidth", halfWidth);
-                    syms["uv"] = new GlslEval.Val(past * halfLength, 0.0, 0.0);
-                    double inside = GlslEval.Scalar(insideExpr, syms);
-                    if (inside / cell < 0.03) { ok = false; detail += $" {past}x tip -> inside {inside:0.000}"; }
-                }
-                check("I-terrain a sunfleck leaf covers nothing past its tips", ok, detail);
+                string openExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float open"));
+                double scatter = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_SCATTER");
+                double Open(double cluster, double dataThin) => GlslEval.Scalar(openExpr,
+                    GlslEval.Syms("cluster", cluster, "dataThin", dataThin, "VV_TERRAIN_FLECK_SCATTER", scatter));
+                string thresholdExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float threshold"));
+                double ragged = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_RAGGED");
+                double Threshold(double lobe, double jitter) => GlslEval.Scalar(thresholdExpr,
+                    GlslEval.Syms("lobe", lobe, "jitter", jitter, "VV_TERRAIN_FLECK_RAGGED", ragged));
+                double lo = Threshold(0.0, 0.0), hi = Threshold(1.0, 1.0);
+                bool ok = Open(0.0, 1.0) < 0.15 && Open(1.0, 0.5) > 0.6 &&
+                          hi - lo > 0.3 && lo > 0.15 && hi < 0.85 &&
+                          fieldBody.Contains("float lit = step(threshold, field);") &&
+                          fieldBody.Contains("float level = max(lit, speck);") &&
+                          fieldBody.Contains("mod(floor(src * VV_TERRAIN_FLECK_TEXELS), VV_TERRAIN_FLECK_TEXEL_PERIOD)") &&
+                          !fieldBody.Contains("penumbra") && !fieldBody.Contains("float inside");
+                check("I-terrain sunfleck pools gather in groups with ragged, stepped, hard edges", ok,
+                      $"open outside a group {Open(0.0, 1.0):0.00}, inside {Open(1.0, 0.5):0.00}; threshold {lo:0.00}..{hi:0.00}");
             }
-            catch (Exception ex) { check("I-terrain sunfleck leaf profile is readable", false, ex.Message); }
-            // INTERACTION: the penumbra is a half-lit rim that grows with the
-            // height of the crown, and nothing else. Evaluated on the shipped
-            // steps: under a 3-block crown there is no rim to speak of; under
-            // a 20-block one, a field just under the pool threshold is half lit.
-            try
-            {
-                string softExpr = GlslEval.Rhs(GlslEval.Statement(fleckBody, "float soft"));
-                string litExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float lit"));
-                string penExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float penumbra"));
-                double rate = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_PENUMBRA");
-                double Soft(double rise) => GlslEval.Scalar(softExpr, GlslEval.Syms("rise", rise, "VV_TERRAIN_FLECK_PENUMBRA", rate));
-                double Level(double field, double soft)
-                {
-                    var syms = GlslEval.Syms("field", field, "soft", soft);
-                    return Math.Max(GlslEval.Scalar(litExpr, syms), GlslEval.Scalar(penExpr, syms));
-                }
-                bool ok = Soft(3.0) <= 0.05 && Soft(20.0) > Soft(3.0) && Soft(200.0) <= 0.3 + 1e-9 &&
-                          Math.Abs(Level(0.45, Soft(20.0)) - 0.5) < 1e-9 && Level(0.45, Soft(3.0)) == 0.0 &&
-                          Level(0.6, Soft(20.0)) == 1.0 && Level(0.1, Soft(20.0)) == 0.0;
-                check("I-terrain the penumbra is a half-lit rim that widens with crown height", ok,
-                      $"rim {Soft(3.0):0.000} at 3 blocks, {Soft(20.0):0.000} at 20");
-            }
-            catch (Exception ex) { check("I-terrain sunfleck penumbra is readable", false, ex.Message); }
+            catch (Exception ex) { check("I-terrain sunfleck grouping and outline are readable", false, ex.Message); }
             check("terrain sunflecks step at the block texel and project from one canopy plane",
                 fleckBody.Contains("vvTerrainIsFlora() ? vec3(0.0) : step(vec3(0.5), abs(faceNormal))") &&
                 fleckBody.Contains("world = mix((texel + 0.5) / VV_TERRAIN_FLECK_TEXELS, world, across);") &&
@@ -725,6 +705,7 @@ void main()
                           shaftBody.Contains("if (vvTerrainFloraClass() != VV_TFLORA_LEAVES) return 0.0;") &&
                           shaftBody.Contains("float crown = vvTerrainCanopyCell(world.xz).x;") &&
                           shaftBody.Contains("float clearSky = vvTerrainClearSky();") &&
+                          shaftBody.Contains("float reached = mix(0.6, 1.0, vvTerrainSunVisibility());") &&
                           shaftBody.Contains("* vvSceneVisibilityDampen()") &&
                           shaftBody.Contains("return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);") &&
                           GlslEval.Const(terrainSnippet, "VV_TERRAIN_SHAFT_MAX") <= 0.4 &&

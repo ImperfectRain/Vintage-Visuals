@@ -335,9 +335,48 @@ namespace VintageVisuals.Weather
                 _target[i] = GameMath.Clamp(1f - (float)Math.Exp(-depth), 0f, 1f);
             }
 
+            if (!clear) ApplyFieldContrast(_target);
+
             SampleDeckHeight();
 
         }
+
+        /// <summary>
+        /// Keeps only the part of each tile that stands out from the field.
+        ///
+        /// The thickness and opaqueness above are normalised against the
+        /// thickest tile recently seen, because their absolute units are not
+        /// known. That makes any sky whose tiles are all alike read as solid
+        /// cloud: in game (2026-11-23) a 70% cirrocumulus noon with the sun
+        /// casting shadows read every tile at 0.86, and cloud shadows put the
+        /// whole world in shade. A relative measure can only say where a tile
+        /// is thicker than its neighbours, so that is all this keeps: a tile
+        /// at the field's mean casts nothing, the thickest casts its full
+        /// value, and a uniform field - clear, hazy or a solid storm deck -
+        /// casts no cloud shadow at all. A shadow is an edge; with no edge in
+        /// the data there is no shadow to draw. DATA GAP: thin uniform cloud
+        /// that really does dim the sun is left to vanilla's own lighting.
+        /// </summary>
+        public static void ApplyFieldContrast(float[] values)
+        {
+            if (values == null || values.Length == 0) return;
+            float mean = 0f, peak = 0f;
+            for (int i = 0; i < values.Length; i++)
+            {
+                mean += values[i];
+                if (values[i] > peak) peak = values[i];
+            }
+            mean /= values.Length;
+            float spread = Math.Max(peak - mean, FieldContrastFloor);
+            for (int i = 0; i < values.Length; i++)
+            {
+                float standOut = GameMath.Clamp((values[i] - mean) / spread, 0f, 1f);
+                values[i] *= standOut;
+            }
+        }
+
+        /// <summary>The smallest peak-to-mean spread treated as real contrast.</summary>
+        public const float FieldContrastFloor = 0.3f;
 
         /// <summary>
         /// Where the window's corner sits relative to the camera, this frame.
