@@ -222,7 +222,7 @@ namespace VintageVisuals.Ui
             Pbr(62, "Vegetation LOD", "How much foliage transmission and cuticle detail survive at this distance.", Forest);
 
             const string Path = "Terrain path";
-            ModularPbr(64, "Sunflecks", "White where a sunfleck lands in canopy shade, orange its bounce light, dim red where leaves are overhead but no fleck. Stand in shade under trees with the sun up.", Canopy);
+            ModularPbr(64, "Sunflecks", "Grey to white where a sunfleck lands in canopy shade (grey a dim dapple, white full sun), orange its bounce light, dim red where leaves are overhead but no fleck. Stand in shade under trees with the sun up.", Canopy);
             ModularPbr(66, "Sun shaft sources", "Yellow on leaf texels lining a hole in the leaves at a real gap, above a lit sunfleck, which feed the game's god-rays; blue on leaves that do not. Look toward the sun through a canopy, within about 30 blocks.", Canopy);
             ModularPbr(67, "Fleck light", "Red is the clear-sky gate (black is too cloudy for flecks), green the wind shimmer, blue the moon's share at night.", Canopy);
             ModularPbr(65, "Leaf map", "The leaves the sun ray passes through, read from the world's blocks: green is how dense, blue how high. Grey means the map is not loaded yet.", Canopy);

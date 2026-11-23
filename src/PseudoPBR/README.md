@@ -192,7 +192,11 @@ block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
 diffuse term only. The shade it leaves is skylit (v9): cooler and moved toward
 its own luminance in proportion to the canopy term, never brighter than vanilla
 in any channel, so a fleck differs from the shade around it in hue as well as
-level. Sunflecks (D50) come through the same entry point,
+level. Since v10 a fleck's brightness varies, from a dim dapple to full sun at
+the heart of a wide gap and over beam groups, in three flat tones; the cut
+reads only world-anchored inputs so the spots hold still while the player
+moves; and each fleck adds a faint bloom to vanilla's glow channel in
+proportion to how far it stands out from its shade. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
 vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a

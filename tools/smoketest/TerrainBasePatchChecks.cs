@@ -442,7 +442,7 @@ void main()
             string fieldBody = GlslEval.StripComments(
                 GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainFleckField(") ?? "");
             string overheadBody = GlslEval.StripComments(
-                GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyOverhead(") ?? "");
+                GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCanopyOverhead(") ?? "");
             string cellBody = GlslEval.StripComments(
                 GlslEval.FunctionBody(terrainSnippet, "vec2 vvTerrainCanopyCell(") ?? "");
             check("terrain canopy shade fades with overcast and is graded by the crown",
@@ -472,7 +472,7 @@ void main()
                 resolveBody.Contains("if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;"),
                 "");
             check("terrain sunflecks need the leaf map and stay inside it",
-                overheadBody.Contains("if (vv_canopyMapValid < 0.5) return vec2(0.0);") &&
+                overheadBody.Contains("if (vv_canopyMapValid < 0.5) return vec3(0.0);") &&
                 overheadBody.Contains("float reach = max(abs(rel.x), abs(rel.z));") &&
                 overheadBody.Contains("if (reach > 28.0) break;") &&
                 VintageVisuals.Common.Scene.CanopyMap.Grid * VintageVisuals.Common.Scene.CanopyMap.CellBlocks / 2
@@ -615,14 +615,100 @@ void main()
                 ok &= levelExpr.Contains("step(threshold, u)") &&
                       fieldBody.Contains("mod(floor(src * VV_TERRAIN_FLECK_TEXELS), VV_TERRAIN_FLECK_TEXEL_PERIOD)") &&
                       fieldBody.Contains("float coverage = vvTerrainFleckCoverage(thin) * breathe;") &&
-                      fieldBody.Contains("float dataThin = clamp(0.6 * (1.0 - clamp(density, 0.0, 1.0)) + 0.4 * clamp(broken, 0.0, 1.0), 0.0, 1.0);") &&
+                      fieldBody.Contains("float thin = clamp(0.7 * (1.0 - clamp(density, 0.0, 1.0)) + 0.3 * region, 0.0, 1.0);") &&
                       fieldBody.Contains("n = 0.78 * n + 0.22 * vvTerrainFleckNoise(") &&
                       fieldBody.Contains("n += w * (0.55 * vvTerrainFleckNoise(") &&
                       fieldBody.Contains("+ 0.45 * vvTerrainFleckNoise(") &&
                       !fieldBody.Contains("penumbra");
                 check("I-terrain the sunfleck field lights the share of the floor the crown asks for, with one hard edge", ok, detail);
+
+                // INTERACTION (v10): lit patches vary in brightness. Outside a
+                // beam group most lit ground is a dim dapple; inside one most is
+                // full sun; and the ramp is stepped into a few flat tones, not a
+                // blur (the v5 defect). Evaluated from the shipped statements
+                // over the same stand-in field.
+                string coreExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float core"));
+                string depthExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float depth"));
+                string brightExpr = GlslEval.Rhs(GlslEval.Statement(fieldBody, "float bright"));
+                var brightConsts = new[] { "VV_TERRAIN_FLECK_CORE_WIDE", "VV_TERRAIN_FLECK_CORE_NARROW", "VV_TERRAIN_FLECK_LEVELS", "VV_TERRAIN_FLECK_DIM" };
+                double dim = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_DIM");
+                var tones = new System.Collections.Generic.HashSet<double>();
+                double DimShare(double beams, out double fullShare)
+                {
+                    int lit = 0, dimLit = 0, full = 0;
+                    for (int i = 0; i < 120; i++)
+                    for (int j = 0; j < 120; j++)
+                    {
+                        double x = i * 0.37 + 0.11, y = j * 0.37 + 0.23;
+                        var syms = GlslEval.Syms("n", Sum(x, y, 0.0), "VV_TERRAIN_FLECK_CONTRAST", contrast, "streak", 0.0,
+                                                 "coverage", 0.3, "VV_TERRAIN_FLECK_RAGGED", ragged, "jitter", 0.5, "beams", beams);
+                        foreach (var c in brightConsts) syms[c] = new GlslEval.Val(GlslEval.Const(terrainSnippet, c));
+                        syms["u"] = new GlslEval.Val(GlslEval.Scalar(uExpr, syms));
+                        syms["threshold"] = new GlslEval.Val(GlslEval.Scalar(thrExpr, syms));
+                        if (GlslEval.Scalar(levelExpr, syms) < 0.5) continue;
+                        syms["core"] = new GlslEval.Val(GlslEval.Scalar(coreExpr, syms));
+                        syms["depth"] = new GlslEval.Val(GlslEval.Scalar(depthExpr, syms));
+                        double b = GlslEval.Scalar(brightExpr, syms);
+                        tones.Add(Math.Round(b, 6));
+                        lit++;
+                        if (b < 0.6) dimLit++;
+                        if (b > 0.999) full++;
+                    }
+                    fullShare = full / (double)Math.Max(lit, 1);
+                    return dimLit / (double)Math.Max(lit, 1);
+                }
+                double fullOut, fullIn;
+                double dimOut = DimShare(0.0, out fullOut), dimIn = DimShare(1.0, out fullIn);
+                check("I-terrain sunflecks vary: dim dapples outside a beam group, full sun inside one, in a few flat tones",
+                    dimOut >= 0.5 && fullOut > 0.02 && fullIn >= 0.5 && dimIn < dimOut &&
+                    dim >= 0.2 && dim <= 0.5 && tones.Count <= (int)GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_LEVELS") + 1 &&
+                    fieldBody.Contains("return vec3(level * bright, halo, coverage);"),
+                    $"outside: dim {dimOut:0.00} full {fullOut:0.00}; inside: dim {dimIn:0.00} full {fullIn:0.00}; tones {tones.Count}");
             }
             catch (Exception ex) { check("I-terrain sunfleck coverage is readable", false, ex.Message); }
+            // v10: the spots jittered while flying. A hard cut turns any
+            // change in its inputs into edges popping, so nothing that sets the
+            // cut may move with the camera: not vanilla's shadow map (fitted
+            // around the camera), not the leaf map's camera-relative edge fade,
+            // and not a canopy plane that follows every new mean.
+            {
+                double held = VintageVisuals.Common.Scene.CanopyMap.HoldPlane(100.0, 101.7);
+                double moved = VintageVisuals.Common.Scene.CanopyMap.HoldPlane(100.0, 104.6);
+                double first = VintageVisuals.Common.Scene.CanopyMap.HoldPlane(double.NaN, 99.4);
+                double none = VintageVisuals.Common.Scene.CanopyMap.HoldPlane(100.0, double.NaN);
+                check("terrain fleck cut reads only world-anchored inputs and the canopy plane holds still",
+                    !Regex.IsMatch(fieldBody, @"\bbroken\b") &&
+                    fleckBody.Contains("vvTerrainFleckField(src, az, l.y, overhead.z,") &&
+                    overheadBody.Contains("raw = max(raw, leaves);") && overheadBody.Contains("return vec3(best, raw);") &&
+                    !Regex.IsMatch(GlslEval.Rhs(GlslEval.Statement(overheadBody, "raw = max(raw")), "reach|cameraRelativePos") &&
+                    held == 100.0 && moved == 105.0 && first == 99.0 && none == 100.0,
+                    $"hold {held}, move {moved}, first {first}, none {none}");
+            }
+            // v10: a faint bloom from each fleck, scaled by how far it stands
+            // out from its shade, zero without a fleck, capped under vanilla's
+            // own sunlit glow, and added at both call sites through the fog.
+            try
+            {
+                string glowExpr = GlslEval.Rhs(GlslEval.Statement(resolveBody, "vv_fleckGlow ="));
+                string contrastExpr = GlslEval.Rhs(GlslEval.Statement(resolveBody, "float contrast"));
+                double glowK = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_GLOW");
+                double Glow(double fleck, double shadedY, double litY, double local)
+                {
+                    var syms = GlslEval.Syms("shaded", GlslEval.Vec(shadedY, shadedY, shadedY), "litY", litY,
+                                             "fleck", GlslEval.Vec(fleck, 0, 0), "local", local, "VV_TERRAIN_FLECK_GLOW", glowK);
+                    syms["contrast"] = new GlslEval.Val(GlslEval.Scalar(contrastExpr, syms));
+                    return GlslEval.Scalar(glowExpr, syms);
+                }
+                string glowYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainmaterial.yaml"));
+                double deep = Glow(1.0, 0.2, 0.8, 1.0), faintContrast = Glow(1.0, 0.7, 0.8, 1.0), dimFleck = Glow(0.3, 0.2, 0.8, 1.0);
+                check("I-terrain fleck bloom scales with the fleck and its contrast, is zero without one, and stays faint",
+                    Glow(0.0, 0.2, 0.8, 1.0) == 0.0 && Glow(1.0, 0.2, 0.8, 0.0) == 0.0 && Glow(1.0, 0.8, 0.8, 1.0) < 1e-9 &&
+                    deep > faintContrast * 3.0 && deep > dimFleck * 2.0 && deep <= 0.1 && glowK <= 0.1 && glowK > 0.0 &&
+                    terrainSnippet.Contains("float vv_fleckGlow = 0.0;") &&
+                    Regex.Matches(glowYaml, @"glow \+= vv_fleckGlow \* \(1\.0 - fogAmount\);").Count == 2,
+                    $"deep shade {deep:0.000}, faint contrast {faintContrast:0.000}, dim fleck {dimFleck:0.000}");
+            }
+            catch (Exception ex) { check("I-terrain fleck bloom is readable", false, ex.Message); }
             check("terrain sunflecks step at the block texel and project from one canopy plane",
                 fleckBody.Contains("vvTerrainIsFlora() ? vec3(0.0) : step(vec3(0.5), abs(faceNormal))") &&
                 fleckBody.Contains("world = mix((texel + 0.5) / VV_TERRAIN_FLECK_TEXELS, world, across);") &&
@@ -698,7 +784,7 @@ void main()
                       relightYaml.Contains("vv_vanillaNormalShade = getBrightnessFromNormal(normal, 1, intensity);");
                 // The resolve may only ever mix TOWARD that level: fleck plus
                 // bounce clamped to one, and the bounce capped well under it.
-                ok &= resolveBody.Contains("return mix(shaded, lit, clamp(fleck.x + fleck.y, 0.0, 1.0) * local);") &&
+                ok &= resolveBody.Contains("float amount = clamp(fleck.x + fleck.y, 0.0, 1.0) * local;") && resolveBody.Contains("return mix(shaded, lit, amount);") &&
                       fleckBody.Contains("float bounce = clamp(field.y * VV_TERRAIN_FLECK_BOUNCE * gate, 0.0, VV_TERRAIN_FLECK_BOUNCE);") &&
                       GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_BOUNCE") <= 0.1;
                 check("I-terrain a sunfleck restores vanilla's sunlit level exactly, normal shade included, and never exceeds it", ok, detail);
@@ -820,10 +906,16 @@ void main()
                           !terrainSnippet.Contains("uniform sampler2D terrainTex") &&
                           shaftBody.Contains("* vvSceneVisibilityDampen()") &&
                           shaftBody.Contains("return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);") &&
-                          GlslEval.Const(terrainSnippet, "VV_TERRAIN_SHAFT_MAX") <= 0.4 &&
+                          GlslEval.Const(terrainSnippet, "VV_TERRAIN_SHAFT_MAX") <= 0.85 &&
                           materialYaml.Contains("godrayLevel = min(1.0, godrayLevel + vvTerrainShaftLevel(worldPos.xyz, fogDensityIn));") &&
-                          Math.Abs(Humid(0, 0, 0) - 0.35) < 1e-9 && Math.Abs(Humid(1, 0, 0) - 1.0) < 1e-9 &&
+                          Math.Abs(Humid(0, 0, 0) - 0.6) < 1e-9 && Math.Abs(Humid(1, 0, 0) - 1.0) < 1e-9 &&
                           Math.Abs(Humid(0, 1, 0) - 1.0) < 1e-9 && Math.Abs(Humid(0, 0, 1) - 1.0) < 1e-9;
+                string landsExpr = GlslEval.Rhs(GlslEval.Statement(shaftBody, "float lands"));
+                double dimK = GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_DIM");
+                double Lands(double x) => GlslEval.Scalar(landsExpr, GlslEval.Syms("field", GlslEval.Vec(x, 0, 0), "VV_TERRAIN_FLECK_DIM", dimK));
+                ok &= Lands(0.0) == 0.0 && Lands(dimK) == 0.0 && Lands(1.0) > 0.999 &&
+                      GlslEval.Const(terrainSnippet, "VV_TERRAIN_SHAFT_GAIN") >= 1.0 &&
+                      shaftBody.Contains("* VV_TERRAIN_SHAFT_GAIN *");
                 check("I-terrain sun shafts start at the rims of real gaps, are capped, and humid air carries them", ok,
                       $"dry noon {Humid(0, 0, 0):0.00}, after rain {Humid(1, 0, 0):0.00}");
             }

@@ -66,6 +66,7 @@
     outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);
+    glow += vv_fleckGlow * (1.0 - fogAmount);
     godrayLevel = min(1.0, godrayLevel + vvTerrainShaftLevel(worldPos.xyz, fogDensityIn));
 
 - type: assert
@@ -129,6 +130,7 @@
     outColor = vvTerrainMaterialPrimary(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     outColor = vvTerrainMaterialPrimaryDebug(outColor, outColor.rgb, normal, uv, worldPos.xyz, 1.0, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);
     glow += vvTerrainEmissiveGlow(glowLevel, uv);
+    glow += vv_fleckGlow * (1.0 - fogAmount);
 
 # --- vertex shaders: sky exposure for the weather on terrain ------------------
 #

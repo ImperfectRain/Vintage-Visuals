@@ -603,10 +603,38 @@ const float VV_TERRAIN_FLECK_OVERCAST_END = 0.65;
 const float VV_TERRAIN_MOON_FLECK = 0.45;
 // The most a shaft may mark vanilla's god-ray channel, so a beam can never
 // hide what is behind it.
-const float VV_TERRAIN_SHAFT_MAX = 0.35;
+const float VV_TERRAIN_SHAFT_MAX = 0.8;
+// v10: how hard the slider drives a shaft source before the cap. Sources are
+// only the texels lining a hole in a leaf (v7), a sparse lace that vanilla's
+// radial blur averages with the dark leaf around it, so at the v8 strength
+// (a few hundredths per texel) no ray survived the blur (in game, v9: "not
+// seeing any rays"). Sparse sources can take a high cap without washing the
+// forest out; whole leaf faces could not (v6).
+const float VV_TERRAIN_SHAFT_GAIN = 2.5;
 // Past this distance a leaf texel is under a pixel, and the hole-rim test
 // that places shaft sources would sparkle.
 const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
+// v10 fleck brightness. A gap's image is as bright as the gap is wide: a
+// patch that only just clears the cut is a small gap's dim, soft image, the
+// heart of a big one is the full sun. DIM is the faintest lit patch as a
+// share of a full fleck; CORE_WIDE and CORE_NARROW are how far above the cut
+// (in the field's 0..1 units) a patch reaches full brightness outside and
+// inside a beam group; BEAM_CELL is the grid beam groups gather on
+// (4096 / 4.096 = 1000 cells); LEVELS steps the ramp, so a patch has a few
+// flat tones with pixel-art edges rather than a blur (the v5 defect).
+const float VV_TERRAIN_FLECK_DIM = 0.3;
+const float VV_TERRAIN_FLECK_CORE_WIDE = 0.4;
+const float VV_TERRAIN_FLECK_CORE_NARROW = 0.1;
+const float VV_TERRAIN_FLECK_BEAM_CELL = 4.096;
+const float VV_TERRAIN_FLECK_BEAM_PERIOD = 1000.0;
+const float VV_TERRAIN_FLECK_LEVELS = 3.0;
+// v10: the faint bloom a fleck adds to vanilla's glow channel at full
+// brightness against the deepest shade. Vanilla's own sunlit-topsoil glow is
+// 0.1 x shadowIntensity; this stays under it.
+const float VV_TERRAIN_FLECK_GLOW = 0.08;
+// The fleck's share of vanilla's glow channel at this fragment, set by
+// vvTerrainCanopyResolve and added at the call site. 0 means none.
+float vv_fleckGlow = 0.0;
 // Vanilla's normal shade (nb) at this fragment, set by the call site before
 // the material runs; see vvTerrainSunRelight. 1 means none, the old formula.
 float vv_vanillaNormalShade = 1.0;
@@ -860,7 +888,11 @@ float vvTerrainCanopyLeafAt(vec2 worldXZ, float rayY, float floorY)
 }
 
 // The leaves the sun ray from this point passes through: x density, y the
-// height above the point of the step that saw the most (debug view only).
+// height above the point of the step that saw the most (debug view only),
+// z the same density BEFORE the fade toward the map's edge. That fade is
+// measured from the camera, so it changes as the player moves; z is for
+// anything thresholded (the fleck cut), where a moving input pops edges -
+// the v9 "spots jitter while flying" (in game, 2026-11-23).
 // Zero when there are none, when the map is absent, or when the ray leaves the
 // map (which is toroidal, so reading past its edge would return another
 // place's leaves).
@@ -870,14 +902,15 @@ float vvTerrainCanopyLeafAt(vec2 worldXZ, float rayY, float floorY)
 // smooth weight, the height test is soft, every step is taken and the
 // strongest kept (an early return switched steps between neighbouring
 // fragments), and the density eases out before the map's edge.
-vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
+vec3 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
 {
-    if (vv_canopyMapValid < 0.5) return vec2(0.0);
+    if (vv_canopyMapValid < 0.5) return vec3(0.0);
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
-    if (l.y < 0.06) return vec2(0.0);
+    if (l.y < 0.06) return vec3(0.0);
 
     vec3 world = cameraRelativePos + vv_pbrOrigin;
     vec2 best = vec2(0.0);
+    float raw = 0.0;
     for (int k = 1; k <= 10; k++)
     {
         float t = float(k) * 2.0 / l.y;
@@ -894,10 +927,12 @@ vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
         float b = vvTerrainCanopyLeafAt(o + vec2(2.0, 0.0), p.y, world.y);
         float c = vvTerrainCanopyLeafAt(o + vec2(0.0, 2.0), p.y, world.y);
         float d = vvTerrainCanopyLeafAt(o + vec2(2.0, 2.0), p.y, world.y);
-        float density = mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * (1.0 - smoothstep(20.0, 28.0, reach));
+        float leaves = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        float density = leaves * (1.0 - smoothstep(20.0, 28.0, reach));
         if (density > best.x) best = vec2(density, p.y - world.y);
+        raw = max(raw, leaves);
     }
-    return best;
+    return vec3(best, raw);
 }
 
 // Value noise on the canopy plane, 0..1, on a grid of `cell` blocks that
@@ -944,7 +979,7 @@ float vvTerrainFleckCoverage(float thin)
 
 // The sun images through the gaps on the canopy plane.
 //
-// x: brightness, 0 or 1.
+// x: brightness, 0 off, VV_TERRAIN_FLECK_DIM to 1 on (v10; was 0 or 1).
 // y: how close an unlit point is to lit ground, 0..1, for the bounce light.
 // z: the lit share asked of the field here (its coverage), 0..1.
 //
@@ -973,14 +1008,19 @@ float vvTerrainFleckCoverage(float thin)
 //
 // Every grid tiles the 4096-block world wrap exactly. There is no cell
 // search, so nothing can be clipped by one.
-vec3 vvTerrainFleckField(vec2 src, vec2 az, float stretch, float density, float broken, float shimmer)
+vec3 vvTerrainFleckField(vec2 src, vec2 az, float stretch, float density, float shimmer)
 {
     stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
     float turn = 6.28318530718 * vv_sceneBreeze;
 
     float region = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
-    float dataThin = clamp(0.6 * (1.0 - clamp(density, 0.0, 1.0)) + 0.4 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
-    float thin = clamp(0.7 * dataThin + 0.3 * region, 0.0, 1.0);
+    // v10: the crown's thinness from the leaf map alone. v7-v9 also read
+    // vanilla's broken shadow here, but the shadow map is fitted around the
+    // camera and resampled as it moves, and a hard cut turns every small
+    // change of its input into edges popping - the spots jittered while
+    // flying (in game, v9). Everything that sets the cut is now anchored to
+    // the world.
+    float thin = clamp(0.7 * (1.0 - clamp(density, 0.0, 1.0)) + 0.3 * region, 0.0, 1.0);
     // Wind opens and closes the crown a little as a whole, on whole turns
     // of the breeze clock; still air holds it.
     float breathe = 1.0 - 0.15 * shimmer * (0.5 + 0.5 * sin(turn * 5.0 + 6.28318530718 * region));
@@ -1008,7 +1048,15 @@ vec3 vvTerrainFleckField(vec2 src, vec2 az, float stretch, float density, float 
     float threshold = 1.0 - coverage + VV_TERRAIN_FLECK_RAGGED * (jitter - 0.5);
     float level = step(threshold, u);
     float halo = smoothstep(threshold - 0.12, threshold, u) * (1.0 - level);
-    return vec3(level, halo, coverage);
+
+    // v10 brightness: most patches are soft dapples, the hearts of wide gaps
+    // are full sun, and in a beam group most of each patch is - the bright
+    // spots the shafts land on. Stepped into a few flat tones.
+    float beams = smoothstep(0.5, 0.8, vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_BEAM_CELL, VV_TERRAIN_FLECK_BEAM_PERIOD, vec2(53.0, 37.0)));
+    float core = mix(VV_TERRAIN_FLECK_CORE_WIDE, VV_TERRAIN_FLECK_CORE_NARROW, beams);
+    float depth = floor(smoothstep(threshold, threshold + core, u) * VV_TERRAIN_FLECK_LEVELS + 0.5) / VV_TERRAIN_FLECK_LEVELS;
+    float bright = mix(VV_TERRAIN_FLECK_DIM, 1.0, depth);
+    return vec3(level * bright, halo, coverage);
 }
 
 // How strongly the light source that makes flecks is up: the sun by day,
@@ -1032,7 +1080,7 @@ float vvTerrainFleckLight()
 // The light is the sun by day and the moon by night - the same occluder, the
 // same gaps, through vanilla's own lightPosition and shadow map. The moon's
 // share is faint and capped (VV_TERRAIN_MOON_FLECK).
-vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, float shadowed, float facing, float broken)
+vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec3 overhead, float shadowed, float facing)
 {
     if (vv_pbrSunflecks < 0.001 || overhead.x <= 0.0) return vec2(0.0);
 
@@ -1059,7 +1107,7 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec2 overhead, f
     float rise = max(vv_canopyPlaneY - world.y, 1.0);
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    vec3 field = vvTerrainFleckField(src, az, l.y, overhead.x, broken, vvTerrainFleckShimmer());
+    vec3 field = vvTerrainFleckField(src, az, l.y, overhead.z, vvTerrainFleckShimmer());
     float pattern = field.x;
 
     float gate = clamp(shadowed, 0.0, 1.0) * resolvable * smoothstep(0.0, 0.12, overhead.x)
@@ -1120,7 +1168,7 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     float shadowed = 1.0 - clamp(sunVisibility, 0.0, 1.0);
     if (shadowed < 0.01) return color;
 
-    vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+    vec3 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
     // Measured once: the dapple's shade and the flecks' placement both read it.
     float evidence = vvTerrainCanopyEvidence(sunVisibility);
     vec3 shaded = vvTerrainApplyCanopy(color, vvTerrainCanopyDapple(cameraRelativePos, fade, sunVisibility, overhead.x, evidence), cap);
@@ -1134,7 +1182,7 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
     float facing = vvTerrainIsFlora() ? mix(0.55, 1.0, abs(dot(faceNormal, l)))
                                       : smoothstep(0.0, 0.25, dot(faceNormal, l));
-    vec2 fleck = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, shadowed, facing, evidence);
+    vec2 fleck = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, shadowed, facing);
     if (fleck.x <= 0.0 && fleck.y <= 0.0) return shaded;
 
     float night = 1.0 - vvTerrainSunPresence();
@@ -1144,7 +1192,14 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     // because the pool is, and well under the cap - it fills the edge of a
     // pool, it does not light the floor.
     float local = 1.0 - vvTerrainLocalLightShare();
-    return mix(shaded, lit, clamp(fleck.x + fleck.y, 0.0, 1.0) * local);
+    float amount = clamp(fleck.x + fleck.y, 0.0, 1.0) * local;
+    // A faint bloom that scales with how much the fleck stands out from the
+    // shade around it: none on a patch barely lighter than its shade, the
+    // most on a full-sun spot in deep shade.
+    float litY = dot(lit, vec3(0.2126, 0.7152, 0.0722));
+    float contrast = clamp(1.0 - dot(shaded, vec3(0.2126, 0.7152, 0.0722)) / max(litY, 0.001), 0.0, 1.0);
+    vv_fleckGlow = clamp(fleck.x, 0.0, 1.0) * local * contrast * VV_TERRAIN_FLECK_GLOW;
+    return mix(shaded, lit, amount);
 }
 
 // How much of this leaf texel lines a hole in the leaf texture, 0..1: the
@@ -1204,7 +1259,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
 
     vec3 world = cameraRelativePos + vv_pbrOrigin;
     float crown = vvTerrainCanopyCell(world.xz).x;
-    float gap = 1.0 - smoothstep(0.4, 1.0, crown);
+    float gap = 1.0 - smoothstep(0.6, 1.0, crown);
     if (gap <= 0.0) return 0.0;
 
     // A beam is the air between a gap and the fleck it lands on, so it
@@ -1218,8 +1273,10 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float rise = vv_canopyPlaneY - world.y;
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    vec3 field = vvTerrainFleckField(src, az, l.y, crown, 0.0, vvTerrainFleckShimmer());
-    float lands = max(field.x, 0.5 * field.y);
+    vec3 field = vvTerrainFleckField(src, az, l.y, crown, vvTerrainFleckShimmer());
+    // v10: only over the BRIGHT patches - a beam is the air a wide gap
+    // lights, and the dim dapples are the small gaps that make none.
+    float lands = smoothstep(VV_TERRAIN_FLECK_DIM + 0.25, 1.0, field.x);
     if (lands <= 0.0) return 0.0;
 
     // Humid air carries a beam: wet ground after rain, a low sun at either
@@ -1227,9 +1284,9 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     // ten times that in fog).
     float lowSun = 1.0 - smoothstep(0.15, 0.55, l.y);
     float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
-    float humid = 0.35 + 0.65 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
+    float humid = 0.6 + 0.4 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
 
-    float level = clamp(vv_pbrShafts, 0.0, 2.0) * toward * rim * near * gap * lands * humid * clearSky * sun
+    float level = clamp(vv_pbrShafts, 0.0, 2.0) * VV_TERRAIN_SHAFT_GAIN * toward * rim * near * gap * lands * humid * clearSky * sun
                 * vvSceneVisibilityDampen();
     return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);
 }
@@ -1551,8 +1608,8 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         // view does not show flecks on leaves that normal rendering skips.
         if (!vvTerrainIsCanopyReceiver()) return vec4(0.0, 0.0, 0.25, color.a);
         float vis = vvTerrainSunVisibility();
-        vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
-        vec2 f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0, vvTerrainCanopyEvidence(vis));
+        vec3 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+        vec2 f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0);
         vec3 base = mix(vec3(overhead.x > 0.0 ? 0.35 : 0.0, 0.0, 0.0), vec3(1.0, 0.55, 0.1), clamp(f.y / VV_TERRAIN_FLECK_BOUNCE, 0.0, 1.0));
         return vec4(mix(base, vec3(1.0), f.x), color.a);
     }
@@ -1575,7 +1632,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 65)
     {
         if (vv_canopyMapValid < 0.5) return vec4(vec3(0.5), color.a);
-        vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
+        vec3 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
         return vec4(0.0, overhead.x, clamp(overhead.y / 16.0, 0.0, 1.0), color.a);
     }
     // 47: optical role. Red is the canopy (the occluder), blue a surface that

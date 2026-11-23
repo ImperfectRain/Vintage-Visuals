@@ -145,7 +145,7 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
-        /// How strongly humid air carries a beam, 0.35 dry at noon to 1: a
+        /// How strongly humid air carries a beam, 0.6 dry at noon to 1: a
         /// mirror of the `humid` term in vvTerrainShaftLevel (wet ground, or a
         /// sun low between 0.55 and 0.15 of elevation). Fog is the shader's
         /// third input and is not known here.
@@ -154,7 +154,7 @@ namespace VintageVisuals.PseudoPBR
         {
             float t = GameMath.Clamp((sunY - 0.15f) / 0.4f, 0f, 1f);
             float lowSun = 1f - t * t * (3f - 2f * t);
-            return 0.35f + 0.65f * GameMath.Clamp(Math.Max(GameMath.Clamp(wetness, 0f, 1f), lowSun), 0f, 1f);
+            return 0.6f + 0.4f * GameMath.Clamp(Math.Max(GameMath.Clamp(wetness, 0f, 1f), lowSun), 0f, 1f);
         }
 
         /// <summary>

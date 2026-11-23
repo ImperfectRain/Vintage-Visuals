@@ -2368,7 +2368,49 @@ by `canopy * VV_TERRAIN_DAPPLE_SKY` (0.10), then clamped to vanilla's colour so
 no channel is brightened. Both vanish with the canopy term, so the open floor,
 an overcast forest and a zero slider are unchanged. The legacy `pseudopbr`
 path keeps its green; it is disabled. Interaction-checked on an autumn-olive
-colour and a blue-free yellow, four mutations. Not yet seen in game.
+colour and a blue-free yellow, four mutations. Seen in game: the shade reads
+right.
+
+**Amendment (v10): brightness variance, world-anchored cut, beams and bloom.**
+(D51 eighth amendment, recorded here with the v8/v9 notes.) The v9 test found
+three faults. Every spot was one flat brightness, so the field read as
+camouflage blotches rather than dappled light. The spots jittered while
+flying. No rays were visible.
+
+*Brightness.* A gap's image is as bright as the gap is wide, so a patch that
+only just clears the cut is a dim dapple (`VV_TERRAIN_FLECK_DIM` 0.3) and full
+sun is reached `CORE` above the cut: 0.4 normally, 0.1 inside beam groups (a
+4.096-block noise, 1000 cells per world wrap). The ramp is stepped into
+`LEVELS` 3 flat tones, keeping the hard pixel-art edge; a soft edge is the v5
+blur defect. Shafts land only over the bright patches.
+
+*Jitter.* A hard cut turns any change in its inputs into popping edges. Three
+inputs moved with the camera: vanilla's broken-shadow evidence (the shadow
+map is fitted around the camera), the leaf-map density's edge fade (measured
+from the camera), and the canopy plane, which eased toward every new mean as
+cells entered the map. The cut now reads the density before the fade
+(`vvTerrainCanopyOverhead` z); the fade stays on the gate, where it is a
+smooth multiplier. The evidence no longer enters the field. The plane holds
+until the mean moves `CanopyMap.PlaneHold` (3 blocks), then follows the
+rounded mean. Accepted cost: the crown's thinness now comes from the leaf map
+alone, which resolves 2-block cells, not individual leaf gaps.
+
+*Beams.* Sources are the texels lining leaf holes, a sparse lace the god-ray
+pass averages with dark leaf around it, so the v8 level never survived the
+blur. A gain of 2.5 under a cap of 0.8 (`VV_TERRAIN_SHAFT_GAIN`,
+`VV_TERRAIN_SHAFT_MAX`); a whole-face source would wash the forest out at
+that level, a rim texel cannot. A dry noon keeps 0.6 of the humid strength.
+
+*Bloom.* The player asked for a very subtle glow that scales with the shading.
+`vvTerrainCanopyResolve` sets `vv_fleckGlow` = fleck x local x contrast x
+`VV_TERRAIN_FLECK_GLOW` (0.08), contrast being how much darker the shade is
+than the lit colour; both call sites add it to vanilla's glow channel through
+`1 - fogAmount`. It rides the sunflecks slider rather than a new one, so zero
+flecks means zero glow. No pass, no target, no sampler.
+
+Interaction-checked (brightness distribution over the stand-in field, the
+bloom's scaling, the beam landing, the plane hold), nine mutations. Not yet
+seen in game.
 
 ## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
 

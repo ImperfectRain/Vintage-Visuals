@@ -74,7 +74,7 @@ namespace VintageVisuals.Common.Scene
         /// <summary>
         /// The world Y the sunfleck pattern is projected from: the mean lowest
         /// leaf of every leafy cell, plus a block and a half into the crown.
-        /// ONE height for the scene, eased over a couple of seconds, because a
+        /// ONE height for the scene, held until the forest is really a different height and then eased (see PlaneHold), because a
         /// per-cell height shifts the pattern at every cell edge and a jump in
         /// this one slides every fleck at once. 0 until a leaf is seen.
         /// </summary>
@@ -82,6 +82,30 @@ namespace VintageVisuals.Common.Scene
 
         /// <summary>Weight of one scan step in easing <see cref="PlaneY"/> toward its target.</summary>
         public const double PlaneEase = 0.05;
+
+        /// <summary>
+        /// How far the scene's mean canopy height must move before the plane
+        /// follows it. The mean changes a little every time the player moves
+        /// and new cells enter the map, and every change of the plane slides
+        /// the whole fleck pattern by (change x the sun's slope) - under a low
+        /// sun, several blocks per block of plane. v9 eased toward every new
+        /// mean, so the spots crept and stepped while the player flew (in game,
+        /// 2026-11-23). The plane now holds until the forest overhead is really
+        /// a different height.
+        /// </summary>
+        public const double PlaneHold = 3.0;
+
+        /// <summary>
+        /// The plane target after a new mean: unchanged unless the mean has
+        /// moved more than <see cref="PlaneHold"/> from it, then the mean
+        /// rounded to a whole block. NaN in either means "no evidence".
+        /// </summary>
+        public static double HoldPlane(double held, double mean)
+        {
+            if (double.IsNaN(mean)) return held;
+            if (double.IsNaN(held) || Math.Abs(mean - held) > PlaneHold) return Math.Round(mean);
+            return held;
+        }
 
         /// <summary>
         /// Called by a consumer every frame it wants the map. Scanning stops two
@@ -204,7 +228,7 @@ namespace VintageVisuals.Common.Scene
                 for (int f = 0; f < PackedFloats; f++)
                     _packed[f] = _cells[f * 2] + _cells[f * 2 + 1] * 4096f;
                 Version++;
-                _planeTarget = MeanCanopyY(_cells);
+                _planeTarget = HoldPlane(_planeTarget, MeanCanopyY(_cells));
             }
             EasePlane();
         }
