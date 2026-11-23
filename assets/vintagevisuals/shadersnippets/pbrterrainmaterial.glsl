@@ -779,22 +779,33 @@ vec2 vvTerrainCanopyCell(vec2 worldXZ)
     return vec2(floor(code / 512.0) / 7.0, mod(code, 512.0));
 }
 
-// One cell's leaves as a sun ray at height rayY sees them: its density and
-// lowest leaf when that leaf is at or below the ray and above the receiver.
-vec2 vvTerrainCanopyLeafAt(vec2 worldXZ, float rayY, float floorY)
+// How much of one cell's crown a sun ray at height rayY passes through, as a
+// density 0..1, SOFT in height: the crown is taken to start at its lowest
+// leaf and run about as deep as its leaf count, and to sit above the
+// receiver. A hard test here flipped whole cells on and off as the ray's
+// step crossed a leaf's height, which drew square, axis-aligned flecks
+// under a low sun (seen in game, v4).
+float vvTerrainCanopyLeafAt(vec2 worldXZ, float rayY, float floorY)
 {
     vec2 cell = vvTerrainCanopyCell(worldXZ);
-    return (cell.x > 0.0 && cell.y <= rayY + 1.0 && cell.y > floorY + 0.5) ? cell : vec2(0.0);
+    if (cell.x <= 0.0) return 0.0;
+    float top = cell.y + max(2.0, cell.x * 5.0);
+    float inCrown = smoothstep(cell.y - 1.5, cell.y + 0.5, rayY) * (1.0 - smoothstep(top, top + 2.0, rayY));
+    float above = smoothstep(floorY + 0.5, floorY + 2.5, cell.y);
+    return cell.x * inCrown * above;
 }
 
-// The leaves the sun ray from this point passes through: x density, y their
-// height above the point. Zero when there are none, when the map is absent, or
-// when the ray leaves the map (which is toroidal, so reading past its edge
-// would return another place's leaves).
+// The leaves the sun ray from this point passes through: x density, y the
+// height above the point of the step that saw the most (debug view only).
+// Zero when there are none, when the map is absent, or when the ray leaves the
+// map (which is toroidal, so reading past its edge would return another
+// place's leaves).
 //
-// The four nearest cells are blended, and the density eases out before the
-// map's edge, so a crown's outline fades over a cell rather than stopping on
-// a 2-block line: both were visible as straight cuts through the flecks.
+// CONTINUOUS in the fragment's position, because every straight line in a
+// fleck has come from a step here: the four nearest cells are blended with a
+// smooth weight, the height test is soft, every step is taken and the
+// strongest kept (an early return switched steps between neighbouring
+// fragments), and the density eases out before the map's edge.
 vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
 {
     if (vv_canopyMapValid < 0.5) return vec2(0.0);
@@ -802,6 +813,7 @@ vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
     if (l.y < 0.06) return vec2(0.0);
 
     vec3 world = cameraRelativePos + vv_pbrOrigin;
+    vec2 best = vec2(0.0);
     for (int k = 1; k <= 10; k++)
     {
         float t = float(k) * 2.0 / l.y;
@@ -812,21 +824,16 @@ vec2 vvTerrainCanopyOverhead(vec3 cameraRelativePos)
 
         vec2 g = p.xz / 2.0 - 0.5;
         vec2 f = fract(g);
+        f = f * f * (3.0 - 2.0 * f);
         vec2 o = (floor(g) + 0.5) * 2.0;
-        vec2 a = vvTerrainCanopyLeafAt(o, p.y, world.y);
-        vec2 b = vvTerrainCanopyLeafAt(o + vec2(2.0, 0.0), p.y, world.y);
-        vec2 c = vvTerrainCanopyLeafAt(o + vec2(0.0, 2.0), p.y, world.y);
-        vec2 d = vvTerrainCanopyLeafAt(o + vec2(2.0, 2.0), p.y, world.y);
-        vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
-        float density = dot(w, vec4(a.x, b.x, c.x, d.x));
-        if (density > 0.0)
-        {
-            vec4 has = w * step(vec4(0.0001), vec4(a.x, b.x, c.x, d.x));
-            float lowest = dot(has, vec4(a.y, b.y, c.y, d.y)) / max(dot(has, vec4(1.0)), 0.0001);
-            return vec2(density * (1.0 - smoothstep(20.0, 28.0, reach)), max(lowest - world.y, 0.5));
-        }
+        float a = vvTerrainCanopyLeafAt(o, p.y, world.y);
+        float b = vvTerrainCanopyLeafAt(o + vec2(2.0, 0.0), p.y, world.y);
+        float c = vvTerrainCanopyLeafAt(o + vec2(0.0, 2.0), p.y, world.y);
+        float d = vvTerrainCanopyLeafAt(o + vec2(2.0, 2.0), p.y, world.y);
+        float density = mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * (1.0 - smoothstep(20.0, 28.0, reach));
+        if (density > best.x) best = vec2(density, p.y - world.y);
     }
-    return vec2(0.0);
+    return best;
 }
 
 // Value noise on the canopy plane, 0..1, on a grid of `cell` blocks that
@@ -879,8 +886,8 @@ float vvTerrainFleckPattern(vec2 src, vec2 az, float stretch, float density, flo
     // crosses, and vanilla's own shadow already broken here (the ring count).
     // The noise only breaks up what the 2-block leaf map cannot resolve.
     float noise = vvTerrainFleckNoise(src, VV_TERRAIN_FLECK_CLUSTER_CELL, VV_TERRAIN_FLECK_CLUSTER_PERIOD, vec2(17.0, 5.0));
-    thin = clamp(0.35 * noise + 0.45 * (1.0 - clamp(density, 0.0, 1.0)) + 0.5 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
-    float open = 0.35 + 1.4 * thin * thin;
+    thin = clamp(0.45 * noise + 0.3 * (1.0 - clamp(density, 0.0, 1.0)) + 0.3 * clamp(broken, 0.0, 1.0), 0.0, 1.0);
+    float open = 0.45 + 1.3 * thin * thin;
     stretch = max(stretch, VV_TERRAIN_FLECK_MIN_STRETCH);
     float breeze = 6.28318530718 * vv_sceneBreeze * 3.0;
 
@@ -1358,6 +1365,9 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     // overhead along the sun ray but no fleck, black elsewhere.
     if (mode == 64)
     {
+        // The canopy itself never takes flecks; dark blue says so, so the
+        // view does not show flecks on leaves that normal rendering skips.
+        if (!vvTerrainIsCanopyReceiver()) return vec4(0.0, 0.0, 0.25, color.a);
         float vis = vvTerrainSunVisibility();
         vec2 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
         float f = vvTerrainSunfleck(cameraRelativePos, faceNormal, overhead, 1.0 - vis, 1.0, vvTerrainCanopyEvidence(vis));

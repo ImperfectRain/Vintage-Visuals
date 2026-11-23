@@ -2236,3 +2236,21 @@ a flying camera at midday almost nothing showed.
 Cost: about 70 hashes, up to 40 uniform-array reads and the 12 shadow taps the
 shade already paid, per shadowed receiver within 26 blocks horizontally; the
 scan reads up to 80 blocks per cell. Not measured.
+
+**Third amendment, 2026-11-23 (in-game audit).** The fourth pattern was played
+in the player's world at noon and with a low sun.
+
+- Under a low sun the flecks came out as squares and stripes. The leaf map was
+  read with a hard per-cell height test, and the march returned at the first
+  cell with any leaves, so each 2-block cell switched on or off as a block. The
+  read is now continuous: smoothstepped bilinear weights, a soft crown height
+  band, a soft "above the floor" test, the strongest density along the whole
+  march rather than the first, and a fade before the march's reach. Smoke
+  checked for continuity, with mutations for both causes.
+- Pools crowded the rim of vanilla's own shadow, because broken shade from the
+  shadow map carried most of the placement. Thin crown from the leaf map now
+  leads it.
+- Debug view 64 drew flecks on the leaves themselves. It now shows only
+  surfaces that can receive canopy light.
+
+Seen in game before the fix; the fix itself is L2 until seen.

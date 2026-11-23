@@ -500,6 +500,18 @@ void main()
                 double.IsNaN(VintageVisuals.Common.Scene.CanopyMap.MeanCanopyY(new int[4])) &&
                 Math.Abs(VintageVisuals.Common.Scene.CanopyMap.MeanCanopyY(new[] { 0, VintageVisuals.Common.Scene.CanopyMap.Encode(3, 100), VintageVisuals.Common.Scene.CanopyMap.Encode(7, 110) }) - 106.5) < 1e-9,
                 "a per-cell projection height cuts flecks at cell edges; snapping across a face speckles it");
+            // Every straight line seen through a fleck came from a step in the
+            // leaf-map read: a hard height test, or an early return that
+            // switched march steps between neighbouring fragments.
+            string leafAtBody = GlslEval.StripComments(
+                GlslEval.FunctionBody(terrainSnippet, "float vvTerrainCanopyLeafAt(") ?? "");
+            check("terrain leaf-map read is continuous in position (no square flecks)",
+                overheadBody.Contains("if (density > best.x) best = vec2(density, p.y - world.y);") &&
+                !Regex.IsMatch(overheadBody, @"return\s+vec2\(\s*density") &&
+                overheadBody.Contains("f = f * f * (3.0 - 2.0 * f);") &&
+                leafAtBody.Contains("smoothstep(cell.y - 1.5, cell.y + 0.5, rayY)") &&
+                leafAtBody.Contains("smoothstep(floorY + 0.5, floorY + 2.5, cell.y)"),
+                "a hard leaf test or an early return draws axis-aligned squares under a low sun");
             // CPU and GPU must agree on the cell, the index and the encoding.
             check("leaf map encoding agrees between CanopyMap and the shader",
                 VintageVisuals.Common.Scene.CanopyMap.Encode(5, 300) == 5 * 512 + 300 &&
