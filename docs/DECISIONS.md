@@ -2253,7 +2253,7 @@ in the player's world at noon and with a low sun.
 - Debug view 64 drew flecks on the leaves themselves. It now shows only
   surfaces that can receive canopy light.
 
-Seen in game before the fix; the fix itself is L2 until seen.
+Seen in game before the fix, and again after it with a low sun: irregular pools with texel edges, no squares.
 
 ## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
 
@@ -2278,4 +2278,7 @@ weakens its sun shadows.
 cannot exceed what a tree's shade looks like. Under heavy overcast the whole
 world can sit at full-shade level; that is vanilla's shade, not darker. The
 invariant I20 and three mutations pin the floor, the min and the block light.
+Seen in game after the fix: the same storm at noon with every tile covered
+leaves the forest dim but readable. Torchlight under cloud was not checked in
+game.
 

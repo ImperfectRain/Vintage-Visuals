@@ -140,7 +140,7 @@ Edge cases exercised: rain ripples anchored to the world rather than the camera
 (regression pinned by call-order test); cloud shadows when the game's cloud
 renderer cannot be read — falls back to off rather than to invented shadows.
 Found in the 2026-11-23 in-game audit: a storm at cloud-shadow strength 1
-turned a forest black at noon (fixed by D52, not yet seen after the fix).
+turned a forest black at noon (fixed by D52, and seen readable in the same storm after the fix).
 
 ---
 
