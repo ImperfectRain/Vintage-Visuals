@@ -611,6 +611,18 @@ const float VV_TERRAIN_SHAFT_MAX = 0.8;
 // seeing any rays"). Sparse sources can take a high cap without washing the
 // forest out; whole leaf faces could not (v6).
 const float VV_TERRAIN_SHAFT_GAIN = 2.5;
+// v11 beams in the air. The god-ray channel above is blurred toward the
+// sun's SCREEN position, so it can only draw rays while the sun is on or near
+// the screen - in game that meant a low sun straight ahead, and nothing at
+// midday (v10: "during mid-day I really can't notice anything"). Real shafts
+// are light scattered by the air inside each beam, visible from the side at
+// any sun height. The beam march integrates that along the view ray: REACH
+// blocks of air in STEPS samples, SCATTER the light a block of full beam adds
+// (as a share of the sunlit colour), MAX the most any fragment takes.
+const float VV_TERRAIN_BEAM_REACH = 26.0;
+const int VV_TERRAIN_BEAM_STEPS = 12;
+const float VV_TERRAIN_BEAM_SCATTER = 0.06;
+const float VV_TERRAIN_BEAM_MAX = 0.3;
 // Past this distance a leaf texel is under a pixel, and the hole-rim test
 // that places shaft sources would sparkle.
 const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
@@ -1291,6 +1303,86 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     return clamp(level, 0.0, VV_TERRAIN_SHAFT_MAX);
 }
 
+// Sunlight scattered toward the camera by the air inside the beams between
+// the camera and this fragment, as a share of the sunlit colour, 0 to
+// VV_TERRAIN_BEAM_MAX.
+//
+// A beam IS the column of air above a bright sunfleck, along the sun: the
+// light that makes the fleck crosses that air on its way down. So a point in
+// the air is in a beam exactly when the sun ray through it reaches the canopy
+// plane at a `src` where the fleck field is bright - the same field, the same
+// projection and the same `lands` test the flecks and the leaf-rim sources
+// use, so every beam ends on a bright patch on the floor and starts at a gap
+// in the crown above it. Nothing here is a second pattern.
+//
+// Visible from the side at any sun height, brightest looking toward the sun
+// (forward scattering), strongest in humid air, scaled by how strongly the
+// sun is up and how clear the sky is, and held back by the visibility
+// dampen. Only air under the canopy plane and under leaves takes a beam;
+// open air above the crown is just daylight. World-anchored except for where
+// the samples fall, which a per-pixel offset spreads so the beams do not
+// band. Twelve field evaluations per terrain fragment within the reach (cost
+// not measured). Beams in front of open sky are not drawn: the sky is not a
+// terrain fragment (DATA GAP).
+float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
+{
+    if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;
+    float sun = vvTerrainSunPresence();
+    if (sun < 0.01) return 0.0;
+    float clearSky = vvTerrainClearSky();
+    if (clearSky < 0.004) return 0.0;
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    if (l.y < 0.06) return 0.0;
+
+    float dist = length(cameraRelativePos);
+    if (dist < 0.5) return 0.0;
+    vec3 dir = cameraRelativePos / dist;
+    float span = min(dist, VV_TERRAIN_BEAM_REACH);
+    float ds = span / float(VV_TERRAIN_BEAM_STEPS);
+    // Interleaved gradient noise: a fixed per-pixel offset of the samples,
+    // so twelve steps read as a smooth integral rather than bands.
+    float offset = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
+    float shimmer = vvTerrainFleckShimmer();
+
+    float beam = 0.0;
+    for (int i = 0; i < VV_TERRAIN_BEAM_STEPS; i++)
+    {
+        vec3 rel = dir * ((float(i) + offset) * ds);
+        vec3 p = rel + vv_pbrOrigin;
+        float rise = vv_canopyPlaneY - p.y;
+        if (rise < 0.5) continue;
+        vec2 srcRel = rel.xz + l.xz * (rise / l.y);
+        if (max(abs(srcRel.x), abs(srcRel.y)) > 28.0) continue;
+        vec2 src = p.xz + l.xz * (rise / l.y);
+        float crown = vvTerrainCanopyCell(src).x;
+        if (crown < 0.15) continue;
+        vec3 field = vvTerrainFleckField(src, az, l.y, crown, shimmer);
+        beam += smoothstep(VV_TERRAIN_FLECK_DIM + 0.25, 1.0, field.x) * smoothstep(0.15, 0.4, crown);
+    }
+    if (beam <= 0.0) return 0.0;
+
+    // Forward scattering: a beam seen from the side is faint but there, and
+    // looking toward the sun it is several times brighter.
+    float cosView = dot(dir, l);
+    float phase = 0.45 + 0.55 * pow(max(cosView, 0.0), 3.0);
+    float lowSun = 1.0 - smoothstep(0.15, 0.55, l.y);
+    float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
+    float humid = 0.6 + 0.4 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
+
+    float level = beam * ds * VV_TERRAIN_BEAM_SCATTER * phase * humid * clearSky * sun
+                * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * vvSceneVisibilityDampen();
+    return clamp(level, 0.0, VV_TERRAIN_BEAM_MAX);
+}
+
+// The colour beams add: the sun's own colour, warmer as it drops.
+vec3 vvTerrainBeamColor()
+{
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    float golden = 1.0 - smoothstep(0.08, 0.45, l.y);
+    return mix(vec3(1.0, 0.97, 0.9), vec3(1.0, 0.82, 0.58), golden);
+}
+
 // ---------------------------------------------------------------------------
 // Plant tissue, on the modular terrain path
 //
@@ -1624,6 +1716,9 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     }
     // 67: the light the flecks run on. Red is the clear-sky gate (black means
     // too cloudy for flecks), green the wind shimmer, blue the moon's share.
+    // 68: beams in the air - the light the beam march adds, white at its cap.
+    if (mode == 68)
+        return vec4(vec3(vvTerrainBeamInscatter(cameraRelativePos, 0.00125) / VV_TERRAIN_BEAM_MAX), color.a);
     if (mode == 67)
         return vec4(vvTerrainClearSky(), vvTerrainFleckShimmer(),
                     (1.0 - vvTerrainSunPresence()) * clamp(vv_sceneMoonLight, 0.0, 1.0), color.a);

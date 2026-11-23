@@ -2492,3 +2492,43 @@ Seen in game after the fix: the same storm at noon with every tile covered
 leaves the forest dim but readable. Torchlight under cloud was not checked in
 game.
 
+## D56. Sun shafts are light in the air, marched in the terrain shader
+
+**Context.** Every shaft version so far fed vanilla's god-ray channel. That
+pass blurs the channel radially toward the sun's position ON SCREEN, so it
+can only draw rays while the sun is on or near the screen. In game at v10 the
+rays showed only at extreme sun angles - a low sun straight ahead - and not at
+all at midday, when the sun is overhead and out of view. The player's
+reference photographs show the opposite: slanted beams seen from the side,
+across a forest, at any sun height. Those are light scattered toward the eye
+by the air inside each beam. No amount of tuning the god-ray source makes a
+screen-space radial blur draw a beam whose source is off screen.
+
+**Decision.** `vvTerrainBeamInscatter` integrates the scattered light along
+the view ray between the camera and each terrain fragment, in the terrain
+shader itself (twelve samples over at most 26 blocks, offset per pixel by
+interleaved gradient noise). A point in the air is in a beam exactly when the
+sun ray through it meets the canopy plane where the fleck field is BRIGHT -
+the same field, projection and bright-patch test as the flecks (v10) and the
+leaf-rim sources (D55), so every beam starts at a gap in the crown and ends on
+a bright fleck, and there is no second pattern to drift out of step. Air above
+the canopy plane, outside the leaf map's reach or under no leaves takes none.
+Forward scattering: 0.45 of the full strength seen from the side, 1 looking
+into the sun. Scaled by sun presence, the clear-sky gate, humid air (0.6 dry
+to 1 wet, at a low sun or in fog) and the visibility dampen, and by the
+existing sun shafts slider (the default 0.45 gives the stated strength); zero
+means vanilla. Capped at 0.3 of the sun's colour, which warms toward golden
+hour. Added to the colour at both terrain call sites through `1 - fogAmount`.
+Debug view 68 shows it.
+
+The god-ray route is kept: looking toward the sun it still draws the comb of
+fine rays through the leaf holes, which a twelve-sample march cannot resolve.
+
+**Consequences.** Beams in front of open sky are not drawn, because the sky is
+not a terrain fragment (DATA GAP). Under a moving camera the per-pixel sample
+offset can show as fine grain inside a beam. Cost: up to twelve fleck-field
+evaluations per terrain fragment where leaves are overhead, none elsewhere;
+not measured. No pass, no render target, no sampler, no uniform.
+Interaction-checked (shared projection and bright-patch test, side and
+toward-sun strength, the cap, slider zero, both call sites), six mutations.
+Not yet seen in game.

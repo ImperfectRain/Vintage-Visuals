@@ -1071,7 +1071,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 67.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 68.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

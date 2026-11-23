@@ -920,6 +920,48 @@ void main()
                       $"dry noon {Humid(0, 0, 0):0.00}, after rain {Humid(1, 0, 0):0.00}");
             }
             catch (Exception ex) { check("I-terrain sun shafts are readable", false, ex.Message); }
+            // INTERACTION (v11): beams in the air. The god-ray channel only draws
+            // while the sun is on screen, so midday had no rays at all (in game,
+            // v10). The march must: share the flecks' projection and bright-patch
+            // test (a beam is the air above a bright fleck), leave air above the
+            // crown alone, stay visible from the side but brighter toward the sun,
+            // reach a visible level for a typical crossing at a dry noon, stay
+            // under its cap, be exactly off at slider zero, and reach the frame
+            // at both call sites through the fog.
+            try
+            {
+                string beamBody = GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainBeamInscatter(") ?? "");
+                string shaftBody2 = GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainShaftLevel(") ?? "");
+                string phaseExpr = GlslEval.Rhs(GlslEval.Statement(beamBody, "float phase"));
+                string levelExpr2 = GlslEval.Rhs(GlslEval.Statement(beamBody, "float level"));
+                double Phase(double c) => GlslEval.Scalar(phaseExpr, GlslEval.Syms("cosView", c));
+                double scatter = GlslEval.Const(terrainSnippet, "VV_TERRAIN_BEAM_SCATTER");
+                double cap = GlslEval.Const(terrainSnippet, "VV_TERRAIN_BEAM_MAX");
+                double Level(double crossing, double phase, double humid, double slider) =>
+                    GlslEval.Scalar(GlslEval.StubCall(levelExpr2, "vvSceneVisibilityDampen", "dampen"),
+                        GlslEval.Syms("beam", crossing, "ds", 1.0, "VV_TERRAIN_BEAM_SCATTER", scatter, "phase", phase,
+                                      "humid", humid, "clearSky", 1.0, "sun", 1.0, "vv_pbrShafts", slider, "dampen", 1.0));
+                string landsShaft = GlslEval.Rhs(GlslEval.Statement(shaftBody2, "float lands"));
+                string beamYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainmaterial.yaml"));
+                double sideNoon = Level(6.0, Phase(0.0), 0.6, 0.45);
+                double towardRain = Level(6.0, Phase(1.0), 1.0, 0.45);
+                bool ok = beamBody.Contains("if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;") &&
+                          beamBody.Contains("if (clearSky < 0.004) return 0.0;") &&
+                          beamBody.Contains("if (rise < 0.5) continue;") &&
+                          beamBody.Contains("vec2 src = p.xz + l.xz * (rise / l.y);") &&
+                          beamBody.Contains("vec3 field = vvTerrainFleckField(src, az, l.y, crown, shimmer);") &&
+                          beamBody.Contains("beam += " + landsShaft + " *") &&
+                          beamBody.Contains("if (max(abs(srcRel.x), abs(srcRel.y)) > 28.0) continue;") &&
+                          beamBody.Contains("return clamp(level, 0.0, VV_TERRAIN_BEAM_MAX);") &&
+                          Phase(0.0) >= 0.4 && Phase(1.0) >= Phase(0.0) * 2.0 && Phase(-1.0) == Phase(0.0) &&
+                          sideNoon >= 0.06 && sideNoon <= cap && towardRain >= sideNoon * 2.0 && cap <= 0.35 &&
+                          Level(6.0, 1.0, 1.0, 0.0) == 0.0 &&
+                          beamYaml.Contains("outColor.rgb += vvTerrainBeamColor() * (vvTerrainBeamInscatter(worldPos.xyz, fogDensityIn) * (1.0 - fogAmount));") &&
+                          beamYaml.Contains("outColor.rgb += vvTerrainBeamColor() * (vvTerrainBeamInscatter(worldPos.xyz, 0.00125) * (1.0 - fogAmount));");
+                check("I-terrain beams in the air: the column above a bright fleck, seen from the side at midday, brighter toward the sun, capped", ok,
+                      $"side at a dry noon {sideNoon:0.000}, toward the sun after rain {towardRain:0.000} (cap {cap}), phase side {Phase(0.0):0.00} toward {Phase(1.0):0.00}");
+            }
+            catch (Exception ex) { check("I-terrain beam march is readable", false, ex.Message); }
             check("terrain leaf sheen is exactly off at a specular strength of zero",
                 GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCuticleSpecular(") ?? "")
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),

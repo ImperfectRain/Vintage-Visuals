@@ -196,7 +196,15 @@ level. Since v10 a fleck's brightness varies, from a dim dapple to full sun at
 the heart of a wide gap and over beam groups, in three flat tones; the cut
 reads only world-anchored inputs so the spots hold still while the player
 moves; and each fleck adds a faint bloom to vanilla's glow channel in
-proportion to how far it stands out from its shade. Sunflecks (D50) come through the same entry point,
+proportion to how far it stands out from its shade.
+
+Sun shafts come two ways (D56). Leaf texels lining a hole mark vanilla's
+god-ray channel, which draws the fine comb of rays only while the sun is on
+screen. And since v11 `vvTerrainBeamInscatter` marches the view ray through
+the air in front of each terrain fragment, adding the sunlight the air inside
+each beam scatters toward the camera, so beams show from the side at any sun
+height. A beam is the column of air above a bright fleck along the sun, read
+from the same fleck field. Debug view 68. Sunflecks (D50) come through the same entry point,
 `vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
 (`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
 vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a
