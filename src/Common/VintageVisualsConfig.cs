@@ -949,6 +949,11 @@ namespace VintageVisuals.Common
         public float Fireflies { get; set; } = 0.6f;
 
         /// <summary>
+        /// v15. Leaves falling from the trees around you, coloured from each tree's own leaf texture and season tint, carried along the wind. A leaf now and then on a still spring day; a flurry when a gust crosses an autumn wood. Evergreens shed a few small needles. 0 spawns none.
+        /// </summary>
+        public float FallingLeaves { get; set; } = 0.6f;
+
+        /// <summary>
         /// Ring radius, in shadow-map texels, for the canopy test.
         ///
         /// A slider rather than a constant because it is a fact about the
@@ -1126,6 +1131,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.Pollen", corrections);
             Fireflies = ColorGradeConfig.Clamp(Fireflies, 0.0f, 1.0f,
                 "PseudoPBR.Fireflies", corrections);
+            FallingLeaves = ColorGradeConfig.Clamp(FallingLeaves, 0.0f, 1.0f,
+                "PseudoPBR.FallingLeaves", corrections);
             CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
                 "PseudoPBR.CanopyRadius", corrections);
             PixelReflection = ColorGradeConfig.Clamp(PixelReflection, 0.0f, 1.0f,

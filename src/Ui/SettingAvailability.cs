@@ -141,6 +141,7 @@ namespace VintageVisuals.Ui
             { "pbr_drips", "Stand under leaves during or just after rain." },
             { "pbr_pollen", "Warm dry day in spring or summer, over grass or flowers." },
             { "pbr_fireflies", "Dusk or a warm summer night, over grass, ideally humid ground." },
+            { "pbr_leaves", "Near trees. Most in autumn and in wind; watch for a gust crossing the crowns." },
             { "atmosphere_foresthaze", "Inside a forest, looking between the trunks." },
             { "atmosphere_groundmist", "Still, humid night or early morning, or after rain, near low ground or water." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
@@ -304,7 +305,7 @@ namespace VintageVisuals.Ui
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
                 "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
-                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_drips", "pbr_pollen", "pbr_fireflies",
+                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 

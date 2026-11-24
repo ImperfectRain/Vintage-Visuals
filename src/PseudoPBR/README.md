@@ -1386,9 +1386,17 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   warm dry growing-season days; fireflies as short full-glow flashes over Plant
   blocks at dusk and on warm calm nights. DATA GAP: neither pollen nor fireflies
   exist in the game.
+- **Falling leaves** (`PseudoPBR.FallingLeaves`, v15, D58): the fourth kind in
+  `ForestLifeSpawner`. Leaves leave the underside of real crowns, coloured by
+  `Block.GetRandomColor` at the leaf block (its own texture, with the game's
+  climate and season tint there), at a rate of season x local wind x day bias.
+  The local wind adds the gust from `GustField`, a CPU port of `vvTerrainGust`
+  whose constants and hash `tools/smoketest` reads back out of the GLSL, so a
+  flurry comes off the crowns the visible gust crosses. Evergreens shed a
+  quarter as often, smaller. Cap 160 alive. A colour, not the leaf's outline.
 
 Cost, none measured: two noise reads for gusts per plant fragment and fleck
 evaluation; four texture reads for the rim per qualifying leaf (already paid by the
 shafts there); one leaf-map and one noise read for damp; up to 8 CPU lookups per
-particle kind every 0.2 s. No sampler, pass, target or texture unit.
+particle kind every 0.2 s (12 for leaves). No sampler, pass, target or texture unit.
 

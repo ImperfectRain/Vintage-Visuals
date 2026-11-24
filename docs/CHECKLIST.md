@@ -111,6 +111,7 @@ from the source texture.
 | Wide-cone leaf translucency (v14, D57) | x | x | x | x | – | – | – | – | x |
 | Damp and moss on sheltered rough faces (v14, D57) | x | x | x | x | – | – | – | – | x |
 | Drips, pollen and fireflies (`ForestLifeSpawner`, v14, D57) | x | x | x | x | – | – | – | – | x |
+| Falling leaves (`ForestLifeSpawner`, `GustField`, v15, D58) | x | x | x | x | – | – | – | – | x |
 | Moonlight flecks | x | x | x | x | – | – | – | – | x |
 | Cloud cover from ambient and falling rain (D53) | x | x | x | x | – | – | – | – | x |
 

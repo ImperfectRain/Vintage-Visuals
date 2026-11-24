@@ -276,6 +276,10 @@ namespace VintageVisuals.Ui
                    "Small blinking lights low over grass at dusk and on warm, humid summer nights.",
                    M, "Foliage", 0f, 1.0f, 0.05f);
 
+            Slider("pbr_leaves", "PseudoPBR.FallingLeaves", "Falling leaves",
+                   "Leaves in each tree's own colours drifting down and along the wind; a few on still days, a flurry in an autumn gust.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
             Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
                    "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees.",
                    M, "Foliage", 0f, 16f, 0.5f, "blocks", true);

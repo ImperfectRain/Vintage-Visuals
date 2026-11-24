@@ -36,6 +36,7 @@ namespace VintageVisuals.SmokeTest
             GroundMist(check);
             Particles(check);
             Season(check);
+            FallingLeaves(glsl, check);
         }
 
         private static string Body(string src, string sig)
@@ -320,6 +321,83 @@ namespace VintageVisuals.SmokeTest
                              ForestLifeSpawner.FireflyRate(World(0.05f, 0.1f, 0.2f, 0f, 1f, 22f)) < summerNight;
             check("forest particles: drips from wet thawed leaves, pollen on warm dry growing-season days, fireflies on warm calm nights",
                   drips && pollen && fireflies, $"spring day pollen {springDay:0.00}, summer night fireflies {summerNight:0.00}");
+        }
+
+        // --- Falling leaves (v15) --------------------------------------------
+
+        private static double GlslConst(string glsl, string name)
+        {
+            Match m = Regex.Match(glsl, @"const\s+float\s+" + name + @"\s*=\s*([0-9.]+)\s*;");
+            return m.Success ? double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) : double.NaN;
+        }
+
+        private static void FallingLeaves(string glsl, Action<string, bool, string> check)
+        {
+            // The rate: a trickle on a still spring day, a flurry where a gust
+            // crosses an autumn wood, and each of season, wind, gust and day
+            // moving it the right way on its own.
+            float calmSpring = ForestLifeSpawner.LeafRate(World(0.9f, 0f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            float autumnGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.7f, 0.5f, 0f, 1f, autumn: 1f), 1f);
+            float autumnBreeze = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 0f);
+            float springBreeze = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            float autumnBreezeGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 1f);
+            float autumnNight = ForestLifeSpawner.LeafRate(World(0.0f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 0f);
+            float handover = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f), 0f);
+            bool rate = calmSpring > 0f && calmSpring < 0.01f &&
+                        autumnGust > 0.9f &&
+                        autumnBreeze > springBreeze * 4f &&
+                        autumnBreezeGust > autumnBreeze * 2f &&
+                        autumnNight > 0f && autumnNight < autumnBreeze &&
+                        handover > 0f;
+            bool evergreen = ForestLifeSpawner.IsEvergreen("seasonalNeedles") && ForestLifeSpawner.IsEvergreen(null) &&
+                             !ForestLifeSpawner.IsEvergreen("seasonalMaple");
+            check("falling leaves: a leaf now and then on a still spring day, a flurry in an autumn gust",
+                  rate && evergreen,
+                  $"still spring {calmSpring:0.0000}, autumn gust {autumnGust:0.00}, autumn breeze {autumnBreeze:0.000} " +
+                  $"(+gust {autumnBreezeGust:0.000}, night {autumnNight:0.000}), spring breeze {springBreeze:0.000}, handover {handover:0.000}");
+
+            // The CPU gust field is a port of the shader's: every constant and
+            // the hash are read back out of the shipped GLSL, so a retune of
+            // either side alone fails here instead of putting the flurry where
+            // the grass is still.
+            string hash = Body(glsl, "uint vvTerrainHashU(");
+            string cell = Body(glsl, "vec4 vvTerrainCellRandom(");
+            string gust = Body(glsl, "float vvTerrainGust(");
+            bool Near(double a, double b) => Math.Abs(a - b) < 1e-6;
+            var mismatches = new System.Collections.Generic.List<string>();
+            if (!Near(GlslConst(glsl, "VV_TERRAIN_GUST_CELL"), GustField.Cell)) mismatches.Add("cell");
+            if (!Near(GlslConst(glsl, "VV_TERRAIN_GUST_PERIOD"), GustField.Period)) mismatches.Add("period");
+            if (!Near(GlslConst(glsl, "VV_TERRAIN_GUST_TRAVEL"), GustField.Travel)) mismatches.Add("travel");
+            if (!Near(GlslConst(glsl, "VV_TERRAIN_GUST_CONTRAST"), GustField.Contrast)) mismatches.Add("contrast");
+            if (!hash.Contains("x *= 0x" + GustField.HashMulA.ToString("x8") + "u") ||
+                !hash.Contains("x *= 0x" + GustField.HashMulB.ToString("x8") + "u")) mismatches.Add("hash");
+            if (!cell.Contains("c.x * 0x" + GustField.CellMulX.ToString("x8") + "u") ||
+                !cell.Contains("c.y + 0x" + GustField.CellAddY.ToString("x8") + "u")) mismatches.Add("cell hash");
+            if (!gust.Contains("vec2(71.0, 23.0)") || !gust.Contains("vec2(79.0, 47.0)")) mismatches.Add("keys");
+            if (!gust.Contains("smoothstep(0.55, 0.8, n)") || !gust.Contains("smoothstep(0.08, 0.5,")) mismatches.Add("cuts");
+            check("falling leaves: the CPU gust field carries the shader's constants and hash",
+                  mismatches.Count == 0, mismatches.Count == 0 ? "in step" : "differs: " + string.Join(", ", mismatches));
+
+            // And it behaves as the shader's: nothing with gusts off or in
+            // still air, patches rather than everywhere, and the same value a
+            // whole world wrap away.
+            int hot = 0, total = 0;
+            double wrapErr = 0;
+            for (int i = 0; i < 48; i++)
+                for (int j = 0; j < 48; j++)
+                {
+                    float x = 3f + i * 5.3f, z = 7f + j * 4.7f;
+                    float g = GustField.At(x, z, 1f, 0.6f, 0.37f, 0.6f, 0.8f);
+                    if (g > 0.5f) hot++;
+                    total++;
+                    if (i < 6 && j < 6)
+                        wrapErr = Math.Max(wrapErr, Math.Abs(g - GustField.At(x + 4096f, z, 1f, 0.6f, 0.37f, 0.6f, 0.8f)));
+                }
+            double share = hot / (double)total;
+            bool off = GustField.At(40f, 40f, 0f, 1f, 0.3f, 1f, 0f) == 0f && GustField.At(40f, 40f, 1f, 0.02f, 0.3f, 1f, 0f) == 0f;
+            check("falling leaves: gusts are patches, none with gusts off or in still air, and tile the 4096 wrap",
+                  off && share > 0.03 && share < 0.5 && wrapErr < 2e-3,
+                  $"gust share {share:0.000}, wrap error {wrapErr:0.0000}, off {off}");
         }
 
         // --- Season ----------------------------------------------------------

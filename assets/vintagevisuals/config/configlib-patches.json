@@ -758,6 +758,18 @@
         "clientSide": true,
         "weight": 98
       },
+      "pbr_leaves": {
+        "ingui": "Falling leaves",
+        "comment": "Leaves falling from the trees around you, coloured from each tree's own leaf texture and season tint, carried along the wind. A leaf now and then on a still spring day; a flurry when a gust crosses an autumn wood. Evergreens shed a few small needles. 0 spawns none.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 102
+      },
       "atmosphere_foresthaze": {
         "ingui": "Forest haze",
         "comment": "A soft, slightly darker haze in the air under a canopy, so trunks fade into depth as you look into a forest. Strongest under thick crowns in humid air; none in the open or underground. 0 is vanilla.",

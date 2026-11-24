@@ -2622,3 +2622,37 @@ or drips are on. Gusts do not bend anything: vanilla's vertex sway is left
 alone, which keeps the vertex shader unpatched. One mist plane means the
 mist lies in one hollow, the player's. Nothing here has been seen in game.
 
+## D58. Falling leaves are the game's particles, coloured by the tree, gusted by the shader's field
+
+**Context.** v15 asked for leaves falling from trees, using the source tree's
+leaf texture, scaling with wind, time of day and season, from a leaf now and
+then on a still spring day to a flurry in an autumn gust. Vanilla's forest
+trees drop nothing: `BlockLeaves` carries only the `RainDrip` behaviour, and
+the one leaf shedding in the game is the fruit trees' own block entity.
+
+**Decision.** A fourth kind in `ForestLifeSpawner`, not a new system. Where:
+the leaf map's crown underside, the same source the drips use. Colour:
+`Block.GetRandomColor(capi, pos, UP)`, which is what vanilla's breaking
+particles call - a texel of the block's own texture with the block's climate
+and season colour maps applied at that position - so a maple's leaves fall in
+the maple's colour for that place and week. Motion: the game's particle wind
+(`WindAffected`) plus a downwind push, with vanilla's random velocity change for
+flutter. Amount: season shed x local wind x a day bias, per try, under a cap.
+
+The local wind is the game's plus the gust at that spot, from `GustField`: a
+CPU port of the shader's `vvTerrainGust`, not a second field. A smoke check
+reads its constants and integer hash back out of the shipped GLSL, so the
+flurry stays under the gust the player sees in the grass.
+
+**Rejected.** A textured leaf (its outline, not just a colour): the game's
+particle API draws solid quads and cubes only, and a textured particle needs
+its own renderer, mesh and shader - a new GL path for a few hundred quads.
+Recorded as possible later work, not done. A shed driven by a vanilla
+leaf-fall field: there is none.
+
+**Consequences.** One slider (`pbr_leaves`), one new pure file
+(`GustField.cs`), three checks and nine mutations. Up to 60 leaf-map lookups
+a second and 160 particles alive at full slider in a gale; not measured.
+DATA GAP: the shape of the shedding year (floor 0.1, autumn 1.0, winter 0.4)
+is this mod's choice; the season, wind, daylight, crowns and colours are the
+game's. Not seen in game.

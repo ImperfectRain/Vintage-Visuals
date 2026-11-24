@@ -217,6 +217,9 @@ namespace VintageVisuals.Common
                 case "pbr_fireflies":
                     pbr.Fireflies = tree.GetFloat("value", pbr.Fireflies);
                     break;
+                case "pbr_leaves":
+                    pbr.FallingLeaves = tree.GetFloat("value", pbr.FallingLeaves);
+                    break;
                 case "pbr_canopyradius":
                     pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
                     break;
