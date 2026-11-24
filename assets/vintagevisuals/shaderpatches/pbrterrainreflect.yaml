@@ -37,3 +37,16 @@
   tokens: outGlow = vec4(glowLevel + glow, godrayLevel, 0, min(1, fogAmount + outColor.a));
   content: |
     outColor = vvTerrainReflectDebug(outColor);
+
+# Stage two (D62): tell the material path the march exists. The define lands
+# on the line after the material snippet's marker, ABOVE the material code,
+# which then declares the march's prototype and calls it. Inserted by this
+# group so it rolls back with the sampler and the march: without this group,
+# the material path compiles with no reference to the capture at all.
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "// vintagevisuals-hook: terrain scene capture define"
+  content: |
+    #define VV_TERRAIN_SCENE_CAPTURE 1

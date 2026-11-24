@@ -89,8 +89,8 @@ namespace VintageVisuals.Ui
         /// <summary>Read only by pseudopbr.glsl, which is gated off with the legacy terrain path.</summary>
         public static readonly HashSet<string> LegacyTerrainOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "reflections_scene",
-            "pbr_pixelreflect",
+            // Empty since D62: pixel and scene reflections are drawn by the
+            // modular terrain path (pbrterrainmaterial + pbrterrainreflect).
         };
 
         /// <summary>Declared FOUNDATION ONLY in their own descriptions and in src/Atmosphere/README.md.</summary>
@@ -99,9 +99,6 @@ namespace VintageVisuals.Ui
             "atmosphere_cloudedge",
             "atmosphere_dapple",
         };
-
-        private const string CaptureBridgeReason =
-            "Not drawn yet: this only turns on the scene capture so Debug views 41 and 42 can check it.";
 
         private const string DebugOnlyReason =
             "Not wired yet: only an atmosphere debug view uses it.";
@@ -175,13 +172,6 @@ namespace VintageVisuals.Ui
 
             if (!PseudoPbrSubsystem.TerrainShaderPatchesEnabled && LegacyTerrainOnly.Contains(setting.Code))
             {
-                // The modular path already consumes the scene capture, but only
-                // in debug views 41 and 42 (pbrterrainreflect, stage one), so
-                // the switch is still not a working reflection control.
-                if (setting.Code == "reflections_scene" && PseudoPbrSubsystem.TerrainReflectPatchEnabled)
-                {
-                    return new SettingAvailability(AvailabilityState.Unavailable, CaptureBridgeReason);
-                }
                 return new SettingAvailability(AvailabilityState.Unavailable, LegacyTerrainReason);
             }
 

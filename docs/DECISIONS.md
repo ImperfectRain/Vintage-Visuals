@@ -2780,3 +2780,58 @@ float and move with the current.
 - *Limits:* litter is session-only and does not survive a world reload; it does
   not follow a block broken under it until its turn in the round robin.
 - *Status:* L2, not seen in game.
+
+## D62. Reflections stage two: the pixel reflection and the march on the modular path
+
+Extends D48 (stage one, the bridge) and D13 (reflection through the existing
+BRDF). Supersedes the "views 41 and 42 only" scope of `pbrterrainreflect`.
+
+**Context.** View 41 was seen in game on 2026-11-22: beneath the legacy blue
+depth tint, the capture reaching terrain was the world, so the bridge holds.
+The modular path's ambient highlight was still the flat fog colour split into
+an upper and lower half, so no surface reflected anything, and the Studio
+marked both reflection controls "not in this build".
+
+**Decision.**
+- *Pixel reflection in the material path, no sampler.* `vvTerrainPixelReflection`
+  ports the legacy method: the ray leaves the texel centre (one colour per
+  texel by construction), the direction is quantised into cells (16 smooth,
+  3 rough), the analytic image is sky / lifted horizon / dim ground with the
+  sun's half of the sky brighter, and the result is the IMAGE handed to the
+  ambient specular, whose Fresnel, roughness fade, specular occlusion and
+  slider still decide how much shows. At `pbr_pixelreflect` 0 it returns the
+  exact flat environment the path drew before.
+- *The march stays in `pbrterrainreflect`,* which owns the sampler, declared
+  directly above `main` as stage one requires. The material path, which comes
+  first in the file, reaches it through a prototype guarded by
+  `VV_TERRAIN_SCENE_CAPTURE`, and only that group inserts the define (on the
+  line after the material snippet's `vintagevisuals-hook` marker). A rollback of
+  the capture group therefore removes the define, the march and the sampler
+  together, and the material path compiles with no reference to the capture.
+- *A budget, which legacy never had.* The march runs only where the reflection's
+  own weight (strength x Fresnel x roughness fade x specular occlusion x the
+  ambient slider, as luminance) is at least 0.025 and the texel is within 48
+  blocks, fading from 32. That keeps it off grass, soil, leaves and dry rough
+  stone, which are most of the screen; wet stone, metal and polished blocks
+  take it. At most 40 steps (legacy 96) plus 5 bisection passes; a long grazing
+  ray walks coarser than the 2-texel stride instead of paying for every texel.
+  All capture reads in the loop are `textureLod`.
+- *Kept from legacy, each a finding from the game:* screen-uniform stepping,
+  axial depth from the projection's w, 1/w interpolation, bisection before the
+  thickness test (0.5 blocks), edge / thickness / camera-facing fades, the
+  luminance ceiling on the captured colour (2x the environment, hue kept) and
+  the feedback guard against a floor reflecting its own brightened copy.
+- *Debug views* 32, 34, 35, 36, 37, 39 and 48 return on the modular path; 39
+  and 48 add a dark blue for "skipped, not worth a march".
+
+**Rejected.**
+- Declaring the capture sampler at the material snippet to avoid the
+  prototype. Stage one's invariant is that the sampler sits below every vanilla
+  sampler and in its own group; the prototype costs nothing and keeps it.
+- Porting the world-volume fallback now. It needs a second auxiliary sampler,
+  is unprofiled, and was never seen working; the analytic sky is the honest
+  fallback until the scene reflection has been seen.
+
+**Not measured.** Cost in game. Expected: the analytic part is a few ALU per
+opaque fragment; the march is bounded by the gate. With Scene reflections on,
+the capture still copies one frame per frame.

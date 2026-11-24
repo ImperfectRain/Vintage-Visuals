@@ -9,6 +9,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Reflections on terrain are back.** Shiny and wet blocks now reflect a
+  small, pixel-locked picture of what they face: the sky, the horizon and,
+  with Scene reflections on, the actual trees and stone on screen. Rough
+  ground, grass and leaves skip the expensive part, so the cost lands only on
+  surfaces that can show it. Reflection strength 0 is exactly the old look.
 - Repository scaffold, build definition, and project documentation.
 - Shader patch engine: YAML-defined regex/token patches against vanilla shaders,
   grouped per subsystem so one bad patch disables only its own subsystem.

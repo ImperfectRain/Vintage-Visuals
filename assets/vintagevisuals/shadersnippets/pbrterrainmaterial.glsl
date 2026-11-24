@@ -63,6 +63,41 @@ uniform vec4 vv_canopyMap[128];
 uniform float vv_canopyMapValid;
 uniform float vv_canopyPlaneY;   // world Y the fleck pattern is projected from
 
+// Pixel reflection: how far the ambient highlight is replaced by a discrete,
+// texel-locked image of what each texel faces. 0 is the flat sky colour this
+// path used before (exactly), 1 the full image. No sampler of its own: the
+// analytic sky, horizon and ground need none.
+uniform float vv_pbrPixelReflect;
+
+// The scene capture is OPTIONAL and belongs to another group
+// (pbrterrainreflect), which owns its sampler and declares it below vanilla's
+// last one, directly above main - after this file. So this file only ever
+// sees the march through a prototype, and only when that group has inserted
+// the define below on the line after this marker. If that group is absent or
+// rolls back, the define goes with it and every reflection here is the
+// analytic environment alone.
+// vintagevisuals-hook: terrain scene capture define
+
+struct VvTerrainSceneHit
+{
+    vec3 color;
+    float valid;   // 0..1 confidence; 0 is a miss
+    float reason;  // VV_TSSR_* below, for debug view 48
+};
+
+#define VV_TSSR_NO_CAPTURE   0.0
+#define VV_TSSR_FACING       1.0
+#define VV_TSSR_ORIGIN_OFF   2.0
+#define VV_TSSR_FAR_OFF      3.0
+#define VV_TSSR_NO_CROSSING  4.0
+#define VV_TSSR_TOO_THICK    5.0
+#define VV_TSSR_HIT          6.0
+#define VV_TSSR_SKIPPED      7.0
+
+#ifdef VV_TERRAIN_SCENE_CAPTURE
+VvTerrainSceneHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v);
+#endif
+
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 
 // Flora taxonomy, read from vanilla's own wind modes in renderFlags. Same
@@ -498,18 +533,221 @@ vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight)
     return spec * ndotl * max(localLight, vv_sceneArtificialLight * 0.35) * blockLight;
 }
 
-vec3 vvTerrainAmbientSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 environmentColor)
+// ---------------------------------------------------------------------------
+// Pixel reflection on the modular path (reflections stage two, D62).
+//
+// Ported from the legacy patch (pseudopbr.glsl, vvPixelReflection and
+// vvSceneReflection), whose method stands: the reflection is the IMAGE the
+// ambient highlight is lit by, not a term of its own, so Fresnel, metalness,
+// roughness, specular occlusion and wetness decide how much of it shows,
+// exactly as they decided how much of the flat sky colour showed (D13).
+//
+// It is pixel art by construction rather than by rounding afterwards: the ray
+// leaves from the centre of the material texel, so every fragment of one
+// texel marches the identical ray and lands on the identical colour; and the
+// analytic environment is looked up in direction CELLS, fewer of them on a
+// rougher surface, so a rough face sees broad patches and never a blur.
+//
+// What is different here is the budget. The legacy march ran on every opaque
+// fragment. This one runs only where its answer can reach the image: a texel
+// whose ambient highlight is too weak to show a reflection (most soil, grass,
+// rough stone and dry wood - Fresnel times the roughness fade) takes the
+// analytic image alone, and the march is skipped past VV_TREFLECT_MARCH_FAR
+// blocks. Wet stone, metal, polished and glazed blocks are where it runs.
+// ---------------------------------------------------------------------------
+
+const float VV_TREFLECT_CELLS_SHARP = 16.0;
+const float VV_TREFLECT_CELLS_ROUGH = 3.0;
+const float VV_TREFLECT_HORIZON = 0.14;      // half-width of the horizon band in r.y
+const float VV_TREFLECT_GROUND = 0.34;       // dim fallback below the horizon
+const float VV_TREFLECT_HORIZON_LIFT = 1.15; // the horizon is the brightest band
+const float VV_TREFLECT_TOWARD = 0.30;       // the sun's half of the sky, brighter
+const float VV_TREFLECT_MAX = 2.0;           // capture colour ceiling vs. the environment
+const float VV_TREFLECT_TWO_PI = 6.28318530718;
+
+// The march is worth its cost only where the reflected image can change the
+// pixel visibly. This is the luminance of the reflection's own weight -
+// strength x Fresnel x roughness fade x specular occlusion x the ambient
+// slider - below which a texel keeps the analytic image. 0.025 is about one
+// 8-bit step on a mid-grey reflection; a dry granite block sits near 0.01, a
+// wet one near 0.06, a polished metal far above.
+const float VV_TREFLECT_MARCH_WEIGHT = 0.025;
+const float VV_TREFLECT_MARCH_NEAR = 32.0;   // full scene reflection inside this
+const float VV_TREFLECT_MARCH_FAR = 48.0;    // none past this: the march's own range
+
+// Feedback guard, as legacy: the capture is last frame's finished image, so a
+// reflective floor filling the screen can reflect its own brightened copy.
+const float VV_TREFLECT_FEEDBACK_KEEP = 0.35;
+const float VV_TREFLECT_FEEDBACK_BRIGHT_START = 1.10;
+const float VV_TREFLECT_FEEDBACK_BRIGHT_END = 1.90;
+const float VV_TREFLECT_FEEDBACK_HUE_START = 0.18;
+const float VV_TREFLECT_FEEDBACK_HUE_END = 0.42;
+
+float vvTerrainLuma(vec3 c)
 {
-    vec3 r = reflect(-viewDir, m.normal);
-    float skyFacing = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// The world position of the centre of this fragment's material texel, from
+// the Jacobian of position against UV that screen derivatives give. Falls back
+// to the fragment itself where that is singular (a face seen edge-on), where
+// the texel is sub-pixel anyway.
+vec3 vvTerrainTexelCentrePos(vec3 cameraRelativePos, vec2 materialUv)
+{
+    vec2 duv = vvTerrainSnap(materialUv) - materialUv;
+    vec2 uvdx = dFdx(materialUv);
+    vec2 uvdy = dFdy(materialUv);
+
+    float det = uvdx.x * uvdy.y - uvdx.y * uvdy.x;
+    if (abs(det) < 1e-12) return cameraRelativePos;
+
+    float a = (duv.x * uvdy.y - duv.y * uvdy.x) / det;
+    float b = (uvdx.x * duv.y - uvdx.y * duv.x) / det;
+    return cameraRelativePos + dFdx(cameraRelativePos) * a + dFdy(cameraRelativePos) * b;
+}
+
+// The analytic environment as a COLOUR: sky above, a lifted horizon band, dim
+// ground below, the sun's half of the sky a little brighter. No sun disc - the
+// direct lobe already draws the sun, and a disc here would count it twice.
+vec3 vvTerrainReflectionFallback(vec3 direction, vec3 environment)
+{
+    float lift = direction.y > VV_TREFLECT_HORIZON
+        ? 1.0
+        : (direction.y < -VV_TREFLECT_HORIZON ? VV_TREFLECT_GROUND : VV_TREFLECT_HORIZON_LIFT);
+
+    vec2 sunAzimuth = lightPosition.xz;
+    if (dot(sunAzimuth, sunAzimuth) > 1e-6 && dot(direction.xz, direction.xz) > 1e-6)
+    {
+        float toward = dot(normalize(direction.xz), normalize(sunAzimuth));
+        lift *= 1.0 + VV_TREFLECT_TOWARD * toward * clamp(vv_sceneDayLight, 0.0, 1.0);
+    }
+    return environment * clamp(lift, 0.0, VV_TREFLECT_MAX);
+}
+
+float vvTerrainReflectCells(float roughness)
+{
+    return max(2.0, mix(VV_TREFLECT_CELLS_SHARP, VV_TREFLECT_CELLS_ROUGH, clamp(roughness, 0.0, 1.0)));
+}
+
+// The reflection direction snapped to its cell, so the analytic image steps
+// in what the texel is looking at.
+vec3 vvTerrainReflectCell(vec3 r, float cells)
+{
+    float elevation = (floor((clamp(r.y, -1.0, 1.0) * 0.5 + 0.5) * cells) + 0.5) / cells;
+    float azimuth = (floor((atan(r.z, r.x) / VV_TREFLECT_TWO_PI + 0.5) * cells * 2.0) + 0.5)
+                  / (cells * 2.0);
+    float y = elevation * 2.0 - 1.0;
+    float theta = (azimuth - 0.5) * VV_TREFLECT_TWO_PI;
+    float radius = sqrt(max(0.0, 1.0 - y * y));
+    return vec3(cos(theta) * radius, y, sin(theta) * radius);
+}
+
+// How much of the reflected image can reach the pixel: the same factors
+// vvTerrainAmbientSpecular applies, as one luminance. Shared so the march gate
+// and the shading can never disagree about what is visible.
+vec3 vvTerrainAmbientWeight(VvTerrainMaterial m, vec3 viewDir)
+{
     vec3 f0 = mix(vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor),
                   m.baseColor, m.metalness);
     vec3 f = vvFresnelSchlickTerrain(max(dot(m.normal, viewDir), 0.0), f0);
     float roughFade = (1.0 - m.perceptualRoughness) * (1.0 - m.perceptualRoughness);
     float specOcc = mix(m.ao, clamp(pow(max(m.ao, 0.02), 1.0 + roughFade), 0.0, 1.0),
                         clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
-    vec3 env = mix(environmentColor * 0.48, environmentColor, skyFacing);
-    return env * f * roughFade * specOcc * max(0.0, vv_pbrAmbient);
+    return f * roughFade * specOcc * max(0.0, vv_pbrAmbient);
+}
+
+// The scene lookup, or a miss saying why there was none. The march itself
+// lives in pbrterrainreflect, which owns the capture.
+VvTerrainSceneHit vvTerrainSceneLookup(vec3 origin, vec3 r, vec3 v, bool worthIt)
+{
+    VvTerrainSceneHit miss;
+    miss.color = vec3(0.0);
+    miss.valid = 0.0;
+    miss.reason = VV_TSSR_NO_CAPTURE;
+#ifdef VV_TERRAIN_SCENE_CAPTURE
+    if (!worthIt) { miss.reason = VV_TSSR_SKIPPED; return miss; }
+    return vvTerrainSceneMarch(origin, r, v);
+#else
+    return miss;
+#endif
+}
+
+struct VvTerrainReflection
+{
+    vec3 image;      // what the texel sees: scene where it can, analytic where not
+    vec3 direction;  // the texel's reflection direction (unquantised)
+    float cells;     // direction cells across elevation
+    float scene;     // 0..1, how much of the image is the captured scene
+    float reason;    // VV_TSSR_* of the march
+};
+
+// Strength 0 returns the flat environment the path used before, so the slider
+// at 0 is the previous build bit for bit.
+VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRelativePos,
+                                             vec2 materialUv, vec3 environment,
+                                             vec3 surfaceColor, vec3 viewDir)
+{
+    VvTerrainReflection o;
+    vec3 rFlat = reflect(-viewDir, m.normal);
+    o.image = mix(environment * 0.48, environment, clamp(rFlat.y * 0.5 + 0.5, 0.0, 1.0));
+    o.direction = rFlat;
+    o.cells = vvTerrainReflectCells(m.perceptualRoughness);
+    o.scene = 0.0;
+    o.reason = VV_TSSR_SKIPPED;
+
+    float strength = clamp(vv_pbrPixelReflect, 0.0, 1.0);
+    if (strength < 0.001) return o;
+
+    // The view vector is the TEXEL's, which is what makes the reflection one
+    // colour per texture pixel rather than a gradient inside it.
+    vec3 origin = vvTerrainTexelCentrePos(cameraRelativePos, materialUv);
+    vec3 v = vvTerrainSafeNormalize(-origin, viewDir);
+    vec3 r = vvTerrainSafeNormalize(reflect(-v, m.normal), m.normal);
+    o.direction = r;
+
+    vec3 fallback = vvTerrainReflectionFallback(vvTerrainReflectCell(r, o.cells), environment);
+
+    // The scene is traced from the block FACE normal, not the material one:
+    // it is geometry, and normal-map grain would steer rays into the floor.
+    vec3 sceneR = vvTerrainSafeNormalize(reflect(-v, m.faceNormal), m.faceNormal);
+    float distance = length(cameraRelativePos);
+    float reach = 1.0 - smoothstep(VV_TREFLECT_MARCH_NEAR, VV_TREFLECT_MARCH_FAR, distance);
+    float weight = vvTerrainLuma(vvTerrainAmbientWeight(m, viewDir)) * strength;
+    bool worthIt = reach > 0.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;
+
+    VvTerrainSceneHit hit = vvTerrainSceneLookup(origin, sceneR, v, worthIt);
+    o.reason = hit.reason;
+
+    // The capture is the finished, graded frame: cap it by LUMINANCE against
+    // the environment (keeping its hue), so a bright sky in the capture cannot
+    // push a metal past what the ambient term could ever have produced.
+    vec3 sceneColor = hit.color;
+    float sceneLuma = vvTerrainLuma(sceneColor);
+    float envLuma = vvTerrainLuma(environment);
+    float ceiling = envLuma * VV_TREFLECT_MAX;
+    if (sceneLuma > ceiling && sceneLuma > 1e-5)
+    {
+        sceneColor *= ceiling / sceneLuma;
+        sceneLuma = ceiling;
+    }
+
+    float surfaceLuma = vvTerrainLuma(surfaceColor);
+    float hueMatch = 1.0 - smoothstep(VV_TREFLECT_FEEDBACK_HUE_START, VV_TREFLECT_FEEDBACK_HUE_END,
+                                      length(sceneColor / max(sceneLuma, 1e-4)
+                                           - surfaceColor / max(surfaceLuma, 1e-4)));
+    float overBright = smoothstep(envLuma * VV_TREFLECT_FEEDBACK_BRIGHT_START,
+                                  envLuma * VV_TREFLECT_FEEDBACK_BRIGHT_END, sceneLuma);
+    float confidence = clamp(hit.valid, 0.0, 1.0) * reach;
+    confidence *= mix(1.0, VV_TREFLECT_FEEDBACK_KEEP, hueMatch * overBright * confidence);
+
+    o.scene = confidence;
+    o.image = mix(o.image, mix(fallback, sceneColor, confidence), strength);
+    return o;
+}
+
+vec3 vvTerrainAmbientSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 reflectedImage)
+{
+    return reflectedImage * vvTerrainAmbientWeight(m, viewDir);
 }
 
 vec3 vvTerrainApplySurfaceLayers(VvTerrainMaterial m, vec3 diffuse)
@@ -1887,7 +2125,9 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
     vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight);
-    vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, environmentColor);
+    VvTerrainReflection reflection = vvTerrainPixelReflection(m, cameraRelativePos, materialUv,
+                                                              environmentColor, litColor.rgb, viewDir);
+    vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, reflection.image);
 
     float energyCap = mix(1.0, 1.18, clamp(vv_pbrEnergyCompensation, 0.0, 1.0));
     vec3 color = diffuse + (directSpec + blockSpec + ambientSpec) * energyCap;
@@ -2080,6 +2320,46 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         return vec4(grain.xy * 0.5 + 0.5, grain.z * clamp(m.specularFactor * 2.0, 0.0, 1.0), color.a);
     }
     if (mode == 33) return vec4(vvTerrainPrimaryGrid(materialUv), color.a);
+
+    // Pixel reflection views (D62). 32 the direction each texel reflects,
+    // 34 the image it sees, 35 how much of that reaches the pixel (x4),
+    // 36 where the analytic sky stands in (white) for the captured scene
+    // (black), 37 how coarse roughness made the direction cells, 39 the
+    // scene's validity (green real reflection, red a miss, dark blue the
+    // march was skipped as not worth its cost, blue no capture), 48 why
+    // the march ended.
+    if (mode == 32 || mode == 34 || mode == 35 || mode == 36 || mode == 37 ||
+        mode == 39 || mode == 48)
+    {
+        VvTerrainReflection rf = vvTerrainPixelReflection(m, cameraRelativePos, materialUv,
+                                                          environmentColor, color.rgb, viewDir);
+        if (mode == 32) return vec4(rf.direction * 0.5 + 0.5, color.a);
+        if (mode == 34) return vec4(rf.image, color.a);
+        if (mode == 35) return vec4(vvTerrainAmbientSpecular(m, viewDir, rf.image) * 4.0, color.a);
+        if (mode == 36) return vec4(vec3(1.0 - rf.scene), color.a);
+        if (mode == 37) return vec4(vec3((VV_TREFLECT_CELLS_SHARP - rf.cells) /
+                                         (VV_TREFLECT_CELLS_SHARP - VV_TREFLECT_CELLS_ROUGH)), color.a);
+        if (mode == 39)
+        {
+            if (rf.reason == VV_TSSR_NO_CAPTURE) return vec4(0.0, 0.0, 0.6, color.a);
+            if (rf.reason == VV_TSSR_SKIPPED) return vec4(0.0, 0.0, 0.18, color.a);
+            return vec4(mix(vec3(0.85, 0.08, 0.05), vec3(0.1, 0.9, 0.15), rf.scene), color.a);
+        }
+        // 48: green hit, yellow found a surface and rejected it as too thick,
+        // red never crossed anything, orange the far end unusable, dark red
+        // the origin off the captured frame, magenta pointing back at the
+        // camera, dark blue skipped as not worth a march, blue no capture.
+        float why = rf.reason;
+        vec3 c = why == VV_TSSR_HIT        ? vec3(0.1, 0.9, 0.15)
+               : why == VV_TSSR_TOO_THICK  ? vec3(0.95, 0.85, 0.1)
+               : why == VV_TSSR_NO_CROSSING? vec3(0.9, 0.1, 0.05)
+               : why == VV_TSSR_FAR_OFF    ? vec3(1.0, 0.5, 0.05)
+               : why == VV_TSSR_ORIGIN_OFF ? vec3(0.45, 0.02, 0.02)
+               : why == VV_TSSR_FACING     ? vec3(0.9, 0.1, 0.9)
+               : why == VV_TSSR_SKIPPED    ? vec3(0.0, 0.0, 0.18)
+               :                             vec3(0.0, 0.0, 0.6);
+        return vec4(c, color.a);
+    }
     if (mode == 52)
     {
         vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));

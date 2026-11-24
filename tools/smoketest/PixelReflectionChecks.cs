@@ -54,6 +54,55 @@ namespace VintageVisuals.SmokeTest
             CheckIntegrationPoint(check);
             CheckHonestLabelling(repo, check);
             CheckSceneBridge(repo, check);
+            CheckModularReflection(repo, check);
+        }
+
+        /// <summary>
+        /// Reflections stage two on the modular terrain path (D62).
+        ///
+        /// Four properties, each one a way this has gone wrong before or would
+        /// cost the player frames without showing:
+        /// - the strength slider at 0 gives exactly the flat environment the
+        ///   path drew before, so an install that never touches it is unchanged;
+        /// - the march runs only where the reflection's own weight can show,
+        ///   which is what keeps it off grass, soil and dry rough stone;
+        /// - the march reads the capture with textureLod only, because a loop
+        ///   with a data-dependent exit has no defined implicit derivatives;
+        /// - only pbrterrainreflect defines VV_TERRAIN_SCENE_CAPTURE, so the
+        ///   material path can never call a march whose group rolled back.
+        /// </summary>
+        private static void CheckModularReflection(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string reflect = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainreflect.glsl"));
+            string reflectYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainreflect.yaml"));
+            string materialCode = GlslEval.StripComments(material);
+
+            string pixel = GlslEval.FunctionBody(materialCode, "VvTerrainReflection vvTerrainPixelReflection(") ?? "";
+            int flat = pixel.IndexOf("o.image = mix(environment * 0.48, environment, clamp(rFlat.y * 0.5 + 0.5, 0.0, 1.0));", StringComparison.Ordinal);
+            int early = pixel.IndexOf("if (strength < 0.001) return o;", StringComparison.Ordinal);
+            check("modular pixel reflection at strength 0 is the previous flat environment",
+                flat >= 0 && early > flat &&
+                Regex.IsMatch(pixel, @"o\.image = mix\(o\.image, [^;]*, strength\);"),
+                "the slider at 0 must leave the ambient highlight exactly as before D62");
+
+            check("the modular march runs only where the reflection can show",
+                Regex.IsMatch(pixel, @"bool worthIt = reach > 0\.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;") &&
+                pixel.Contains("vvTerrainSceneLookup(origin, sceneR, v, worthIt)") &&
+                Regex.IsMatch(materialCode, @"if \(!worthIt\) \{ miss\.reason = VV_TSSR_SKIPPED; return miss; \}"),
+                "an ungated march costs every opaque fragment up to 40 capture reads for nothing");
+
+            string march = GlslEval.FunctionBody(GlslEval.StripComments(reflect), "VvTerrainSceneHit vvTerrainSceneMarch(") ?? "";
+            check("the modular march reads the capture with textureLod only",
+                march.Length > 0 && march.Contains("textureLod(vv_reflectScene") &&
+                !Regex.IsMatch(march, @"(?<![A-Za-z_])texture\(vv_reflectScene"),
+                "implicit derivatives are undefined inside the march's divergent loop");
+
+            check("only the capture group defines the scene-capture switch",
+                !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&
+                reflectYaml.Contains("#define VV_TERRAIN_SCENE_CAPTURE 1") &&
+                materialCode.Contains("#ifdef VV_TERRAIN_SCENE_CAPTURE"),
+                "a material path that defines it itself calls a march that may not exist");
         }
 
         /// <summary>

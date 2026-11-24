@@ -452,9 +452,7 @@ namespace VintageVisuals.Ui
             bool reflectionsUnavailable = StateByCode("reflections_scene") == NotInThisBuild;
             AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
                 reflectionsUnavailable
-                    ? (PseudoPbrSubsystem.TerrainReflectPatchEnabled
-                        ? "Stage one: Debug views 41 and 42 only."
-                        : "Needs the legacy terrain shader, which is off.")
+                    ? "Needs Surface materials, which draws the reflections."
                     : "Scene reflections " + StateByCode("reflections_scene") + " · Strength " + StateByCode("pbr_pixelreflect"),
                 "Open scene reflection controls.", y);
         }
