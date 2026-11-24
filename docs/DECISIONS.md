@@ -2896,3 +2896,56 @@ fact).
 **Cost, not measured.** Block light: a few ALU and derivatives per opaque
 fragment. Crevices: none on a dry world; on a wet top face no extra read; on a
 wall in rain four reads of the second atlas.
+
+## D65. Crevice water must read as water; torchlight shades the relief
+
+**Context.** In game after D64 (2026-11-24, rain, sliders at maximum): "not
+seeing much of a pronounced effect", and no way to tell whether torch light
+was shading the per-pixel normals. The player's Wetness view showed top faces
+almost uniformly white with grey specks, walls near black, and the crevice
+occlusion view nearly flat. Three causes, each from D64's own numbers:
+- The pool level was ABSOLUTE (0.46 x wetness) on a height that the atlas
+  normalises to each texture's own range, so on most textures it flooded close
+  to half the face, and the 0.55 film left on the rest gave pools nothing to
+  stand against.
+- Pooled texels kept their crevice's baked occlusion, and specular occlusion
+  then took the reflection away from exactly the texels holding water.
+- Walls streamed only in strict grooves, scaled by the wall's own wetness
+  (a quarter of a top face's), so streams were rare and faint.
+- Vanilla lights a face with one block-light value per vertex, and D64 shaded
+  the per-pixel normal only in the torch HIGHLIGHT, a narrow lobe that rough
+  stone barely shows. The diffuse relief came from the sun term alone, which is
+  absent at night and underground.
+
+**Decision - pools.** Water collects where the texture is LOCALLY low: a texel
+below the mean of both neighbours on either axis by 0.03 starts to hold water
+and is full at 0.10, once the ground is a little wet (so a mortar joint, low
+across and level along, fills as well as a pit); plus the texture's lowest
+band, up to 0.24 x wetness. The rest of the face keeps 0.30 of the film. A
+pooled texel's occlusion is lifted (the water surface sits above the crevice),
+its roughness goes to the minimum and its specular to at least 0.8, and its
+diffuse darkens a further 0.62 with a slight cool lean. Four second-atlas reads
+on a wet top face (none before).
+
+**Decision - streams.** Channels are judged more loosely (open along the fall
+line up to 0.04-0.12 of a rise); the texture's lowest texels on a wall are
+seams that stay wet while it rains; and about 30% of the columns of an open
+face carry a rivulet of drops with no groove to follow. Gated on the sky
+exposure and the falling rain rather than the wall's own wetness. Running
+water gets the same mirror treatment as a pool.
+
+**Decision - torchlight relief.** `vvTerrainBlockRelief` adds, in the torch's
+own light on the texture's colour, the change in N.L between the texel's own
+normal and the flat face toward the recovered block-light direction. Texels
+tilted toward the torch brighten, texels tilted away darken, a flat texel is
+untouched, and the result is bounded to 0.6 of vanilla's lit colour. It rides
+`vv_pbrBlockLight` (clamped to 1 for this term), so 0 is still no block-light
+response at all; no new slider.
+
+**Debug views.** 73 Water in crevices (grey film, blue pools, cyan streams).
+74 Torchlight on the normals (terrain lit by block light alone, as clay
+through each texel's normal, with the torch highlight on top). The debug view
+maximum is 74.
+
+**Cost, not measured.** Pools: four texture reads on a wet top face within the
+detail distance. Relief: one derivative-based direction per opaque fragment.

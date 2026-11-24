@@ -122,6 +122,50 @@ namespace VintageVisuals.SmokeTest
                 Regex.IsMatch(crevice, @"return vec2\(0\.0, stream \* rain \*"),
                 "pools on a wall or streams on a floor are not where water goes");
 
+            // D65: a pool has to stand out against the face around it. v17
+            // flooded every texel below an absolute 0.46 of a per-texture
+            // normalised height and left 0.55 of the wetness on the rest, so
+            // the Wetness view read white with grey specks and nothing looked
+            // like a pool. Evaluated from the shipped mix, at soaked ground.
+            string weather = GlslEval.FunctionBody(materialCode, "VvTerrainMaterial vvTerrainApplyWeather(") ?? "";
+            string poolMix = null;
+            try { poolMix = GlslEval.Statement(weather, "m.wetness = mix(m.wetness * mix(1.0, VV_TERRAIN_POOL_FILM, amount)"); }
+            catch (ArgumentException) { }
+            bool contrastOk = false;
+            string contrastWhy = "the pool/film mix was not found";
+            if (poolMix != null)
+            {
+                string expr = GlslEval.Rhs(poolMix).Replace("m.wetness", "w").Replace("crevice.x", "p");
+                double film = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_FILM");
+                double Wet(double pool) => GlslEval.Scalar(expr, GlslEval.Syms(
+                    "w", 1.0, "p", pool, "amount", 1.0, "VV_TERRAIN_POOL_FILM", film));
+                double level = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_LEVEL");
+                double contrast = Wet(1.0) - Wet(0.0);
+                contrastOk = contrast >= 0.6 && level <= 0.3 &&
+                             crevice.Contains("float dip = max(0.5 * (hl + hr), 0.5 * (hu + hd)) - h;");
+                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6), low band {level:0.00} (at most 0.3), local dip test present: {crevice.Contains("float dip")}";
+            }
+            check("a crevice pool stands out against the film around it", contrastOk, contrastWhy);
+
+            check("water in a crevice is a mirror its own crevice cannot occlude",
+                weather.Contains("m.ao = mix(m.ao, 1.0, max(m.pool, m.stream * 0.6));") &&
+                weather.Contains("m.perceptualRoughness = mix(m.perceptualRoughness, VV_TERRAIN_MIN_ROUGHNESS, water);"),
+                "keeping the joint's baked occlusion lets specular occlusion remove the reflection from exactly the texels holding water");
+
+            // D65: block light shades the per-pixel normal in the diffuse, by
+            // the change in N.L against the flat face (0 on a flat texel), with
+            // the direction taken before the gate (derivatives).
+            string relief = GlslEval.FunctionBody(materialCode, "vec3 vvTerrainBlockRelief(") ?? "";
+            string primary = GlslEval.FunctionBody(materialCode, "vec4 vvTerrainMaterialPrimary(") ?? "";
+            int rDir = relief.IndexOf("vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);", StringComparison.Ordinal);
+            int rGate = relief.IndexOf("if (strength < 0.001 || intensity < 0.004) return vec3(0.0);", StringComparison.Ordinal);
+            check("torchlight shades each texel's normal in the diffuse and leaves a flat texel alone",
+                rDir >= 0 && rGate > rDir &&
+                relief.Contains("float delta = max(dot(m.normal, toTorch), 0.0) - max(dot(m.faceNormal, toTorch), 0.0);") &&
+                relief.Contains("clamp(vv_pbrBlockLight, 0.0, 1.0)") &&
+                primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos), vec3(0.0));"),
+                "without it a torch lights a cobble face evenly and its relief is shaded only by the sun, which is absent at night and underground");
+
             check("only the capture group defines the scene-capture switch",
                 !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&
                 reflectYaml.Contains("#define VV_TERRAIN_SCENE_CAPTURE 1") &&

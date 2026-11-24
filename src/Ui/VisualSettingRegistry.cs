@@ -197,7 +197,7 @@ namespace VintageVisuals.Ui
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_blocklight", "PseudoPBR.BlockLightSpecular", "Torch and lava highlights",
-                   "Whether firelight makes a proper highlight on nearby surfaces rather than only brightening them.",
+                   "Whether firelight makes a proper highlight on nearby surfaces, and shades their relief toward the flame (up to 1), rather than only brightening them.",
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_blocklightdir", "PseudoPBR.BlockLightDirectionality", "Torch highlight direction",

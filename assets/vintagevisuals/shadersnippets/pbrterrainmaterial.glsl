@@ -157,6 +157,8 @@ struct VvTerrainMaterial
     float wetness;
     float snow;
     float frost;
+    float pool;     // standing water filling this texel (top faces, D65)
+    float stream;   // water running down this texel (side faces, D65)
 };
 
 vec3 vvTerrainSafeNormalize(vec3 v, vec3 fallback)
@@ -353,33 +355,50 @@ vec2 vvTerrainRippleField(vec3 faceNormal, vec3 cameraRelativePos, float wetness
 // now: derived from the texture itself, so mortar lines, the gaps between
 // cobbles and the pits in a rough stone are its low texels.
 //
-// TOP FACES pool. Water fills the lowest texels first, and the level rises
-// with how wet the ground is (the shared wetness, which lingers after rain and
-// dries on its own clock), so a shower fills the joints and the pits and a
-// soaked surface lies under shallow sheets. A pooled texel is open water:
-// flat (its relief drowned), as smooth as the wet layer gets, and the only
-// place ripples land. The texels above the level keep a lighter damp film.
+// TOP FACES pool (D65). Water collects where the texture is locally low - a
+// texel below both neighbours on either axis, which is a joint, a groove or a
+// pit - once the ground is a little wet, and the texture's lowest band fills
+// as it soaks (the shared wetness, which lingers after rain and dries on its
+// own clock). A pooled texel is open water: flat (its relief drowned), a
+// mirror (minimum roughness, its crevice occlusion lifted because the water
+// surface sits above the crevice), darker and a touch cool, and the only
+// place ripples land. The texels above it keep a thin damp film.
 //
 // SIDE FACES stream. Only while rain is FALLING (vv_weatherRain, a fact, not
-// the lingering wetness): a texel that is a groove across (lower than its
-// left and right neighbours) and open along (its upper and lower neighbours
-// not higher) is a channel, and drops run down it, one texel at a time, at a
-// rate and offset of its own. Nothing pools on a wall.
+// the lingering wetness) and on a wall open to the sky: a texel that is a
+// groove across (lower than its left and right neighbours) and open along is
+// a channel, and drops run down it one texel at a time; the texture's lowest
+// texels are seams that stay wet; and some columns of an open face carry a
+// rivulet of drops with no groove to follow. Nothing pools on a wall.
 //
 // Pixel art by construction: every input is per material texel and the
 // stream steps whole texels, so water is a set of texels, never a smooth
 // shape. DATA GAP: the game simulates no water on a block face; where the
 // low texels are is the texture's, where water is at a given moment is ours.
-// Cost while wet and within the detail distance: no extra read on a top face,
-// four reads of the second atlas on a wall while it rains; nothing when dry.
+// Cost while wet and within the detail distance: four reads of the second
+// atlas on a top face, four on a wall while it rains; nothing when dry or with
+// the slider at 0. Not measured.
 // ---------------------------------------------------------------------------
 
-const float VV_TERRAIN_POOL_LEVEL = 0.46;     // height the water reaches on soaked ground
-const float VV_TERRAIN_POOL_SOFT = 0.035;     // how much a texel straddling the level shows
-const float VV_TERRAIN_POOL_FILM = 0.55;      // damp left on texels above the water
-const float VV_TERRAIN_STREAM_GROOVE = 0.025; // how much lower than its sides a channel is
-const float VV_TERRAIN_STREAM_ROWS = 14.0;    // texels between drops in one channel
-const float VV_TERRAIN_STREAM_DROP = 0.22;    // share of a cycle a drop's texels are lit
+// D65 retune. v17 filled every texel below an ABSOLUTE height of 0.46, and
+// the height is normalised to each texture's own range, so on most textures
+// that was nearly half the face: the Wetness view read white with grey
+// specks and nothing looked like a pool (in-game screenshots, 2026-11-24).
+// Water now collects where the texture is LOCALLY low - a texel lower than
+// both neighbours on one axis is a joint, a groove or a pit - plus the lowest
+// band of the texture once the ground is soaked, and the rest of the face
+// keeps a much thinner film so the pools have something to stand against.
+const float VV_TERRAIN_POOL_LEVEL = 0.24;     // the low band soaked ground fills
+const float VV_TERRAIN_POOL_SOFT = 0.03;      // how much a texel straddling the level shows
+const float VV_TERRAIN_POOL_DIP = 0.03;       // how far below its neighbours a dip starts holding water
+const float VV_TERRAIN_POOL_DIP_FULL = 0.10;  // ... and is brim full
+const float VV_TERRAIN_POOL_FILM = 0.30;      // damp left on texels above the water
+const float VV_TERRAIN_POOL_DARKEN = 0.62;    // standing water over the wet darkening
+const float VV_TERRAIN_STREAM_GROOVE = 0.03;  // how much lower than its sides a channel is
+const float VV_TERRAIN_STREAM_SEAM = 0.26;    // texels this low on a wall are seams that stay wet
+const float VV_TERRAIN_STREAM_RIVULET = 0.70; // columns above this seed carry a rivulet down an open face
+const float VV_TERRAIN_STREAM_ROWS = 10.0;    // texels between drops in one channel
+const float VV_TERRAIN_STREAM_DROP = 0.30;    // share of a cycle a drop's texels are lit
 const float VV_TERRAIN_STREAM_BASE = 0.55;    // the film a running channel keeps between drops
 
 float vvTerrainHeightAt(vec2 materialUv)
@@ -395,12 +414,26 @@ vec2 vvTerrainCreviceWater(VvTerrainMaterial m, vec2 materialUv, vec3 cameraRela
         return vec2(0.0);
 
     float up = m.faceNormal.y;
+    vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+    vec2 texel = 1.0 / size;
     if (up > 0.7)
     {
-        // The level rises with the ground's wetness; m.wetness already holds
-        // the sky exposure, so a sheltered top stays dry.
-        float level = VV_TERRAIN_POOL_LEVEL * clamp(m.wetness, 0.0, 1.0);
-        float pool = 1.0 - smoothstep(level - VV_TERRAIN_POOL_SOFT, level + VV_TERRAIN_POOL_SOFT, m.height);
+        // The water rises with the ground's wetness; m.wetness already holds
+        // the sky exposure, so a sheltered top stays dry. A dip is judged
+        // against its neighbours on each axis, so a mortar joint (low across,
+        // level along) holds water as well as an isolated pit does.
+        float wet = clamp(m.wetness, 0.0, 1.0);
+        float h = m.height;
+        float hl = vvTerrainHeightAt(materialUv - vec2(texel.x, 0.0));
+        float hr = vvTerrainHeightAt(materialUv + vec2(texel.x, 0.0));
+        float hu = vvTerrainHeightAt(materialUv - vec2(0.0, texel.y));
+        float hd = vvTerrainHeightAt(materialUv + vec2(0.0, texel.y));
+        float dip = max(0.5 * (hl + hr), 0.5 * (hu + hd)) - h;
+        float basin = smoothstep(VV_TERRAIN_POOL_DIP, VV_TERRAIN_POOL_DIP_FULL, dip)
+                    * smoothstep(0.08, 0.45, wet);
+        float level = VV_TERRAIN_POOL_LEVEL * wet;
+        float low = 1.0 - smoothstep(level - VV_TERRAIN_POOL_SOFT, level + VV_TERRAIN_POOL_SOFT, h);
+        float pool = max(basin, low * step(0.001, level));
         return vec2(pool * amount * m.detailFade, 0.0);
     }
 
@@ -410,7 +443,6 @@ vec2 vvTerrainCreviceWater(VvTerrainMaterial m, vec2 materialUv, vec3 cameraRela
     // Which way is down, in material texels: the least-squares UV step per
     // block of falling world Y, from screen derivatives. Independent of how
     // the texture is rotated on the face.
-    vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
     vec2 uvdx = dFdx(materialUv) * size;
     vec2 uvdy = dFdy(materialUv) * size;
     float ydx = dFdx(cameraRelativePos.y);
@@ -423,17 +455,21 @@ vec2 vvTerrainCreviceWater(VvTerrainMaterial m, vec2 materialUv, vec3 cameraRela
     vec2 down = downTexels / perBlock;
     vec2 across = vec2(-down.y, down.x);
 
-    vec2 texel = 1.0 / size;
     float h = m.height;
     float hl = vvTerrainHeightAt(materialUv - across * texel);
     float hr = vvTerrainHeightAt(materialUv + across * texel);
     float hu = vvTerrainHeightAt(materialUv - down * texel);
     float hd = vvTerrainHeightAt(materialUv + down * texel);
 
+    // A channel: lower than its sides and open along the fall line. A seam:
+    // one of the texture's lowest texels (a mortar joint, a crack), which
+    // stays wet whichever way it runs. A rivulet: on an open stretch of face,
+    // some columns carry a thread of drops even with no groove to follow, as
+    // rain does on any wall.
     float groove = smoothstep(0.0, VV_TERRAIN_STREAM_GROOVE, 0.5 * (hl + hr) - h);
-    float open = 1.0 - smoothstep(0.02, 0.08, max(hu, hd) - h);
+    float open = 1.0 - smoothstep(0.04, 0.12, max(hu, hd) - h);
     float channel = groove * open;
-    if (channel < 0.01) return vec2(0.0);
+    float seam = 1.0 - smoothstep(VV_TERRAIN_STREAM_SEAM - 0.04, VV_TERRAIN_STREAM_SEAM + 0.04, h);
 
     // Drops: whole texel rows along the channel, each column on its own
     // offset and the block's own seed, moving down a little under a block a
@@ -445,8 +481,12 @@ vec2 vvTerrainCreviceWater(VvTerrainMaterial m, vec2 materialUv, vec3 cameraRela
     vec4 seed = vvTerrainCellRandom(vec2(column + cell.x * 7.0 + cell.y * 13.0, cell.z * 5.0 + cell.y));
     float phase = fract(row / VV_TERRAIN_STREAM_ROWS - vv_sceneClock * 2.0 + seed.x);
     float drop = 1.0 - step(VV_TERRAIN_STREAM_DROP * mix(0.7, 1.3, seed.y), phase);
-    float stream = channel * (VV_TERRAIN_STREAM_BASE + (1.0 - VV_TERRAIN_STREAM_BASE) * drop);
-    return vec2(0.0, stream * rain * amount * clamp(m.wetness * 4.0, 0.0, 1.0) * m.detailFade);
+    float rivulet = step(VV_TERRAIN_STREAM_RIVULET, seed.z) * open;
+    float stream = max(max(channel * (VV_TERRAIN_STREAM_BASE + (1.0 - VV_TERRAIN_STREAM_BASE) * drop),
+                           seam * VV_TERRAIN_STREAM_BASE),
+                       rivulet * drop);
+    if (stream < 0.01) return vec2(0.0);
+    return vec2(0.0, stream * rain * amount * clamp(vvTerrainSkyExposure() * 2.0, 0.0, 1.0) * m.detailFade);
 }
 
 VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelativePos, vec2 materialUv)
@@ -464,6 +504,13 @@ VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelative
         m.normal = vvTerrainSafeNormalize(mix(m.normal, m.faceNormal, crevice.x), m.faceNormal);
     }
     m.wetness = max(m.wetness, crevice.y);
+    m.pool = crevice.x;
+    m.stream = crevice.y;
+    // The water's surface sits ABOVE the crevice it fills, so the crevice no
+    // longer shadows what that surface reflects: v17 kept the joint's baked
+    // occlusion, and specular occlusion then took the reflection away from
+    // exactly the texels holding water.
+    m.ao = mix(m.ao, 1.0, max(m.pool, m.stream * 0.6));
 
     m.snow = vvTerrainSnow(m.faceNormal);
     m.frost = clamp(vv_sceneFrost, 0.0, 1.0);
@@ -488,6 +535,15 @@ VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelative
         m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
                                m.perceptualRoughness * m.perceptualRoughness);
         m.specularFactor = clamp(layered.specular, 0.0, 1.0);
+    }
+    // Open water is a mirror whatever the stone under it was.
+    float water = max(m.pool, m.stream) * (1.0 - clamp(m.snow + m.frost, 0.0, 1.0));
+    if (water > 0.001)
+    {
+        m.perceptualRoughness = mix(m.perceptualRoughness, VV_TERRAIN_MIN_ROUGHNESS, water);
+        m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
+                               m.perceptualRoughness * m.perceptualRoughness);
+        m.specularFactor = max(m.specularFactor, 0.8 * water);
     }
     return m;
 }
@@ -517,6 +573,8 @@ VvTerrainMaterial vvDecodeTerrainMaterial(vec4 litColor, vec3 baseColor,
     m.wetness = 0.0;
     m.snow = 0.0;
     m.frost = 0.0;
+    m.pool = 0.0;
+    m.stream = 0.0;
     return vvTerrainApplyWeather(m, cameraRelativePos, materialUv);
 }
 
@@ -675,6 +733,37 @@ vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight, 
     float g = vvGeometrySmith(ndotv, ndotl, m.perceptualRoughness);
     vec3 spec = (d * g * f) / max(4.0 * ndotv * ndotl, 0.08);
     return blockLight * spec * ndotl * max(0.0, vv_pbrBlockLight);
+}
+
+// Torchlight relief (D65): block light shading the per-pixel normal in the
+// DIFFUSE, not only in the highlight.
+//
+// Vanilla lights a block face with one block-light value per vertex, so a
+// torch brightens a cobble face evenly and its relief is lit only by the sun
+// term above, which is dark at night and underground - exactly where a torch
+// matters. v17 shaded the per-pixel normal in the torch HIGHLIGHT alone, which
+// is a narrow lobe on rough stone and next to invisible. This adds the change
+// in N.L between the texel's own normal and the flat face toward the same
+// recovered light direction (vvBlockLightDirection), in the torch's own
+// light on the texture's colour: texels tilted toward the torch brighten,
+// texels tilted away darken, and a flat texel is untouched, so the face's
+// average stays vanilla's. Zero at vv_pbrBlockLight 0; bounded to a share of
+// what vanilla lit so it cannot invent light vanilla did not have.
+// Cost: one derivative-based direction per fragment, no texture read.
+const float VV_TERRAIN_TORCH_RELIEF = 0.9;
+const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.6;
+
+vec3 vvTerrainBlockRelief(VvTerrainMaterial m, vec3 litColor, vec3 blockLight, vec3 cameraRelativePos)
+{
+    float intensity = dot(blockLight, VV_PBR_LUMA);
+    vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
+    float strength = clamp(vv_pbrBlockLight, 0.0, 1.0) * VV_TERRAIN_TORCH_RELIEF * m.detailFade;
+    if (strength < 0.001 || intensity < 0.004) return vec3(0.0);
+
+    float delta = max(dot(m.normal, toTorch), 0.0) - max(dot(m.faceNormal, toTorch), 0.0);
+    vec3 relief = m.baseColor * blockLight * (delta * strength * (1.0 - m.metalness));
+    vec3 cap = litColor * VV_TERRAIN_TORCH_RELIEF_CAP;
+    return clamp(relief, -cap, cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -904,6 +993,10 @@ vec3 vvTerrainApplySurfaceLayers(VvTerrainMaterial m, vec3 diffuse)
     float wet = m.wetness * clamp(1.0 - m.snow - m.frost, 0.0, 1.0);
 
     diffuse *= mix(1.0, VV_LAYER_WET_DARKEN, wet * (1.0 - m.metalness));
+    // Standing and running water darken further than a damp film, and lean a
+    // touch cool: the colour of the sky it now shows instead of the stone.
+    float water = max(m.pool, m.stream) * clamp(1.0 - m.snow - m.frost, 0.0, 1.0) * (1.0 - m.metalness);
+    diffuse *= mix(vec3(1.0), vec3(0.94, 0.97, 1.0) * VV_TERRAIN_POOL_DARKEN, water);
     diffuse = mix(diffuse, vec3(dot(diffuse, vec3(0.299, 0.587, 0.114))) * 1.22, m.snow * 0.7);
     diffuse = mix(diffuse, diffuse * vec3(0.86, 0.92, 1.0), m.frost * 0.45);
     return diffuse;
@@ -2289,6 +2382,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     diffuse = vvTerrainApplySurfaceLayers(m, diffuse);
     diffuse = vvTerrainApplyDamp(m, diffuse, cameraRelativePos);
     diffuse = vvTerrainCanopyResolve(diffuse, cameraRelativePos, m.faceNormal, m.detailFade, -1.0, 0.85);
+    diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos), vec3(0.0));
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
     vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight, cameraRelativePos);
@@ -2495,6 +2589,32 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     {
         vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, dot(blockLight, VV_PBR_LUMA));
         return vec4(l * 0.5 + 0.5, color.a);
+    }
+
+    // 73 water in crevices (D65): grey the damp film, blue standing water on
+    // a top face, cyan water running down a wall, by how much.
+    if (mode == 73)
+    {
+        vec3 film = vec3(clamp(m.wetness, 0.0, 1.0) * 0.35);
+        vec3 view = mix(film, vec3(0.10, 0.35, 1.00), clamp(m.pool, 0.0, 1.0));
+        view = mix(view, vec3(0.20, 1.00, 0.95), clamp(m.stream, 0.0, 1.0));
+        return vec4(view, color.a);
+    }
+
+    // 74 torchlight on the normals (D65): the terrain lit by block light ALONE,
+    // as untextured clay, through each texel's own normal, with the torch
+    // highlight on top in its own colour. Relief that turns with the torch
+    // is the per-pixel normal being shaded; a flat even face would mean it
+    // is not. Black where no block light reaches. Stand by a torch at night.
+    if (mode == 74)
+    {
+        float intensity = dot(blockLight, VV_PBR_LUMA);
+        vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
+        vec3 v = vvTerrainSafeNormalize(-cameraRelativePos, m.faceNormal);
+        float ndotl = max(dot(m.normal, l), 0.0);
+        vec3 clay = vec3(clamp(intensity * 1.6, 0.0, 1.0) * ndotl);
+        vec3 glint = vvTerrainBlockSpecular(m, v, blockLight, cameraRelativePos);
+        return vec4(clamp(clay + glint, 0.0, 1.0), color.a);
     }
 
     // Pixel reflection views (D62). 32 the direction each texel reflects,

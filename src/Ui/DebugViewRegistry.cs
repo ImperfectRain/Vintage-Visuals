@@ -230,6 +230,8 @@ namespace VintageVisuals.Ui
             ModularPbr(72, "Backlit rim light", "White on the leaf texels lining a hole when the sun is behind them, by how much light the rim adds. Look toward the sun through leaves, within about 24 blocks.", Canopy);
             ModularPbr(67, "Fleck light", "Red is the clear-sky gate (black is too cloudy for flecks), green the wind shimmer, blue the moon's share at night.", Canopy);
             ModularPbr(65, "Leaf map", "The leaves the sun ray passes through, read from the world's blocks: green is how dense, blue how high. Grey means the map is not loaded yet.", Canopy);
+            ModularPbr(73, "Water in crevices", "Grey is the damp film, blue standing water pooled in joints and dips on top faces, cyan water running down a wall. Needs rain, and Water in crevices above 0.", Layers);
+            ModularPbr(74, "Torchlight on the normals", "The terrain lit by block light alone, as untextured clay through each texel's own normal, with the torch highlight on top. Relief that turns as you carry a torch past is the normal map being shaded. Black where no block light reaches; try at night.", Layers);
             ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue on the foliage path. Read this one first.", Path);
 
             void Entity(int n, string name, string desc)

@@ -356,7 +356,7 @@ actually for.
 | Sky reflection | 0 – 2 | 0.35 | realism |
 | Specular antialiasing | 0 – 2 | 1.0 | correctness |
 | Detail distance | 4 – 192 | 48 | performance/quality |
-| Torch & lava highlights | 0 – 2 | 1.0 | realism |
+| Torch & lava highlights (and, up to 1, torchlight relief on terrain, D65) | 0 – 2 | 1.0 | realism |
 | Torch highlight directionality | 0 – 1 | 0.7 | taste |
 
 **Roughness bias** is the strongest single style control, because roughness is
@@ -473,6 +473,8 @@ yellow is near one material texel per screen pixel, red is undersampled.
 | 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
 | 8 | roughness as shaded | Stored roughness plus bias plus specular antialiasing. Brighter than view 2 means aliasing is being suppressed there |
 | 9 | estimated block-light direction | Flat means the gradient found nothing and the light is ambient; variation across a wall means a torch is being located |
+| 73 | water in crevices (modular path, D65) | Grey the damp film, blue standing water in joints and dips on top faces, cyan water running down walls. Needs rain and `pbr_crevicewater` above 0 |
+| 74 | torchlight on the normals (modular path, D65) | Terrain lit by block light alone, as clay through each texel's own normal, plus the torch highlight. Relief that turns as a torch moves past is the normal map being shaded |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is
