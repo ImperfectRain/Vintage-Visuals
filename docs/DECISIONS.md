@@ -2682,3 +2682,49 @@ field the game never rewrites do the same with nothing to unpatch.
 **Consequences.** Reflection on a VSEssentials internal: a smoke check reads
 the game's own DLL for the type and field, and a failure at runtime is logged
 once and leaves vanilla's fireflies on. Not seen in game.
+
+## D60. Falling leaves get their real shapes, drawn through the game's standard shader
+
+Supersedes the "Rejected: a textured leaf" paragraph of D58.
+
+**Context.** Asked for leaves with the tree's actual leaf shapes, tinted with
+its seasonal colour, rather than coloured squares. The game's particles
+cannot carry a texture. Its leaf textures are greyscale clusters of
+overlapping leaves (64x64 for broadleaves), tinted at draw time by the
+block's climate and season colour maps.
+
+**Decision.**
+- *Shapes:* `LeafSprites` cuts single leaves out of the PNG: a flood fill from
+  a seed texel through opaque texels within 40 grey of the seed, inside a
+  circle of half a cell (12 px on a 64 px texture), wrapping as the texture
+  tiles. The art shades each leaf as one tone against its neighbours, so the
+  fill stops at the leaf's own edge. Best of 60 seeds per sprite: fill near
+  40%, stopped by its own edge rather than the circle, from a light (front,
+  whole) leaf. 16 per texture, one 4x4 sheet, uploaded once.
+- *Colour:* the game's own tinted samples (`Block.GetRandomColor` at the
+  leaf block) over the texture's mean grey, as a per-channel multiplier.
+- *Drawing:* flat two-sided quads through `PreparedStandardShader`, the
+  program block entities use, so the game's lighting, fog, alpha test and
+  render-target outputs apply and the mod ships no GLSL for it.
+- *Motion:* `LeafFlight` on the CPU. The leaf falls at about 0.7 blocks a
+  second, swinging across the wind, and takes up the wind's speed downwind:
+  0.3 b/s in still air, 5 at a gale, by the square of the local wind,
+  including the gust. It tumbles faster when blown. It lands flat on the first
+  non-leaf collision box or floats on liquid, lies 8 s, then shrinks.
+
+**Rejected.**
+- An instanced draw with a custom shader. It is cheaper per leaf, but needs
+  mod GLSL for lighting, fog and every render target. At 160 leaves, 160
+  draws through the game's own program are the safer cost.
+- Windows of the texture without a flood fill. They come out as square
+  fragments of a cluster, not leaves.
+
+**Consequences.**
+- *Cost:* up to 160 `RenderMesh` calls per frame and one light lookup per leaf
+  ten times a second. One small texture per leaf texture seen. Not measured.
+- *Fallback:* a texture that yields no leaf, or any render failure, falls back
+  to coloured particles, and the log says so once.
+- *Unknown:* that the standard shader accepts the xyz/uv/rgba/flags layout used
+  here, and the channel order of the tint. A wrong order would show as blue or
+  purple autumn leaves.
+- *Status:* not seen in game.

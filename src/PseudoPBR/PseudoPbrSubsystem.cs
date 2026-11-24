@@ -5,6 +5,7 @@ using System.IO;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Scene;
 
@@ -148,12 +149,33 @@ namespace VintageVisuals.PseudoPBR
 
             _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
             mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
-            _forestLife = new ForestLifeSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
+            _leafRenderer = new LeafRenderer(mod.Capi, LeafWind);
+            mod.Capi.Event.RegisterRenderer(_leafRenderer, EnumRenderStage.Opaque, "vintagevisuals-leaves");
+            _forestLife = new ForestLifeSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR,
+                                                _leafRenderer);
             mod.Capi.Event.RegisterRenderer(_forestLife, EnumRenderStage.Before, "vintagevisuals-forestlife");
         }
 
         private DustMoteSpawner _motes;
         private ForestLifeSpawner _forestLife;
+        private LeafRenderer _leafRenderer;
+
+        /// <summary>The game's wind, as the textured leaves need it, from the one tracker.</summary>
+        private LeafRenderer.WindSample LeafWind()
+        {
+            var sample = new LeafRenderer.WindSample { DirX = 1f };
+            var tracker = _mod?.Environment;
+            if (tracker == null) return sample;
+            var world = tracker.Current;
+            Vec2f dir = world.WindDirection ?? new Vec2f(1f, 0f);
+            float len = (float)Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
+            sample.DirX = len > 1e-3f ? dir.X / len : 1f;
+            sample.DirZ = len > 1e-3f ? dir.Y / len : 0f;
+            sample.Speed = GameMath.Clamp(world.WindSpeed, 0f, 1f);
+            sample.Gusts = GameMath.Clamp(_mod?.ConfigManager?.Config?.PseudoPBR?.WindGusts ?? 0f, 0f, 1f);
+            sample.Breeze = tracker.BreezeClock;
+            return sample;
+        }
 
         public void Apply()
         {
@@ -639,6 +661,13 @@ namespace VintageVisuals.PseudoPBR
             if (_mod != null && _mod.Capi != null && _forestLife != null)
             {
                 _mod.Capi.Event.UnregisterRenderer(_forestLife, EnumRenderStage.Before);
+                _forestLife.Dispose();
+            }
+            if (_mod != null && _mod.Capi != null && _leafRenderer != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_leafRenderer, EnumRenderStage.Opaque);
+                _leafRenderer.Dispose();
+                _leafRenderer = null;
             }
 
             if (_bindInterceptor != null)

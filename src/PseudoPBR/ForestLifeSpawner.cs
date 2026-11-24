@@ -133,8 +133,12 @@ namespace VintageVisuals.PseudoPBR
         private float _leaves;
         private bool _reported;
 
-        public ForestLifeSpawner(ICoreClientAPI capi, Func<EnvironmentTracker> tracker, Func<PseudoPbrConfig> config)
+        private readonly LeafRenderer _leafRenderer;
+
+        public ForestLifeSpawner(ICoreClientAPI capi, Func<EnvironmentTracker> tracker, Func<PseudoPbrConfig> config,
+                                 LeafRenderer leafRenderer = null)
         {
+            _leafRenderer = leafRenderer;
             _capi = capi;
             _tracker = tracker;
             _config = config;
@@ -363,7 +367,7 @@ namespace VintageVisuals.PseudoPBR
             var pos = new BlockPos(player.Pos.Dimension);
             int spawned = 0;
 
-            for (int t = 0; t < LeafTriesPerTick && _leaves < LeafMaxAlive; t++)
+            for (int t = 0; t < LeafTriesPerTick && _leaves + (_leafRenderer?.Count ?? 0) < LeafMaxAlive; t++)
             {
                 double x = player.Pos.X + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
                 double z = player.Pos.Z + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
@@ -381,12 +385,23 @@ namespace VintageVisuals.PseudoPBR
                 bool evergreen = IsEvergreen(block.SeasonColorMap);
                 if (evergreen && _random.NextDouble() > LeafEvergreenShare) continue;
 
+                float push = 0.2f + 0.9f * GameMath.Clamp(world.WindSpeed + LeafGustLift * gust, 0f, 1f);
+
+                // A leaf with its real shape where the renderer can cut one
+                // from this tree's texture; a coloured particle where it cannot.
+                if (_leafRenderer != null && _leafRenderer.Usable &&
+                    _leafRenderer.TrySpawn(block, pos, x, lowest - 0.2, z,
+                        dx * push, -0.3f, dz * push, evergreen))
+                {
+                    spawned++;
+                    continue;
+                }
+
                 int color = block.GetRandomColor(_capi, pos, BlockFacing.UP, -1);
                 _leaf.Color = (color & 0x00FFFFFF) | unchecked((int)0xFF000000);
                 _leaf.MinSize = evergreen ? NeedleMinSize : LeafMinSize;
                 _leaf.MaxSize = evergreen ? NeedleMaxSize : LeafMaxSize;
 
-                float push = 0.2f + 0.9f * GameMath.Clamp(world.WindSpeed + LeafGustLift * gust, 0f, 1f);
                 _leaf.MinVelocity.Set(dx * push - 0.15f, -0.35f, dz * push - 0.15f);
                 _leaf.AddVelocity.Set(0.3f, 0.2f, 0.3f);
                 _leaf.MinPos.Set(x, lowest - 0.15, z);

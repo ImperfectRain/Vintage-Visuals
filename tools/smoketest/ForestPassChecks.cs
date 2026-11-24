@@ -39,6 +39,7 @@ namespace VintageVisuals.SmokeTest
             Season(check);
             FallingLeaves(glsl, check);
             Fireflies(check);
+            TexturedLeaves(check);
         }
 
         private static string Body(string src, string sig)
@@ -454,6 +455,96 @@ namespace VintageVisuals.SmokeTest
                 detail = found ? "found" : VanillaFireflies.SystemTypeName + "::" + VanillaFireflies.FieldName + " missing";
             }
             check("fireflies: vanilla's firefly particles are where the switch-off looks for them", found, detail);
+        }
+
+        // --- Textured leaves (v15) -------------------------------------------
+
+        private static void TexturedLeaves(Action<string, bool, string> check)
+        {
+            // A synthetic leaf texture in the game's manner: greyscale leaves
+            // that overlap, each one tone. Light leaves (200) on a lattice,
+            // dark ones (110) between them, touching.
+            int w = 64, h = 64;
+            var tex = new int[w * h];
+            void Disc(int cx, int cy, int r, int grey)
+            {
+                for (int y = cy - r; y <= cy + r; y++)
+                    for (int x = cx - r; x <= cx + r; x++)
+                    {
+                        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > r * r) continue;
+                        int px = ((x % w) + w) % w, py = ((y % h) + h) % h;
+                        tex[py * w + px] = unchecked((int)0xFF000000) | (grey << 16) | (grey << 8) | grey;
+                    }
+            }
+            for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) Disc(8 + i * 16, 8 + j * 16, 6, 110);
+            for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) Disc(16 + i * 16, 16 + j * 16, 5, 200);
+
+            int[] sheet = LeafSprites.BuildSheet(tex, w, h, 7, out int cell, out int sprites);
+            int size = LeafSprites.Side * cell;
+            bool oneTone = sheet != null, connected = sheet != null, inBand = sheet != null;
+            for (int sIdx = 0; sheet != null && sIdx < LeafSprites.Side * LeafSprites.Side; sIdx++)
+            {
+                int ox = (sIdx % LeafSprites.Side) * cell, oy = (sIdx / LeafSprites.Side) * cell;
+                var tones = new System.Collections.Generic.HashSet<int>();
+                int filled = 0, sx = -1, sy = -1;
+                for (int y = 0; y < cell; y++)
+                    for (int x = 0; x < cell; x++)
+                    {
+                        int c = sheet[(oy + y) * size + ox + x];
+                        if (LeafSprites.Alpha(c) < LeafSprites.AlphaCut) continue;
+                        tones.Add(c & 0xff); filled++; sx = x; sy = y;
+                    }
+                if (filled == 0) continue;
+                // One leaf: one tone (it stopped at the edge of the leaf it
+                // overlaps), one 4-connected piece, a leaf-sized share of the cell.
+                if (tones.Count != 1) oneTone = false;
+                float fill = filled / (float)(cell * cell);
+                if (fill < LeafSprites.MinFill || fill > LeafSprites.MaxFill) inBand = false;
+                var seen = new bool[cell * cell];
+                var stack = new System.Collections.Generic.Stack<int>();
+                stack.Push(sy * cell + sx); seen[sy * cell + sx] = true; int reached = 0;
+                while (stack.Count > 0)
+                {
+                    int i = stack.Pop(); reached++;
+                    int cx = i % cell, cy = i / cell;
+                    foreach (var (nx, ny) in new[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) })
+                    {
+                        if (nx < 0 || ny < 0 || nx >= cell || ny >= cell || seen[ny * cell + nx]) continue;
+                        if (LeafSprites.Alpha(sheet[(oy + ny) * size + ox + nx]) < LeafSprites.AlphaCut) continue;
+                        seen[ny * cell + nx] = true; stack.Push(ny * cell + nx);
+                    }
+                }
+                if (reached != filled) connected = false;
+            }
+            check("textured leaves: each sprite is one whole leaf cut from the texture - one tone, one piece, leaf-sized",
+                  sheet != null && sprites >= 12 && oneTone && connected && inBand,
+                  $"{sprites} sprites of {cell} px; one tone {oneTone}, connected {connected}, in band {inBand}");
+
+            // The tint is the game's colour over the texture's grey.
+            int sample = unchecked((int)0xFF000000) | (200 << 16) | (100 << 8) | 50;
+            LeafSprites.Tint(new[] { sample, sample }, 2, 100f, out float tr, out float tg, out float tb);
+            bool tint = Math.Abs(tr - 2f) < 1e-4 && Math.Abs(tg - 1f) < 1e-4 && Math.Abs(tb - 0.5f) < 1e-4 &&
+                        Math.Abs(LeafSprites.MeanGrey(new[] { sample, 0 }) - 350f / 3f) < 1e-3;
+
+            // Flight: slow fall and little drift in still air, carried at about
+            // the gale's speed in one, tumbling harder when blown.
+            var rnd = new Random(3);
+            LeafFlight.State calm = LeafFlight.Start(0, 100, 0, 0, 0, 0, rnd);
+            LeafFlight.State gale = calm;
+            float calmRoll0 = calm.Roll;
+            for (int i = 0; i < 600; i++) { LeafFlight.Step(ref calm, 1f / 60f, 1f, 0f, 0f); LeafFlight.Step(ref gale, 1f / 60f, 1f, 0f, 1f); }
+            double calmFall = (100 - calm.Y) / 10.0, galeAlong = gale.X / 10.0;
+            float calmSpin = Math.Abs(calm.Roll - calmRoll0), galeSpin = Math.Abs(gale.Roll - calmRoll0);
+            bool flight = calmFall > 0.5 && calmFall < 1.0 && Math.Abs(calm.X) < 4.0 &&
+                          galeAlong > 0.6 * LeafFlight.GaleDrift && galeSpin > calmSpin * 2f;
+            var landed = calm;
+            LeafFlight.Land(ref landed, 64.02, false);
+            for (int i = 0; i < 60; i++) LeafFlight.Settle(ref landed, 1f / 60f);
+            bool rest = landed.Landed && landed.VY == 0f && Math.Abs(landed.Pitch - Math.PI / 2) < 0.05 &&
+                        LeafFlight.Shrink(-1f, 1f) == 1f && LeafFlight.Shrink(2f, 1f) == 0f;
+            check("textured leaves: tinted by the game's colour, fall slowly, ride the wind, lie flat when down",
+                  tint && flight && rest,
+                  $"tint {tr:0.00}/{tg:0.00}/{tb:0.00}; still fall {calmFall:0.00} b/s drift {calm.X:0.0}; gale {galeAlong:0.0} b/s; spin {calmSpin:0.0}/{galeSpin:0.0}; rest {rest}");
         }
 
         // --- Season ----------------------------------------------------------

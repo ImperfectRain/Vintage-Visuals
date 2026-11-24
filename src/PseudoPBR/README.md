@@ -1393,7 +1393,11 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   The local wind adds the gust from `GustField`, a CPU port of `vvTerrainGust`
   whose constants and hash `tools/smoketest` reads back out of the GLSL, so a
   flurry comes off the crowns the visible gust crosses. Evergreens shed a
-  quarter as often, smaller. Cap 160 alive. A colour, not the leaf's outline.
+  quarter as often, smaller. Cap 160 alive. Since D60 the leaves have their real
+  shapes: `LeafRenderer` cuts single leaves from the tree's own texture
+  (`LeafSprites`), tints them with the game's colour, and draws them as tumbling
+  two-sided meshes through the game's standard shader (`LeafFlight` moves them).
+  Coloured particles are the fallback.
   The season comes from `EnvironmentState.LeafFall`, continuous across the
   handovers (D59), and leaves draw at 0.35 to 0.55.
 - **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
