@@ -944,7 +944,7 @@ namespace VintageVisuals.Common
         public float Pollen { get; set; } = 0.5f;
 
         /// <summary>
-        /// v14. Small glowing lights blinking low over grass at dusk and on warm summer nights, most in humid places. None in rain, cold or winter. 0 spawns none.
+        /// v14. Swarms of fireflies flashing together low over grass at dusk and on warm summer nights, most in humid places; replaces the game's own fireflies while on. None in rain, cold or winter. 0 gives the game's own fireflies back.
         /// </summary>
         public float Fireflies { get; set; } = 0.6f;
 

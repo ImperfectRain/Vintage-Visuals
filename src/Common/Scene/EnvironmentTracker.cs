@@ -107,6 +107,7 @@ namespace VintageVisuals.Common.Scene
         private float _winter;
         private float _spring;
         private float _summer;
+        private float _leafFall;
         private readonly Vec3f _camera = new Vec3f();
 
         private bool _reportedFirstSample;
@@ -481,6 +482,23 @@ namespace VintageVisuals.Common.Scene
         }
 
         /// <summary>
+        /// v15. The leaves' fall at a point in the year, continuous across every
+        /// handover: late summer 0 to 0.25, autumn 0.25 to 1, winter 1 to 0,
+        /// spring 0. See <see cref="EnvironmentState.LeafFall"/>. Pure.
+        /// </summary>
+        public static float LeafFallAt(EnumSeason season, float within)
+        {
+            float w = GameMath.Clamp(within, 0f, 1f);
+            switch (season)
+            {
+                case EnumSeason.Summer: return 0.25f * w * w;
+                case EnumSeason.Fall: return 0.25f + 0.75f * w;
+                case EnumSeason.Winter: return 1f - w;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>
         /// How far into autumn and winter the world is, from the game's answer.
         ///
         /// GetSeason is per-position and hemisphere-aware, so it is asked at the
@@ -519,6 +537,7 @@ namespace VintageVisuals.Common.Scene
                 _winter = season == EnumSeason.Winter ? depth : 0f;
                 _spring = season == EnumSeason.Spring ? depth : 0f;
                 _summer = season == EnumSeason.Summer ? depth : 0f;
+                _leafFall = LeafFallAt(season, within);
 
                 // The one assumption here that cannot be checked without the
                 // game running: that the season the calendar names and the
@@ -603,7 +622,7 @@ namespace VintageVisuals.Common.Scene
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
-                _camera, _proximity, _autumn, _winter, _spring, _summer);
+                _camera, _proximity, _autumn, _winter, _spring, _summer, _leafFall);
         }
 
         /// <summary>

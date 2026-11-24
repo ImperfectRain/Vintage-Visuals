@@ -19,9 +19,12 @@ namespace VintageVisuals.PseudoPBR
     /// time of day, the wind - and where they spawn is the game's own blocks:
     /// leaves from the leaf map (<see cref="CanopyMap"/>), plants (block
     /// material Plant) at the top of the rain map. Nothing here invents a place for
-    /// them. The game has no pollen or fireflies of its own (DATA GAP: neither
-    /// is in its assets, so how many and how they move is this mod's choice;
-    /// where and when is the world's).
+    /// them. The game has no pollen of its own (DATA GAP: how much and how it
+    /// moves is this mod's choice; where and when is the world's). It DOES have
+    /// fireflies (ModSystemAmbientParticles, single scattered specks); the v14
+    /// note here said otherwise and was wrong. v15 rebuilds ours as flashing
+    /// swarms and switches vanilla's off while ours are on
+    /// (<see cref="VanillaFireflies"/>).
     ///
     /// No GL: IClientWorldAccessor.SpawnParticles, safe at
     /// EnumRenderStage.Before. Cost: at most <see cref="TriesPerTick"/>
@@ -46,7 +49,27 @@ namespace VintageVisuals.PseudoPBR
 
         public const float FireflyNear = 4f;
         public const float FireflyReach = 20f;
-        public const int FireflyMaxAlive = 16;
+        public const int FireflyMaxAlive = 30;
+
+        /// <summary>
+        /// v15 fireflies, rebuilt to replace vanilla's (ModSystemAmbientParticles,
+        /// scattered single specks): a few SWARMS over vegetation, each living
+        /// <see cref="SwarmLifeMin"/> to <see cref="SwarmLifeMax"/> seconds
+        /// before it moves, flashing together in waves every
+        /// <see cref="WaveMin"/> to <see cref="WaveMax"/> seconds - the
+        /// synchronous blinking of a real colony - each flash a bright core in a
+        /// soft halo, so it reads as a light rather than a pixel.
+        /// </summary>
+        public const int Swarms = 3;
+        public const float SwarmRadius = 2.5f;
+        public const float SwarmLifeMin = 15f;
+        public const float SwarmLifeMax = 30f;
+        public const float WaveMin = 1.6f;
+        public const float WaveMax = 3.2f;
+        public const int WaveMaxFlashes = 5;
+        public const float FireflyCoreMin = 0.1f;
+        public const float FireflyCoreMax = 0.14f;
+        public const float FireflyHalo = 0.55f;
         /// <summary>One flash: a firefly is drawn as a short glow that fades, so many of them read as blinking.</summary>
         public const float FireflyLife = 1.3f;
         public const float FireflyMinCelsius = 14f;
@@ -64,6 +87,20 @@ namespace VintageVisuals.PseudoPBR
         public const float LeafLife = 7f;
         public const float LeafAddLife = 5f;
 
+        /// <summary>The year-round trickle, as a share of the late-autumn peak.</summary>
+        public const float LeafShedFloor = 0.08f;
+
+        /// <summary>
+        /// A leaf's drawn size, broadleaf and evergreen. The first cut used
+        /// 0.14 to 0.24 and read in game as a few coloured pixels: the game's
+        /// quad sizes are not blocks (its fire smoke starts at 0.3), so a leaf
+        /// that is to read at ten blocks needs this.
+        /// </summary>
+        public const float LeafMinSize = 0.35f;
+        public const float LeafMaxSize = 0.55f;
+        public const float NeedleMinSize = 0.18f;
+        public const float NeedleMaxSize = 0.26f;
+
         /// <summary>How much a full gust adds to the game's wind where it passes, for the leaves.</summary>
         public const float LeafGustLift = 0.6f;
 
@@ -80,6 +117,13 @@ namespace VintageVisuals.PseudoPBR
         private readonly SimpleParticleProperties _drip;
         private readonly SimpleParticleProperties _pollen;
         private readonly SimpleParticleProperties _firefly;
+        private readonly SimpleParticleProperties _fireflyHalo;
+        private readonly double[] _swarmX = new double[Swarms];
+        private readonly double[] _swarmY = new double[Swarms];
+        private readonly double[] _swarmZ = new double[Swarms];
+        private readonly float[] _swarmLife = new float[Swarms];
+        private readonly float[] _swarmWave = new float[Swarms];
+        private readonly VanillaFireflies _vanillaFireflies;
         private readonly SimpleParticleProperties _leaf;
 
         private float _sinceTick;
@@ -118,12 +162,26 @@ namespace VintageVisuals.PseudoPBR
                 1, 0, ColorUtil.ToRgba(230, 200, 255, 110),
                 new Vec3d(), new Vec3d(),
                 new Vec3f(-0.12f, -0.04f, -0.12f), new Vec3f(0.24f, 0.08f, 0.24f),
-                FireflyLife, 0f, 0.09f, 0.13f, EnumParticleModel.Quad);
+                FireflyLife, 0f, FireflyCoreMin, FireflyCoreMax, EnumParticleModel.Quad);
             _firefly.WithTerrainCollision = false;
             _firefly.ShouldDieInLiquid = true;
+            _firefly.RandomVelocityChange = true;
             // Full glow: a firefly is a light, not a lit speck.
             _firefly.VertexFlags = 255;
             _firefly.OpacityEvolve = EvolvingNatFloat.create(EnumTransformFunction.LINEAR, -230f);
+
+            // The halo: the same flash, wide and faint, drawn about the core.
+            _fireflyHalo = new SimpleParticleProperties(
+                1, 0, ColorUtil.ToRgba(60, 170, 255, 90),
+                new Vec3d(), new Vec3d(),
+                new Vec3f(), new Vec3f(),
+                FireflyLife, 0f, FireflyHalo, FireflyHalo * 1.2f, EnumParticleModel.Quad);
+            _fireflyHalo.WithTerrainCollision = false;
+            _fireflyHalo.ShouldDieInLiquid = true;
+            _fireflyHalo.VertexFlags = 255;
+            _fireflyHalo.OpacityEvolve = EvolvingNatFloat.create(EnumTransformFunction.LINEAR, -60f);
+
+            _vanillaFireflies = new VanillaFireflies(capi);
 
             // A leaf: the colour of a random texel of the tree's own leaf
             // texture, set per spawn (see SpawnLeaves). Light, slow under
@@ -134,7 +192,7 @@ namespace VintageVisuals.PseudoPBR
                 1, 0, ColorUtil.ToRgba(255, 120, 140, 60),
                 new Vec3d(), new Vec3d(),
                 new Vec3f(), new Vec3f(),
-                LeafLife, 0.03f, 0.14f, 0.24f, EnumParticleModel.Quad);
+                LeafLife, 0.03f, LeafMinSize, LeafMaxSize, EnumParticleModel.Quad);
             _leaf.addLifeLength = LeafAddLife;
             _leaf.WithTerrainCollision = true;
             _leaf.ShouldDieInLiquid = false;
@@ -149,7 +207,7 @@ namespace VintageVisuals.PseudoPBR
 
         public int RenderRange { get { return 0; } }
 
-        public void Dispose() { }
+        public void Dispose() { _vanillaFireflies.Suppress(false); }
 
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
@@ -165,6 +223,9 @@ namespace VintageVisuals.PseudoPBR
             _sinceTick = 0f;
 
             PseudoPbrConfig config = _config();
+            // Ours replace the game's: vanilla's are switched off exactly while
+            // ours could spawn, and handed back the moment ours cannot.
+            _vanillaFireflies.Suppress(config != null && config.Enabled && config.Fireflies > 0.001f);
             if (config == null || !config.Enabled) return;
             EnvironmentTracker tracker = _tracker();
             EntityPlayer player = _capi.World?.Player?.Entity;
@@ -178,7 +239,7 @@ namespace VintageVisuals.PseudoPBR
             int spawned = 0;
             spawned += SpawnDrips(drips * DripRate(world), tracker.Canopy, player);
             spawned += SpawnPollen(GameMath.Clamp(config.Pollen, 0f, 1f) * PollenRate(world), world, player);
-            spawned += SpawnFireflies(GameMath.Clamp(config.Fireflies, 0f, 1f) * FireflyRate(world), player);
+            spawned += SpawnFireflies(GameMath.Clamp(config.Fireflies, 0f, 1f) * FireflyRate(world), player, TickSeconds);
             spawned += SpawnLeaves(leaves, GameMath.Clamp(config.WindGusts, 0f, 1f), tracker.BreezeClock,
                                    world, tracker.Canopy, player);
 
@@ -229,17 +290,18 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
-        /// How much the season sheds, 0..1: a trickle all year, most in
-        /// autumn, some of the browned leaves through winter. The season
-        /// weights are 0 at each handover, so the floor carries it across.
+        /// How much the season sheds, 0..1: a trickle all year, a quarter of
+        /// the peak as autumn opens, all of it by autumn's end, falling away
+        /// through winter. From <see cref="EnvironmentState.LeafFall"/>, which
+        /// is continuous across the handovers; the v15 first cut used the
+        /// season depths, which are 0 at each handover, so on 2 September, with
+        /// every crown already yellow, it shed at its spring trickle.
         /// DATA GAP: the game's trees never drop a leaf, so the shape of the
-        /// year is this mod's; which season it is, is the game's.
+        /// year is this mod's; which day it is, is the game's.
         /// </summary>
         public static float LeafShed(EnvironmentState world)
         {
-            float shed = 0.1f + 0.05f * world.Spring + 0.12f * world.Summer
-                       + 0.9f * world.Autumn + 0.3f * world.Winter;
-            return GameMath.Clamp(shed, 0f, 1f);
+            return GameMath.Clamp(LeafShedFloor + (1f - LeafShedFloor) * world.LeafFall, 0f, 1f);
         }
 
         /// <summary>
@@ -321,8 +383,8 @@ namespace VintageVisuals.PseudoPBR
 
                 int color = block.GetRandomColor(_capi, pos, BlockFacing.UP, -1);
                 _leaf.Color = (color & 0x00FFFFFF) | unchecked((int)0xFF000000);
-                _leaf.MinSize = evergreen ? 0.06f : 0.14f;
-                _leaf.MaxSize = evergreen ? 0.1f : 0.24f;
+                _leaf.MinSize = evergreen ? NeedleMinSize : LeafMinSize;
+                _leaf.MaxSize = evergreen ? NeedleMaxSize : LeafMaxSize;
 
                 float push = 0.2f + 0.9f * GameMath.Clamp(world.WindSpeed + LeafGustLift * gust, 0f, 1f);
                 _leaf.MinVelocity.Set(dx * push - 0.15f, -0.35f, dz * push - 0.15f);
@@ -385,18 +447,61 @@ namespace VintageVisuals.PseudoPBR
             return spawned;
         }
 
-        private int SpawnFireflies(float rate, EntityPlayer player)
+        /// <summary>How many flash in one wave of a swarm, at a rate 0..1 and a draw 0..1. Pure.</summary>
+        public static int WaveFlashes(float rate, double draw)
         {
-            if (rate < 0.001f) return 0;
-            int cap = (int)(FireflyMaxAlive * rate);
-            int spawned = 0;
-            for (int t = 0; t < TriesPerTick && _fireflies < cap; t++)
+            if (!(rate >= 0.001f)) return 0;
+            double n = rate * (2.0 + draw * (WaveMaxFlashes - 2));
+            return Math.Max(1, Math.Min(WaveMaxFlashes, (int)Math.Round(n)));
+        }
+
+        private int SpawnFireflies(float rate, EntityPlayer player, float dt)
+        {
+            if (rate < 0.001f)
             {
-                if (!TryVegetation(player, FireflyNear, FireflyReach, out double x, out double groundY, out double z)) continue;
-                _firefly.MinPos.Set(x, groundY + 0.3 + _random.NextDouble() * 1.6, z);
-                _capi.World.SpawnParticles(_firefly);
-                _fireflies += 1f;
-                spawned++;
+                for (int s = 0; s < Swarms; s++) _swarmLife[s] = 0f;
+                return 0;
+            }
+            int cap = (int)Math.Max(1, FireflyMaxAlive * rate);
+            int spawned = 0;
+            for (int s = 0; s < Swarms; s++)
+            {
+                _swarmLife[s] -= dt;
+                double dx = _swarmX[s] - player.Pos.X, dz = _swarmZ[s] - player.Pos.Z;
+                bool far = dx * dx + dz * dz > (FireflyReach + 4f) * (FireflyReach + 4f);
+                if (_swarmLife[s] <= 0f || far)
+                {
+                    // A new colony over vegetation; if none is found this tick,
+                    // try again next tick rather than flashing over bare ground.
+                    if (!TryVegetation(player, FireflyNear, FireflyReach, out double x, out double groundY, out double z))
+                    {
+                        _swarmLife[s] = 0f;
+                        continue;
+                    }
+                    _swarmX[s] = x; _swarmY[s] = groundY; _swarmZ[s] = z;
+                    _swarmLife[s] = SwarmLifeMin + (float)_random.NextDouble() * (SwarmLifeMax - SwarmLifeMin);
+                    _swarmWave[s] = (float)_random.NextDouble() * WaveMax;
+                }
+
+                _swarmWave[s] -= dt;
+                if (_swarmWave[s] > 0f) continue;
+                _swarmWave[s] = WaveMin + (float)_random.NextDouble() * (WaveMax - WaveMin);
+
+                int n = WaveFlashes(rate, _random.NextDouble());
+                for (int k = 0; k < n && _fireflies < cap; k++)
+                {
+                    double a = _random.NextDouble() * Math.PI * 2.0;
+                    double r = Math.Sqrt(_random.NextDouble()) * SwarmRadius;
+                    double fx = _swarmX[s] + Math.Cos(a) * r;
+                    double fz = _swarmZ[s] + Math.Sin(a) * r;
+                    double fy = _swarmY[s] + 0.3 + _random.NextDouble() * 1.7;
+                    _firefly.MinPos.Set(fx, fy, fz);
+                    _capi.World.SpawnParticles(_firefly);
+                    _fireflyHalo.MinPos.Set(fx, fy, fz);
+                    _capi.World.SpawnParticles(_fireflyHalo);
+                    _fireflies += 1f;
+                    spawned++;
+                }
             }
             return spawned;
         }

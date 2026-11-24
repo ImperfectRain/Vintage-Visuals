@@ -1394,6 +1394,12 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   whose constants and hash `tools/smoketest` reads back out of the GLSL, so a
   flurry comes off the crowns the visible gust crosses. Evergreens shed a
   quarter as often, smaller. Cap 160 alive. A colour, not the leaf's outline.
+  The season comes from `EnvironmentState.LeafFall`, continuous across the
+  handovers (D59), and leaves draw at 0.35 to 0.55.
+- **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
+  quantity of the game's `fireflyParticles` while ours are on and restores it
+  when they are off. Ours are swarms flashing together in waves, each flash a
+  glowing core in a faint halo.
 
 Cost, none measured: two noise reads for gusts per plant fragment and fleck
 evaluation; four texture reads for the rim per qualifying leaf (already paid by the

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Atmosphere;
 using VintageVisuals.ColorGrade;
@@ -37,6 +38,7 @@ namespace VintageVisuals.SmokeTest
             Particles(check);
             Season(check);
             FallingLeaves(glsl, check);
+            Fireflies(check);
         }
 
         private static string Body(string src, string sig)
@@ -254,7 +256,8 @@ namespace VintageVisuals.SmokeTest
 
         private static EnvironmentState World(float day, float wind, float humidity, float wetness, float sky,
                                               float temperature = 18f, float rain = 0f,
-                                              float autumn = 0f, float winter = 0f, float spring = 0f, float summer = 0f)
+                                              float autumn = 0f, float winter = 0f, float spring = 0f, float summer = 0f,
+                                              float leafFall = 0f)
         {
             return new EnvironmentState(
                 dayLight: day, moonLight: 0f, cloudCover: 0f,
@@ -263,7 +266,7 @@ namespace VintageVisuals.SmokeTest
                 temperature: temperature, humidity: humidity,
                 skyExposure: sky, depth: 0f, underwater: 0f,
                 cameraPosition: new Vec3f(), proximity: 0f,
-                autumn: autumn, winter: winter, spring: spring, summer: summer);
+                autumn: autumn, winter: winter, spring: spring, summer: summer, leafFall: leafFall);
         }
 
         private static void GroundMist(Action<string, bool, string> check)
@@ -337,24 +340,40 @@ namespace VintageVisuals.SmokeTest
             // crosses an autumn wood, and each of season, wind, gust and day
             // moving it the right way on its own.
             float calmSpring = ForestLifeSpawner.LeafRate(World(0.9f, 0f, 0.5f, 0f, 1f, spring: 1f), 0f);
-            float autumnGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.7f, 0.5f, 0f, 1f, autumn: 1f), 1f);
-            float autumnBreeze = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 0f);
+            float autumnGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.7f, 0.5f, 0f, 1f, leafFall: 1f), 1f);
+            float lateAutumn = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, leafFall: 1f), 0f);
+            float earlyAutumn = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, leafFall: 0.25f), 0f);
             float springBreeze = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, spring: 1f), 0f);
-            float autumnBreezeGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 1f);
-            float autumnNight = ForestLifeSpawner.LeafRate(World(0.0f, 0.3f, 0.5f, 0f, 1f, autumn: 1f), 0f);
-            float handover = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f), 0f);
+            float lateAutumnGust = ForestLifeSpawner.LeafRate(World(0.9f, 0.3f, 0.5f, 0f, 1f, leafFall: 1f), 1f);
+            float autumnNight = ForestLifeSpawner.LeafRate(World(0.0f, 0.3f, 0.5f, 0f, 1f, leafFall: 1f), 0f);
             bool rate = calmSpring > 0f && calmSpring < 0.01f &&
                         autumnGust > 0.9f &&
-                        autumnBreeze > springBreeze * 4f &&
-                        autumnBreezeGust > autumnBreeze * 2f &&
-                        autumnNight > 0f && autumnNight < autumnBreeze &&
-                        handover > 0f;
+                        lateAutumn > springBreeze * 4f &&
+                        earlyAutumn > springBreeze * 3f &&
+                        lateAutumnGust > lateAutumn * 2f &&
+                        autumnNight > 0f && autumnNight < lateAutumn;
+
+            // The leaf-fall year is continuous across every handover - the
+            // first cut sat at its spring trickle on 2 September because the
+            // season depths are all 0 there - and rises through autumn.
+            float F(EnumSeason season, float within) => EnvironmentTracker.LeafFallAt(season, within);
+            bool year = Math.Abs(F(EnumSeason.Summer, 1f) - F(EnumSeason.Fall, 0f)) < 1e-6 &&
+                        Math.Abs(F(EnumSeason.Fall, 1f) - F(EnumSeason.Winter, 0f)) < 1e-6 &&
+                        Math.Abs(F(EnumSeason.Winter, 1f) - F(EnumSeason.Spring, 0f)) < 1e-6 &&
+                        Math.Abs(F(EnumSeason.Spring, 1f) - F(EnumSeason.Summer, 0f)) < 1e-6 &&
+                        F(EnumSeason.Fall, 0f) >= 0.2f && F(EnumSeason.Fall, 0.9f) > F(EnumSeason.Fall, 0.1f) &&
+                        F(EnumSeason.Spring, 0.5f) == 0f;
+
+            // Readable: the first cut drew 0.14 to 0.24, which read in game as
+            // a few coloured pixels; the game's quads are not blocks.
+            bool size = ForestLifeSpawner.LeafMinSize >= 0.3f && ForestLifeSpawner.NeedleMinSize >= 0.15f;
             bool evergreen = ForestLifeSpawner.IsEvergreen("seasonalNeedles") && ForestLifeSpawner.IsEvergreen(null) &&
                              !ForestLifeSpawner.IsEvergreen("seasonalMaple");
             check("falling leaves: a leaf now and then on a still spring day, a flurry in an autumn gust",
-                  rate && evergreen,
-                  $"still spring {calmSpring:0.0000}, autumn gust {autumnGust:0.00}, autumn breeze {autumnBreeze:0.000} " +
-                  $"(+gust {autumnBreezeGust:0.000}, night {autumnNight:0.000}), spring breeze {springBreeze:0.000}, handover {handover:0.000}");
+                  rate && year && size && evergreen,
+                  $"still spring {calmSpring:0.0000}, autumn gust {autumnGust:0.00}, late autumn {lateAutumn:0.000} " +
+                  $"(+gust {lateAutumnGust:0.000}, night {autumnNight:0.000}), early autumn {earlyAutumn:0.000}, " +
+                  $"spring breeze {springBreeze:0.000}; year {year}, size {size}");
 
             // The CPU gust field is a port of the shader's: every constant and
             // the hash are read back out of the shipped GLSL, so a retune of
@@ -398,6 +417,43 @@ namespace VintageVisuals.SmokeTest
             check("falling leaves: gusts are patches, none with gusts off or in still air, and tile the 4096 wrap",
                   off && share > 0.03 && share < 0.5 && wrapErr < 2e-3,
                   $"gust share {share:0.000}, wrap error {wrapErr:0.0000}, off {off}");
+        }
+
+        // --- Fireflies (v15) -------------------------------------------------
+
+        private static void Fireflies(Action<string, bool, string> check)
+        {
+            // Waves: none when the gate is shut, at least one flash when it is
+            // open at all, more at a higher rate, never past the cap.
+            bool waves = ForestLifeSpawner.WaveFlashes(0f, 0.5) == 0 &&
+                         ForestLifeSpawner.WaveFlashes(0.05f, 0.0) == 1 &&
+                         ForestLifeSpawner.WaveFlashes(1f, 1.0) == ForestLifeSpawner.WaveMaxFlashes &&
+                         ForestLifeSpawner.WaveFlashes(1f, 0.5) > ForestLifeSpawner.WaveFlashes(0.3f, 0.5) &&
+                         ForestLifeSpawner.FireflyHalo > ForestLifeSpawner.FireflyCoreMax * 3f;
+            check("fireflies: swarms flash in waves of a few, each a core in a halo", waves,
+                  $"waves {ForestLifeSpawner.WaveFlashes(0.3f, 0.5)}/{ForestLifeSpawner.WaveFlashes(1f, 0.5)}");
+
+            // The vanilla fireflies ours replace are where VanillaFireflies
+            // reaches for them: the type and field must exist in the game's own
+            // VSEssentials, or the switch-off silently fails and both draw.
+            string game = Environment.GetEnvironmentVariable("VINTAGE_STORY") ?? "";
+            string dll = Path.Combine(game, "Mods", "VSEssentials.dll");
+            bool found = false;
+            string detail = dll;
+            if (File.Exists(dll))
+            {
+                using var pe = new System.Reflection.PortableExecutable.PEReader(File.OpenRead(dll));
+                var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+                foreach (var th in md.TypeDefinitions)
+                {
+                    var t = md.GetTypeDefinition(th);
+                    if (md.GetString(t.Namespace) + "." + md.GetString(t.Name) != VanillaFireflies.SystemTypeName) continue;
+                    foreach (var fh in t.GetFields())
+                        if (md.GetString(md.GetFieldDefinition(fh).Name) == VanillaFireflies.FieldName) found = true;
+                }
+                detail = found ? "found" : VanillaFireflies.SystemTypeName + "::" + VanillaFireflies.FieldName + " missing";
+            }
+            check("fireflies: vanilla's firefly particles are where the switch-off looks for them", found, detail);
         }
 
         // --- Season ----------------------------------------------------------

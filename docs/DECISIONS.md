@@ -2656,3 +2656,29 @@ a second and 160 particles alive at full slider in a gale; not measured.
 DATA GAP: the shape of the shedding year (floor 0.1, autumn 1.0, winter 0.4)
 is this mod's choice; the season, wind, daylight, crowns and colours are the
 game's. Not seen in game.
+
+## D59. Leaf fall follows the date, not the season depth; our fireflies replace the game's
+
+**Context.** First in-game test of D58 on 2 September with wind: no leaves
+seen, only a few coloured specks. Two causes. The shed was built on the
+season depths, which are all 0 at a handover - exactly when the crowns have
+just turned yellow - so it ran at its spring trickle. And 0.14 to 0.24 quads
+draw as a few pixels: the game's quad sizes are not blocks. The same test
+noted that the game already has fireflies, which D57 had recorded as absent.
+
+**Decision.** `EnvironmentState.LeafFall`, from the same calendar reading as
+the depths but continuous across every handover (late summer 0 to 0.25,
+autumn 0.25 to 1, winter 1 to 0, spring 0), drives the shed; leaves draw at
+0.35 to 0.55. Vanilla's fireflies are one `SimpleParticleProperties`
+(`ModSystemAmbientParticles.fireflyParticles`) whose quantity is set once at
+start; `VanillaFireflies` zeroes it while ours are on and puts it back when
+they are off, so the two never draw together and our slider at 0 is vanilla.
+Ours become swarms that flash together in waves, each flash a core in a halo,
+in place of single specks - a different look, not a second copy.
+
+**Rejected.** A Harmony patch on the ambient spawn tick: two float writes on a
+field the game never rewrites do the same with nothing to unpatch.
+
+**Consequences.** Reflection on a VSEssentials internal: a smoke check reads
+the game's own DLL for the type and field, and a failure at runtime is logged
+once and leaves vanilla's fireflies on. Not seen in game.

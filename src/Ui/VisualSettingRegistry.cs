@@ -273,7 +273,7 @@ namespace VintageVisuals.Ui
                    M, "Foliage", 0f, 1.0f, 0.05f);
 
             Slider("pbr_fireflies", "PseudoPBR.Fireflies", "Fireflies",
-                   "Small blinking lights low over grass at dusk and on warm, humid summer nights.",
+                   "Swarms flashing together low over grass at dusk and on warm, humid summer nights. Replaces the game's fireflies; 0 brings them back.",
                    M, "Foliage", 0f, 1.0f, 0.05f);
 
             Slider("pbr_leaves", "PseudoPBR.FallingLeaves", "Falling leaves",
