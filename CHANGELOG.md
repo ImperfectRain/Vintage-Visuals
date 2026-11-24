@@ -9,6 +9,12 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Torchlight on terrain.** Highlights from torches, lanterns and lava now
+  sit on the side of a block facing the light and slide across wet or polished
+  surfaces as you move, and a wet cave floor can reflect a torch at night.
+- **Water in crevices.** Rain pools in the joints and pits of a block's top
+  first and runs down the grooves of its sides while it rains. New slider:
+  Water in crevices (0 keeps the old even wet look).
 - **Reflections on terrain are back.** Shiny and wet blocks now reflect a
   small, pixel-locked picture of what they face: the sky, the horizon and,
   with Scene reflections on, the actual trees and stone on screen. Rough

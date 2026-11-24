@@ -934,6 +934,11 @@ namespace VintageVisuals.Common
         public float Damp { get; set; } = 0.5f;
 
         /// <summary>
+        /// D64. Rain follows each texture's own relief: on top faces water pools in the low texels first and rises with how wet the ground is; on side faces it runs down the vertical grooves while rain is falling. 0 is the even wet film from before.
+        /// </summary>
+        public float CreviceWater { get; set; } = 0.8f;
+
+        /// <summary>
         /// v14. Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.
         /// </summary>
         public float LeafDrips { get; set; } = 0.6f;
@@ -1125,6 +1130,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.ContactShade", corrections);
             Damp = ColorGradeConfig.Clamp(Damp, 0.0f, 1.0f,
                 "PseudoPBR.Damp", corrections);
+            CreviceWater = ColorGradeConfig.Clamp(CreviceWater, 0.0f, 1.0f,
+                "PseudoPBR.CreviceWater", corrections);
             LeafDrips = ColorGradeConfig.Clamp(LeafDrips, 0.0f, 1.0f,
                 "PseudoPBR.LeafDrips", corrections);
             Pollen = ColorGradeConfig.Clamp(Pollen, 0.0f, 1.0f,

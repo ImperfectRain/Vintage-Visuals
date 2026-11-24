@@ -311,7 +311,8 @@ namespace VintageVisuals.PseudoPBR
                 Clamp01(world.WindSpeed),
                 Clamp01(world.MoonLight),
                 world.WindDirection,
-                Clamp01(world.Humidity));
+                Clamp01(world.Humidity),
+                Clamp01(world.Rain));
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

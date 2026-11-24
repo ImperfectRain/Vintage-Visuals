@@ -2858,3 +2858,41 @@ vanilla had already darkened for facing away from the sun.
 
 **Not measured, not seen.** Both are L2 until the same blocks are looked at
 again.
+
+## D64. Torch light drives terrain PBR; rain follows each texture's relief
+
+**Context.** Asked for (2026-11-24): block light from torches and the like
+should drive the PBR realistically, and rain should pool in the divots of top
+faces and stream down the channels of side faces.
+
+**Decision - block light.**
+- Terrain's block-light highlight now takes its direction from the shared
+  core's `vvBlockLightDirection` (the surface gradient of vanilla's own block
+  light across the face), as creatures and particles already did. It was a
+  fixed nudge of the light colour upward, so every glint sat in the same place.
+  The `Block light` and `Block light direction` sliders now reach terrain. The
+  direction is taken before any early return because it uses derivatives.
+- The pixel reflection's luminance ceiling follows the brighter of the sky
+  colour and the local block light. Against the sky alone, a torch reflected in
+  a wet cave floor was capped to near black.
+
+**Decision - water in crevices** (`PseudoPBR.CreviceWater`, `pbr_crevicewater`,
+`vv_pbrCreviceWater`, default 0.8; plus `vv_weatherRain`, the falling rain as a
+fact).
+- Reads the second atlas's height channel, which had no consumer.
+- Top faces (normal y > 0.7): water fills texels below a level of 0.46 x the
+  wetness, so joints and pits fill first and a soaked surface floods; pooled
+  texels are fully wet, flattened to the face normal, and are the only place
+  ripples land. Texels above the level keep 0.55 of the film at full slider.
+- Side faces (|normal y| < 0.3), only while rain falls: a texel lower than its
+  left and right neighbours and not lower than the ones above and below it is
+  a channel; drops step down it a whole texel at a time, each column on its
+  own offset and the block's seed. The down direction in texture space comes
+  from screen derivatives, so it holds however the texture is rotated.
+- Not on plants, beyond the detail distance, without the second atlas, or
+  when dry. 0 is the even film from before. DATA GAP: the game has no water on
+  block faces; where the low texels are is the texture's, the rest is ours.
+
+**Cost, not measured.** Block light: a few ALU and derivatives per opaque
+fragment. Crevices: none on a dry world; on a wet top face no extra read; on a
+wall in rain four reads of the second atlas.

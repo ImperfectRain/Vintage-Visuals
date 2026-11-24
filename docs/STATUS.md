@@ -149,7 +149,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Cook-Torrance: GGX + Smith-Schlick + Schlick Fresnel | L4 | energy-conserving |
 | `[~]` | Geometric specular antialiasing | L2 | roughness widened in alpha from screen-space normal derivatives |
 | `[~]` | Sky/ambient specular from `rgbaFog` | L2 | |
-| `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field |
+| `[~]` | Block-light specular with recovered direction | L2 | Mikkelsen surface-gradient of the light field. On terrain since D64 (it was a fixed direction there, and the sliders did not reach it); reflected torches are no longer capped against the night sky. Debug view 9 on the modular path. Not seen in game |
 | `[~]` | Per-layer debug views (0–63) | L3 | Registry and slider range remain pinned by `tools/smoketest`. Each terrain view is tagged with the terrain path that draws it, and the Studio lists only the active path's set; smoke compares each tag set to that shader's mode arms in both directions. The modular path draws 1-5, 7, 8, 10-12, 14, 16, 19-22, 24, 33, 52 and 63 (shading path, new, L2). 6 and 23 were dropped from the modular path as exact duplicates of 1 and 7 there; they remain in the legacy patch, where they differ. Canopy, reflection, flora, march, world-proof and forest views are legacy-only until those features return |
 | `[x]` | Offline `tools/pbrgen` prototype + parity fixture | L4 | 31 Python tests; smoketest asserts the C# port agrees |
 | `[~]` | **Lighting reach: entities** (`pbrentity` group) | L2 | mobs, animals and players get the same lobe. Default material, not a derived atlas - see below |
@@ -182,8 +182,8 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | consumed by the material snow film; real accumulated depth remains vanilla snow blocks |
 | `[~]` | **Snow film as a material response** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
 | `[x]` | **Frost as an environmental layer** | L2 | built on vanilla's own `frostAlpha`/`fragFrostAlpha`. Vanilla tints; this adds the material body |
-| `[ ]` | Rain streaks running down vertical wet faces | — | cut from the ripple commit on purpose, unverifiable blind |
-| `[ ]` | Puddles pooling in depressions | — | needs a height signal the terrain shader does not have |
+| `[~]` | Rain streaks running down vertical wet faces | L2 | D64: in the texture's own vertical grooves only, see the crevice row |
+| `[~]` | **Water in crevices: pools on tops, streams down walls** | L2 | D64, `pbr_crevicewater` (0.8). Pools fill a texture's low texels (second-atlas height) as the ground gets wetter, flat and smooth, with the ripples confined to them; walls run drops down vertical grooves while rain falls, stepped per texel. Debug view 10 shows the result as wetness. Not seen in game, cost not measured. Puddles across several blocks still need a height signal the shader does not have |
 | `[ ]` | Weather transitions as first-class state | — | today each effect eases independently |
 | `[-]` | Volumetric cloud shaping (`cloudshape` group) | — | **abandoned.** `octave()` is only reachable from `warp()`, which early-returns unless a perception effect is active. The slider did nothing |
 | `[-]` | Cloud density scaling | — | **abandoned.** Unset uniform reads 0, and 0 meant *no clouds at all* |

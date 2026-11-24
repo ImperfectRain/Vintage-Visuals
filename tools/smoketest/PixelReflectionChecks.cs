@@ -98,6 +98,30 @@ namespace VintageVisuals.SmokeTest
                 !Regex.IsMatch(march, @"(?<![A-Za-z_])texture\(vv_reflectScene"),
                 "implicit derivatives are undefined inside the march's divergent loop");
 
+            // D64: a reflected torch must not be capped against a black night sky.
+            check("the reflection's brightness ceiling follows the local block light",
+                pixel.Contains("float ceiling = max(envLuma, vvTerrainLuma(blockLight)) * VV_TREFLECT_MAX;"),
+                "capping against the sky colour alone erases every torch reflection at night and underground");
+
+            // D64: block-light highlights on terrain come from the recovered
+            // direction, computed before any branch (it uses derivatives).
+            string block = GlslEval.FunctionBody(materialCode, "vec3 vvTerrainBlockSpecular(") ?? "";
+            int dirAt = block.IndexOf("vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);", StringComparison.Ordinal);
+            int gateAt = block.IndexOf("if (vv_pbrBlockLight < 0.001 || intensity < 0.004) return vec3(0.0);", StringComparison.Ordinal);
+            check("terrain torch highlights use the recovered light direction, taken before any branch",
+                dirAt >= 0 && gateAt > dirAt && block.Contains("max(0.0, vv_pbrBlockLight)"),
+                "a fixed direction puts every torch glint in the same place; derivatives after a branch are undefined");
+
+            // D64: water in crevices. Pools only on top faces, streams only on
+            // walls and only while rain is falling, and 0 changes nothing.
+            string crevice = GlslEval.FunctionBody(materialCode, "vec2 vvTerrainCreviceWater(") ?? "";
+            check("crevice water pools only on top faces and streams only on walls in falling rain",
+                crevice.Contains("if (amount < 0.001 || m.wetness < 0.001 || vv_material2Valid < 0.5 || m.detailFade <= 0.0)") &&
+                Regex.IsMatch(crevice, @"if \(up > 0\.7\)\s*\{[^}]*return vec2\(pool \* amount \* m\.detailFade, 0\.0\);") &&
+                crevice.Contains("if (abs(up) > 0.3 || rain < 0.001) return vec2(0.0);") &&
+                Regex.IsMatch(crevice, @"return vec2\(0\.0, stream \* rain \*"),
+                "pools on a wall or streams on a floor are not where water goes");
+
             check("only the capture group defines the scene-capture switch",
                 !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&
                 reflectYaml.Contains("#define VV_TERRAIN_SCENE_CAPTURE 1") &&

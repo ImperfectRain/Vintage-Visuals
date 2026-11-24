@@ -134,6 +134,7 @@ namespace VintageVisuals.Ui
             { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
             { "pbr_gusts", "Needs wind. Watch a grass field or crowns from a little way off." },
             { "pbr_contactshade", "Shows at the foot of grass, flowers and crops, close up." },
+            { "pbr_crevicewater", "Shows on stone and brick open to the sky while it rains and while the ground stays wet." },
             { "pbr_damp", "Shows on rough stone, logs and soil under trees or in half-shade, in a rainy climate." },
             { "pbr_drips", "Stand under leaves during or just after rain." },
             { "pbr_pollen", "Warm dry day in spring or summer, over grass or flowers." },
@@ -142,12 +143,12 @@ namespace VintageVisuals.Ui
             { "atmosphere_foresthaze", "Inside a forest, looking between the trunks." },
             { "atmosphere_groundmist", "Still, humid night or early morning, or after rain, near low ground or water." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
-            { "pbr_blocklight", "Creatures, items and particles only in this build." },
+            { "pbr_blocklight", "Shows near torches, lanterns and lava, strongest on wet or polished blocks." },
             { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },
             { "pbr_emissivetemperature", "Shows on glowing blocks, creatures, items and particles." },
             { "pbr_emissiveflicker", "Shows on glowing blocks, creatures, items and particles." },
             { "pbr_emissivebloom", "Shows as bloom around glowing blocks, such as torches and lava." },
-            { "pbr_blocklightdir", "Creatures, items and particles only in this build." },
+            { "pbr_blocklightdir", "Walk past a torch beside a wet or polished wall and watch the highlight move." },
             { "weather_wetness", "Shows while it rains and while surfaces dry." },
             { "weather_ripples", "Shows on flat ground open to the sky while it rains." },
             { "weather_raincover", "Decides which sheltered spots stay dry in rain." },
@@ -185,16 +186,8 @@ namespace VintageVisuals.Ui
                 return new SettingAvailability(AvailabilityState.Unavailable, DebugOnlyReason);
             }
 
-            if (setting.Code == "pbr_blocklight" || setting.Code == "pbr_blocklightdir")
-            {
-                // The terrain material shader does not read these, so they reach
-                // the screen only through the entity and particle programs.
-                if (config != null && !config.PseudoPBR.EntityLighting && !config.PseudoPBR.ParticleLighting)
-                {
-                    return new SettingAvailability(AvailabilityState.ParentOff,
-                        "Turn on Creature and player lighting or Particle lighting.");
-                }
-            }
+            // pbr_blocklight and pbr_blocklightdir reach terrain since D64, so
+            // they are no longer limited to the entity and particle programs.
 
             Parent[] parents;
             if (config != null && Parents.TryGetValue(setting.Code, out parents))
@@ -295,7 +288,7 @@ namespace VintageVisuals.Ui
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
                 "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
-                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
+                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_crevicewater", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 

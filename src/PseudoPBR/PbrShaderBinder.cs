@@ -99,6 +99,8 @@ namespace VintageVisuals.PseudoPBR
         public const string ContactShadeUniform = "vv_pbrContactShade";
         public const string DampUniform = "vv_pbrDamp";
         public const string HumidityUniform = "vv_pbrHumidity";
+        public const string CreviceWaterUniform = "vv_pbrCreviceWater";
+        public const string RainUniform = "vv_weatherRain";
 
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
@@ -491,6 +493,8 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, ContactShadeUniform, _look.ContactShade);
             SetIfPresent(program, DampUniform, _look.Damp);
             SetIfPresent(program, HumidityUniform, _weather.Humidity);
+            SetIfPresent(program, CreviceWaterUniform, _look.CreviceWater);
+            SetIfPresent(program, RainUniform, _weather.Rain);
         }
 
         /// <summary>

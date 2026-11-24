@@ -722,6 +722,18 @@
         "clientSide": true,
         "weight": 95
       },
+      "pbr_crevicewater": {
+        "ingui": "Water in crevices",
+        "comment": "Rain follows each block's own relief: on top faces water pools in the low pixels first and rises as the ground gets wetter; on side faces it runs down the vertical grooves while rain is falling. Needs Surface materials. 0 is the even wet film from before.",
+        "default": 0.8,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 103
+      },
       "pbr_drips": {
         "ingui": "Drips from wet leaves",
         "comment": "Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.",

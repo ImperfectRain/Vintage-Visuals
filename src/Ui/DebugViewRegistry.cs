@@ -122,7 +122,7 @@ namespace VintageVisuals.Ui
             // Views only the legacy terrain patch draws. Everything else is
             // drawn by both terrain paths unless marked otherwise.
             var legacyOnly = new HashSet<int> {
-                6, 9, 17, 18, 23,
+                6, 17, 18, 23,
                 26, 27, 28,
                 38, 40, 43,
                 45, 46,

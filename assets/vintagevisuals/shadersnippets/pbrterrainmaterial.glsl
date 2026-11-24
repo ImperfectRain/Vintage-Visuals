@@ -31,6 +31,8 @@ uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
 uniform vec3 vv_pbrOrigin;           // camera world position, wrapped to VV_TERRAIN_ORIGIN_PERIOD on the CPU
+uniform float vv_pbrCreviceWater;    // water follows the texture's relief; 0 is the even film from before
+uniform float vv_weatherRain;        // how hard rain is falling, a fact; 0 means no streams
 
 // Vanilla's per-vertex sun light level (rgbaLightIn.a), 0 under a roof and 1 in
 // the open. This group writes it in the vertex shader of the same program, so
@@ -343,13 +345,132 @@ vec2 vvTerrainRippleField(vec3 faceNormal, vec3 cameraRelativePos, float wetness
 // environment layer stack from pbrcore.glsl for roughness and specular (wet is
 // glossier, snow and frost are rough). Albedo is darkened later, in
 // vvTerrainApplySurfaceLayers, on the lit colour.
-VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelativePos)
+// ---------------------------------------------------------------------------
+// Water in crevices (D64)
+//
+// Rain follows each block's own relief instead of lying as one even film. The
+// relief is the second atlas's height channel, which had no consumer until
+// now: derived from the texture itself, so mortar lines, the gaps between
+// cobbles and the pits in a rough stone are its low texels.
+//
+// TOP FACES pool. Water fills the lowest texels first, and the level rises
+// with how wet the ground is (the shared wetness, which lingers after rain and
+// dries on its own clock), so a shower fills the joints and the pits and a
+// soaked surface lies under shallow sheets. A pooled texel is open water:
+// flat (its relief drowned), as smooth as the wet layer gets, and the only
+// place ripples land. The texels above the level keep a lighter damp film.
+//
+// SIDE FACES stream. Only while rain is FALLING (vv_weatherRain, a fact, not
+// the lingering wetness): a texel that is a groove across (lower than its
+// left and right neighbours) and open along (its upper and lower neighbours
+// not higher) is a channel, and drops run down it, one texel at a time, at a
+// rate and offset of its own. Nothing pools on a wall.
+//
+// Pixel art by construction: every input is per material texel and the
+// stream steps whole texels, so water is a set of texels, never a smooth
+// shape. DATA GAP: the game simulates no water on a block face; where the
+// low texels are is the texture's, where water is at a given moment is ours.
+// Cost while wet and within the detail distance: no extra read on a top face,
+// four reads of the second atlas on a wall while it rains; nothing when dry.
+// ---------------------------------------------------------------------------
+
+const float VV_TERRAIN_POOL_LEVEL = 0.46;     // height the water reaches on soaked ground
+const float VV_TERRAIN_POOL_SOFT = 0.035;     // how much a texel straddling the level shows
+const float VV_TERRAIN_POOL_FILM = 0.55;      // damp left on texels above the water
+const float VV_TERRAIN_STREAM_GROOVE = 0.025; // how much lower than its sides a channel is
+const float VV_TERRAIN_STREAM_ROWS = 14.0;    // texels between drops in one channel
+const float VV_TERRAIN_STREAM_DROP = 0.22;    // share of a cycle a drop's texels are lit
+const float VV_TERRAIN_STREAM_BASE = 0.55;    // the film a running channel keeps between drops
+
+float vvTerrainHeightAt(vec2 materialUv)
+{
+    return vvTerrainSecondaryTexel(materialUv).g;
+}
+
+// x: standing water in this texel (top faces), y: running water (side faces).
+vec2 vvTerrainCreviceWater(VvTerrainMaterial m, vec2 materialUv, vec3 cameraRelativePos)
+{
+    float amount = clamp(vv_pbrCreviceWater, 0.0, 1.0);
+    if (amount < 0.001 || m.wetness < 0.001 || vv_material2Valid < 0.5 || m.detailFade <= 0.0)
+        return vec2(0.0);
+
+    float up = m.faceNormal.y;
+    if (up > 0.7)
+    {
+        // The level rises with the ground's wetness; m.wetness already holds
+        // the sky exposure, so a sheltered top stays dry.
+        float level = VV_TERRAIN_POOL_LEVEL * clamp(m.wetness, 0.0, 1.0);
+        float pool = 1.0 - smoothstep(level - VV_TERRAIN_POOL_SOFT, level + VV_TERRAIN_POOL_SOFT, m.height);
+        return vec2(pool * amount * m.detailFade, 0.0);
+    }
+
+    float rain = clamp(vv_weatherRain, 0.0, 1.0);
+    if (abs(up) > 0.3 || rain < 0.001) return vec2(0.0);
+
+    // Which way is down, in material texels: the least-squares UV step per
+    // block of falling world Y, from screen derivatives. Independent of how
+    // the texture is rotated on the face.
+    vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
+    vec2 uvdx = dFdx(materialUv) * size;
+    vec2 uvdy = dFdy(materialUv) * size;
+    float ydx = dFdx(cameraRelativePos.y);
+    float ydy = dFdy(cameraRelativePos.y);
+    float g2 = ydx * ydx + ydy * ydy;
+    if (g2 < 1e-10) return vec2(0.0);
+    vec2 downTexels = -(uvdx * ydx + uvdy * ydy) / g2;   // texels per block, downward
+    float perBlock = length(downTexels);
+    if (perBlock < 1.0) return vec2(0.0);
+    vec2 down = downTexels / perBlock;
+    vec2 across = vec2(-down.y, down.x);
+
+    vec2 texel = 1.0 / size;
+    float h = m.height;
+    float hl = vvTerrainHeightAt(materialUv - across * texel);
+    float hr = vvTerrainHeightAt(materialUv + across * texel);
+    float hu = vvTerrainHeightAt(materialUv - down * texel);
+    float hd = vvTerrainHeightAt(materialUv + down * texel);
+
+    float groove = smoothstep(0.0, VV_TERRAIN_STREAM_GROOVE, 0.5 * (hl + hr) - h);
+    float open = 1.0 - smoothstep(0.02, 0.08, max(hu, hd) - h);
+    float channel = groove * open;
+    if (channel < 0.01) return vec2(0.0);
+
+    // Drops: whole texel rows along the channel, each column on its own
+    // offset and the block's own seed, moving down a little under a block a
+    // second at 32 texels a block. Periodic in the 1.5 s scene clock.
+    vec2 coord = materialUv * size;
+    float row = floor(dot(coord, down));
+    float column = floor(dot(coord, across));
+    vec3 cell = floor(cameraRelativePos + vv_pbrOrigin - m.faceNormal * 0.01);
+    vec4 seed = vvTerrainCellRandom(vec2(column + cell.x * 7.0 + cell.y * 13.0, cell.z * 5.0 + cell.y));
+    float phase = fract(row / VV_TERRAIN_STREAM_ROWS - vv_sceneClock * 2.0 + seed.x);
+    float drop = 1.0 - step(VV_TERRAIN_STREAM_DROP * mix(0.7, 1.3, seed.y), phase);
+    float stream = channel * (VV_TERRAIN_STREAM_BASE + (1.0 - VV_TERRAIN_STREAM_BASE) * drop);
+    return vec2(0.0, stream * rain * amount * clamp(m.wetness * 4.0, 0.0, 1.0) * m.detailFade);
+}
+
+VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelativePos, vec2 materialUv)
 {
     m.wetness = vvTerrainWetness(m.faceNormal);
+
+    // Crevices redistribute the water before anything reads the wetness:
+    // pooled texels are fully wet and flat, the rest of a top face keeps a
+    // film, and a running channel is wet whatever the wall's own film is.
+    vec2 crevice = vvTerrainCreviceWater(m, materialUv, cameraRelativePos);
+    float amount = clamp(vv_pbrCreviceWater, 0.0, 1.0);
+    if (m.faceNormal.y > 0.7 && amount > 0.001 && vv_material2Valid > 0.5)
+    {
+        m.wetness = mix(m.wetness * mix(1.0, VV_TERRAIN_POOL_FILM, amount), 1.0, crevice.x);
+        m.normal = vvTerrainSafeNormalize(mix(m.normal, m.faceNormal, crevice.x), m.faceNormal);
+    }
+    m.wetness = max(m.wetness, crevice.y);
+
     m.snow = vvTerrainSnow(m.faceNormal);
     m.frost = clamp(vv_sceneFrost, 0.0, 1.0);
 
-    vec2 slope = vvTerrainRippleField(m.faceNormal, cameraRelativePos, m.wetness, m.detailFade);
+    // Ripples land only on open water when crevices are on.
+    float rippleWater = mix(m.wetness, crevice.x, step(0.001, amount) * step(0.5, vv_material2Valid));
+    vec2 slope = vvTerrainRippleField(m.faceNormal, cameraRelativePos, rippleWater, m.detailFade);
     if (dot(slope, slope) > 0.0)
     {
         m.normal = vvTerrainSafeNormalize(m.normal + vec3(slope.x, 0.0, slope.y) * VV_TERRAIN_RIPPLE_DEPTH,
@@ -396,7 +517,7 @@ VvTerrainMaterial vvDecodeTerrainMaterial(vec4 litColor, vec3 baseColor,
     m.wetness = 0.0;
     m.snow = 0.0;
     m.frost = 0.0;
-    return vvTerrainApplyWeather(m, cameraRelativePos);
+    return vvTerrainApplyWeather(m, cameraRelativePos, materialUv);
 }
 
 float vvDistributionGGXTerrain(float ndoth, float alphaRoughness)
@@ -519,24 +640,41 @@ vec3 vvTerrainDirectSpecular(VvTerrainMaterial m, vec3 viewDir, float shadowBrig
     return spec * ndotl * visibility;
 }
 
-vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight)
+// Highlights from torches, lanterns, lava and every other block light (D64).
+//
+// This path used to aim every block-light highlight a fixed way (the light's
+// colour vector nudged upward), so a torch's glint sat in the same place on
+// every block whatever side the torch was on, and the Block light sliders did
+// not reach terrain at all. It now uses the shared core's model, the one the
+// creatures and particles already use: the direction toward the light is
+// recovered from how vanilla's own block light falls off across the surface
+// (vvBlockLightDirection, Mikkelsen's surface gradient), so a highlight slides
+// across a wet floor as you walk past a torch and sits on the side facing it.
+// Never gated on the sun or the shadow map: a torch burns at midnight in a
+// cave. vv_pbrBlockLight 0 is no highlight; vv_pbrBlockLightDir 0 treats the
+// light as coming from straight off the surface.
+//
+// The direction is taken before any branch, because it is built from screen
+// derivatives, which need every fragment of the quad to reach them.
+vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight, vec3 cameraRelativePos)
 {
-    float localLight = clamp(max(max(blockLight.r, blockLight.g), blockLight.b), 0.0, 1.0);
-    if (localLight <= 0.002 && vv_sceneArtificialLight <= 0.002) return vec3(0.0);
+    float intensity = dot(blockLight, VV_PBR_LUMA);
+    vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
+    if (vv_pbrBlockLight < 0.001 || intensity < 0.004) return vec3(0.0);
 
-    vec3 l = vvTerrainSafeNormalize(blockLight + vec3(0.08, 0.28, 0.08), vec3(0.0, 1.0, 0.0));
     vec3 h = vvTerrainSafeNormalize(l + viewDir, m.normal);
     float ndotl = max(dot(m.normal, l), 0.0);
-    float ndotv = max(dot(m.normal, viewDir), 0.0);
+    float ndotv = max(dot(m.normal, viewDir), 1e-4);
     float ndoth = max(dot(m.normal, h), 0.0);
     float vdoth = max(dot(viewDir, h), 0.0);
     vec3 f0 = mix(vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor),
                   m.baseColor, m.metalness);
-    vec3 f = vvFresnelSchlickTerrain(vdoth, f0);
-    float d = vvDistributionGGXTerrain(ndoth, max(m.alphaRoughness, 0.08));
-    float g = vvGeometrySmithTerrain(ndotv, ndotl, max(m.perceptualRoughness, 0.28));
-    vec3 spec = (d * g * f) / max(4.0 * ndotv * ndotl, 0.16);
-    return spec * ndotl * max(localLight, vv_sceneArtificialLight * 0.35) * blockLight;
+
+    vec3 f = vvFresnelSchlick(vdoth, f0);
+    float d = vvDistributionGGX(ndoth, m.perceptualRoughness);
+    float g = vvGeometrySmith(ndotv, ndotl, m.perceptualRoughness);
+    vec3 spec = (d * g * f) / max(4.0 * ndotv * ndotl, 0.08);
+    return blockLight * spec * ndotl * max(0.0, vv_pbrBlockLight);
 }
 
 // ---------------------------------------------------------------------------
@@ -691,7 +829,7 @@ struct VvTerrainReflection
 // at 0 is the previous build bit for bit.
 VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRelativePos,
                                              vec2 materialUv, vec3 environment,
-                                             vec3 surfaceColor, vec3 viewDir)
+                                             vec3 surfaceColor, vec3 viewDir, vec3 blockLight)
 {
     VvTerrainReflection o;
     vec3 rFlat = reflect(-viewDir, m.normal);
@@ -730,7 +868,11 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     vec3 sceneColor = hit.color;
     float sceneLuma = vvTerrainLuma(sceneColor);
     float envLuma = vvTerrainLuma(environment);
-    float ceiling = envLuma * VV_TREFLECT_MAX;
+    // The ceiling follows the brighter of the sky and the local block light:
+    // by night or underground the sky colour is near black, and capping a
+    // reflected torch or forge against it erased exactly the reflection a wet
+    // cave floor should show (D64).
+    float ceiling = max(envLuma, vvTerrainLuma(blockLight)) * VV_TREFLECT_MAX;
     if (sceneLuma > ceiling && sceneLuma > 1e-5)
     {
         sceneColor *= ceiling / sceneLuma;
@@ -2149,9 +2291,9 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     diffuse = vvTerrainCanopyResolve(diffuse, cameraRelativePos, m.faceNormal, m.detailFade, -1.0, 0.85);
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
-    vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight);
+    vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight, cameraRelativePos);
     VvTerrainReflection reflection = vvTerrainPixelReflection(m, cameraRelativePos, materialUv,
-                                                              environmentColor, litColor.rgb, viewDir);
+                                                              environmentColor, litColor.rgb, viewDir, blockLight);
     vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, reflection.image);
 
     float energyCap = mix(1.0, 1.18, clamp(vv_pbrEnergyCompensation, 0.0, 1.0));
@@ -2346,6 +2488,15 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     }
     if (mode == 33) return vec4(vvTerrainPrimaryGrid(materialUv), color.a);
 
+    // 9: the recovered block-light direction, as a colour. Flat means the
+    // light is being treated as coming straight off the surface; a gradient
+    // across a wall means a torch is being located.
+    if (mode == 9)
+    {
+        vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, dot(blockLight, VV_PBR_LUMA));
+        return vec4(l * 0.5 + 0.5, color.a);
+    }
+
     // Pixel reflection views (D62). 32 the direction each texel reflects,
     // 34 the image it sees, 35 how much of that reaches the pixel (x4),
     // 36 where the analytic sky stands in (white) for the captured scene
@@ -2357,7 +2508,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         mode == 39 || mode == 48)
     {
         VvTerrainReflection rf = vvTerrainPixelReflection(m, cameraRelativePos, materialUv,
-                                                          environmentColor, color.rgb, viewDir);
+                                                          environmentColor, color.rgb, viewDir, blockLight);
         if (mode == 32) return vec4(rf.direction * 0.5 + 0.5, color.a);
         if (mode == 34) return vec4(rf.image, color.a);
         if (mode == 35) return vec4(vvTerrainAmbientSpecular(m, viewDir, rf.image) * 4.0, color.a);

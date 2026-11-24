@@ -343,6 +343,10 @@ namespace VintageVisuals.Ui
                    "Rings spreading on wet surfaces while it rains.",
                    W, "Rain and wetness", 0f, 1f, 0.05f);
 
+            Slider("pbr_crevicewater", "PseudoPBR.CreviceWater", "Water in crevices",
+                   "Rain pools in the low pixels of each block's top first and runs down the grooves of its sides while it rains. 0 is an even wet film.",
+                   W, "Rain and wetness", 0.0f, 1.0f, 0.05f);
+
             Slider("weather_fogstrength", "Weather.FogStrength", "Rain fog",
                    "How much falling rain thickens the air and shortens the view.",
                    W, "Fog", 0f, 1f, 0.05f);

@@ -97,6 +97,9 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>v14. The climate's rainfall at the player, 0 arid to 1 lush. A fact.</summary>
         public readonly float Humidity;
 
+        /// <summary>D64. How hard rain is falling at the player, 0..1. A fact; the crevice slider scales what it does.</summary>
+        public readonly float Rain;
+
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
                            float rippleTime, float breeze, float overcast, Vec3f origin,
                            float enclosure = 0f, float artificialLight = 0f,
@@ -104,8 +107,9 @@ namespace VintageVisuals.PseudoPBR
                            float autumn = 0f, float winter = 0f,
                            float frost = 0f, float snow = 0f,
                            float skyCover = 0f, float wind = 0f, float moonLight = 0f,
-                           Vec2f windDirection = null, float humidity = 0f)
+                           Vec2f windDirection = null, float humidity = 0f, float rain = 0f)
         {
+            Rain = rain;
             WindDirection = windDirection ?? new Vec2f(1f, 0f);
             Humidity = humidity;
             SkyCover = skyCover;
