@@ -949,6 +949,15 @@ void main()
                 bool ok = beamBody.Contains("if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;") &&
                           beamBody.Contains("if (clearSky < 0.004) return 0.0;") &&
                           beamBody.Contains("if (rise < 0.5) continue;") &&
+                          // v13: shaded air only, nothing marched in open country, blocked by crowns between
+                          beamBody.Contains("if (crowns < VV_TERRAIN_BEAM_CROWN) return 0.0;") &&
+                          beamBody.Contains("if (here.x < VV_TERRAIN_BEAM_CROWN || p.y > here.y - 0.5) continue;") &&
+                          beamBody.Contains("vec3 mid = p + l * (0.5 * rise / l.y);") &&
+                          Regex.IsMatch(beamBody, @"if \(midCell\.x >= VV_TERRAIN_BEAM_BLOCK && mid\.y > midCell\.y - 0\.5\s*&& mid\.y < midCell\.y \+ max\(2\.0, midCell\.x \* 5\.0\)\) continue;") &&
+                          // the cheap gates run before any noise read
+                          beamBody.IndexOf("vec2 here = vvTerrainCanopyCell(p.xz);") < beamBody.IndexOf("vvTerrainBeamDensity(src)") &&
+                          beamBody.IndexOf("if (crowns < VV_TERRAIN_BEAM_CROWN) return 0.0;") < beamBody.IndexOf("for (int i = 0;") &&
+                          GlslEval.Const(terrainSnippet, "VV_TERRAIN_BEAM_CROWN") >= 0.2 &&
                           beamBody.Contains("vec2 src = p.xz + l.xz * (rise / l.y);") &&
                           // same field: the beam-group noise and the coarse octave, same grids and keys
                           beamBody.Contains("beam += vvTerrainBeamDensity(src) * smoothstep(0.15, 0.4, crown);") &&

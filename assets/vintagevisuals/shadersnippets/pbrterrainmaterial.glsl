@@ -603,14 +603,17 @@ const float VV_TERRAIN_FLECK_OVERCAST_END = 0.65;
 const float VV_TERRAIN_MOON_FLECK = 0.45;
 // The most a shaft may mark vanilla's god-ray channel, so a beam can never
 // hide what is behind it.
-const float VV_TERRAIN_SHAFT_MAX = 0.8;
+const float VV_TERRAIN_SHAFT_MAX = 0.4;
 // v10: how hard the slider drives a shaft source before the cap. Sources are
 // only the texels lining a hole in a leaf (v7), a sparse lace that vanilla's
 // radial blur averages with the dark leaf around it, so at the v8 strength
 // (a few hundredths per texel) no ray survived the blur (in game, v9: "not
 // seeing any rays"). Sparse sources can take a high cap without washing the
 // forest out; whole leaf faces could not (v6).
-const float VV_TERRAIN_SHAFT_GAIN = 2.5;
+// v13: back down to 1 under a cap of 0.4. The air march (v11) now draws the
+// beams; at 2.5 / 0.8 the radial blur of the sparse rim sources hatched the
+// whole view near a low sun with fine lines (in game, v12).
+const float VV_TERRAIN_SHAFT_GAIN = 1.0;
 // v11 beams in the air. The god-ray channel above is blurred toward the
 // sun's SCREEN position, so it can only draw rays while the sun is on or near
 // the screen - in game that meant a low sun straight ahead, and nothing at
@@ -628,6 +631,11 @@ const float VV_TERRAIN_BEAM_REACH = 20.0;
 const int VV_TERRAIN_BEAM_STEPS = 8;
 const float VV_TERRAIN_BEAM_SCATTER = 0.2;
 const float VV_TERRAIN_BEAM_MAX = 0.32;
+// v13 gates: the least leaf density that makes a column shaded air a beam
+// can show in, and the density of a crown that blocks a beam passing through
+// it on the way down.
+const float VV_TERRAIN_BEAM_CROWN = 0.3;
+const float VV_TERRAIN_BEAM_BLOCK = 0.45;
 // Past this distance a leaf texel is under a pixel, and the hole-rim test
 // that places shaft sources would sparkle.
 const float VV_TERRAIN_SHAFT_RIM_FAR = 32.0;
@@ -1361,6 +1369,13 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     vec3 dir = cameraRelativePos / dist;
     float span = min(dist, VV_TERRAIN_BEAM_REACH);
     float ds = span / float(VV_TERRAIN_BEAM_STEPS);
+    // v13: nothing to march where no crown stands along the marched span -
+    // open country, where v12 still paid for every sample and drew beams over
+    // scrub in full sun. Three leaf-map reads, no noise.
+    float crowns = max(max(vvTerrainCanopyCell(vv_pbrOrigin.xz).x,
+                           vvTerrainCanopyCell(vv_pbrOrigin.xz + dir.xz * (span * 0.5)).x),
+                       vvTerrainCanopyCell(vv_pbrOrigin.xz + dir.xz * span).x);
+    if (crowns < VV_TERRAIN_BEAM_CROWN) return 0.0;
     // Interleaved gradient noise: a fixed per-pixel offset of the samples,
     // so twelve steps read as a smooth integral rather than bands.
     float offset = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -1371,6 +1386,19 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
         vec3 p = rel + vv_pbrOrigin;
         float rise = vv_canopyPlaneY - p.y;
         if (rise < 0.5) continue;
+        // v13: a beam is only a beam in SHADED air - under a crown, below its
+        // lowest leaf. In open sunlight all the air is lit and there is no
+        // shaft to see; v12 drew them over meadows and inside crowns.
+        vec2 here = vvTerrainCanopyCell(p.xz);
+        if (here.x < VV_TERRAIN_BEAM_CROWN || p.y > here.y - 0.5) continue;
+        // v13: and only if no crown stands between this air and the gap. The
+        // sun ray halfway up to the canopy plane must not pass through another
+        // tree's leaves; at a low sun v12's beams ran through whole crowns as
+        // horizontal slabs.
+        vec3 mid = p + l * (0.5 * rise / l.y);
+        vec2 midCell = vvTerrainCanopyCell(mid.xz);
+        if (midCell.x >= VV_TERRAIN_BEAM_BLOCK && mid.y > midCell.y - 0.5
+            && mid.y < midCell.y + max(2.0, midCell.x * 5.0)) continue;
         vec2 srcRel = rel.xz + l.xz * (rise / l.y);
         if (max(abs(srcRel.x), abs(srcRel.y)) > 28.0) continue;
         vec2 src = p.xz + l.xz * (rise / l.y);

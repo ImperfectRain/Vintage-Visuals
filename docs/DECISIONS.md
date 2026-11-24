@@ -2548,3 +2548,27 @@ read. About an eighth of v11's work per fragment; not measured. Scatter
 raised from 0.06 to 0.2 per block of full beam, cap 0.32, so the default
 reads without maxing the slider. Three more mutations.
 
+**Amendment (v13): beams only in shaded air.** Ten v12 screenshots at many
+angles and times: under a maple at midday the floor and the beams read well,
+but elsewhere the beams were inconsistent. They stood over open scrub in full
+sun. At a low sun they ran through whole crowns as near-horizontal slabs, and
+a fine radial hatching covered the view near the sun. Cost was about 15 fps
+while looking at beams. Causes: the march asked only whether the canopy plane
+above a point had a gap, never whether the point itself was in shade or
+whether another crown stood between it and the gap; and the leaf-rim god-ray
+sources, raised to gain 2.5 under a 0.8 cap in v10, were blurred into
+hatching. A point now carries a beam only when its own column has a crown
+(`VV_TERRAIN_BEAM_CROWN` 0.3) and it sits below that crown's lowest leaf,
+and when the sun ray halfway up to the canopy plane does not pass through
+another crown (`VV_TERRAIN_BEAM_BLOCK` 0.45, over the crown's lowest leaf to
+its estimated top). The march returns before any sample when no crown stands
+at the camera, the middle or the end of the marched span, which also makes
+open country free. The rim sources are back to gain 1 under a cap of 0.4.
+Accepted limits: the leaf map resolves 2-block cells, so shade and blocking
+are cell-coarse; the halfway test is one read and can miss a thin crown
+elsewhere on the ray. Three mutations. Not yet seen in game; cost not
+measured.
+
+The overall yellow cast in the same screenshots is not the colour grade: the
+session log shows it neutral (temperature 0.01, tint 1/1/1). Not chased here.
+
