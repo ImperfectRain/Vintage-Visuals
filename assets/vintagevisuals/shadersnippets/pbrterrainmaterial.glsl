@@ -2609,9 +2609,9 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 74)
     {
         float intensity = dot(blockLight, VV_PBR_LUMA);
-        vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
+        vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
         vec3 v = vvTerrainSafeNormalize(-cameraRelativePos, m.faceNormal);
-        float ndotl = max(dot(m.normal, l), 0.0);
+        float ndotl = max(dot(m.normal, toTorch), 0.0);
         vec3 clay = vec3(clamp(intensity * 1.6, 0.0, 1.0) * ndotl);
         vec3 glint = vvTerrainBlockSpecular(m, v, blockLight, cameraRelativePos);
         return vec4(clamp(clay + glint, 0.0, 1.0), color.a);
