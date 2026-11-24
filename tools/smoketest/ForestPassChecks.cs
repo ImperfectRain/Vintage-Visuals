@@ -40,6 +40,7 @@ namespace VintageVisuals.SmokeTest
             FallingLeaves(glsl, check);
             Fireflies(check);
             TexturedLeaves(check);
+            LeafLitter(check);
         }
 
         private static string Body(string src, string sig)
@@ -545,6 +546,61 @@ namespace VintageVisuals.SmokeTest
             check("textured leaves: tinted by the game's colour, fall slowly, ride the wind, lie flat when down",
                   tint && flight && rest,
                   $"tint {tr:0.00}/{tg:0.00}/{tb:0.00}; still fall {calmFall:0.00} b/s drift {calm.X:0.0}; gale {galeAlong:0.0} b/s; spin {calmSpin:0.0}/{galeSpin:0.0}; rest {rest}");
+        }
+
+        private static void LeafLitter(Action<string, bool, string> check)
+        {
+            // Heavy weather: a storm strips green leaves in any season, where
+            // the same breeze in spring is still a trickle. The first cut in
+            // game gave an occasional tumble in summer wind.
+            float springStorm = ForestLifeSpawner.LeafRate(World(0.9f, 1f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            float springWind = ForestLifeSpawner.LeafRate(World(0.9f, 0.4f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            float springCalm = ForestLifeSpawner.LeafRate(World(0.9f, 0f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            bool storm = springStorm > 0.3f && springStorm > springWind * 10f && springCalm < 0.01f;
+
+            // Dozens at once: enough tries to find them, a batched cap far
+            // above the per-particle one, and a litter cap that cannot grow.
+            bool volume = ForestLifeSpawner.LeafTriesPerTick >= 30 &&
+                          LeafRenderer.MaxFlying >= 2 * ForestLifeSpawner.LeafMaxAlive &&
+                          LeafRenderer.MaxLitter > 0 && LeafRenderer.MaxLitter <= 4000 &&
+                          LeafRenderer.PileCap > 1 && LeafRenderer.PileStep > 0f && LeafRenderer.PileStep * LeafRenderer.PileCap < 0.25f;
+
+            // Decay is a spread, not a timer: draws across 0..1 give lives that
+            // differ by far more than a few seconds; rain shortens them; water
+            // rots a leaf sooner than ground; all bounded.
+            float Life(double u, float rain, bool water) => LeafFlight.LitterLife(u, rain, water);
+            bool decay = Life(0.9, 0f, false) < 60f && Life(0.05, 0f, false) > 600f &&
+                         Life(0.3, 1f, false) < Life(0.3, 0f, false) * 0.5f &&
+                         Life(0.3, 0f, true) < Life(0.3, 0f, false) &&
+                         Life(1e-9, 0f, false) <= 900f && Life(1.0, 1f, true) >= 20f;
+
+            // On water: a current carries the leaf along it whatever the wind,
+            // and on still water the wind nudges it; it never sinks or lifts.
+            var rnd = new Random(7);
+            var a = LeafFlight.Start(0, 0, 0, 0f, 0f, 0f, rnd);
+            var b = a;
+            for (int i = 0; i < 200; i++)
+            {
+                LeafFlight.Float(ref a, 0.05f, 0f, 0.0015f, 1f, 0f, 1f);   // current +Z, wind +X
+                LeafFlight.Float(ref b, 0.05f, 0f, 0f, 1f, 0f, 1f);        // still water, wind +X
+            }
+            bool water = a.Z > 5.0 && Math.Abs(a.X) < 0.5 && a.Y == 0.0 &&
+                         b.X > 2.0 && Math.Abs(b.Z) < 0.5 && b.Y == 0.0;
+
+            // The batched quad: a square of the leaf's size, any turn. Flat
+            // (pitch 90 degrees) lies in the ground plane.
+            var c = new float[12];
+            LeafFlight.Corners(0.7f, 0.4f, 1.1f, 0.5f, c);
+            float E(int i, int j) => (float)Math.Sqrt(Math.Pow(c[i * 3] - c[j * 3], 2) + Math.Pow(c[i * 3 + 1] - c[j * 3 + 1], 2) + Math.Pow(c[i * 3 + 2] - c[j * 3 + 2], 2));
+            bool square = Math.Abs(E(0, 1) - 0.5f) < 1e-4f && Math.Abs(E(1, 2) - 0.5f) < 1e-4f &&
+                          Math.Abs(E(0, 2) - 0.5f * (float)Math.Sqrt(2)) < 1e-4f;
+            LeafFlight.Corners(0.3f, (float)Math.PI / 2f, 0.2f, 0.5f, c);
+            bool flat = Math.Abs(c[1]) < 1e-4f && Math.Abs(c[4]) < 1e-4f && Math.Abs(c[7]) < 1e-4f && Math.Abs(c[10]) < 1e-4f;
+
+            check("leaf litter: dozens in a storm, litter decays at varied rates and is capped, leaves ride a current",
+                  storm && volume && decay && water && square && flat,
+                  $"spring storm {springStorm:0.00} wind {springWind:0.000}; volume {volume}; life {Life(0.9, 0f, false):0}/{Life(0.05, 0f, false):0}s " +
+                  $"rain {Life(0.3, 1f, false):0} water {Life(0.3, 0f, true):0}; current {a.X:0.0},{a.Z:0.0} still {b.X:0.0},{b.Z:0.0}; square {square} flat {flat}");
         }
 
         // --- Season ----------------------------------------------------------

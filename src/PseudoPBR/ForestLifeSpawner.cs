@@ -78,10 +78,14 @@ namespace VintageVisuals.PseudoPBR
         /// v15 falling leaves. Tries per tick, reach, how many may live, and
         /// how long one lasts, from leaving the crown to lying on the ground.
         /// A try is one leaf-map lookup; a hit adds one block read. At most
-        /// 60 lookups a second, and the cap holds the particle count however
-        /// hard the wind blows.
+        /// 180 lookups a second (v15d: 12 a tick gave an occasional tumble in
+        /// game where a storm wants dozens), and the cap holds the count
+        /// however hard the wind blows: <see cref="LeafRenderer.MaxFlying"/>
+        /// for textured leaves, which cost one batched draw however many there
+        /// are, and <see cref="LeafMaxAlive"/> for the coloured fallback,
+        /// which the game draws one particle at a time.
         /// </summary>
-        public const int LeafTriesPerTick = 12;
+        public const int LeafTriesPerTick = 36;
         public const float LeafReach = 20f;
         public const int LeafMaxAlive = 160;
         public const float LeafLife = 7f;
@@ -89,6 +93,16 @@ namespace VintageVisuals.PseudoPBR
 
         /// <summary>The year-round trickle, as a share of the late-autumn peak.</summary>
         public const float LeafShedFloor = 0.08f;
+
+        /// <summary>
+        /// v15d. A storm tears green leaves out of any crown: from a strong
+        /// wind (<see cref="LeafStormLow"/>) to a gale (<see cref="LeafStormHigh"/>)
+        /// the shed rises to at least this share of the autumn peak, whatever
+        /// the season. A still summer day keeps its trickle.
+        /// </summary>
+        public const float LeafStormShed = 0.4f;
+        public const float LeafStormLow = 0.45f;
+        public const float LeafStormHigh = 0.9f;
 
         /// <summary>
         /// A leaf's drawn size, broadleaf and evergreen. The first cut used
@@ -329,7 +343,10 @@ namespace VintageVisuals.PseudoPBR
         {
             float local = world.WindSpeed + LeafGustLift * GameMath.Clamp(gust, 0f, 1f);
             float day = 0.5f + 0.5f * GameMath.Clamp(world.DayLight, 0f, 1f);
-            return LeafShed(world) * LeafWind(local) * day;
+            float storm = GameMath.Clamp((local - LeafStormLow) / (LeafStormHigh - LeafStormLow), 0f, 1f);
+            storm = storm * storm * (3f - 2f * storm);
+            float shed = Math.Max(LeafShed(world), LeafStormShed * storm);
+            return shed * LeafWind(local) * day;
         }
 
         /// <summary>
@@ -367,8 +384,10 @@ namespace VintageVisuals.PseudoPBR
             var pos = new BlockPos(player.Pos.Dimension);
             int spawned = 0;
 
-            for (int t = 0; t < LeafTriesPerTick && _leaves + (_leafRenderer?.Count ?? 0) < LeafMaxAlive; t++)
+            for (int t = 0; t < LeafTriesPerTick; t++)
             {
+                bool textured = _leafRenderer != null && _leafRenderer.Usable;
+                if (_leaves >= LeafMaxAlive && (!textured || _leafRenderer.Count >= LeafRenderer.MaxFlying)) break;
                 double x = player.Pos.X + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
                 double z = player.Pos.Z + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
                 int bx = (int)Math.Floor(x), bz = (int)Math.Floor(z);
@@ -389,7 +408,7 @@ namespace VintageVisuals.PseudoPBR
 
                 // A leaf with its real shape where the renderer can cut one
                 // from this tree's texture; a coloured particle where it cannot.
-                if (_leafRenderer != null && _leafRenderer.Usable &&
+                if (textured && _leafRenderer.Count < LeafRenderer.MaxFlying &&
                     _leafRenderer.TrySpawn(block, pos, x, lowest - 0.2, z,
                         dx * push, -0.3f, dz * push, evergreen))
                 {
@@ -397,6 +416,7 @@ namespace VintageVisuals.PseudoPBR
                     continue;
                 }
 
+                if (_leaves >= LeafMaxAlive) continue;
                 int color = block.GetRandomColor(_capi, pos, BlockFacing.UP, -1);
                 _leaf.Color = (color & 0x00FFFFFF) | unchecked((int)0xFF000000);
                 _leaf.MinSize = evergreen ? NeedleMinSize : LeafMinSize;

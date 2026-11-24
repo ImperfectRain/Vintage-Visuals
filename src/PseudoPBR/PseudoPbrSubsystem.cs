@@ -174,6 +174,7 @@ namespace VintageVisuals.PseudoPBR
             sample.Speed = GameMath.Clamp(world.WindSpeed, 0f, 1f);
             sample.Gusts = GameMath.Clamp(_mod?.ConfigManager?.Config?.PseudoPBR?.WindGusts ?? 0f, 0f, 1f);
             sample.Breeze = tracker.BreezeClock;
+            sample.Rain = GameMath.Clamp(world.Rain, 0f, 1f);
             return sample;
         }
 

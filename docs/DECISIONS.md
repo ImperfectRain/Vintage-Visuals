@@ -2727,4 +2727,56 @@ block's climate and season colour maps.
 - *Unknown:* that the standard shader accepts the xyz/uv/rgba/flags layout used
   here, and the channel order of the tint. A wrong order would show as blue or
   purple autumn leaves.
-- *Status:* not seen in game.
+- *Status:* seen working in game (2026-11-24, "leaves work and look good"),
+  which settles both unknowns above. Its one-draw-per-leaf drawing is
+  superseded by D61.
+
+## D61. Leaves are batched, lie on the ground as litter, and ride water currents
+
+Supersedes the *Drawing* point and the cost of D60.
+
+**Context.** D60's leaves were seen working, but only as an occasional tumble,
+and the ask was dozens on screen in heavy weather, litter that piles up and
+decays at varied rates (only if it does not chug the game), and leaves that
+float and move with the current.
+
+**Decision.**
+- *Batching:* each leaf texture's sheet owns two preallocated meshes, one for
+  flying leaves (400 quads) and one for litter (1500), uploaded once. Flying
+  leaves are rewritten on the CPU every frame (four corners from
+  `LeafFlight.Corners`, light and tint in the vertex colour, divided by
+  `LeafRenderer.TintScale` and restored by the shader's `RgbaTint`) and sent
+  with one `UpdateMesh`; unused quads are zeroed. So the draw count is two per
+  leaf texture seen, however many leaves there are.
+- *More leaves:* 36 leaf-map tries a tick (was 12), cap 400 textured
+  (`LeafRenderer.MaxFlying`; the coloured fallback keeps its 160), and a storm
+  term: from a 0.45 to a 0.9 local wind the shed rises to at least 0.4 of the
+  autumn peak in any season, because storms tear green leaves.
+- *Litter:* a landed leaf stays as a quad in the litter mesh, which is relative
+  to a held origin and rebuilt at most twice a second, only when it changed.
+  Each lies for an exponential draw (mean 240 s on ground, 90 s on water,
+  divided by 1 + 2 x rain; clamped 20 to 900 s), so most go within minutes and
+  a few stay long. Leaves on the same block stack by 0.004 each, up to 24, so a
+  pile builds without z-fighting. Forty litter leaves a frame are checked in
+  turn: decayed ones shrink away, unsupported ones fall again, a strong gust
+  (local wind over 0.7) lifts one now and then, and any beyond 64 blocks is
+  dropped. Cap 1500; when it is full a landing leaf fades instead.
+- *Water:* a leaf that meets liquid floats at its surface and is carried by the
+  game's own current there (`IBlockFlowing.GetPushVector`, else the block's
+  `PushVector`), at 0.9 b/s along it; on still water the wind nudges it. It
+  strands at the bank and becomes litter there.
+
+**Rejected.**
+- Litter as blocks or block decals. Writing to chunks is server state and
+  rebuilds chunk meshes; a client-side mesh costs neither.
+- Persisting litter across sessions. Session-only keeps it free of save data
+  and of a stale pile at a place the player has not seen for days.
+- Instancing with mod GLSL: still not needed at these counts.
+
+**Consequences.**
+- *Cost:* per frame, up to 400 x 4 vertices written and uploaded per active
+  sheet, two draws per sheet, and 40 litter checks (a block read each). Litter
+  re-upload at most 2/s. Not measured.
+- *Limits:* litter is session-only and does not survive a world reload; it does
+  not follow a block broken under it until its turn in the round robin.
+- *Status:* L2, not seen in game.

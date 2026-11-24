@@ -1398,6 +1398,11 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   (`LeafSprites`), tints them with the game's colour, and draws them as tumbling
   two-sided meshes through the game's standard shader (`LeafFlight` moves them).
   Coloured particles are the fallback.
+  Since D61 they are batched (two draws per leaf texture, up to 400 flying),
+  storms strip green leaves in any season, landed leaves lie as litter that
+  piles per block and decays at varied rates (mean 240 s, shorter in rain and
+  on water; cap 1500, session-only, lifted again by strong gusts), and leaves
+  on water float with the game's current.
   The season comes from `EnvironmentState.LeafFall`, continuous across the
   handovers (D59), and leaves draw at 0.35 to 0.55.
 - **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
@@ -1408,5 +1413,7 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
 Cost, none measured: two noise reads for gusts per plant fragment and fleck
 evaluation; four texture reads for the rim per qualifying leaf (already paid by the
 shafts there); one leaf-map and one noise read for damp; up to 8 CPU lookups per
-particle kind every 0.2 s (12 for leaves). No sampler, pass, target or texture unit.
+particle kind every 0.2 s (36 for leaves); for textured leaves, a vertex
+rewrite of up to 400 quads and two draws per leaf texture a frame, and 40
+litter checks a frame. No sampler, pass, target or texture unit.
 
