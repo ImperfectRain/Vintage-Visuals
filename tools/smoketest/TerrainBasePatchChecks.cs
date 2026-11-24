@@ -306,7 +306,7 @@ void main()
                 foliageBody.Contains("* vv_pbrFoliage"),
                 "");
             check("terrain foliage transmission adds to vanilla's lit leaf rather than replacing it",
-                floraShadeBody.Contains("vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet);") &&
+                floraShadeBody.Contains("vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet) * vvTerrainContactShade(cameraRelativePos);") &&
                 floraShadeBody.Contains("+ through) * clearAir;"),
                 "");
 
@@ -316,9 +316,11 @@ void main()
             string transBody = GlslEval.StripComments(
                 GlslEval.FunctionBody(terrainSnippet, "float vvTerrainTranslucency(") ?? "")
                 .Replace("vvTerrainSafeNormalize", "vvSafeNormalize");
+            double transmitDiffuse = GlslEval.Const(terrainSnippet, "VV_TERRAIN_TRANSMIT_DIFFUSE");
             double Translucency(GlslEval.Val l)
             {
-                var syms = GlslEval.Syms("l", l, "n", GlslEval.Vec(0, 0, 1), "v", GlslEval.Vec(0, 0, 1));
+                var syms = GlslEval.Syms("l", l, "n", GlslEval.Vec(0, 0, 1), "v", GlslEval.Vec(0, 0, 1),
+                                         "VV_TERRAIN_TRANSMIT_DIFFUSE", transmitDiffuse);
                 string through = GlslEval.Rhs(GlslEval.Statement(transBody, "vec3 through"));
                 syms["through"] = GlslEval.Eval(through, syms);
                 string ret = GlslEval.Statement(transBody, "return");
@@ -334,6 +336,18 @@ void main()
             check("terrain leaves glow with the sun behind them and not in front",
                 backlit > 0.3 && frontlit < 0.01,
                 "backlit " + backlit.ToString("0.000") + ", front-lit " + frontlit.ToString("0.000"));
+            // v14 INTERACTION: a leaf lit from behind glows over a wide cone,
+            // not only when the viewer looks down the sun ray through it; and
+            // the broad share never lights a front-lit leaf.
+            try
+            {
+                double sideBack = Translucency(GlslEval.Vec(0.94, 0.0, -0.34));
+                double sideFront = Translucency(GlslEval.Vec(0.94, 0.0, 0.34));
+                check("I-terrain a backlit leaf glows over a wide cone, and the broad share never lights its front",
+                      sideBack > 0.05 && sideFront < 0.01 && transmitDiffuse > 0.0 && transmitDiffuse <= 0.3 && backlit <= 1.3,
+                      $"sun off to the side behind {sideBack:0.000}, in front {sideFront:0.000}, straight behind {backlit:0.000}");
+            }
+            catch (Exception ex) { check("I-terrain wide-cone translucency is readable", false, ex.Message); }
 
             // Sun visibility is read from the shadow map, not from vanilla's `b`.
             // `b` bottoms out at 1 - shadowIntensity/2 and has blockBrightness
@@ -868,8 +882,8 @@ void main()
                 bool ok = Math.Abs(Breathe(0.0, 1.0) - 1.0) < 1e-9 && Math.Abs(Breathe(0.0, -1.0) - 1.0) < 1e-9 &&
                           Breathe(1.0, 1.0) < Breathe(1.0, -1.0) && Breathe(1.0, 1.0) >= 0.8 &&
                           sway.Success && still > 0.0 && gust > still * 1.5 &&
-                          fleckBody.Contains("vvTerrainFleckShimmer()") &&
-                          GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFleckShimmer(") ?? "").Contains("clamp(vv_sceneWind, 0.0, 1.0)") &&
+                          fleckBody.Contains("vvTerrainFleckShimmerAt(src)") &&
+                          GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "float vvTerrainFleckShimmerAt(") ?? "").Contains("clamp(vv_sceneWind + VV_TERRAIN_GUST_FLUTTER * vvTerrainGust(src), 0.0, 1.0)") &&
                           !Regex.IsMatch(fieldBody, @"turn \* [0-9]+\.[1-9]");
                 check("I-terrain sunflecks flutter in the game's wind, on whole turns of the breeze clock", ok,
                       $"still {Breathe(0.0, 1.0):0.00}, gusting {Breathe(1.0, 1.0):0.00}..{Breathe(1.0, -1.0):0.00}; sway {still:0.00}..{gust:0.00}");
@@ -891,7 +905,8 @@ void main()
                           shaftBody.Contains("if (vvTerrainFloraClass() != VV_TFLORA_LEAVES) return 0.0;") &&
                           shaftBody.Contains("float crown = vvTerrainCanopyCell(world.xz).x;") &&
                           shaftBody.Contains("float clearSky = vvTerrainClearSky();") &&
-                          shaftBody.Contains("float rim = vvTerrainLeafHoleRim();") &&
+                          shaftBody.Contains("float rim = vvTerrainLeafRim();") &&
+                          (GlslEval.FunctionBody(terrainSnippet, "float vvTerrainLeafRim(") ?? "").Contains("vv_leafRim = vvTerrainLeafHoleRim();") &&
                           // beams land on flecks: the same canopy-plane projection the flecks use
                           shaftBody.Contains("vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));") &&
                           fleckBody.Contains("vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));") &&

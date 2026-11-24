@@ -135,6 +135,14 @@ namespace VintageVisuals.Ui
             { "pbr_moonflecks", "Needs shadows on. Shows in shade under leaves at night with the moon up." },
             { "pbr_shafts", "Needs god-rays on in the game's settings. Look toward the sun through a canopy." },
             { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
+            { "pbr_gusts", "Needs wind. Watch a grass field or crowns from a little way off." },
+            { "pbr_contactshade", "Shows at the foot of grass, flowers and crops, close up." },
+            { "pbr_damp", "Shows on rough stone, logs and soil under trees or in half-shade, in a rainy climate." },
+            { "pbr_drips", "Stand under leaves during or just after rain." },
+            { "pbr_pollen", "Warm dry day in spring or summer, over grass or flowers." },
+            { "pbr_fireflies", "Dusk or a warm summer night, over grass, ideally humid ground." },
+            { "atmosphere_foresthaze", "Inside a forest, looking between the trunks." },
+            { "atmosphere_groundmist", "Still, humid night or early morning, or after rain, near low ground or water." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
             { "pbr_blocklight", "Creatures, items and particles only in this build." },
             { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },
@@ -287,7 +295,7 @@ namespace VintageVisuals.Ui
 
             // GradeStack.Evaluate applies only the style when adaptive grading is off.
             Under(new[] { colour, world },
-                "grade_timeofday", "grade_weather", "grade_biome", "grade_indoor", "grade_depth", "grade_underwater");
+                "grade_timeofday", "grade_weather", "grade_biome", "grade_season", "grade_indoor", "grade_depth", "grade_underwater");
 
             // Read by the terrain material shader, which IsPatchGroupEnabled
             // removes entirely when Surface materials is off.
@@ -296,6 +304,7 @@ namespace VintageVisuals.Ui
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
                 "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
+                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_drips", "pbr_pollen", "pbr_fireflies",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 
@@ -319,7 +328,8 @@ namespace VintageVisuals.Ui
                 "atmosphere_aerial", "atmosphere_horizon", "atmosphere_sunscatter", "atmosphere_heighthaze",
                 "atmosphere_heightattenuation", "atmosphere_weatherextinction", "atmosphere_weathertint",
                 "atmosphere_cloudatmosphere", "atmosphere_precipitation", "atmosphere_godrays",
-                "atmosphere_godrayquality", "atmosphere_moon", "atmosphere_cloudedge", "atmosphere_dapple");
+                "atmosphere_godrayquality", "atmosphere_moon", "atmosphere_cloudedge", "atmosphere_dapple",
+                "atmosphere_foresthaze", "atmosphere_groundmist");
 
             return map;
         }

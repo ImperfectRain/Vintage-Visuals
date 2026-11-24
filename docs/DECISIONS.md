@@ -2572,3 +2572,53 @@ measured.
 The overall yellow cast in the same screenshots is not the colour grade: the
 session log shows it neutral (temperature 0.01, tint 1/1/1). Not chased here.
 
+## D57. The v14 forest pass builds on what exists, and says what is invented
+
+**Context.** The player asked for eleven forest and weather effects in one
+pass: leaf translucency, backlit rim light, wet foliage with drips, forest
+haze, ground mist, pollen and fireflies, travelling gusts, flutter linked to
+the flecks, plant base shade, damp and moss, and a seasonal light tint - on
+top of the existing foliage lighting and the work-in-progress atmosphere, and
+without overlapping either. The audit found four of them already partly built:
+leaf translucency (`vvTerrainFoliageTransmission`), wet foliage (wet-leaf
+darkening and the wet cuticle), ground haze (`AmbientBridge`'s height fog)
+and the fleck shimmer (`vvTerrainFleckShimmer`).
+
+**Decision.** Extend those four rather than add a second copy, and give each
+new effect its own slider and zero-means-vanilla uniform:
+
+- Translucency keeps its lobe and gains a wide-cone diffuse share; the
+  validation also found the root-to-tip gradient was dead for every
+  single-block plant (`windData / 7` is 0) and fixed it from vanilla's own bend
+  height.
+- Rim light and the shaft sources read the hole rim once (`vvTerrainLeafRim`).
+- Wet foliage is unchanged; drips are new particles.
+- Ground mist rides the ground haze's one vanilla plane (`AmbientBridge.Combine`)
+  instead of a shader fog, because vanilla's height fog already reaches every
+  program including the sky and water, and a second plane does not exist.
+- Gusts feed the existing fleck shimmer rather than a second flutter.
+- Forest haze is atmosphere feature 12, a medium summed into the existing
+  extinction under the shared ceiling, with only its own share tinted.
+- Seasonal light is one more GradeStack influence; autumn deliberately does
+  not warm, because the game's colormaps already paint it.
+- Plant base shade and damp are new multipliers that can only darken.
+
+Each new value that the game does not supply is labelled where it is made:
+gust placement is invented (FOUNDATION ONLY), damp and moss placement is
+inferred from shelter and rainfall (DATA GAP), hollows are the terrain read
+near the player (DATA GAP), and pollen and fireflies do not exist in the
+game (DATA GAP). Whether there is wind, which way, how wet, how warm, which
+season and where the leaves and plants are, are all the game's.
+
+**Consequences.** Nine new sliders (gusts, plant base shade, damp, drips,
+pollen, fireflies, forest haze, ground mist, season) and four debug views
+(69 gusts, 70 damp, 71 plant base, 72 rim). New per-fragment cost is small
+and gated: two noise reads for gusts on plants and in the flecks, four
+texture reads for the rim on backlit leaves within 24 blocks (already paid
+by the shafts there), one leaf-map and one noise read for damp, a few
+multiplies for forest haze; none of it measured. No new sampler, pass,
+target or texture unit. The leaf map now also scans while forest haze, damp
+or drips are on. Gusts do not bend anything: vanilla's vertex sway is left
+alone, which keeps the vertex shader unpatched. One mist plane means the
+mist lies in one hollow, the player's. Nothing here has been seen in game.
+

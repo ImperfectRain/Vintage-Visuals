@@ -686,6 +686,114 @@
         "clientSide": true,
         "weight": 91
       },
+      "pbr_gusts": {
+        "ingui": "Travelling wind gusts",
+        "comment": "Patches of stronger wind rolling downwind across grass, crops and crowns: plants brighten a little at the tips as a gust bends them, and the sunflecks under a crown flutter as it passes. Direction and speed are the game's own wind; none in still air. 0 is vanilla.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 93
+      },
+      "pbr_contactshade": {
+        "ingui": "Shade at plant bases",
+        "comment": "Darkens the foot of grass, flowers and crops where the stems crowd together, so plants sit in the ground instead of floating on it. Never brighter, in any light. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 94
+      },
+      "pbr_damp": {
+        "ingui": "Damp and moss on sheltered stone",
+        "comment": "Rough stone, wood and soil faces under a crown or in half-shade go slightly darker and greener in patches, most on north faces and in rainy climates. None on metal, under snow, or in dry climates. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 95
+      },
+      "pbr_drips": {
+        "ingui": "Drips from wet leaves",
+        "comment": "Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 96
+      },
+      "pbr_pollen": {
+        "ingui": "Pollen in the air",
+        "comment": "A few pale specks drifting downwind over grass and flowers on warm, dry days in spring and summer. None in rain, cold, autumn, winter or at night. 0 spawns none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 97
+      },
+      "pbr_fireflies": {
+        "ingui": "Fireflies",
+        "comment": "Small glowing lights blinking low over grass at dusk and on warm summer nights, most in humid places. None in rain, cold or winter. 0 spawns none.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 98
+      },
+      "atmosphere_foresthaze": {
+        "ingui": "Forest haze",
+        "comment": "A soft, slightly darker haze in the air under a canopy, so trunks fade into depth as you look into a forest. Strongest under thick crowns in humid air; none in the open or underground. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 99
+      },
+      "atmosphere_groundmist": {
+        "ingui": "Ground mist in hollows",
+        "comment": "A shallow mist that settles into the low ground around you and over nearby water on still, humid nights and mornings and after rain, then burns off. Drawn by the game's own height fog, the same layer as Ground haze. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 100
+      },
+      "grade_season": {
+        "ingui": "Adaptive: season",
+        "comment": "The colour of the light through the year: a touch fresher in spring, warmer in summer, softer in autumn, cooler and crisper in winter. Never recolours leaves or grass, which the game does itself. 0 is vanilla.",
+        "default": 0.7,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 101
+      },
       "pbr_motes": {
         "ingui": "Dust motes in sun shafts",
         "comment": "A few small specks of dust drifting in the beams of sun under a canopy, only where the game's own leaf blocks have a gap the sun shines through. None under cloud or at night. 0 spawns none.",
@@ -766,7 +874,7 @@
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 68.0,
+          "max": 72.0,
           "step": 1.0
         }
       },

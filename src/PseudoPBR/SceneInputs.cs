@@ -88,14 +88,26 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>How bright the moon is, already 0 by day.</summary>
         public readonly float MoonLight;
 
+        /// <summary>
+        /// v14. The game's wind direction in world XZ, unit, from
+        /// EnvironmentState. A fact: the gusts slider is what scales it.
+        /// </summary>
+        public readonly Vec2f WindDirection;
+
+        /// <summary>v14. The climate's rainfall at the player, 0 arid to 1 lush. A fact.</summary>
+        public readonly float Humidity;
+
         public SceneInputs(float dayLight, float wetness, float rainCover, float ripples,
                            float rippleTime, float breeze, float overcast, Vec3f origin,
                            float enclosure = 0f, float artificialLight = 0f,
                            float restraint = 0f, float readability = 0f,
                            float autumn = 0f, float winter = 0f,
                            float frost = 0f, float snow = 0f,
-                           float skyCover = 0f, float wind = 0f, float moonLight = 0f)
+                           float skyCover = 0f, float wind = 0f, float moonLight = 0f,
+                           Vec2f windDirection = null, float humidity = 0f)
         {
+            WindDirection = windDirection ?? new Vec2f(1f, 0f);
+            Humidity = humidity;
             SkyCover = skyCover;
             Wind = wind;
             MoonLight = moonLight;

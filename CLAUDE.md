@@ -346,7 +346,7 @@ interpretation.
 4. **Atmosphere never owns weather.** It reads it. `AtmosphereState` carrying the
    same rain figure as `EnvironmentState` is one snapshot travelling together,
    not a second opinion - read on the same tick from the same source.
-5. **Never couple two feature toggles.** Eleven strengths, eleven independent
+5. **Never couple two feature toggles.** Twelve strengths, twelve independent
    effects. A check drives the real derivation with everything on, zeroes each in
    turn, and fails if a feature leaks when off, does nothing when on, or moves
    another. `CloudAtmosphere` damping the directional terms is the one documented

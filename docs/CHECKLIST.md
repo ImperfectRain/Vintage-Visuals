@@ -105,6 +105,12 @@ from the source texture.
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
 | Sun shafts on the modular path (godrayLevel) | x | x | x | x | – | – | – | – | x |
 | Dust motes in sun shafts | x | x | x | x | – | – | – | – | x |
+| Travelling gusts, linked to fleck flutter (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Plant base shade, and the one-block tissue gradient fix (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Backlit rim light on leaf-hole rims (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Wide-cone leaf translucency (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Damp and moss on sheltered rough faces (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Drips, pollen and fireflies (`ForestLifeSpawner`, v14, D57) | x | x | x | x | – | – | – | – | x |
 | Moonlight flecks | x | x | x | x | – | – | – | – | x |
 | Cloud cover from ambient and falling rain (D53) | x | x | x | x | – | – | – | – | x |
 
@@ -157,6 +163,8 @@ turned a forest black at noon (fixed by D52, and seen readable in the same storm
 | Transport model | x | x | x | x | – | – | – | – | x |
 | Ambient stack bridge | x | x | x | x | – | – | – | n/a | x |
 | Height haze | x | x | x | x | – | – | – | – | x |
+| 12 Forest haze (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Ground mist on the height-haze plane (`GroundMap`, v14, D57) | x | x | x | x | – | – | – | – | x |
 | 1 Aerial perspective | x | x | x | x | – | – | – | – | x |
 | 2 Horizon scattering | x | x | x | x | – | – | – | – | x |
 | 3 Sun-aware scattering | x | x | x | x | – | – | – | – | x |
@@ -240,6 +248,7 @@ Not yet validated, and each is a separate question:
 | Colour grading | x | x | x | x | x | – | – | x | x |
 | Adaptive exposure | x | x | x | x | – | – | – | – | x |
 | Adaptive grading | x | x | x | x | – | – | – | – | x |
+| Seasonal light in the grade (v14, D57) | x | x | x | x | – | – | – | – | x |
 | Tonemap | x | x | x | x | – | – | – | – | x |
 | Post-processing (bloom, DoF, camera FX) | – | – | – | – | – | – | – | – | x |
 

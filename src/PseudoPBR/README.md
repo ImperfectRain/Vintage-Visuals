@@ -1349,3 +1349,46 @@ The debugging path in the UI is:
 | Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | actual seasonal/lit leaf colour stored for that column |
 | Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | ambient attenuation/tint result |
 | Debug > Debug System: Materials > Forest lighting > Vegetation LOD | 62 | distance simplification applied to foliage lighting |
+
+## v14 forest pass (D57)
+
+Built on the existing foliage, fleck and wetness code rather than beside it.
+Every strength is 0 for vanilla; nothing here has been seen in game (L2).
+
+- **Travelling gusts** (`PseudoPBR.WindGusts`, `vv_pbrGusts`, debug view 69).
+  `vvTerrainGust`: value noise on a 16.384-block grid (tiles the 4096 wrap in 250
+  cells), carried downwind along `vv_pbrWindDir` (the game's wind direction) by 96
+  blocks per turn of the breeze clock, in two copies crossfaded so the clock's wrap
+  never shows, re-expanded before the cut. Nothing bends - vanilla's vertex sway is
+  untouched. A gust brightens bending plants toward the tip and a touch paler
+  (`vvTerrainGustSheen`, at most 14%), and adds to the fleck shimmer under a crown it
+  crosses (`vvTerrainFleckShimmerAt`), so the flecks flutter as a gust passes over.
+  None in still air. FOUNDATION ONLY: where a gust is drawn is invented.
+- **Plant base shade** (`PseudoPBR.ContactShade`, debug view 71). The lowest 0.45
+  blocks of rooted ground plants darken by up to 45% at full slider, from vanilla's
+  bend height (`windData` plus `fract(worldPos.y + playerpos.y)`; `playerpos` is
+  vanilla's own uniform). The same height fixes the tissue gradient, which read
+  `windData / 7` - 0 for every single-block plant.
+- **Backlit rim light** (rides `PseudoPBR.FoliageTranslucency`, debug view 72). The
+  texels lining a hole in a leaf texture glow when the sun is behind them, in direct
+  sun, within 24 blocks. The hole-rim read (four texture reads) is now done once per
+  fragment and shared with the shaft sources (`vvTerrainLeafRim`).
+- **Leaf translucency** gains a wide-cone diffuse share
+  (`VV_TERRAIN_TRANSMIT_DIFFUSE`, 0.2) beside its narrow lobe.
+- **Wet foliage** is the existing wet-leaf darkening and wet cuticle; unchanged.
+- **Damp and moss** (`PseudoPBR.Damp`, `vv_pbrDamp`, `vv_pbrHumidity`, debug view
+  70). Rough non-metal faces under a crown or in half-shade go darker and greener in
+  half-block patches, more on north faces and in rainy climates, never brighter.
+  DATA GAP: the game simulates no moisture or moss on ordinary blocks.
+- **Drips, pollen and fireflies** (`PseudoPBR.LeafDrips`, `Pollen`, `Fireflies`):
+  `ForestLifeSpawner`, on the dust-mote pattern. Drips from the lowest leaf of real
+  crowns while the leaves are wet and thawed; pollen downwind over Plant blocks on
+  warm dry growing-season days; fireflies as short full-glow flashes over Plant
+  blocks at dusk and on warm calm nights. DATA GAP: neither pollen nor fireflies
+  exist in the game.
+
+Cost, none measured: two noise reads for gusts per plant fragment and fleck
+evaluation; four texture reads for the rim per qualifying leaf (already paid by the
+shafts there); one leaf-map and one noise read for damp; up to 8 CPU lookups per
+particle kind every 0.2 s. No sampler, pass, target or texture unit.
+

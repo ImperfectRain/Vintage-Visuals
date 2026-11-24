@@ -230,6 +230,15 @@ namespace VintageVisuals.Common.Scene
         /// </summary>
         public readonly float SkyExposure;
 
+        /// <summary>
+        /// v14. SAMPLED. How much leaf canopy is over the camera, 0 open to 1
+        /// a closed crown, from the game's own leaf blocks through the leaf
+        /// map (<see cref="CanopyMap.CoverAround"/>), eased over a few seconds
+        /// so walking under one tree does not pop the forest haze. 0 when the
+        /// map is not being scanned, which is the no-haze value.
+        /// </summary>
+        public readonly float CanopyCover;
+
         public AtmosphereState(Vec3f fogColor, float fogDensity, float fogMin, float fogBrightness,
                                float flatFogDensity, float flatFogYPos,
                                Vec3f sunColor, Vec3f sunDirection, float dayLight,
@@ -238,8 +247,9 @@ namespace VintageVisuals.Common.Scene
                                float temperature, float humidity,
                                Vec3f ambientColor,
                                float heightAboveSeaLevel, float viewDistance,
-                               float skyExposure)
+                               float skyExposure, float canopyCover = 0f)
         {
+            CanopyCover = canopyCover;
             DayLight = dayLight;
             MoonDirection = moonDirection;
             MoonLight = moonLight;

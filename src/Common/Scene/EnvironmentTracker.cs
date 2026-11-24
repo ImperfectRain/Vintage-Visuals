@@ -105,6 +105,8 @@ namespace VintageVisuals.Common.Scene
         private float _proximity;
         private float _autumn;
         private float _winter;
+        private float _spring;
+        private float _summer;
         private readonly Vec3f _camera = new Vec3f();
 
         private bool _reportedFirstSample;
@@ -257,6 +259,13 @@ namespace VintageVisuals.Common.Scene
         /// </summary>
         public CanopyMap Canopy { get; } = new CanopyMap();
 
+        /// <summary>
+        /// v14. Where the low ground and the water are around the player, for
+        /// the ground mist. Scanned on the tick only while asked for, like
+        /// <see cref="Canopy"/>.
+        /// </summary>
+        public GroundMap Ground { get; } = new GroundMap();
+
         /// <summary>The claim record behind Grants, for the log and for reports.</summary>
         public VisualBudget Budget { get; private set; }
 
@@ -313,7 +322,8 @@ namespace VintageVisuals.Common.Scene
 
             SampleObserver();
             SampleSky();
-            SampleCanopy();
+            SampleCanopy(deltaSeconds);
+            SampleGround();
 
             _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
             RippleClock = (float)_rippleClock;
@@ -507,6 +517,8 @@ namespace VintageVisuals.Common.Scene
 
                 _autumn = season == EnumSeason.Fall ? depth : 0f;
                 _winter = season == EnumSeason.Winter ? depth : 0f;
+                _spring = season == EnumSeason.Spring ? depth : 0f;
+                _summer = season == EnumSeason.Summer ? depth : 0f;
 
                 // The one assumption here that cannot be checked without the
                 // game running: that the season the calendar names and the
@@ -591,7 +603,7 @@ namespace VintageVisuals.Common.Scene
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
-                _camera, _proximity, _autumn, _winter);
+                _camera, _proximity, _autumn, _winter, _spring, _summer);
         }
 
         /// <summary>
@@ -619,12 +631,47 @@ namespace VintageVisuals.Common.Scene
             }
         }
 
-        private void SampleCanopy()
+        /// <summary>
+        /// v14. Blocks around the camera the forest haze's canopy cover is
+        /// measured over, and how fast the reading follows the player.
+        /// </summary>
+        public const int CanopyCoverRadius = 10;
+        public const float CanopyCoverSeconds = 3f;
+        private float _canopyCover;
+
+        /// <summary>Eases a canopy-cover reading toward its target, frame-rate independently. Pure.</summary>
+        public static float EaseCanopyCover(float current, float target, float deltaSeconds)
+        {
+            float k = 1f - (float)Math.Exp(-Math.Max(0f, deltaSeconds) / CanopyCoverSeconds);
+            return current + (GameMath.Clamp(target, 0f, 1f) - current) * k;
+        }
+
+        private void SampleGround()
         {
             try
             {
-                if (!Canopy.Wanted(_capi.ElapsedMilliseconds)) return;
-                Canopy.Scan(_capi, _capi.World?.Player?.Entity?.Pos);
+                if (!Ground.Wanted(_capi.ElapsedMilliseconds)) return;
+                Ground.Scan(_capi, _capi.World?.Player?.Entity?.Pos);
+            }
+            catch (Exception)
+            {
+                // Held at the last scan; the mist keeps its last floor.
+            }
+        }
+
+        private void SampleCanopy(float deltaSeconds)
+        {
+            try
+            {
+                if (!Canopy.Wanted(_capi.ElapsedMilliseconds))
+                {
+                    _canopyCover = EaseCanopyCover(_canopyCover, 0f, deltaSeconds);
+                    return;
+                }
+                EntityPos player = _capi.World?.Player?.Entity?.Pos;
+                Canopy.Scan(_capi, player);
+                float target = player == null ? 0f : Canopy.CoverAround(player.X, player.Y, player.Z, CanopyCoverRadius);
+                _canopyCover = EaseCanopyCover(_canopyCover, target, deltaSeconds);
             }
             catch (Exception)
             {
@@ -730,7 +777,8 @@ namespace VintageVisuals.Common.Scene
                     ambientColor: ambientColor == null ? new Vec3f(1f, 1f, 1f) : ambientColor,
                     heightAboveSeaLevel: height,
                     viewDistance: viewDistance,
-                    skyExposure: _skyExposure);
+                    skyExposure: _skyExposure,
+                    canopyCover: _canopyCover);
             }
             catch (Exception)
             {

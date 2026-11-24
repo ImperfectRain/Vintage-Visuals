@@ -43,6 +43,16 @@ uniform float vv_pbrCanopyRadius;  // shadow-map ring radius in texels; 0 disabl
 uniform float vv_pbrSunflecks;     // sunflecks inside canopy shade; 0 is vanilla
 uniform float vv_pbrMoonFlecks;    // the moon's faint version of them; 0 is none
 uniform float vv_pbrShafts;        // beams from real gaps into vanilla's god-ray pass; 0 is vanilla
+// v14 forest pass. Every strength is 0 for vanilla, and so is an unset uniform.
+uniform float vv_pbrGusts;         // travelling gusts on plants and in the flecks; 0 is vanilla
+uniform vec2 vv_pbrWindDir;        // the game's wind direction in world XZ; 0 reads as +X, harmless at 0 gusts
+uniform float vv_pbrContactShade;  // shade at the base of ground plants; 0 is vanilla
+uniform float vv_pbrDamp;          // damp and moss on sheltered rough faces; 0 is vanilla
+uniform float vv_pbrHumidity;      // the climate's rainfall where the player is, 0 arid to 1 lush; 0 means no damp
+// Vanilla's own uniform, the origin worldPos is relative to. Its vertex shader
+// bends a plant by worldPos.y + playerpos.y; the plant-height terms below read
+// the same sum, so they agree with the bend exactly.
+uniform vec3 playerpos;
 
 // The leaf map: for each 2x2-block cell around the player, how much leaf is
 // overhead and the world Y of the lowest leaf, read from the world's own blocks
@@ -994,6 +1004,66 @@ float vvTerrainFleckShimmer()
     return clamp(vv_sceneWind, 0.0, 1.0);
 }
 
+// v14 travelling gusts. The game gives one wind per player (speed and
+// direction, EnvironmentState); a gust is a patch of stronger wind carried
+// DOWNWIND across the land at the breeze clock's pace, which is how a gust
+// crosses a meadow or a crown. FOUNDATION ONLY in the sense of rule 10: the
+// game has no gust field, so where a gust is drawn is invented; its direction,
+// its speed and whether there is wind at all are the game's.
+//
+// The field is value noise on a 16.384-block grid that tiles the 4096-block
+// world wrap (250 cells), sampled twice and translated along the wind by
+// TRAVEL blocks per turn of the breeze clock. Each copy fades out at the
+// instant its own clock wraps and the other is at full weight, so the wrap of
+// vv_sceneBreeze never shows (the two-phase flow-map construction). The grid
+// is never rotated toward the wind: a rotated grid does not tile the wrap.
+// The sum is re-expanded by the weights' norm before the cut, so a gust's
+// coverage does not sag at the crossfade (the summed-noise rule).
+const float VV_TERRAIN_GUST_CELL = 16.384;
+const float VV_TERRAIN_GUST_PERIOD = 250.0;
+const float VV_TERRAIN_GUST_TRAVEL = 96.0;
+const float VV_TERRAIN_GUST_CONTRAST = 1.6;
+// How much a full gust brightens the tip of a bending plant (the paler
+// undersides and the cuticle turned toward the sky), and how much shimmer it
+// adds to the flecks under a crown it crosses.
+const float VV_TERRAIN_GUST_SHEEN = 0.14;
+const float VV_TERRAIN_GUST_FLUTTER = 0.6;
+
+vec2 vvTerrainWindDir()
+{
+    return dot(vv_pbrWindDir, vv_pbrWindDir) > 1e-4 ? normalize(vv_pbrWindDir) : vec2(1.0, 0.0);
+}
+
+float vvTerrainGustNoise(vec2 worldXZ, float phase, vec2 key)
+{
+    vec2 p = worldXZ - vvTerrainWindDir() * (VV_TERRAIN_GUST_TRAVEL * (phase - 0.5));
+    return vvTerrainFleckNoise(p, VV_TERRAIN_GUST_CELL, VV_TERRAIN_GUST_PERIOD, key) - 0.5;
+}
+
+// 0 calm to 1 the heart of a gust, at a world position.
+float vvTerrainGust(vec2 worldXZ)
+{
+    if (vv_pbrGusts < 0.001) return 0.0;
+    float wind = smoothstep(0.08, 0.5, clamp(vv_sceneWind, 0.0, 1.0));
+    if (wind <= 0.0) return 0.0;
+    float a = fract(vv_sceneBreeze);
+    float b = fract(vv_sceneBreeze + 0.5);
+    float wa = 1.0 - abs(2.0 * a - 1.0);
+    float wb = 1.0 - wa;
+    float n = vvTerrainGustNoise(worldXZ, a, vec2(71.0, 23.0)) * wa
+            + vvTerrainGustNoise(worldXZ, b, vec2(79.0, 47.0)) * wb;
+    n = 0.5 + n * VV_TERRAIN_GUST_CONTRAST * inversesqrt(max(wa * wa + wb * wb, 0.5));
+    return smoothstep(0.55, 0.8, n) * wind * clamp(vv_pbrGusts, 0.0, 1.0);
+}
+
+// The flecks' flutter at a place on the canopy plane: the game's wind, plus
+// any gust crossing the crown there. Still air holds still whatever the gusts
+// slider says, because a gust needs wind.
+float vvTerrainFleckShimmerAt(vec2 src)
+{
+    return clamp(vv_sceneWind + VV_TERRAIN_GUST_FLUTTER * vvTerrainGust(src), 0.0, 1.0);
+}
+
 // The lit share of the floor asked of the fleck field for a crown this thin,
 // 0 closed to 1 open. Kept away from both ends: a closed crown still has
 // holes, and an open one is still a crown.
@@ -1132,7 +1202,7 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec3 overhead, f
     float rise = max(vv_canopyPlaneY - world.y, 1.0);
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    vec3 field = vvTerrainFleckField(src, az, l.y, overhead.z, vvTerrainFleckShimmer());
+    vec3 field = vvTerrainFleckField(src, az, l.y, overhead.z, vvTerrainFleckShimmerAt(src));
     float pattern = field.x;
 
     float gate = clamp(shadowed, 0.0, 1.0) * resolvable * smoothstep(0.0, 0.12, overhead.x)
@@ -1242,6 +1312,15 @@ float vvTerrainLeafHoleRim()
     return holes * 0.25;
 }
 
+// v14: the rim is read at most once per fragment. The backlit rim light and
+// the shaft sources both want it, and it is four texture reads.
+float vv_leafRim = -1.0;
+float vvTerrainLeafRim()
+{
+    if (vv_leafRim < 0.0) vv_leafRim = vvTerrainLeafHoleRim();
+    return vv_leafRim;
+}
+
 // How much this fragment marks vanilla's god-ray channel, 0 to
 // VV_TERRAIN_SHAFT_MAX.
 //
@@ -1279,7 +1358,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
 
     float near = 1.0 - smoothstep(VV_TERRAIN_SHAFT_RIM_FAR * 0.5, VV_TERRAIN_SHAFT_RIM_FAR, length(cameraRelativePos));
     if (near < 0.004) return 0.0;
-    float rim = vvTerrainLeafHoleRim();
+    float rim = vvTerrainLeafRim();
     if (rim <= 0.0) return 0.0;
 
     vec3 world = cameraRelativePos + vv_pbrOrigin;
@@ -1298,7 +1377,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float rise = vv_canopyPlaneY - world.y;
     vec2 src = world.xz + l.xz * (rise / max(l.y, 0.06));
     vec2 az = length(l.xz) > 0.001 ? normalize(l.xz) : vec2(1.0, 0.0);
-    vec3 field = vvTerrainFleckField(src, az, l.y, crown, vvTerrainFleckShimmer());
+    vec3 field = vvTerrainFleckField(src, az, l.y, crown, vvTerrainFleckShimmerAt(src));
     // v10: only over the BRIGHT patches - a beam is the air a wide gap
     // lights, and the dim dapples are the small gaps that make none.
     float lands = smoothstep(VV_TERRAIN_FLECK_DIM + 0.25, 1.0, field.x);
@@ -1414,7 +1493,7 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     float phase = 0.45 + 0.55 * pow(max(cosView, 0.0), 3.0);
     float lowSun = 1.0 - smoothstep(0.15, 0.55, l.y);
     float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
-    float humid = 0.6 + 0.4 * clamp(max(max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun), fog), 0.0, 1.0);
+    float humid = 0.6 + 0.4 * clamp(max(fog, max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun)), 0.0, 1.0);
 
     float level = beam * ds * VV_TERRAIN_BEAM_SCATTER * phase * humid * clearSky * sun
                 * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * vvSceneVisibilityDampen();
@@ -1438,6 +1517,46 @@ vec3 vvTerrainBeamColor()
 // from vanilla's lit colour and takes only the terms below.
 // ---------------------------------------------------------------------------
 
+// v14: how far up a plant this fragment is, in blocks: the block's windData
+// (how many blocks of the same plant are below it) plus the height inside the
+// block, the same two terms vanilla's applyVertexWarping bends the plant by.
+// Read from vanilla's own worldPos + playerpos so it agrees with the bend.
+float vvTerrainPlantHeight(vec3 cameraRelativePos)
+{
+    float within = fract(cameraRelativePos.y + playerpos.y);
+    return float((renderFlags >> WindDataPosition) & 0x7) + within;
+}
+
+// Ground flora rooted in the block below, whose height up the plant means
+// root to tip. Leaves, vines, fruit and water plants are not.
+bool vvTerrainIsRootedFlora(int flora)
+{
+    return flora == VV_TFLORA_HERB || flora == VV_TFLORA_GRASS || flora == VV_TFLORA_CROP ||
+           flora == VV_TFLORA_REED || flora == VV_TFLORA_STIFF || flora == VV_TFLORA_THIN;
+}
+
+// 0 at the root to 1 a block up and beyond, continuous across the block
+// boundaries of a tall plant (its total height is not known here).
+float vvTerrainPlantTip(vec3 cameraRelativePos)
+{
+    return smoothstep(0.0, 1.0, vvTerrainPlantHeight(cameraRelativePos));
+}
+
+// v14 contact shade: the darkening at the foot of a plant, where the stems
+// crowd together and the sky sees least of them - the occlusion vanilla gives
+// a block's vertices and not a plant's. A multiplier on vanilla's lit colour,
+// 1 everywhere above REACH blocks, never brighter. Ambient occlusion, so it
+// holds in any light.
+const float VV_TERRAIN_CONTACT_REACH = 0.45;
+const float VV_TERRAIN_CONTACT_DEPTH = 0.45;
+float vvTerrainContactShade(vec3 cameraRelativePos)
+{
+    if (vv_pbrContactShade < 0.001) return 1.0;
+    if (!vvTerrainIsRootedFlora(vvTerrainFloraClass())) return 1.0;
+    float foot = 1.0 - smoothstep(0.0, VV_TERRAIN_CONTACT_REACH, vvTerrainPlantHeight(cameraRelativePos));
+    return 1.0 - VV_TERRAIN_CONTACT_DEPTH * clamp(vv_pbrContactShade, 0.0, 1.0) * foot;
+}
+
 float vvTerrainFloraTissue()
 {
     int flora = vvTerrainFloraClass();
@@ -1457,12 +1576,13 @@ float vvTerrainFloraTissue()
     else                                 base = 0.55;
 
     // Root-to-tip gradient, only for the bending ground flora whose wind data
-    // is a height up the plant.
-    if (flora == VV_TFLORA_HERB || flora == VV_TFLORA_GRASS || flora == VV_TFLORA_CROP ||
-        flora == VV_TFLORA_REED || flora == VV_TFLORA_STIFF || flora == VV_TFLORA_THIN)
+    // is a height up the plant. v14: up to v13 this read windData / 7 alone,
+    // which is 0 for every single-block plant - the commonest grass sat at
+    // its root value, 55%, from root to tip. The height now includes the
+    // position inside the block, as vanilla's bend does.
+    if (vvTerrainIsRootedFlora(flora))
     {
-        float height = clamp(float((renderFlags >> WindDataPosition) & 0x7) / 7.0, 0.0, 1.0);
-        base *= mix(0.55, 1.0, height);
+        base *= mix(0.55, 1.0, vvTerrainPlantTip(worldPos.xyz));
     }
     return base;
 }
@@ -1487,10 +1607,16 @@ vec3 vvTerrainFloraPigment(vec3 albedo)
 // l points to the sun and v to the viewer, so a backlit leaf has l roughly
 // opposite v. Bending l THROUGH the surface and asking how directly the
 // viewer looks back down it is the legacy form, sign included.
+// v14: plus a broad diffuse share. The lobe alone lit a leaf only when the
+// viewer looked nearly down the sun ray through it; a real leaf lit from
+// behind glows over a wide cone too, which is why a canopy seen from below is
+// green and bright even with the sun well off to one side. DIFFUSE is that
+// share at a sun straight behind the leaf.
+const float VV_TERRAIN_TRANSMIT_DIFFUSE = 0.2;
 float vvTerrainTranslucency(vec3 n, vec3 l, vec3 v)
 {
     vec3 through = vvTerrainSafeNormalize(l + n * 0.35, l);
-    return pow(max(0.0, dot(v, -through)), 3.0);
+    return pow(max(0.0, dot(v, -through)), 3.0) + VV_TERRAIN_TRANSMIT_DIFFUSE * max(0.0, -dot(n, l));
 }
 
 // Distance at which per-leaf detail stops being resolvable.
@@ -1581,6 +1707,57 @@ vec3 vvTerrainCuticleSpecular(vec3 n, vec3 l, vec3 v, float wet, float snowFrost
          * vv_pbrSpecularStrength * classSpec * mix(0.18, 1.0, lod);
 }
 
+// v14 backlit rim light: the bright edge around every chink of sky in a
+// backlit crown, where the sun scatters through the thin margin of each leaf.
+// Only on the texels lining a hole in the leaf texture (the rim the shaft
+// sources already find, read once), only looking toward the sun, only in
+// direct sun and within RIM_FAR, where a texel is still bigger than a pixel.
+// Lit where the shadow map says so, or where the leaf map says the crown is
+// thin: a backlit leaf facing the camera is shadowed by its own block, which
+// is not the light it shows. Rides the foliage slider: it is light through
+// the leaf, like the transmission beside it.
+const float VV_TERRAIN_RIM_GAIN = 0.45;
+const float VV_TERRAIN_RIM_FAR = 24.0;
+vec3 vvTerrainBacklitRim(vec3 albedo, vec3 cameraRelativePos, vec3 l, float sunVisibility)
+{
+    if (!(vv_pbrFoliage >= 0.001)) return vec3(0.0);
+    int flora = vvTerrainFloraClass();
+    if (flora != VV_TFLORA_LEAVES && flora != VV_TFLORA_BUSH && flora != VV_TFLORA_VINE &&
+        flora != VV_TFLORA_GRASS && flora != VV_TFLORA_HERB) return vec3(0.0);
+    float sun = vvTerrainSunPresence();
+    if (sun < 0.01) return vec3(0.0);
+    float back = smoothstep(0.35, 0.9, dot(vvTerrainSafeNormalize(cameraRelativePos, -l), l));
+    if (back < 0.004) return vec3(0.0);
+    float near = 1.0 - smoothstep(VV_TERRAIN_RIM_FAR * 0.5, VV_TERRAIN_RIM_FAR, length(cameraRelativePos));
+    if (near < 0.004) return vec3(0.0);
+    float thin = 0.0;
+    if (vv_canopyMapValid > 0.5)
+        thin = 0.6 * (1.0 - smoothstep(0.5, 1.0, vvTerrainCanopyCell((cameraRelativePos + vv_pbrOrigin).xz).x));
+    float lit = max(clamp(sunVisibility, 0.0, 1.0), thin) * vvTerrainClearSky();
+    if (lit < 0.004) return vec3(0.0);
+    float rim = vvTerrainLeafRim();
+    if (rim <= 0.0) return vec3(0.0);
+    vec3 glow = mix(vvTerrainFloraPigment(albedo), vec3(1.0, 0.95, 0.82), 0.45);
+    return glow * (rim * back * near * lit * sun * VV_TERRAIN_RIM_GAIN * clamp(vv_pbrFoliage, 0.0, 2.0));
+}
+
+// v14 gust sheen on a plant a gust is crossing: brighter toward the tip and a
+// touch paler (the undersides and the cuticle turned up as the plant bends),
+// most in sunlight. A multiplier of 1 in calm air, at 0 gusts and at night's
+// floor of 0.3 of the effect.
+vec3 vvTerrainGustSheen(vec3 color, vec3 cameraRelativePos, float sunVisibility)
+{
+    int flora = vvTerrainFloraClass();
+    if (flora == VV_TFLORA_STIFF || flora == VV_TFLORA_AQUATIC || flora == VV_TFLORA_FRUIT) return color;
+    float gust = vvTerrainGust((cameraRelativePos + vv_pbrOrigin).xz);
+    if (gust <= 0.0) return color;
+    float tip = vvTerrainIsRootedFlora(flora) ? vvTerrainPlantTip(cameraRelativePos) : 1.0;
+    float light = mix(0.3, 1.0, clamp(sunVisibility, 0.0, 1.0) * vvTerrainSunPresence());
+    float k = gust * mix(0.4, 1.0, tip) * light;
+    float y = dot(color, vec3(0.299, 0.587, 0.114));
+    return mix(color, vec3(y), 0.12 * k) * (1.0 + VV_TERRAIN_GUST_SHEEN * k);
+}
+
 vec4 vvTerrainFloraShade(vec4 litColor, vec3 baseColor, vec3 faceNormal, vec3 cameraRelativePos,
                          float fogAmount, float murkiness)
 {
@@ -1595,15 +1772,74 @@ vec4 vvTerrainFloraShade(vec4 litColor, vec3 baseColor, vec3 faceNormal, vec3 ca
     float wet = vvTerrainWetness(n);
     float snowFrost = clamp(vvTerrainSnow(n) + vv_sceneFrost, 0.0, 1.0);
 
-    // Vanilla's lit leaf is the base; a wet leaf is a darker leaf.
-    vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet);
+    // Vanilla's lit leaf is the base; a wet leaf is a darker leaf, and the
+    // foot of a plant a shadier one.
+    vec3 result = litColor.rgb * mix(1.0, VV_LAYER_WET_LEAF_DARKEN, wet) * vvTerrainContactShade(cameraRelativePos);
+    result = vvTerrainGustSheen(result, cameraRelativePos, sunVisibility);
     result = vvTerrainCanopyResolve(result, cameraRelativePos, n, lod, sunVisibility, 0.55);
 
     vec3 through = vvTerrainFoliageTransmission(baseColor, faceNormal, cameraRelativePos, sunVisibility)
                  * mix(0.45, 1.0, lod);
     result += (vvTerrainFloraFrontScatter(baseColor, n, l, sunVisibility, lod) + through) * clearAir;
+    result += vvTerrainBacklitRim(baseColor, cameraRelativePos, l, sunVisibility) * clearAir;
     result += vvTerrainCuticleSpecular(n, l, v, wet, snowFrost, sunVisibility, lod) * clearAir;
     return vec4(clamp(result, 0.0, 8.0), litColor.a);
+}
+
+// v14 damp and moss on sheltered faces. Where a rough stone, wood or soil
+// face sits under a crown, or in the half-light a few blocks into cover, in a
+// climate that rains, it holds moisture and greens over: a little darker and
+// a little greener, in pixel-art patches on the face's own texel grid.
+// DATA GAP: the game simulates no persistent moisture and no moss growth on
+// ordinary blocks, so where it lands is inferred from shelter and the
+// climate's rainfall, both the game's. The leaf map only reaches about 28
+// blocks, so its share fades out by then and the light-level share carries on.
+// Never on metal or polished faces, displaced by snow and frost, never
+// brighter overall.
+const float VV_TERRAIN_DAMP_DARKEN = 0.84;
+const vec3 VV_TERRAIN_MOSS_TINT = vec3(0.86, 1.0, 0.72);
+const float VV_TERRAIN_MOSS_SHARE = 0.6;
+// Patch grid: half-block cells, 8000 of them across the 4096-block wrap.
+const float VV_TERRAIN_MOSS_CELL = 0.512;
+const float VV_TERRAIN_MOSS_PERIOD = 8000.0;
+float vvTerrainDamp(VvTerrainMaterial m, vec3 cameraRelativePos)
+{
+    if (vv_pbrDamp < 0.001 || vv_pbrHumidity <= 0.0) return 0.0;
+    if (m.metalness > 0.2 || m.perceptualRoughness < 0.45) return 0.0;
+    vec3 n = m.faceNormal;
+    if (n.y < -0.5) return 0.0;
+
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    float shelter = 0.0;
+    if (vv_canopyMapValid > 0.5)
+    {
+        vec2 cell = vvTerrainCanopyCell(world.xz);
+        float reach = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));
+        if (cell.y > world.y + 0.5) shelter = cell.x * (1.0 - smoothstep(20.0, 28.0, reach));
+    }
+    float sky = clamp(vv_sunExposure, 0.0, 1.0);
+    shelter = max(shelter, smoothstep(0.25, 0.45, sky) * (1.0 - smoothstep(0.7, 0.92, sky)));
+    if (shelter <= 0.0) return 0.0;
+
+    float side = n.y > 0.5 ? 0.6 : 1.0;
+    float north = 1.0 + 0.3 * clamp(-n.z, 0.0, 1.0);
+    float humid = mix(0.35, 1.0, clamp(vv_pbrHumidity, 0.0, 1.0));
+    vec3 p = floor((world - n * 0.01) * 16.0) / 16.0 + 1.0 / 32.0;
+    vec2 q = abs(n.y) > 0.5 ? p.xz : (abs(n.x) > 0.5 ? p.zy : p.xy);
+    float patches = smoothstep(0.35, 0.7, vvTerrainFleckNoise(q, VV_TERRAIN_MOSS_CELL, VV_TERRAIN_MOSS_PERIOD, vec2(97.0, 61.0)));
+    float layer = clamp(1.0 - m.snow - m.frost, 0.0, 1.0);
+    return clamp(clamp(vv_pbrDamp, 0.0, 1.0) * shelter * side * north * humid * mix(0.45, 1.0, patches) * layer, 0.0, 1.0);
+}
+
+vec3 vvTerrainApplyDamp(VvTerrainMaterial m, vec3 diffuse, vec3 cameraRelativePos)
+{
+    float damp = vvTerrainDamp(m, cameraRelativePos);
+    if (damp <= 0.0) return diffuse;
+    vec3 luma = vec3(0.299, 0.587, 0.114);
+    vec3 moss = diffuse * VV_TERRAIN_MOSS_TINT;
+    moss *= dot(diffuse, luma) / max(dot(moss, luma), 1e-4);
+    diffuse = mix(diffuse, moss, damp * VV_TERRAIN_MOSS_SHARE);
+    return diffuse * mix(1.0, VV_TERRAIN_DAMP_DARKEN, damp);
 }
 
 vec3 vvTerrainEmission(VvTerrainMaterial m, float glowLevel, vec3 cameraRelativePos)
@@ -1646,6 +1882,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     vec3 diffuse = litColor.rgb * diffuseEnergy * relief;
     diffuse *= mix(1.0, max(indirectAo, 0.82), 0.35);
     diffuse = vvTerrainApplySurfaceLayers(m, diffuse);
+    diffuse = vvTerrainApplyDamp(m, diffuse, cameraRelativePos);
     diffuse = vvTerrainCanopyResolve(diffuse, cameraRelativePos, m.faceNormal, m.detailFade, -1.0, 0.85);
 
     vec3 directSpec = vvTerrainDirectSpecular(m, viewDir, shadowBrightness, fogAmount, murkiness, materialUv);
@@ -1768,6 +2005,28 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     if (mode == 67)
         return vec4(vvTerrainClearSky(), vvTerrainFleckShimmer(),
                     (1.0 - vvTerrainSunPresence()) * clamp(vv_sceneMoonLight, 0.0, 1.0), color.a);
+    // v14 views. 69: gusts - white in a gust's heart, blue the wind
+    // direction's x and z where calm. 71: plant foot - red the contact
+    // shade taken, green the tip height. 72: backlit rim - white the rim
+    // light added, at twice its cap.
+    if (mode == 69)
+    {
+        vec3 world = cameraRelativePos + vv_pbrOrigin;
+        vec2 d = vvTerrainWindDir();
+        return vec4(mix(vec3(0.0, 0.25 + 0.25 * d.x, 0.25 + 0.25 * d.y), vec3(1.0), vvTerrainGust(world.xz)), color.a);
+    }
+    if (mode == 71)
+    {
+        if (!vvTerrainIsRootedFlora(vvTerrainFloraClass())) return vec4(vec3(0.0), color.a);
+        return vec4((1.0 - vvTerrainContactShade(cameraRelativePos)) / VV_TERRAIN_CONTACT_DEPTH,
+                    vvTerrainPlantTip(cameraRelativePos), 0.0, color.a);
+    }
+    if (mode == 72)
+    {
+        vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+        vec3 rim = vvTerrainBacklitRim(vec3(1.0), cameraRelativePos, l, vvTerrainSunVisibility());
+        return vec4(vec3(clamp(dot(rim, vec3(0.333)) / VV_TERRAIN_RIM_GAIN * 0.5, 0.0, 1.0)), color.a);
+    }
     // 65: the leaf map. Green is leaf density along the sun ray, blue its
     // height (white at 16 blocks); grey means the map is not uploaded.
     if (mode == 65)
@@ -1807,6 +2066,8 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         return vec4(slope * 0.5 + 0.5, m.wetness, color.a);
     }
     if (mode == 16) return vec4(vec3(clamp(vv_sunExposure, 0.0, 1.0)), color.a);
+    // 70: damp - green where a face takes damp and moss, by how much.
+    if (mode == 70) return vec4(0.0, vvTerrainDamp(m, cameraRelativePos), 0.0, color.a);
     if (mode == 12) return vec4(vec3(m.ao * mix(0.92, 1.06, m.height)), color.a);
     if (mode == 14) return vec4(vvTerrainEmission(m, glowLevel, cameraRelativePos), color.a);
     if (mode == 19) return vec4(vec3(m.metalness), color.a);

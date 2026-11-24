@@ -177,6 +177,24 @@ namespace VintageVisuals.Common.Scene
         /// a measurement, and it sits at the bottom of the information ladder in
         /// docs/VISUAL-LANGUAGE.md by necessity rather than by choice.
         /// </summary>
+        /// <summary>
+        /// v14. How much the world wants a shallow GROUND MIST, before the
+        /// slider: moist air (the climate's rainfall, the wetness rain left,
+        /// open water nearby), still air, and the cool of night and early
+        /// morning - it burns off by mid-morning, which is the one way it
+        /// differs in timing from the ground haze. All facts the game supplies;
+        /// <paramref name="water"/> is GroundMap.WaterShare.
+        /// </summary>
+        public static float MistPressure(EnvironmentState world, float water)
+        {
+            float moist = Clamp01(world.Humidity * 0.5f + world.Wetness * 0.5f + Clamp01(water) * 0.3f);
+            float still = 1f - Clamp01(world.WindSpeed * 1.5f);
+            float t = Clamp01((Clamp01(world.DayLight) - 0.35f) / 0.45f);
+            float cool = 1f - t * t * (3f - 2f * t);
+            float outside = Clamp01(world.SkyExposure);
+            return Clamp01(moist * still * cool * outside);
+        }
+
         public static float HazePressure(EnvironmentState world)
         {
             float damp = Clamp01(world.Humidity * 0.6f + world.Wetness * 0.4f);

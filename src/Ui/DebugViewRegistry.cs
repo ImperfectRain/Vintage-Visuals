@@ -225,6 +225,10 @@ namespace VintageVisuals.Ui
             ModularPbr(64, "Sunflecks", "Grey to white where a sunfleck lands in canopy shade (grey a dim dapple, white full sun), orange its bounce light, dim red where leaves are overhead but no fleck. Stand in shade under trees with the sun up.", Canopy);
             ModularPbr(66, "Sun shaft sources", "Yellow on leaf texels lining a hole in the leaves at a real gap, above a lit sunfleck, which feed the game's god-rays; blue on leaves that do not. Look toward the sun through a canopy, within about 30 blocks.", Canopy);
             ModularPbr(68, "Sun beams in the air", "The light the beams add between you and each surface, white at its cap. A beam is the air above a bright sunfleck, along the sun. Look across a forest with the sun up; strongest toward the sun.", Canopy);
+            ModularPbr(69, "Wind gusts", "White where a gust is crossing, moving downwind; dark blue to teal where calm, shaded by the wind's direction. Needs wind; watch from a little way off.", Canopy);
+            ModularPbr(70, "Damp and moss", "Green on rough stone, wood and soil faces taking damp and moss, by how much. Look at sheltered faces under trees or in half-shade.", Canopy);
+            ModularPbr(71, "Plant base shade", "On grass, flowers and crops: red the shade taken at the foot, green the height up the plant. Black on everything else.", Canopy);
+            ModularPbr(72, "Backlit rim light", "White on the leaf texels lining a hole when the sun is behind them, by how much light the rim adds. Look toward the sun through leaves, within about 24 blocks.", Canopy);
             ModularPbr(67, "Fleck light", "Red is the clear-sky gate (black is too cloudy for flecks), green the wind shimmer, blue the moon's share at night.", Canopy);
             ModularPbr(65, "Leaf map", "The leaves the sun ray passes through, read from the world's blocks: green is how dense, blue how high. Grey means the map is not loaded yet.", Canopy);
             ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue on the foliage path. Read this one first.", Path);

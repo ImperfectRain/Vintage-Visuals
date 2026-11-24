@@ -153,6 +153,10 @@ namespace VintageVisuals.Ui
                    "Heat, cold, aridity and lushness colouring the light where you are standing.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
+            Slider("grade_season", "AdaptiveGrade.SeasonStrength", "Season",
+                   "The colour of the light through the year, cooler and crisper in winter. Never recolours leaves or grass; the game does that itself.",
+                   C, "World-responsive colour", 0f, 2.0f, 0.05f);
+
             Slider("grade_indoor", "AdaptiveGrade.IndoorStrength", "Indoors",
                    "How differently light reads under a roof or inside a building.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
@@ -247,6 +251,30 @@ namespace VintageVisuals.Ui
             Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
                    "A few specks of dust drifting in the sun shafts under a canopy. None under cloud or at night.",
                    M, "Foliage", 0f, 1f, 0.05f);
+
+            Slider("pbr_gusts", "PseudoPBR.WindGusts", "Wind gusts",
+                   "Gusts rolling downwind across grass and crowns, brightening the bent tips and fluttering the sunflecks. The game's own wind direction and speed; none in still air.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_contactshade", "PseudoPBR.ContactShade", "Plant base shade",
+                   "Darkens the foot of grass, flowers and crops where stems crowd, so plants sit in the ground.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_damp", "PseudoPBR.Damp", "Damp and moss",
+                   "Sheltered rough stone, wood and soil under trees or in half-shade go a little darker and greener, most on north faces and in rainy climates.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_drips", "PseudoPBR.LeafDrips", "Leaf drips",
+                   "Drops falling from the leaves overhead during and after rain, until they dry.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_pollen", "PseudoPBR.Pollen", "Pollen",
+                   "Pale specks drifting downwind over vegetation on warm dry days in spring and summer.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_fireflies", "PseudoPBR.Fireflies", "Fireflies",
+                   "Small blinking lights low over grass at dusk and on warm, humid summer nights.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
 
             Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
                    "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees.",
@@ -373,6 +401,14 @@ namespace VintageVisuals.Ui
             Slider("atmosphere_heighthaze", "Atmosphere.HeightHaze", "Ground haze",
                    "Haze pooling in low ground and valleys. Rendered by the game's own fog rather than by this mod, so it costs nothing extra.",
                    A, "Height", 0f, 1f, 0.05f);
+
+            Slider("atmosphere_foresthaze", "Atmosphere.ForestHaze", "Forest haze",
+                   "A soft haze in the air under a canopy, so trunks fade into depth. Strongest under thick crowns in humid air.",
+                   A, "Height", 0f, 1.0f, 0.05f);
+
+            Slider("atmosphere_groundmist", "Atmosphere.GroundMist", "Ground mist",
+                   "A shallow mist settling into nearby low ground and over water on still, humid nights and mornings and after rain. The game's own height fog.",
+                   A, "Height", 0f, 1.0f, 0.05f);
 
             Slider("atmosphere_heightattenuation", "Atmosphere.HeightAttenuation", "Thin mountain air",
                    "Air thinning with altitude, so a mountain top sees further than a valley floor.",

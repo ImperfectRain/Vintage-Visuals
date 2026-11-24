@@ -199,6 +199,24 @@ namespace VintageVisuals.Common
                 case "pbr_motes":
                     pbr.DustMotes = tree.GetFloat("value", pbr.DustMotes);
                     break;
+                case "pbr_gusts":
+                    pbr.WindGusts = tree.GetFloat("value", pbr.WindGusts);
+                    break;
+                case "pbr_contactshade":
+                    pbr.ContactShade = tree.GetFloat("value", pbr.ContactShade);
+                    break;
+                case "pbr_damp":
+                    pbr.Damp = tree.GetFloat("value", pbr.Damp);
+                    break;
+                case "pbr_drips":
+                    pbr.LeafDrips = tree.GetFloat("value", pbr.LeafDrips);
+                    break;
+                case "pbr_pollen":
+                    pbr.Pollen = tree.GetFloat("value", pbr.Pollen);
+                    break;
+                case "pbr_fireflies":
+                    pbr.Fireflies = tree.GetFloat("value", pbr.Fireflies);
+                    break;
                 case "pbr_canopyradius":
                     pbr.CanopyRadius = tree.GetFloat("value", pbr.CanopyRadius);
                     break;
@@ -280,6 +298,9 @@ namespace VintageVisuals.Common
                 case "grade_biome":
                     adaptiveGrade.BiomeStrength = tree.GetFloat("value", adaptiveGrade.BiomeStrength);
                     break;
+                case "grade_season":
+                    adaptiveGrade.SeasonStrength = tree.GetFloat("value", adaptiveGrade.SeasonStrength);
+                    break;
                 case "grade_indoor":
                     adaptiveGrade.IndoorStrength = tree.GetFloat("value", adaptiveGrade.IndoorStrength);
                     break;
@@ -336,6 +357,12 @@ namespace VintageVisuals.Common
                     break;
                 case "atmosphere_heighthaze":
                     atmosphere.HeightHaze = tree.GetFloat("value", atmosphere.HeightHaze);
+                    break;
+                case "atmosphere_foresthaze":
+                    atmosphere.ForestHaze = tree.GetFloat("value", atmosphere.ForestHaze);
+                    break;
+                case "atmosphere_groundmist":
+                    atmosphere.GroundMist = tree.GetFloat("value", atmosphere.GroundMist);
                     break;
                 case "atmosphere_aerial":
                     atmosphere.AerialPerspective = tree.GetFloat("value", atmosphere.AerialPerspective);

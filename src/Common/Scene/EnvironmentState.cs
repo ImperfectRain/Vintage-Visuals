@@ -98,6 +98,17 @@ namespace VintageVisuals.Common.Scene
         /// <summary>SAMPLED. How far into winter the world is, 0..1. See <see cref="Autumn"/>.</summary>
         public readonly float Winter;
 
+        /// <summary>
+        /// v14. SAMPLED. How far into spring and into summer the world is, 0..1,
+        /// the same way as <see cref="Autumn"/>. Read by the seasonal light
+        /// grade and by the pollen and firefly spawner; like Autumn, nothing
+        /// driven by them recolours a surface.
+        /// </summary>
+        public readonly float Spring;
+
+        /// <summary>v14. SAMPLED. See <see cref="Spring"/>.</summary>
+        public readonly float Summer;
+
         /// <summary>SAMPLED. Air temperature at the player, in degrees C.</summary>
         public readonly float Temperature;
 
@@ -174,8 +185,11 @@ namespace VintageVisuals.Common.Scene
                                 float temperature, float humidity,
                                 float skyExposure, float depth, float underwater,
                                 Vec3f cameraPosition, float proximity = 0f,
-                                float autumn = 0f, float winter = 0f)
+                                float autumn = 0f, float winter = 0f,
+                                float spring = 0f, float summer = 0f)
         {
+            Spring = spring;
+            Summer = summer;
             DayLight = dayLight;
             MoonLight = moonLight;
             CloudCover = cloudCover;

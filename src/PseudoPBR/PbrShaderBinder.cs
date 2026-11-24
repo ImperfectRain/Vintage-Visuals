@@ -94,6 +94,11 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
         public const string ShaftUniform = "vv_pbrShafts";
+        public const string GustsUniform = "vv_pbrGusts";
+        public const string WindDirUniform = "vv_pbrWindDir";
+        public const string ContactShadeUniform = "vv_pbrContactShade";
+        public const string DampUniform = "vv_pbrDamp";
+        public const string HumidityUniform = "vv_pbrHumidity";
 
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
@@ -461,6 +466,7 @@ namespace VintageVisuals.PseudoPBR
             UploadCanopyMap(program);
             SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
+            UploadForest(program);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
             SetIfPresent(program, RainCoverUniform, _weather.RainCover);
@@ -474,6 +480,20 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
+        /// v14 forest pass: gusts, plant-base shade and damp, and the two world
+        /// facts they read (wind direction and climate rainfall). Zero is
+        /// vanilla for each strength.
+        /// </summary>
+        private void UploadForest(IShaderProgram program)
+        {
+            SetIfPresent(program, GustsUniform, _look.WindGusts);
+            SetIfPresent(program, WindDirUniform, _weather.WindDirection);
+            SetIfPresent(program, ContactShadeUniform, _look.ContactShade);
+            SetIfPresent(program, DampUniform, _look.Damp);
+            SetIfPresent(program, HumidityUniform, _weather.Humidity);
+        }
+
+        /// <summary>
         /// Uploads the leaf map as a uniform array: no texture unit, no
         /// sampler, nothing that can shift vanilla's samplers. Asks the tracker
         /// to keep scanning only while a canopy effect is on.
@@ -481,7 +501,7 @@ namespace VintageVisuals.PseudoPBR
         private void UploadCanopyMap(IShaderProgram program)
         {
             var map = Canopy;
-            bool wanted = _look.SunFlecks > 0.001f || _look.SunDapple > 0.001f || _look.SunShafts > 0.001f || _look.MoonFlecks > 0.001f;
+            bool wanted = _look.SunFlecks > 0.001f || _look.SunDapple > 0.001f || _look.SunShafts > 0.001f || _look.MoonFlecks > 0.001f || _look.Damp > 0.001f;
             if (map != null && wanted) map.Request(_capi.ElapsedMilliseconds);
 
             bool valid = map != null && wanted && map.Valid;

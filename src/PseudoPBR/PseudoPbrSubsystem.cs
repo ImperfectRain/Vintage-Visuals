@@ -148,9 +148,12 @@ namespace VintageVisuals.PseudoPBR
 
             _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
             mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
+            _forestLife = new ForestLifeSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
+            mod.Capi.Event.RegisterRenderer(_forestLife, EnumRenderStage.Before, "vintagevisuals-forestlife");
         }
 
         private DustMoteSpawner _motes;
+        private ForestLifeSpawner _forestLife;
 
         public void Apply()
         {
@@ -247,7 +250,8 @@ namespace VintageVisuals.PseudoPBR
                                        intent[IntentChannel.Restraint],
                                        intent[IntentChannel.Readability],
                                        world.Autumn, world.Winter, 0f, 0f,
-                                       Clamp01(world.CloudCover), Clamp01(world.WindSpeed), Clamp01(world.MoonLight));
+                                       Clamp01(world.CloudCover), Clamp01(world.WindSpeed), Clamp01(world.MoonLight),
+                                       world.WindDirection, Clamp01(world.Humidity));
             }
 
             return new SceneInputs(
@@ -282,7 +286,9 @@ namespace VintageVisuals.PseudoPBR
                 world.Snow * weather.SnowDusting,
                 Clamp01(world.CloudCover),
                 Clamp01(world.WindSpeed),
-                Clamp01(world.MoonLight));
+                Clamp01(world.MoonLight),
+                world.WindDirection,
+                Clamp01(world.Humidity));
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)
@@ -629,6 +635,10 @@ namespace VintageVisuals.PseudoPBR
             if (_mod != null && _mod.Capi != null && _motes != null)
             {
                 _mod.Capi.Event.UnregisterRenderer(_motes, EnumRenderStage.Before);
+            }
+            if (_mod != null && _mod.Capi != null && _forestLife != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_forestLife, EnumRenderStage.Before);
             }
 
             if (_bindInterceptor != null)

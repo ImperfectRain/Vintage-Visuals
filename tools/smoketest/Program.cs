@@ -398,6 +398,7 @@ void main(void) {
         FloraTaxonomyChecks.Run(Repo, Check);
 
         AtmosphereChecks.Run(Repo, Check);
+        ForestPassChecks.Run(Repo, Check);
 
         SceneInvariantChecks.Run(Repo, Check);
 

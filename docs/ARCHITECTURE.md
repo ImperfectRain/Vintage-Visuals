@@ -375,6 +375,13 @@ information ladder applies throughout: prefer what the game already computed.
 | Sun beams in the air (v11, D56) | the leaf map (`vv_canopyMap`, `vv_canopyPlaneY`), `lightPosition`, the scene's wetness, cover and dampen | `vvTerrainBeamInscatter` in `chunkopaque` and `chunktopsoil`: eight samples along the view ray within 20 blocks (v12), each projected up the sun ray to the canopy plane and tested against the two field layers that place the bright patches (`vvTerrainBeamDensity`); since v13 only in shaded air below a crown, blocked by a crown halfway up the sun ray, and skipped where no crown stands along the span | added to the terrain colour through `1 - fogAmount`, at most 0.3 of the sun's colour; no pass, target, sampler or uniform | sun shafts slider, debug view 68 |
 | Dust motes | `CanopyMap.TryCell`, `EnvironmentState` cover, daylight and wetness, `AtmosphereState.SunDirection` | `DustMoteSpawner`, an `IRenderer` at `EnumRenderStage.Before`, up to 24 leaf-map lookups every 0.2 s; no world query, no GL | game particles via `SpawnParticles`, at most 40 alive, scaled by the shafts' humid-air term (`BeamHumidity`, mirrored from the shader) | sun shafts (visual only) |
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
+| Wind direction (v14) | `GetWindSpeedAt`, normalised in `EnvironmentTracker` | `SceneInputs.WindDirection` | `vv_pbrWindDir` | travelling gusts (`vvTerrainGust`), pollen drift |
+| Climate rainfall at the player (v14) | `EnvironmentState.Humidity` | `SceneInputs.Humidity` | `vv_pbrHumidity` | damp and moss |
+| Plant height (v14) | vanilla `renderFlags` windData and `worldPos.y + playerpos.y`, as vanilla's bend reads them | none | vanilla uniforms and varyings | plant base shade, tissue gradient, gust sheen |
+| Canopy cover over the camera (v14) | the leaf map, `CanopyMap.CoverAround` over 10 blocks | eased over 3 s in `EnvironmentTracker` | `AtmosphereState.CanopyCover` -> `vv_atmosForest` (with the slider and humidity, in `AtmosphereInputs`) | forest haze |
+| Low ground and water near the player (v14) | `GetTerrainMapheightAt`, `GetRainMapHeightAt`, liquid at the rain-map top | `GroundMap`: lowest quarter of 81 columns, held and eased | the ground haze's vanilla height-fog plane via `AmbientBridge.Combine` | ground mist |
+| Season depth: spring, summer, autumn, winter | `GetSeason`, `GetSeasonRel` | `EnvironmentTracker` | none (CPU) | seasonal grade, pollen and firefly gates |
+| Forest particles (v14) | `CanopyMap.TryCell` for drips; Plant blocks at the rain-map top for pollen and fireflies; `EnvironmentState` gates | `ForestLifeSpawner`, an `IRenderer` at `EnumRenderStage.Before`, up to 8 lookups per kind every 0.2 s | game particles | drips, pollen, fireflies |
 | Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Local reflection volume | `IBlockAccessor` over a bounded player-centred block region | classified block cells, representative colour multiplied by block light, 2D Z-slice atlas | world volume texture, unit 12 | `vvWorldReflection` |
 | Canopy context | `WorldReflectionVolume` CPU scan over the same local region | low-frequency leaf density and representative canopy colour | 128 x 128 texture; terrain binding disabled pending sampler audit | shader fallback only until binding is proven safe |
@@ -457,6 +464,11 @@ appears often.
 | Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
 | Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |
 | Cloud shadows | uniform array lookup, no sampler | per terrain fragment | no | resolution |
+| v14 gusts | two value-noise reads (8 hashes) | per plant fragment and per fleck evaluation, while the slider and the wind are up | no | resolution |
+| v14 backlit rim | four `textureLod` reads, shared with the shaft sources | per leaf fragment within 24 blocks looking toward the sun | no | resolution |
+| v14 damp and moss | one leaf-map read, one value-noise read | per rough non-metal terrain fragment while sheltered | no | resolution |
+| v14 forest haze | a few multiplies and a log | per fogged fragment while on | no | resolution |
+| v14 ground map | 9 columns per tick, 81 in all | CPU, while ground mist is on | no | — |
 | Colour grading | one fullscreen pass | yes | no | resolution |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene

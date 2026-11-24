@@ -196,6 +196,7 @@ namespace VintageVisuals.SmokeTest
                 IndoorStrength = strength,
                 DepthStrength = strength,
                 UnderwaterStrength = strength,
+                SeasonStrength = strength,
             };
         }
 

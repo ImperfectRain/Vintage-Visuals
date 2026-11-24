@@ -44,6 +44,7 @@ namespace VintageVisuals.Atmosphere
         public const string PrecipUniform = "vv_atmosPrecip";
         public const string MoonUniform = "vv_atmosMoon";
         public const string DappleUniform = "vv_atmosDapple";
+        public const string ForestUniform = "vv_atmosForest";
         public const string WeatherTintUniform = "vv_atmosWeatherTint";
 
         // Normalised world state. Every one read from the game, none simulated.
@@ -216,6 +217,7 @@ namespace VintageVisuals.Atmosphere
             program.Uniform(PrecipUniform, inputs.Precipitation);
             program.Uniform(MoonUniform, inputs.Moon);
             program.Uniform(DappleUniform, inputs.Dapple);
+            program.Uniform(ForestUniform, inputs.ForestHaze);
             program.Uniform(WeatherTintUniform, inputs.WeatherTint);
 
             _sunDir.Set(inputs.SunDirection.X, inputs.SunDirection.Y, inputs.SunDirection.Z);

@@ -247,3 +247,16 @@ caused.
 Uploads stop once the grade settles: uniform values are per-program state that
 survives until the program is relinked, so a still scene costs a comparison per
 tick and nothing else.
+
+## v14: seasonal light (D57)
+
+`AdaptiveGrade.SeasonStrength` (`grade_season`, default 0.7) adds four
+influences to the GradeStack, one per season, each weighted by how far into that
+season the world is (`EnvironmentState.Spring/Summer/Autumn/Winter`, rising to
+midseason and handing over through neutral), outdoors and by day only. Spring is
+a touch fresher, summer a touch warm and bright, autumn only softer, winter
+cooler and crisper (temperature -0.18, saturation -0.10, contrast +0.05 at full).
+Autumn deliberately does not warm: the game's colormaps already turn the leaves,
+and a warm grade on top would double what the game paints. It changes the light,
+never a surface. Checked in `tools/smoketest` (ForestPassChecks); not seen in game.
+

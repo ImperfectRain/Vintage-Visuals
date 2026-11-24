@@ -143,6 +143,31 @@ namespace VintageVisuals.Common.Scene
             return true;
         }
 
+        /// <summary>
+        /// v14. How much of the sky over a point is leaf, 0..1: the mean leaf
+        /// density of the cells within <paramref name="radiusBlocks"/> whose
+        /// lowest leaf is above <paramref name="y"/>, counting every cell in the
+        /// disc, so a lone tree over an open field is a little cover and a
+        /// forest is a lot. 0 before the map is scanned. Pure over the cells.
+        /// </summary>
+        public float CoverAround(double x, double y, double z, int radiusBlocks)
+        {
+            if (!Valid) return 0f;
+            int total = 0;
+            float leaf = 0f;
+            for (int dz = -radiusBlocks; dz <= radiusBlocks; dz += CellBlocks)
+            {
+                for (int dx = -radiusBlocks; dx <= radiusBlocks; dx += CellBlocks)
+                {
+                    if (dx * dx + dz * dz > radiusBlocks * radiusBlocks) continue;
+                    total++;
+                    if (!TryCell((int)Math.Floor(x) + dx, (int)Math.Floor(z) + dz, out int density, out int lowest)) continue;
+                    if (density > 0 && lowest > y + 1.0) leaf += density / 7f;
+                }
+            }
+            return total == 0 ? 0f : GameMath.Clamp(leaf / total, 0f, 1f);
+        }
+
         public static int Index(int worldBlockX, int worldBlockZ)
         {
             int cx = FloorDiv(worldBlockX, CellBlocks);

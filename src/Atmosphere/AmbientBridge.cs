@@ -101,11 +101,40 @@ namespace VintageVisuals.Atmosphere
         /// the grant, so 0 here means the player asked for nothing OR the
         /// budget refused it, and both must look identical.
         /// </summary>
+        /// <summary>
+        /// v14. Ground mist at full strength: a denser, shallower layer than the
+        /// haze, its top <see cref="MistDepth"/> blocks above the low ground
+        /// around the player (GroundMap) rather than tied to sea level.
+        /// </summary>
+        public const float MistDensityAtFullStrength = -0.07f;
+        public const float MistDepth = 4f;
+
         public void SetHeightHaze(float strength, float seaLevel)
         {
-            strength = Clamp01(strength);
+            SetHeightHaze(strength, seaLevel, 0f, 0f);
+        }
 
-            if (strength <= 0f)
+        /// <summary>
+        /// One plane for both layers, because vanilla's height fog is one plane:
+        /// the densities add, and the top sits between the two layers' tops,
+        /// weighted by how much each contributes. With no mist this is exactly
+        /// the haze alone. Pure.
+        /// </summary>
+        public static void Combine(float haze, float hazeTop, float mist, float mistTop,
+                                   out float density, out float top)
+        {
+            float h = Clamp01(haze) * -HazeDensityAtFullStrength;
+            float m = Clamp01(mist) * -MistDensityAtFullStrength;
+            density = -(h + m);
+            top = h + m <= 0f ? 0f : (h * hazeTop + m * mistTop) / (h + m);
+        }
+
+        public void SetHeightHaze(float strength, float seaLevel, float mist, float mistTop)
+        {
+            strength = Clamp01(strength);
+            mist = Clamp01(mist);
+
+            if (strength <= 0f && mist <= 0f)
             {
                 HazeDensity = 0f;
                 HazeTop = 0f;
@@ -113,8 +142,9 @@ namespace VintageVisuals.Atmosphere
                 return;
             }
 
-            HazeDensity = HazeDensityAtFullStrength * strength;
-            HazeTop = seaLevel + HazeTopAboveSeaLevel;
+            Combine(strength, seaLevel + HazeTopAboveSeaLevel, mist, mistTop, out float density, out float top);
+            HazeDensity = density;
+            HazeTop = top;
 
             // Weight 1 on the two fields this owns, and weight 0 on every other
             // field of the modifier. A weight of 0 is the documented no-op:
