@@ -100,6 +100,12 @@ VvTerrainSceneHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v);
 
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 
+// How much of vanilla's lit colour a metal keeps as its body (D63): a polished
+// one less, a rough one more. Never 1, so a metal still reads darker and more
+// saturated than the painted block it would otherwise be.
+const float VV_TERRAIN_METAL_BODY_SMOOTH = 0.55;
+const float VV_TERRAIN_METAL_BODY_ROUGH = 0.85;
+
 // Flora taxonomy, read from vanilla's own wind modes in renderFlags. Same
 // numbering and the same values as the legacy patch (pseudopbr.glsl), which
 // was seen working in a world as debug view 44. Modes 6 and 12 are liquid, not
@@ -1489,6 +1495,9 @@ float vvTerrainSunRelight(float sunVisibility)
 
 // Canopy shade and sunflecks applied to a sunlit term, the one entry point
 // for opaque blocks, the forest floor and plants alike.
+// Share of the canopy shade cap a vertical block face takes (D63).
+const float VV_TERRAIN_CANOPY_WALL = 0.45;
+
 vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float fade,
                             float sunVisibility, float cap)
 {
@@ -1504,6 +1513,13 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
     vec3 overhead = vvTerrainCanopyOverhead(cameraRelativePos);
     // Measured once: the dapple's shade and the flecks' placement both read it.
     float evidence = vvTerrainCanopyEvidence(sunVisibility);
+    // A wall or a trunk sees most of its sky toward the horizon, not up
+    // through the crown, and vanilla has already darkened it for facing
+    // away from the light. Under its own crown a trunk read the full 0.85
+    // cap and went near black (seen in game 2026-11-24, D63), so a block's
+    // vertical faces take at most VV_TERRAIN_CANOPY_WALL of the cap.
+    if (!vvTerrainIsFlora())
+        cap *= mix(VV_TERRAIN_CANOPY_WALL, 1.0, clamp(faceNormal.y, 0.0, 1.0));
     vec3 shaded = vvTerrainApplyCanopy(color, vvTerrainCanopyDapple(cameraRelativePos, fade, sunVisibility, overhead.x, evidence), cap);
 
     // A face turned away from the light gets no fleck. A plant's card is
@@ -2115,7 +2131,16 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     vec3 dielectricF0 = vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor);
     vec3 f0 = mix(dielectricF0, m.baseColor, m.metalness);
-    vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);
+    // A metal has no diffuse, and on this path its body colour has to come
+    // from somewhere: the ambient highlight alone, scaled by the roughness
+    // fade and the ambient slider, left a rough gold block near black (seen
+    // in game 2026-11-24, D63). Vanilla's lit colour IS the texture's albedo
+    // under the scene's light, and a metal's albedo is its reflectance, so
+    // the metal keeps that as its body - less of it the smoother it is,
+    // because a polished metal shows its reflection instead.
+    vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness)
+                       + vec3(m.metalness * mix(VV_TERRAIN_METAL_BODY_SMOOTH, VV_TERRAIN_METAL_BODY_ROUGH,
+                                                m.perceptualRoughness));
 
     vec3 diffuse = litColor.rgb * diffuseEnergy * relief;
     diffuse *= mix(1.0, max(indirectAo, 0.82), 0.35);

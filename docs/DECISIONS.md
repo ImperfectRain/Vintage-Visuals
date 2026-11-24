@@ -2835,3 +2835,26 @@ marked both reflection controls "not in this build".
 **Not measured.** Cost in game. Expected: the analytic part is a few ALU per
 opaque fragment; the march is bounded by the gate. With Scene reflections on,
 the capture still copies one frame per frame.
+
+## D63. Terrain metals keep a body colour; walls take less canopy shade
+
+**Context.** First in-game look at the D62 build (2026-11-24): a placed gold
+metal block rendered with a near-black top and blotchy gold/black sides, and
+the face of a trunk under its own crown rendered near black. Neither came from
+the reflection itself. The modular path zeroed a metal's diffuse, leaving its
+whole body to the ambient highlight, which the roughness fade (about 0.28 at
+the player's roughness) and the ambient slider (0.3) cut to a few percent. And
+the canopy shade darkened every receiver up to its 0.85 cap, so a trunk, which
+always stands under the densest part of its own crown, lost 85% of a colour
+vanilla had already darkened for facing away from the sun.
+
+**Decision.**
+- A metal keeps `mix(0.55, 0.85, roughness)` of vanilla's lit colour as its
+  body: the lit colour is the texture's albedo under the scene's light, and a
+  metal's albedo is its reflectance. A polished metal keeps less because its
+  reflection carries more. Dielectrics are unchanged.
+- A block's vertical faces take at most 0.45 of the canopy cap, rising to the
+  full cap on a face pointing up. Plants keep their own cap.
+
+**Not measured, not seen.** Both are L2 until the same blocks are looked at
+again.

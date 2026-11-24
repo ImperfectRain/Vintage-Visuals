@@ -1001,9 +1001,27 @@ void main()
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),
                 "");
             check("Stage C diffuse energy is not view-angle blackening",
-                resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness);") &&
+                resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness)") &&
                 !resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - fresnel)"),
                 "dielectric terrain diffuse must not collapse merely because the camera is grazing it");
+            // D63: a metal keeps part of vanilla's lit colour as its body. With
+            // only the ambient highlight left, a rough gold block rendered near
+            // black in game.
+            check("terrain metal keeps a body colour, rough more than polished",
+                Regex.IsMatch(GlslEval.StripComments(resolved),
+                    @"\+ vec3\(m\.metalness \* mix\(VV_TERRAIN_METAL_BODY_SMOOTH, VV_TERRAIN_METAL_BODY_ROUGH,\s*m\.perceptualRoughness\)\)") &&
+                Regex.IsMatch(resolved, @"const float VV_TERRAIN_METAL_BODY_SMOOTH = 0\.(\d+);") &&
+                float.Parse(Regex.Match(resolved, @"VV_TERRAIN_METAL_BODY_SMOOTH = ([0-9.]+);").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) >= 0.3f &&
+                float.Parse(Regex.Match(resolved, @"VV_TERRAIN_METAL_BODY_ROUGH = ([0-9.]+);").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) <
+                    1.0f,
+                "a metal with no diffuse and a weak ambient highlight renders black");
+            // D63: a trunk under its own crown took the full canopy cap and went
+            // near black; vertical block faces take a share of it.
+            check("canopy shade on a vertical block face is capped below the floor's",
+                Regex.IsMatch(GlslEval.StripComments(resolved),
+                    @"if \(!vvTerrainIsFlora\(\)\)\s*cap \*= mix\(VV_TERRAIN_CANOPY_WALL, 1\.0, clamp\(faceNormal\.y, 0\.0, 1\.0\)\);") &&
+                Regex.IsMatch(resolved, @"const float VV_TERRAIN_CANOPY_WALL = 0\.[0-6]\d*;"),
+                "under its own crown a trunk face reads the full 0.85 cap");
             check("Stage C terrain material has no scene-capture, world-reflection or canopy reads",
                 !resolved.Contains("texture(vv_reflect") &&
                 !resolved.Contains("textureLod(vv_reflect") &&

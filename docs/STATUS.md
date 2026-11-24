@@ -158,7 +158,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[~]` | Crevice shading from the material normal's curvature | L2 | divergence of the stored gradient - a real cavity estimate, not an edge detector |
 | `[ ]` | Screen-space contact shadows | — | **blocked.** Needs the depth buffer, which is being written during the opaque pass, not readable |
 | `[ ]` | Separate local contrast from albedo level before the Sobel pass | — | "dark is deep" is the known weakness; belongs in `tools/pbrgen` first |
-| `[~]` | **Metalness from the second atlas** | L2 | real `f0` from metalness rather than the specular-mask stand-in |
+| `[~]` | **Metalness from the second atlas** | L2 | real `f0` from metalness rather than the specular-mask stand-in. On the modular path a metal keeps 0.55..0.85 (polished..rough) of vanilla's lit colour as its body since D63: with no diffuse at all a gold block rendered near black in game (2026-11-24). Fix not yet seen |
 | `[~]` | **Multi-scatter GGX compensation** | L2 | Kulla-Conty with the Karis analytic fit; only ever adds, only to rough surfaces |
 | `[~]` | **Specular occlusion** | L2 | Lagarde's fit, clamped below by the plain occlusion where it inverts at grazing angles |
 | `[~]` | **Anisotropic highlight along measured grain** | L2 | structure tensor on the material normal; collapses exactly to the isotropic lobe at zero. Back on terrain in the modular path (2026-11-22): five extra primary-atlas taps per terrain pixel while the slider is above zero, not measured; debug view 24 |
