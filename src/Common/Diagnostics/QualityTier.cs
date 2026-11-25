@@ -80,6 +80,12 @@ namespace VintageVisuals.Common.Diagnostics
             get { return Pick(1f, 2f, 2f, 2f); }
         }
 
+        /// <summary>Focusing waves behind the water caustics: 3 on Low, 6 otherwise.</summary>
+        public static float WaterCausticWaves
+        {
+            get { return Pick(3f, 6f, 6f, 6f); }
+        }
+
         private static float Pick(float low, float medium, float high, float ultra)
         {
             switch (Current)

@@ -3404,3 +3404,52 @@ reflected sky's variation. Supersedes D73's 0.32 / 0.30.
 **Limits.** The facets are a stand-in for sub-texel wave detail. L2: previewed
 offline, not seen in game.
 
+## D77 - Water caustics: the waves focus sunlight onto the bed, drawn by the water pass
+
+**Context.** Elijah asked for performance-friendly caustics that play with the
+game's lighting and the mod's (sun shafts, PBR, the sun visibility the glints
+use) (2026-11-25).
+
+**Decision.** The water pass draws them, onto the bed it already sees through
+each texel, rather than the terrain pass drawing them under the water. The bed
+point is the texel centre pushed along its view ray by `behind / own` (vanilla's
+`depthTex`, already read for the depth colour). The light is a refraction
+model, not a texture: six short focusing waves (about 0.9 to 1.6 blocks, whole
+cycles per 4096 blocks, bent by a slow warp so the lattice reads as cells) give
+the surface curvature H; a ray reaching a floor `d` down was displaced by
+`-d (1 - 1/1.33) grad h`, so the floor sees the surface through
+`J = I - f H` and light gathers where `det J -> 0`. The gain over flat water is
+`sqrt(1 + s^2) / sqrt(det^2 + s^2) - 1`, exactly 0 on flat water, softened by
+`s` that grows with depth (the sun is a disc), shouldered below 1.6. The lens
+settles at about 2 blocks of depth and holds instead of folding into noise.
+The sample point is where the refracted sun ray entered the surface, the bed
+texel is snapped to 1/32 block, and the pattern drifts with vanilla's flow.
+
+It reads only what the glints read: the game's sun colour, `sunUp` and
+`clearSky` (daylight, overcast and the game's cloud tiles), and the SURFACE's
+shadow (`shadowBright`), so a tree's shadow, a cloud's shadow on the shadow map
+and the mod's canopy dapple all take it away together. It is added to the
+colour after the opacity is final, scaled by `(1 - outAlpha)`, so it is light
+on what shows through and can never hide the bed. It fades past 4 to 8 blocks
+of depth and when a bed texel is smaller than a pixel (0.04 to 0.08 blocks per
+pixel), where the web only shimmers. `Water.Caustics` (0.6), zero is off;
+`QualityTier.WaterCausticWaves` 3 on Low, 6 above (the 3-wave set is 60
+degrees apart and its height scaled by sqrt 2 for the same curvature spread).
+Debug view 7 shows the light alone.
+
+**Rejected.** Caustics in `pbrterrainmaterial.glsl`, where the bed's albedo
+and PBR response are known: chunkopaque does not know the water level above a
+fragment without the water's own depth, and the change belongs to the PBR
+thread's files. A caustic texture or a second sampler: CLAUDE.md, and the water
+group declares none. Darkening between the lines: the water pass can only add
+to what lies behind it, so the light is put on the lines and the rest of the
+bed is left as the game lit it.
+
+**Limits.** DATA GAP: the bed's colour is assumed (albedo 0.45), not read, so
+lines on dark stone are as bright as on sand. The shadow is the surface's, not
+the bed's. Side faces (waterfalls, walls under water) get none. The light on
+its way down only loses a little red, because the game lights the bed as if no
+water were above it and the water body colours the view path. Sun shafts: the
+mod's shafts are read through the same shadow and canopy, no volumetric shaft
+in the water is drawn. L2: previewed offline on the game's sand and water
+textures, not seen in game; frame cost not measured.

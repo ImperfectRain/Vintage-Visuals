@@ -21,7 +21,8 @@
 // Each texel stays one flat colour; neighbouring texels just differ by less.
 //
 // Order of the layers, as planned: the sky and horizon reflection, then the
-// depth colouring, then the rain ripples, then the sun and moon glints. A
+// depth colouring, then the rain ripples, then the sun and moon glints, then
+// the caustics the waves focus onto what lies beneath (D77). A
 // screen-space reflection of the world is NOT here yet; it needs its own
 // sampler and its own group.
 //
@@ -53,6 +54,8 @@ uniform float vv_waterRippleLayers;// quality: 1 or 2 ripple scales
 uniform float vv_waterOwnDrops;    // 1 when this mod's rain rings replace vanilla's droplet rings
 uniform float vv_waterGlints;      // sun and moon highlight strength
 uniform float vv_waterWaves;       // texel wave relief strength
+uniform float vv_waterCaustics;    // sunlight the waves focus onto the bed, 0 none
+uniform float vv_waterCausticWaves;// quality: 3 or 6 focusing waves
 uniform float vv_waterDebug;       // debug views, 0 off
 
 const float VV_WATER_TEXELS = 32.0;          // water texels per block: the water texture is 32x32
@@ -68,7 +71,7 @@ const float VV_WATER_SOFT_RADIUS = 3.0;      // texels between a texel and each 
 const float VV_WATER_BANK_LOW = 0.02;
 const float VV_WATER_BANK_HIGH = 0.18;
 const float VV_WATER_BANK_SHADE = 0.42;      // the surroundings, relative to the sky lighting them
-const float VV_WATER_GLINT_ALPHA = 0.6;
+const float VV_WATER_GLINT_ALPHA = 0.6;      // most a glint may add to the water's opacity
 const float VV_WATER_GLINT_PEAK = 1.2;       // a glint's luminance approaches this, never clips to it
 const float VV_WATER_GLINT_FACETS = 0.62;    // share of texels with a soft facet; the rest glitter hard
 const float VV_WATER_GLINT_HARD = 1.6;
@@ -76,8 +79,26 @@ const float VV_WATER_GLINT_SOFT = 0.3;
 const float VV_WATER_GLINT_TWINKLE = 3.0;    // facet re-deals per unit of vanilla's wave counter
 const float VV_WATER_GLINT_COVER_START = 0.45; // sky cover where the sun's path starts to fade
 const float VV_WATER_GLINT_COVER_END = 0.9;
-const float VV_WATER_RING_SHARE = 0.9;       // reflected share a full ring crest reaches, at any view angle      // most a glint may add to the water's opacity
+const float VV_WATER_RING_SHARE = 0.9;       // reflected share a full ring crest reaches, at any view angle
 const float VV_WATER_SPEC_KEEP = 0.25;       // vanilla's broad sun specular kept at full glints
+
+// Caustics (D77). The bed under open water is lit through a moving lens: the
+// short focusing waves below, refracted into the water (index 1.33), gather
+// the sun into bright lines that sharpen with depth up to their focus and then
+// soften, because the sun is a disc and not a point. DATA GAP: the bed's own
+// colour is not visible to this shader (no scene-colour sampler, by design),
+// so the focused light lands on an assumed albedo; and the shadow is the one
+// at the SURFACE, which is where the light enters.
+const float VV_WATER_ETA = 0.75188;          // 1 / 1.33, air into water
+const float VV_WATER_CAUSTIC_RELIEF = 0.07;  // blocks of height on the six focusing waves
+const float VV_WATER_CAUSTIC_FOCUS = 2.0;    // blocks: the depth the lens settles at
+const float VV_WATER_CAUSTIC_WARP = 0.3;     // blocks the web's cells are bent by
+const float VV_WATER_CAUSTIC_SHARP = 0.05;   // how soft a focus line is right under the surface
+const float VV_WATER_CAUSTIC_SPREAD = 0.05;  // ... and how much softer per block of depth
+const float VV_WATER_CAUSTIC_PEAK = 1.6;     // a line approaches this gain, never clips to it
+const float VV_WATER_CAUSTIC_ALBEDO = 0.45;  // the bed it lands on (DATA GAP above)
+const float VV_WATER_CAUSTIC_DEEP = 8.0;     // blocks: faded out by this depth
+const float VV_WATER_CAUSTIC_FAR = 0.08;     // blocks of bed per pixel where the web is gone
 
 // Absorption per block of path, red first: what makes deep water blue-green
 // and shallow water clear. Scaled by vv_waterDepthTint.
@@ -244,6 +265,58 @@ vec2 vvWaterWaveSlope(vec2 world, float t)
            + k3 * cos(dot(k3, world) - t * 2.05) * 0.012;
     float height = 0.45 + 1.1 * clamp(vv_sceneWind, 0.0, 1.0);
     return (s + vvWaterChop(world, t)) * height;
+}
+
+// One focusing wave's curvature. A travelling sine of unit height has the
+// Hessian -k k^T sin(phase); returned as (xx, xz, zz). Whole cycles per 4096
+// blocks, like the surface waves, so the origin wrap is a phase boundary.
+vec3 vvWaterCausticWave(vec2 world, float t, vec2 cycles, float speed)
+{
+    vec2 k = cycles * (VV_WATER_TWO_PI / 4096.0);
+    float s = sin(dot(k, world) - t * speed);
+    return -vec3(k.x * k.x, k.x * k.y, k.y * k.y) * s;
+}
+
+// How much the waves gather the light reaching a floor `depth` blocks down,
+// as a gain over flat water: 0 where no light gathers, rising on focus lines.
+// Refraction displaces a ray by -depth (1 - 1/1.33) grad(height), so the floor
+// sees the surface through J = I - f H, and light collects where det J -> 0.
+// Light spread thin (det J > 1) is not taken from the bed: this pass can only
+// add to what lies behind it, and the gain keeps that addition on the lines.
+float vvWaterCausticGain(vec2 world, float t, float depth, float waves)
+{
+    // A slow drift bends the lattice the sines alone would draw into the
+    // irregular cells of a real caustic web. Whole cycles per 4096 blocks too.
+    const float K = VV_WATER_TWO_PI / 4096.0;
+    world += VV_WATER_CAUSTIC_WARP * vec2(sin(dot(vec2(1300.0, -700.0) * K, world) - t * 0.7),
+                                          sin(dot(vec2(600.0, 1400.0) * K, world) + t * 0.6));
+
+    // The first three run 60 degrees apart, so Low still has no favoured direction.
+    vec3 h = vvWaterCausticWave(world, t, vec2(3860.0, 540.0), 1.30)
+           + vvWaterCausticWave(world, t, vec2(1650.0, 4080.0), 1.55)
+           + vvWaterCausticWave(world, t, vec2(-2110.0, 2800.0), 1.85);
+    float relief = VV_WATER_CAUSTIC_RELIEF * 1.41421;
+    if (waves > 4.5)
+    {
+        h += vvWaterCausticWave(world, t, vec2(2600.0, 2030.0), 1.40)
+           + vvWaterCausticWave(world, t, vec2(-570.0, 4660.0), 1.70)
+           + vvWaterCausticWave(world, t, vec2(-3750.0, 1670.0), 1.15);
+        relief = VV_WATER_CAUSTIC_RELIEF;   // twice the waves: the same curvature spread
+    }
+    // Calm water still focuses a little; wind sharpens it.
+    relief *= 0.7 + 0.6 * clamp(vv_sceneWind, 0.0, 1.0);
+
+    // The lens reaches its focus around VV_WATER_CAUSTIC_FOCUS blocks down and
+    // holds there, softening, instead of folding into noise deeper still.
+    float lensDepth = VV_WATER_CAUSTIC_FOCUS * (1.0 - exp(-depth / (0.45 * VV_WATER_CAUSTIC_FOCUS)));
+    float f = lensDepth * (1.0 - VV_WATER_ETA) * relief;
+    float jxx = 1.0 - f * h.x;
+    float jzz = 1.0 - f * h.z;
+    float jxz = -f * h.y;
+    float det = jxx * jzz - jxz * jxz;
+    float soft = VV_WATER_CAUSTIC_SHARP + VV_WATER_CAUSTIC_SPREAD * depth;
+    float gain = max(0.0, sqrt(1.0 + soft * soft) / sqrt(det * det + soft * soft) - 1.0);
+    return gain * VV_WATER_CAUSTIC_PEAK / (VV_WATER_CAUSTIC_PEAK + gain);
 }
 
 // The normal of one water texel: the face, tilted by the waves (top faces at
@@ -429,12 +502,23 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     // the reflection slider at 0 does not take the rain with it.
     reflectShare = max(reflectShare, VV_WATER_RING_SHARE * ring);
 
+    // The sun has to be up and its disc visible for the glints and the
+    // caustics alike: the game's own cloud tiles (sky cover) hide it, as well
+    // as the player's overcast softening. In game a grey sky still threw a
+    // white sun path (2026-11-25).
+    float sunUp = smoothstep(-0.02, 0.08, vv_waterSunDir.y) * clamp(vv_sceneDayLight * 1.5, 0.0, 1.0);
+    float clearSky = (1.0 - 0.85 * clamp(vv_sceneOvercast, 0.0, 1.0))
+                   * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,
+                                       clamp(vv_sceneSkyCover, 0.0, 1.0)));
+
     // --- 2. depth colouring: the path behind this texel ----------------------
     vec3 body = color.rgb;
     float bodyAlpha = clamp(color.a, 0.0, 1.0);
     float path = 0.0;
     float depthTint = clamp(vv_waterDepthTint, 0.0, 1.0);
-    if (depthTint > 0.001 || vv_waterClarity > 0.001 || vv_waterDebug > 0.5)
+    float caustics = clamp(vv_waterCaustics, 0.0, 1.0);
+    vec3 causticLight = vec3(0.0);
+    if (depthTint > 0.001 || vv_waterClarity > 0.001 || caustics > 0.001 || vv_waterDebug > 0.5)
     {
         vec2 uv = (gl_FragCoord.xy + screenStep) / frameSize;
         float behind = linearDepth(texture(depthTex, clamp(uv, vec2(0.0), vec2(1.0))).x);
@@ -452,6 +536,35 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         body = mix(body, deep, absorbed * depthTint);
         float clear = clamp(vv_waterClarity, 0.0, 1.0) * (1.0 - smoothstep(0.25, 2.0, path));
         bodyAlpha = mix(bodyAlpha * (1.0 - 0.55 * clear), max(bodyAlpha, 0.92), absorbed * depthTint);
+
+        // --- 5. caustics on the bed seen through this texel ----------------
+        // Points on one view ray scale with view depth, so the bed is the
+        // texel centre pushed along the ray by behind / own. Top faces in the
+        // open, under a sun that is up and visible, only.
+        float sunLight = sunUp * clearSky * shadowBright;
+        if (caustics > 0.001 && skyOpen > 0 && top > 0.5 && sunLight > 0.001 && own > 1e-6)
+        {
+            vec3 bed = vv_waterEye + (centre - vv_waterEye) * (behind / own);
+            float depth = max(centre.y - bed.y, 0.0);
+            // Where the sunlight that reaches this bed point entered the
+            // water: back up the refracted sun ray to the surface.
+            vec3 down = refract(-vv_waterSunDir, vec3(0.0, 1.0, 0.0), VV_WATER_ETA);
+            float sunPath = depth / max(-down.y, 0.2);
+            vec2 bedTexel = (floor((bed.xz + vv_waterOrigin.xz) * VV_WATER_TEXELS) + 0.5) / VV_WATER_TEXELS;
+            vec2 entry = bedTexel - down.xz * sunPath - flowOffset;
+            float gain = vvWaterCausticGain(entry, waterWaveCounter, depth, vv_waterCausticWaves);
+            // The game lights the bed as if no water were above it, and the
+            // view path's colour is already the water body's job, so the light
+            // on its way down only loses a little red: enough to keep the lines
+            // the colour of sunlight in water, not of a second tint.
+            vec3 downTransmit = exp(-VV_WATER_ABSORB * sunPath * depthTint * 0.5);
+            float fade = 1.0 - smoothstep(VV_WATER_CAUSTIC_DEEP * 0.5, VV_WATER_CAUSTIC_DEEP, depth);
+            // A line is a few bed texels wide; once a texel is smaller than a
+            // pixel the web only shimmers, so it gives way with distance.
+            float footprint = sqrt(max(a11, a22)) * (behind / own);
+            fade *= 1.0 - smoothstep(VV_WATER_CAUSTIC_FAR * 0.5, VV_WATER_CAUSTIC_FAR, footprint);
+            causticLight = vv_waterSunColor * downTransmit * (gain * fade * sunLight * caustics);
+        }
     }
 
     // --- 3./4. glints from the sun and the moon -----------------------------
@@ -459,13 +572,6 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float glints = clamp(vv_waterGlints, 0.0, 1.0);
     if (glints > 0.001 && skyOpen > 0)
     {
-        float sunUp = smoothstep(-0.02, 0.08, vv_waterSunDir.y) * clamp(vv_sceneDayLight * 1.5, 0.0, 1.0);
-        // The disc has to be visible to glint: the game's own cloud tiles
-        // (sky cover) hide it, as well as the player's overcast softening. In
-        // game a grey sky still threw a white sun path (2026-11-25).
-        float clearSky = (1.0 - 0.85 * clamp(vv_sceneOvercast, 0.0, 1.0))
-                       * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,
-                                           clamp(vv_sceneSkyCover, 0.0, 1.0)));
         float lit = mix(0.08, 1.0, shadowBright * shadowBright);
         glint += vvWaterGlint(n, v, vv_waterSunDir, vv_waterSunColor) * sunUp * clearSky * lit;
         glint += vvWaterGlint(n, v, vv_waterMoonDir, vec3(0.55, 0.62, 0.80))
@@ -489,6 +595,10 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     vec3 premult = image * reflectShare + body * bodyAlpha * (1.0 - reflectShare) + glint;
     float glintAlpha = clamp(vvWaterLuma(glint), 0.0, 1.0);
     outAlpha = clamp(outAlpha + min(glintAlpha, VV_WATER_GLINT_ALPHA) * (1.0 - outAlpha), 0.0, 1.0);
+    // Caustics are light on the BED, seen through what the water lets by:
+    // they add to the colour and leave the opacity alone, so they can never
+    // hide what is beneath. Zero is exactly the composition above.
+    premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha));
     vec4 result = vec4(premult / max(outAlpha, 1e-3), outAlpha);
 
     // --- debug views (Water.DebugView) -------------------------------------
@@ -499,5 +609,6 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     if (mode == 4) return vec4(vec3(reflectShare * 4.0), 1.0);              // reflected share, x4
     if (mode == 5) return vec4(glint, 1.0);                                 // glints alone
     if (mode == 6) return vec4(fract(centreWorld.xz * VV_WATER_TEXELS / 2.0) * 0.8 + 0.1, top, 1.0); // texel grid
+    if (mode == 7) return vec4(causticLight, 1.0);                          // caustic light reaching the bed
     return result;
 }
