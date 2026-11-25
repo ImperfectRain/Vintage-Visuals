@@ -284,6 +284,11 @@ namespace VintageVisuals.SmokeTest
                                    Syms("vv_waterGlints", 0.0, "VV_WATER_SPEC_KEEP", Const(water, "VV_WATER_SPEC_KEEP")));
             check("vanilla's water specular is untouched at glints 0", Math.Abs(atZero - 1.0) < 1e-9, "keep " + atZero);
 
+            string dropKeep = FunctionBody(water, "float vvWaterVanillaDropletKeep(");
+            check("vanilla's water droplets stay unless this mod's rings replace them",
+                  yaml.Contains("f = dropletnoise(uv) * vvWaterVanillaDropletKeep();") &&
+                  Statements(dropKeep).FirstOrDefault()?.StartsWith("if (vv_water < 0.5) return 1.0", StringComparison.Ordinal) == true &&
+                  dropKeep.Contains("1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0)"), "");
             check("the water surface is never applied to lava", yaml.Contains("if (!isLava) texColor = vvWaterSurface("), "");
             // Asserting vanilla's depthTex is fine; declaring one of our own is
             // not - a sampler above vanilla's shifts every unit below it.

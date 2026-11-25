@@ -32,6 +32,7 @@ namespace VintageVisuals.Water
         public const string RippleTimeUniform = "vv_waterRippleTime";
         public const string RippleEpochUniform = "vv_waterRippleEpoch";
         public const string RippleLayersUniform = "vv_waterRippleLayers";
+        public const string OwnDropsUniform = "vv_waterOwnDrops";
         public const string GlintsUniform = "vv_waterGlints";
         public const string WavesUniform = "vv_waterWaves";
         public const string DebugUniform = "vv_waterDebug";
@@ -119,6 +120,8 @@ namespace VintageVisuals.Water
             program.Uniform(RippleTimeUniform, tracker != null ? tracker.RippleClock : 0f);
             program.Uniform(RippleEpochUniform, tracker != null ? tracker.RippleEpoch : 0f);
             program.Uniform(RippleLayersUniform, QualityTier.WaterRippleLayers);
+            // One drop system: vanilla's fixed-grid droplet rings step aside while ours are on.
+            program.Uniform(OwnDropsUniform, config.RainRipples > 0.001f ? 1f : 0f);
             program.Uniform(GlintsUniform, config.Glints);
             program.Uniform(DebugUniform, config.DebugView);
 

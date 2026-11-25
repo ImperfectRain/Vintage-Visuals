@@ -40,6 +40,9 @@ never reaches it.
    (`RippleEpoch` counts turns of the 1.5 s clock), so drops land somewhere new
    every time and the rain amount sets how many fall (D73). A ring's crest
    raises the reflected share at any angle, so drops read looking down too.
+   While the ring slider is above 0, vanilla's own droplet rings (a fixed grid
+   that replays in the same cells) are multiplied out, so water and land show
+   one drop system (D75).
 5. **Glints** (`Glints`): GGX from `pbrcore.glsl` for the sun and the moon on
    the texel normal, shadow-aware. Vanilla's broad sun highlight steps back to a
    quarter at full strength (`vvWaterVanillaSpecularKeep`).
