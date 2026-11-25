@@ -8,6 +8,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Reflections are more physically balanced.** A wet or polished floor seen at
+  a low angle no longer shows its full colour and a near-full reflection on top
+  (a milky sheen); rough stone is unchanged. Bright things such as sunlit trees
+  and torches keep more of their brightness in reflections. Creatures and
+  particles now take their highlights from your eyes rather than your feet.
+
 ### Added
 - **Torchlight on terrain.** Highlights from torches, lanterns and lava now
   sit on the side of a block facing the light and slide across wet or polished

@@ -39,20 +39,25 @@ AfterPostProcessing  ---> capture ---> reflection ray
 | `../../assets/vintagevisuals/shaders/vvscenecapture.vsh` | Fullscreen quad, clip space, no matrix |
 | `../../assets/vintagevisuals/shaders/vvscenecapture.fsh` | Copies scene colour to RGB, linear view depth to alpha |
 
-The consuming code is `vvSceneReflection` in
-`../../assets/vintagevisuals/shadersnippets/pseudopbr.glsl`.
+The consumer on the active terrain path is `vvTerrainPixelReflection` in
+`../../assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl`, which
+calls the march `vvTerrainSceneMarch` in `pbrterrainreflect.glsl` (D62). The
+legacy `vvSceneReflection` in `pseudopbr.glsl` is the only reader of the world
+volume below, and that path is switched off. The phased redesign (one shared
+reflection core, screen then block volume then seen sky) is recorded in D80
+and `docs/IMPLEMENTATION_PLAN.md`.
 
 **The capture runs only while something can sample it.** Two shaders can:
 the legacy `pseudopbr.glsl`, gated off by
 `PseudoPbrSubsystem.TerrainShaderPatchesEnabled` during the staged terrain
 recovery, and the modular path's `pbrterrainreflect` group, which is stage one
 of the reflection restoration ([D48](../../docs/DECISIONS.md)): the capture
-sampler and debug views 41 and 42, nothing else. That group is applied only
-while `Reflections.SceneReflections` is on, and the capture runs under the same
+sampler and debug views 41 and 42. Stage two (D62) added the march, so terrain
+now draws scene reflections. That group is applied only while
+`Reflections.SceneReflections` is on, and the capture runs under the same
 switch (`PseudoPbrSubsystem.TerrainSceneCaptureConsumerPossible`). The capture
 is rebound per terrain draw by `TerrainTextureBindInterceptor`, inside its
-active-texture save/restore. No reflection is drawn yet, so the Tuning Studio
-still lists the switch as not a working control, with that reason.
+active-texture save/restore.
 
 ## What the capture holds
 
@@ -236,7 +241,10 @@ sharply, rough reflects coarsely — currently applies to the analytic sky and n
 to the captured world, so the two can have visibly different character on the
 same surface either side of a hit boundary.
 
-**The luminance ceiling is a compression rule, not an energy rule.** A scene hit
+**The luminance ceiling is a compression rule, not an energy rule.** (Since
+reflection phase 0, D80, it is a soft knee on the terrain path: a hit keeps its
+full brightness below the ceiling and the excess is compressed, never past
+twice the ceiling. The paragraph below describes the legacy hard clamp.) A scene hit
 brighter than `envLuma * VV_REFLECT_MAX` is scaled down to it. The first ceiling
 was 1.2, so with a local environment at 0.20 and a sunlit tree at 0.70, the tree
 arrived at 0.24 — losing about two thirds of its luminance before PBR saw it. A
@@ -262,9 +270,10 @@ diagnostic capture, so diagnostics now freeze on the last normal frame before
 they inspect the bridge. See `docs/CHECKLIST.md` for the specific scenes still
 outstanding.
 
-**Water is not supported.** `chunkliquid.fsh` is in no patch group. It should
-wait until the reflection geometry is validated on terrain, or a wrong reflection
-appears in two places at once and neither can be trusted to diagnose the other.
+**Water reflects the analytic sky only** (`src/Water`, D71/D73), texel-locked,
+with no scene source. Its screen reflection is phase 1 of D80: the water pass
+draws in the transparent pass and can read the finished opaque frame and depth
+live, so it needs no capture and has no frame lag.
 
 **Entities are not supported.** They have no material atlas, so there is no texel
 grid to attach a reflection to.

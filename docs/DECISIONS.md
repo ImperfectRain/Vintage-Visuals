@@ -3522,3 +3522,40 @@ noise and the forest still read sparse, so D78b multiplies every crown's shed
 by 3 (`ForestLifeSpawner.LeafAbundance`; the bench's legacy run keeps 1) and
 raises `LeafBudget.FarShare` from 0.3 to 0.45. The rate's shape over season,
 wind, rain and frost is unchanged. D78b is L2, not seen in game.
+
+## D80 - Reflection phase 0: energy split, soft ceiling, eye distances everywhere
+
+**Context.** The 2026-11-25 reflection review
+(https://claude.ai/artifact/VmuoJ57XNtWe9zeqeXReua) found the terrain's
+reflection capped rather than conserved: diffuse kept `1 - 0.35 F0` at every
+angle while the reflection rose toward 1 at grazing views, `energyCap` lifted
+every highlight and reflection by up to 18%, and scene hits were hard-clamped at
+twice the environment's luminance. Creatures, particles and the terrain's
+distance fades still measured from the player's feet (D73, D74). Elijah approved
+the phased design and phase 0 the same day.
+
+**Decision.**
+- Diffuse gives up exactly what Fresnel ADDS over its head-on value,
+  `(F(view) - F0) x roughness fade x specular occlusion x min(ambient, 1)`
+  (`vvTerrainGrazingShare`). Facing a block nothing changes, so vanilla's look is
+  kept. Rough stone loses almost nothing at a grazing view, which is the defect
+  the old `(1 - F)` shipped with (blackened terrain; see the Stage C check). A
+  polished wet floor hands real energy to its reflection.
+- Multiple-scattering compensation applies to rough metals only:
+  `1 + 0.18 x slider x metalness x roughness`.
+- The scene-hit ceiling is a soft knee: full brightness below it, the excess
+  compressed, never past twice it. The colour-match feedback guard is KEPT until
+  phase 2 marks reflective pixels in the capture, because a floor reflecting its
+  own brightened copy is a defect that was seen in game.
+- `vvTerrainEyeDistance` drives every terrain distance fade, and the shaft
+  march starts at the eye. Fog keeps vanilla's feet-origin distance, because
+  vanilla's own fog uses it and the two must agree. `pbrentity` and `pbrparticle`
+  read `vv_pbrEye`; their positions share the chunk space because they draw
+  with the same view matrix (not separately measured).
+
+**Evidence.** I23 evaluates the shipped share (zero head-on, under 0.03 on rough
+stone at a grazing view, over 0.4 on a polished wet floor, never above the
+reflection it pays for). I22 now also requires eye-measured fades and
+eye-origin creature and particle vectors and evaluates the knee and the
+rough-metal boost. Seven mutations. L2, not seen in game; performance not
+measured (one extra Fresnel evaluation per terrain fragment).

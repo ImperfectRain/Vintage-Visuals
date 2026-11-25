@@ -533,8 +533,8 @@ void main()
                     fleckEnd <= 28.0 && fleckEnd <= dappleEnd &&
                     GlslEval.Const(terrainSnippet, "VV_TERRAIN_FLECK_VIEW_LIMIT") <= dappleEnd &&
                     fleckBody.Contains("float flatDistance = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));") &&
-                    fleckBody.Contains("smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, length(cameraRelativePos))") &&
-                    resolveBody.Contains("if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;"),
+                    fleckBody.Contains("smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, vvTerrainEyeDistance(cameraRelativePos))") &&
+                    resolveBody.Contains("if (vvTerrainEyeDistance(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;"),
                     $"grids tile the wrap: {tiles}; flecks end at {fleckEnd} (<= 28 and <= {dappleEnd})");
             }
             catch (Exception ex) { check("I-terrain sunfleck extent is readable", false, ex.Message); }
@@ -1001,7 +1001,7 @@ void main()
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),
                 "");
             check("Stage C diffuse energy is not view-angle blackening",
-                resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness)") &&
+                resolved.Contains("vec3 diffuseEnergy = max(vec3(1.0) - f0 * 0.35 - grazingShare, vec3(0.0)) * (1.0 - m.metalness)") &&
                 !resolved.Contains("vec3 diffuseEnergy = (vec3(1.0) - fresnel)"),
                 "dielectric terrain diffuse must not collapse merely because the camera is grazing it");
             // D63: a metal keeps part of vanilla's lit colour as its body. With
