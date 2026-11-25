@@ -23,9 +23,10 @@
 // Order of the layers, as planned: the sky and horizon reflection, then the
 // depth colouring, then the rain ripples, then the sun and moon glints, then
 // the caustics the waves focus onto what lies beneath (D77), then the
-// shoreline: a soft edge and a lapping foam line (D79). A
-// screen-space reflection of the world is NOT here yet; it needs its own
-// sampler and its own group.
+// shoreline: a soft edge and a lapping foam line (D79). The world reflected
+// in the water and the bed bent through the waves come from the "waterscene"
+// group (waterscene.glsl, D80), called under #ifdef VV_WATER_SCENE: that group
+// declares the sampler, so with it off this file is exactly the sky-only water.
 //
 // ZERO IS VANILLA. vv_water is the master and an unset uniform reads 0, so a
 // program the binder never reached returns vanilla's colour untouched, and
@@ -59,6 +60,13 @@ uniform float vv_waterCaustics;    // sunlight the waves focus onto the bed, 0 n
 uniform float vv_waterCausticWaves;// quality: 3 or 6 focusing waves
 uniform float vv_waterShore;      // shoreline soft edge and foam line, 0 none
 uniform float vv_waterDebug;       // debug views, 0 off
+
+// Whether anything below needs the bed point behind the texel.
+#ifdef VV_WATER_SCENE
+#define VV_WATER_REFRACTS (vv_waterRefraction > 0.001)
+#else
+#define VV_WATER_REFRACTS false
+#endif
 
 const float VV_WATER_TEXELS = 32.0;          // water texels per block: the water texture is 32x32
 const float VV_WATER_F0 = 0.02;              // water's reflectance at normal incidence
@@ -566,6 +574,16 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     }
     image *= skyFactor;
 
+    // --- 1b. the world in the water (D80) ---------------------------------
+    // The texel's own reflected ray, marched across the opaque frame: banks,
+    // trees and the far shore replace the sky where the ray finds them, and
+    // the sky (with its bank stand-in) stays where it does not.
+    vec4 sceneHit = vec4(0.0);
+#ifdef VV_WATER_SCENE
+    if (top > 0.5) sceneHit = vvWaterSceneTrace(centre, r);
+    image = mix(image, sceneHit.rgb, sceneHit.a * clamp(vv_waterSceneMix, 0.0, 1.0));
+#endif
+
     float ndotv = clamp(dot(n, v), 0.0, 1.0);
     float fresnel = VV_WATER_F0 + (1.0 - VV_WATER_F0) * pow(1.0 - ndotv, 5.0);
     float reflectShare = clamp(fresnel * clamp(vv_waterSky, 0.0, 1.0), 0.0, 1.0);
@@ -594,9 +612,10 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float caustics = clamp(vv_waterCaustics, 0.0, 1.0);
     vec3 causticLight = vec3(0.0);
     vec3 bedNormal = vec3(0.0, 1.0, 0.0);
+    vec3 bedPoint = centre;
     float shoreGap = VV_WATER_DEEP_PATH;
     float shore = clamp(vv_waterShore, 0.0, 1.0);
-    if (depthTint > 0.001 || vv_waterClarity > 0.001 || caustics > 0.001 || shore > 0.001 || vv_waterDebug > 0.5)
+    if (depthTint > 0.001 || vv_waterClarity > 0.001 || caustics > 0.001 || shore > 0.001 || VV_WATER_REFRACTS || vv_waterDebug > 0.5)
     {
         vec2 uv = (gl_FragCoord.xy + screenStep) / frameSize;
         float behind = linearDepth(texture(depthTex, clamp(uv, vec2(0.0), vec2(1.0))).x);
@@ -621,6 +640,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         // a block edge between two pixels is a jump, not a slope, and there
         // the bed counts as flat rather than drawing a seam along every block.
         vec3 bed = vv_waterEye + (centre - vv_waterEye) * (behind / max(own, 1e-6));
+        bedPoint = bed;
         vec3 bedCross = cross(bedDx, bedDy);
         float bedReach = 9.0 * (behindPixel / max(ownLinear, 1e-6)) * (behindPixel / max(ownLinear, 1e-6));
         bool jump = dot(bedDx, bedDx) > bedReach * a11 || dot(bedDy, bedDy) > bedReach * a22;
@@ -726,6 +746,23 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         premult = foamColor * foam + premult * (1.0 - foam);
         outAlpha = foam + outAlpha * (1.0 - foam);
     }
+#ifdef VV_WATER_SCENE
+    // --- 7. the bed bent through the waves (D80) --------------------------
+    // The water shows its own copy of what lies behind, sampled where the wave
+    // slope bends the view, and covers the straight view by the same share:
+    // what passes is (1 - outAlpha), split between the bent copy (k) and the
+    // straight one (1 - k). A sample that would land in front of the water
+    // keeps the straight view.
+    float refraction = clamp(vv_waterRefraction, 0.0, 1.0);
+    if (refraction > 0.001 && top > 0.5 && vv_waterSceneOn > 0.5 && path > 0.0)
+    {
+        vec4 bentBed = vvWaterSceneRefract(centre, bedPoint, n, path);
+        float k = refraction * bentBed.a;
+        premult += bentBed.rgb * ((1.0 - outAlpha) * k);
+        outAlpha = mix(outAlpha, 1.0, k);
+    }
+#endif
+
     vec4 result = vec4(premult / max(outAlpha, 1e-3), outAlpha);
 
     // --- debug views (Water.DebugView) -------------------------------------
@@ -738,5 +775,6 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     if (mode == 6) return vec4(fract(centreWorld.xz * VV_WATER_TEXELS / 2.0) * 0.8 + 0.1, top, 1.0); // texel grid
     if (mode == 7) return vec4(causticLight, 1.0);                          // caustic light reaching the bed
     if (mode == 8) return vec4(foam, flowAmount, far, 1.0);                 // foam line, flow, far swell
+    if (mode == 9) return vec4(sceneHit.rgb * sceneHit.a, 1.0);             // the world found by the reflected ray
     return result;
 }
