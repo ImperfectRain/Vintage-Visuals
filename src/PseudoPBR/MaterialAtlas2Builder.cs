@@ -17,11 +17,24 @@ namespace VintageVisuals.PseudoPBR
     /// This page carries what the first could not:
     ///
     ///   R = metalness      is this surface a conductor, in the top seven
-    ///                      bits; the lowest bit says whether rain can stand
-    ///                      in its crevices (D66, PackMetalWater)
+    ///                      bits; the lowest bit says the region carries the
+    ///                      crevice layout below (D66, D67, PackMetalWater)
     ///   G = height         the surface's own relief, as a normalised field
     ///   B = baked AO       broad occlusion from that height
     ///   A = emission mask  WHERE an already-emitting block emits
+    ///
+    /// A region whose flag bit is set (a material that holds water, not
+    /// emitting, at most CreviceMaps.MaxSize on a side) carries the crevice
+    /// layout instead (D67):
+    ///
+    ///   G = stone shape    each stone as a pillow around its joints
+    ///   B = pool | flow    joint water depth in the high nibble, how much
+    ///                      rain a wall path gathers in the low nibble
+    ///   A = flow phase     how far along its path each texel is, for drops
+    ///
+    /// The shader derives that region's AO from the shape. The emission mask
+    /// is free to give up there because it is identically zero for a block
+    /// the game says does not glow.
     ///
     /// The layout, the slot rectangles and the sampling convention are
     /// deliberately identical to the first atlas, so a single set of UVs
@@ -44,7 +57,7 @@ namespace VintageVisuals.PseudoPBR
         /// fingerprint, so the two caches cannot be confused for one another
         /// even though they describe the same regions at the same size.
         /// </summary>
-        public const int FormatVersion = 2;
+        public const int FormatVersion = 3;
 
         /// <summary>
         /// What an untouched texel means: not metal, flat, unoccluded, and not
@@ -114,6 +127,10 @@ namespace VintageVisuals.PseudoPBR
             float metalness = MetalnessFor(region);
             double[] emission = EmissionMask(region, luminance);
 
+            CreviceMaps.Result crevice = CarriesCrevices(region)
+                ? CreviceMaps.Build(height, texture.Width, texture.Height)
+                : null;
+
             int slotWidth = region.Width > 0 ? region.Width : texture.Width;
             int slotHeight = region.Height > 0 ? region.Height : texture.Height;
 
@@ -139,8 +156,18 @@ namespace VintageVisuals.PseudoPBR
 
                     int source = sourceRow + sourceX;
 
+                    if (crevice != null)
+                    {
+                        pixels[destRow + x] = MaterialAtlasBuilder.Pack(
+                            PackMetalWater(metalness, true),
+                            (float)crevice.Shape[source],
+                            PackPoolFlow(crevice.Pool[source], crevice.Flow[source]),
+                            (float)crevice.Phase[source]);
+                        continue;
+                    }
+
                     pixels[destRow + x] = MaterialAtlasBuilder.Pack(
-                        PackMetalWater(metalness, region.HoldsWater),
+                        PackMetalWater(metalness, false),
                         (float)height[source],
                         (float)Occlusion(height[source], mean[source]),
                         (float)emission[source]);
@@ -170,6 +197,35 @@ namespace VintageVisuals.PseudoPBR
             int level = (int)(m * 127f + 0.5f);
             int value = level * 2 + (holdsWater ? 1 : 0);
             return value / 255f;
+        }
+
+        /// <summary>
+        /// Whether a region gets the crevice layout: its material holds water
+        /// (MaterialProfiles.HoldsWater), the game says it does not glow (the
+        /// alpha channel is the emission mask otherwise), and it is small
+        /// enough to trace. Anything else keeps the plain layout and no water.
+        /// </summary>
+        public static bool CarriesCrevices(AtlasRegion region)
+        {
+            if (region == null || !region.HoldsWater || region.GlowLevel > 0f || region.Texture == null) return false;
+            return region.Texture.Width <= CreviceMaps.MaxSize && region.Texture.Height <= CreviceMaps.MaxSize &&
+                   region.Texture.Width >= 4 && region.Texture.Height >= 4;
+        }
+
+        /// <summary>Pool depth in the high nibble, gathered flow in the low,
+        /// as the 0..1 float Pack expects. Nearest-sampled, no mips, so the
+        /// shader reads both nibbles back exactly.</summary>
+        public static float PackPoolFlow(double pool, double flow)
+        {
+            int p = Nibble(pool), f = Nibble(flow);
+            return (p * 16 + f) / 255f;
+        }
+
+        private static int Nibble(double v)
+        {
+            if (double.IsNaN(v)) return 0;
+            int n = (int)(v * 15.0 + 0.5);
+            return n < 0 ? 0 : (n > 15 ? 15 : n);
         }
 
         public static float MetalnessFor(AtlasRegion region)

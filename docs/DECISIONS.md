@@ -2991,3 +2991,60 @@ colour and 0 at `vv_pbrBlockLight` 0. View 74 now shows exactly this term.
 
 **Cost, not measured.** Unchanged from D65: four reads on a wet top face of a
 water-holding block, none on any other material.
+
+## D67 - Crevice structure is measured on the CPU at load, not guessed per texel in the shader
+
+**Context.** D64 to D66 (v17 to v19) each found "crevices" in the fragment
+shader by comparing a texel's height with its four neighbours. In game
+(2026-11-25, seven screenshots of v19) pools and streams were still speckle
+and wall streams were straight vertical lines on random columns. An offline
+audit against the game's own stone textures (`/mnt/project-files/audit/`)
+found the root cause: the only height the mod has is the texture's
+luminance, and on Vintage Story stone that is mostly painted speckle, while a
+real joint is a long connected dark run about two texels wide. No per-texel
+neighbour test can tell the two apart; it takes a view several texels wide.
+
+**Decision.** `src/PseudoPBR/CreviceMaps.cs` computes three maps per
+water-holding texture when the second atlas is built, a port of
+`tools/pbrgen/crevice.py` (where the method was previewed on twelve real
+textures and approved by the player before any of it was built):
+
+- *joints*: black top-hat of the lightly smoothed height (closing radius 2),
+  hysteresis from strong seeds (82nd percentile, at least 0.05) into weak
+  neighbours (0.75 of that), keeping only 4-connected components of at least
+  10 texels that span at least 0.3 of the texture. A speck or a chisel mark
+  is short; a joint runs.
+- *stone shape*: a pillow, rounded within three texels of a joint and flat on
+  top, with 0.15 of the painted shading kept.
+- *flow*: for a wall, water takes the lowest of the three texels below it on
+  the shape (joints 0.25 lower: channels), so it slides off a bump's shoulder;
+  under a ledge it runs sideways along the joint. Rain lands on every texel
+  and the gathered amount, log-scaled, marks the streams. Each texel also gets
+  a phase (its step along the longest path through it, over 9, plus that
+  path's own hash) so drops slide along a path, bends included.
+
+Packing (`MaterialAtlas2Builder`, format version 3): a region carries this
+layout when its material holds water, the game says it does not glow and it
+is at most 128 px; the lowest red bit now means exactly that. Green is the
+shape, blue the joint depth (high nibble) and flow (low nibble), alpha the
+phase. The shader derives AO from the shape (0.55 on a joint floor, 1 from
+shape 0.6), pools top faces straight from the joint map, streams walls along
+the paths with `fract(phase - sceneClock * 2 + blockSeed)` (an integer speed
+so the 1.5 s wrap is seamless) and only where the texture is upright on the
+face, and lights torch relief from the shape's gradient (four second-atlas
+reads, only for torch-lit water-holding texels).
+
+**Supersedes** D66's structure tests and D64's wall grooves and rivulets.
+D66's material gate stands. Debug view 73 now shows the baked maps; the old
+live-water view moved to 75.
+
+**Evidence.** The C# port matches the reference texel for texel on a
+formula fixture (`crevice_fixture.json`, smoketest) and, out of tree, on all
+twelve audited textures (largest difference 0). A smoketest fails if a speck
+pools or a kept joint is small. Not seen in game. Cost: about 7 ms per
+texture at load including JIT, measured on twelve textures out of game;
+runtime cost not measured.
+
+**Limits.** Basalt brick vertical joints and a few short dry-stone joints are
+missed. Paths are traced for an upright texture; a texture turned on its face
+gets wet joints and no streams. Pools stop at the block edge.

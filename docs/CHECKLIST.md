@@ -117,8 +117,9 @@ from the source texture.
 | Fireflies replace vanilla's (`VanillaFireflies`, swarms, v15, D59) | x | x | x | x | – | – | – | – | x |
 | Moonlight flecks | x | x | x | x | – | – | – | – | x |
 | Cloud cover from ambient and falling rain (D53) | x | x | x | x | – | – | – | – | x |
-| Water in crevices: local pools, wall streams (D64, retuned D65) | x | x | x | x | – | – | – | – | x |
+| Water in crevices: local pools, wall streams (D64, retuned D65, rebuilt on load-time maps D67) | x | x | x | x | – | – | – | – | x |
 | Torchlight relief on per-pixel normals (D65) | x | x | x | x | – | – | – | – | x |
+| Crevice maps at load: joints, stone shape, rain paths (D67) | x | x | x | x | – | – | – | – | x |
 
 ---
 

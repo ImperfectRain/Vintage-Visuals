@@ -140,12 +140,15 @@ namespace VintageVisuals.SmokeTest
                 double Wet(double pool) => GlslEval.Scalar(expr, GlslEval.Syms(
                     "w", 1.0, "p", pool, "amount", 1.0, "VV_TERRAIN_POOL_FILM", film));
                 double contrast = Wet(1.0) - Wet(0.0);
-                // No threshold on the raw height: an absolute band is not a
-                // basin on a per-texture normalised luminance.
-                bool structural = crevice.Contains("float pool = max(max(jointX, jointY), pit)") &&
+                // D67: pools come from the baked joint network alone. No
+                // threshold on the height and no neighbour reads: v17 to v19
+                // each found "crevices" per texel in the shader and each
+                // filled the painted speckle.
+                bool structural = crevice.Contains("float pool = m.jointPool * smoothstep(") &&
+                                  !crevice.Contains("vvTerrainHeightAt(") &&
                                   !Regex.IsMatch(crevice, @"smoothstep\([^;]*,\s*(m\.height|h)\s*\)");
                 contrastOk = contrast >= 0.6 && structural;
-                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6); pools from joints and pits only, no absolute low band: {structural}";
+                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6); pools from the baked joint map only, no per-texel guessing: {structural}";
             }
             check("a crevice pool stands out against the film around it", contrastOk, contrastWhy);
 
@@ -156,6 +159,31 @@ namespace VintageVisuals.SmokeTest
                 crevice.Contains("if (m.holdsWater < 0.5) return vec2(0.0);") &&
                 materialCode.Contains("m.holdsWater = redByte - metalLevel * 2.0;"),
                 "without the game's material gate, a meadow's dark texels read as puddles");
+
+            // D67: the layout the builder packs is the layout the shader reads
+            // (SecondAtlasChecks packs it), and walls stream along the baked
+            // paths with drops sliding along each path's own phase.
+            string decode = GlslEval.FunctionBody(materialCode, "VvTerrainMaterial vvDecodeTerrainMaterial(") ?? "";
+            check("the shader reads the crevice layout exactly as the atlas packs it",
+                decode.Contains("float blueByte = floor(secondary.b * 255.0 + 0.5);") &&
+                decode.Contains("float poolLevel = floor(blueByte / 16.0);") &&
+                decode.Contains("m.jointPool = poolLevel / 15.0;") &&
+                decode.Contains("m.flowAmount = (blueByte - poolLevel * 16.0) / 15.0;") &&
+                decode.Contains("m.flowPhase = secondary.a;") &&
+                decode.Contains("m.ao = vvTerrainShapeOcclusion(m.height);") &&
+                decode.IndexOf("m.holdsWater = vv_material2Valid < 0.5 ? 0.0 : m.holdsWater;", StringComparison.Ordinal) <
+                decode.IndexOf("if (m.holdsWater > 0.5)", StringComparison.Ordinal),
+                "a nibble read in the wrong order turns joints into flow and flow into joints");
+
+            string dropFn = GlslEval.FunctionBody(materialCode, "float vvTerrainStreamDrop(") ?? "";
+            double speed = GlslEval.Const(materialCode, "VV_TERRAIN_STREAM_SPEED");
+            check("rain runs down a wall along its traced paths, drops sliding along each path",
+                crevice.Contains("float path = m.flowAmount * upright;") &&
+                crevice.Contains("float drop = vvTerrainStreamDrop(m.flowPhase, blockSeed);") &&
+                dropFn.Contains("fract(flowPhase - vv_sceneClock * VV_TERRAIN_STREAM_SPEED + blockSeed)") &&
+                speed >= 1.0 && Math.Abs(speed - Math.Round(speed)) < 1e-9 &&
+                !crevice.Contains("column"),
+                "streams on random columns are the straight vertical lines v19 drew; a non-integer speed jumps every 1.5 s when the scene clock wraps");
 
             check("water in a crevice is a mirror its own crevice cannot occlude",
                 weather.Contains("m.ao = mix(m.ao, 1.0, max(m.pool, m.stream * 0.6));") &&
@@ -172,11 +200,13 @@ namespace VintageVisuals.SmokeTest
             string shadeFn = GlslEval.FunctionBody(materialCode, "float vvTerrainTorchShade(") ?? "";
             check("torchlight shades each texel's normal in the diffuse and leaves a flat texel alone",
                 rDir >= 0 && rGate > rDir &&
-                relief.Contains("float shade = vvTerrainTorchShade(m, toTorch);") &&
+                relief.Contains("float shade = vvTerrainTorchShade(m, toTorch, vvTerrainTorchNormal(m, materialUv));") &&
+                shadeFn.Contains("vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, VV_TERRAIN_TORCH_NORMAL), m.faceNormal);") &&
+                (GlslEval.FunctionBody(materialCode, "vec3 vvTerrainTorchNormal(") ?? "").Contains("if (m.holdsWater < 0.5) return m.normal;") &&
                 shadeFn.Contains("float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);") &&
                 shadeFn.Contains("float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;") &&
                 relief.Contains("clamp(vv_pbrBlockLight, 0.0, 1.0)") &&
-                primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos), vec3(0.0));"),
+                primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos, materialUv), vec3(0.0));"),
                 "without it a torch lights a cobble face evenly and its relief is shaded only by the sun, which is absent at night and underground");
 
             check("only the capture group defines the scene-capture switch",

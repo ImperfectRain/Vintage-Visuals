@@ -473,8 +473,9 @@ yellow is near one material texel per screen pixel, red is undersampled.
 | 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
 | 8 | roughness as shaded | Stored roughness plus bias plus specular antialiasing. Brighter than view 2 means aliasing is being suppressed there |
 | 9 | estimated block-light direction | Flat means the gradient found nothing and the light is ambient; variation across a wall means a torch is being located |
-| 73 | water in crevices (modular path, D65) | Grey the damp film, blue standing water in joints and dips on top faces, cyan water running down walls. Needs rain and `pbr_crevicewater` above 0 |
-| 74 | torchlight on the normals (modular path, D65) | Terrain lit by block light alone, as clay through each texel's own normal, plus the torch highlight. Relief that turns as a torch moves past is the normal map being shaded |
+| 73 | crevice maps (modular path, D67) | What `CreviceMaps` found at load: grey the stone shape, blue the joint network by depth, cyan the rain paths on walls. Black where the material holds no water. Any weather. Speckle here means the maps are wrong |
+| 74 | torchlight on the normals (modular path, D65, D67) | Terrain lit by block light alone, as clay through the stone shape (crevice regions) or each texel's own normal, plus the torch highlight. Relief that turns as a torch moves past is being shaded |
+| 75 | water in crevices, live (modular path, D65) | Grey the damp film, blue standing water in the joints of top faces, cyan water running down walls. Needs rain and `pbr_crevicewater` above 0 |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is

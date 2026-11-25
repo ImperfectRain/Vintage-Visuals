@@ -13,10 +13,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sit on the side of a block facing the light and slide across wet or polished
   surfaces as you move, and a wet cave floor can reflect a torch at night.
 - **Water in crevices.** On stone, brick, ceramic and metal, rain pools in
-  the joints and pits of a block's top and runs down the grooves of its sides
-  while it rains. Soil, grass, sand and wood just get wet. Pools are
-  dark, glossy and reflect the sky. New slider: Water in crevices (0 keeps the
-  old even wet look). Debug view 73 shows where the water is.
+  the joints between stones on a block's top, and runs down its sides while it
+  rains, sliding off each stone and gathering in the gaps between them rather
+  than falling in straight lines. The mod finds the joints and the shape of
+  each stone once, when textures load. Soil, grass, sand and wood just get
+  wet. Pools are dark, glossy and reflect the sky. New slider: Water in
+  crevices (0 keeps the old even wet look). Debug view 73 shows the joints and
+  rain paths the mod found, 75 where the water is right now.
 - **Torchlight shades the surface relief.** Near a torch, the bumps of a
   block now catch the light on the side facing the flame and fall into shade
   on the other, at night and underground too. Debug view 74 shows it alone.

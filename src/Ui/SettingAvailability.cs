@@ -134,7 +134,7 @@ namespace VintageVisuals.Ui
             { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
             { "pbr_gusts", "Needs wind. Watch a grass field or crowns from a little way off." },
             { "pbr_contactshade", "Shows at the foot of grass, flowers and crops, close up." },
-            { "pbr_crevicewater", "Shows on stone and brick open to the sky: pools in joints and dips while the ground is wet, streams down walls while it rains. Debug view 73 shows where." },
+            { "pbr_crevicewater", "Shows on stone and brick open to the sky: pools in the joints between stones while the ground is wet, streams sliding down walls along each stone while it rains. Debug view 73 shows the joints and paths found, 75 the water." },
             { "pbr_damp", "Shows on rough stone, logs and soil under trees or in half-shade, in a rainy climate." },
             { "pbr_drips", "Stand under leaves during or just after rain." },
             { "pbr_pollen", "Warm dry day in spring or summer, over grass or flowers." },
