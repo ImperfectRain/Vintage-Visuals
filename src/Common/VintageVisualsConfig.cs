@@ -939,6 +939,15 @@ namespace VintageVisuals.Common
         public float CreviceWater { get; set; } = 0.8f;
 
         /// <summary>
+        /// D70. Steepens the game's own torch falloff on terrain, so light
+        /// pools around each torch instead of filling a room evenly. Works
+        /// only from the block light vanilla already computed per vertex; it
+        /// never adds light, only takes it from the dim edge of a torch's
+        /// reach. 0 is vanilla.
+        /// </summary>
+        public float TorchFalloff { get; set; } = 0.0f;
+
+        /// <summary>
         /// v14. Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.
         /// </summary>
         public float LeafDrips { get; set; } = 0.6f;
@@ -1132,6 +1141,8 @@ namespace VintageVisuals.Common
                 "PseudoPBR.Damp", corrections);
             CreviceWater = ColorGradeConfig.Clamp(CreviceWater, 0.0f, 1.0f,
                 "PseudoPBR.CreviceWater", corrections);
+            TorchFalloff = ColorGradeConfig.Clamp(TorchFalloff, 0.0f, 1.0f,
+                "PseudoPBR.TorchFalloff", corrections);
             LeafDrips = ColorGradeConfig.Clamp(LeafDrips, 0.0f, 1.0f,
                 "PseudoPBR.LeafDrips", corrections);
             Pollen = ColorGradeConfig.Clamp(Pollen, 0.0f, 1.0f,

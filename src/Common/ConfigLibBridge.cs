@@ -211,6 +211,9 @@ namespace VintageVisuals.Common
                 case "pbr_crevicewater":
                     pbr.CreviceWater = tree.GetFloat("value", pbr.CreviceWater);
                     break;
+                case "pbr_torchfalloff":
+                    pbr.TorchFalloff = tree.GetFloat("value", pbr.TorchFalloff);
+                    break;
                 case "pbr_drips":
                     pbr.LeafDrips = tree.GetFloat("value", pbr.LeafDrips);
                     break;

@@ -204,6 +204,10 @@ namespace VintageVisuals.Ui
                    "How strongly a firelight highlight points back at the flame rather than sitting flat on the surface.",
                    M, "Light response", 0f, 1f, 0.05f, null, true);
 
+            Slider("pbr_torchfalloff", "PseudoPBR.TorchFalloff", "Torch light falloff",
+                   "Makes light pool around each torch instead of filling a room evenly, by steepening the game's own falloff. Only takes light from the dim edge of a torch's reach. 0 is vanilla.",
+                   M, "Light response", 0f, 1f, 0.05f);
+
             Slider("pbr_roughnessbias", "PseudoPBR.RoughnessBias", "Roughness bias",
                    "Shifts every surface toward polished or toward worn. 0 uses the material as it was measured.",
                    M, "Material response", -0.5f, 0.5f, 0.05f);

@@ -358,6 +358,7 @@ actually for.
 | Detail distance | 4 – 192 | 48 | performance/quality |
 | Torch & lava highlights (and, up to 1, torchlight relief on terrain, D65) | 0 – 2 | 1.0 | realism |
 | Torch highlight directionality | 0 – 1 | 0.7 | taste |
+| Torch light falloff (terrain only, D70) | 0 – 1 | 0.0 | taste |
 
 **Roughness bias** is the strongest single style control, because roughness is
 what separates a look that reads as *wet* from one that reads as *dry* — and

@@ -96,6 +96,7 @@ namespace VintageVisuals.SmokeTest
             Guarded("I12", () => I12_ARateConstantIsTheRateUsed(check));
             Guarded("I13", () => I13_AToleranceIsNotFinerThanItsData(repo, check));
             Guarded("I20", () => I20_ACloudIsNoDarkerThanATree(check));
+            Guarded("I21", () => I21_TorchFalloffOnlyDarkensTheEdge(repo, check));
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
@@ -1558,6 +1559,80 @@ namespace VintageVisuals.SmokeTest
                   pbrCode.Contains("source = mix(source, vec3(1.0), scene58Confidence)") &&
                   File.ReadAllText(Path.Combine(repo, "src/Ui/DebugViewRegistry.cs")).Contains("Hybrid reflection source"),
                   "Debug > Debug System: Materials > World reflection proof > Hybrid reflection source (58) must explain the resolver");
+        }
+
+        // -------------------------------------------------------------------
+        // I21: the torch falloff slider (D70) reshapes the game's own light,
+        // it never adds light, never inverts it, and is the identity at zero
+        // and in daylight.
+        //
+        // The function is a few guards and a chain of locals, so it is walked
+        // statement by statement from the shipped body: the guards' conditions
+        // and every right-hand side are the shipped text, not a copy.
+        // -------------------------------------------------------------------
+        static void I21_TorchFalloffOnlyDarkensTheEdge(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string body = FunctionBody(material, "float vvTerrainTorchFalloff(vec3 torch)");
+            var stmts = Statements(body);
+            string[] consts = { "VV_TERRAIN_FALLOFF_FULL", "VV_TERRAIN_FALLOFF_POWER",
+                                "VV_TERRAIN_FALLOFF_FLOOR", "VV_TERRAIN_FALLOFF_MIN" };
+
+            double F(double slider, double b, double sunExposure, double sunPresence)
+            {
+                var syms = Syms("vv_pbrTorchFalloff", slider, "vv_sunExposure", sunExposure,
+                                "sunPresenceStub", sunPresence);
+                syms["torch"] = Vec(b, b, b);
+                foreach (string c in consts) syms[c] = new Val(Const(material, c));
+                for (int i = 0; i < stmts.Count; i++)
+                {
+                    string st = StubCall(stmts[i], "vvTerrainSunPresence", "sunPresenceStub");
+                    var guard = Regex.Match(st, @"^if\s*\((.*)\)\s*return\s+(.+)$");
+                    if (guard.Success)
+                    {
+                        if (Scalar(guard.Groups[1].Value, syms) != 0.0) return Scalar(guard.Groups[2].Value, syms);
+                        continue;
+                    }
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Scalar(Rhs(st), syms);
+                    var decl = Regex.Match(st, @"^float\s+([A-Za-z_][A-Za-z_0-9]*)\s*=");
+                    if (!decl.Success) throw new ArgumentException("unexpected statement in the falloff: " + st);
+                    syms[decl.Groups[1].Value] = new Val(Scalar(Rhs(st), syms));
+                }
+                throw new ArgumentException("the falloff never returned");
+            }
+
+            double worstOff = 0, worstOver = 0, worstDay = 0, minFactor = 1;
+            bool inverts = false;
+            for (int si = 0; si <= 10; si++)
+            {
+                double slider = si / 10.0;
+                double prevOut = -1;
+                for (int bi = 0; bi <= 120; bi++)
+                {
+                    double b = bi / 100.0;
+                    double night = F(slider, b, 0.0, 0.0);
+                    if (si == 0) worstOff = Math.Max(worstOff, Math.Abs(night - 1.0));
+                    worstOver = Math.Max(worstOver, night - 1.0);
+                    minFactor = Math.Min(minFactor, night);
+                    worstDay = Math.Max(worstDay, Math.Abs(F(slider, b, 1.0, 1.0) - 1.0));
+                    double outp = b * night;
+                    if (outp < prevOut - 1e-9) inverts = true;
+                    prevOut = outp;
+                }
+            }
+            check("I21 torch falloff at 0 is exactly vanilla", worstOff < 1e-9, "worst " + worstOff);
+            check("I21 torch falloff never adds light", worstOver < 1e-9, "worst gain " + worstOver);
+            check("I21 torch falloff keeps a floor", minFactor >= Const(material, "VV_TERRAIN_FALLOFF_MIN") - 1e-9,
+                  "min factor " + minFactor);
+            check("I21 a brighter torch never ends up darker", !inverts, "light output inverts along the falloff");
+            check("I21 torch falloff is off in full daylight", worstDay < 1e-9, "worst " + worstDay);
+            double dim = F(1.0, 0.2, 0.0, 0.0), half = F(0.5, 0.2, 0.0, 0.0);
+            check("I21 the slider steepens a dim wall, more at 1 than at 0.5",
+                  dim < half && half < 0.999, $"factor at b 0.2: slider 1 {dim:F3}, slider 0.5 {half:F3}");
+            check("I21 the falloff is applied to the terrain's lit colour",
+                  material.Contains("litColor.rgb *= vvTerrainTorchFalloff(blockLight);"),
+                  "vvTerrainMaterialPrimary no longer applies it");
         }
     }
 }

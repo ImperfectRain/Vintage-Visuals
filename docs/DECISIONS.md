@@ -3119,3 +3119,30 @@ blocks away on coral, chalk and granite ashlar and granite cobblestone
 **Evidence.** A check fails if the dark cap exceeds 0.4 or reaches the light
 cap, or if the joint term stops fading; two mutations prove it. Not seen in
 game.
+
+## D70 - An optional slider steepens the game's own torch falloff on blocks
+
+**Context.** D69 in game (2026-11-25): more natural, but a room lit by a few
+torches reads evenly bright, with no pooling of light by each flame. Vanilla
+spreads block light in near-linear steps of one level per block, so the walls
+between two torches are almost as bright as the walls beside one.
+
+**Decision.** Elijah chose a slider over a fixed change: `PseudoPBR.TorchFalloff`
+(0..1, default 0, Materials > Light response, "Torch light falloff"). The
+terrain shader reads the game's own block light (`vv_blockLight`, D68), takes
+its mean as a level `b`, and above zero rescales vanilla's lit colour by
+`(steep + 0.08) / (b + 0.08)` with `steep = 0.85 * (b / 0.85)^(1 + 2 * amount)`.
+Light at or above 0.85 (beside the flame) is untouched, so the slider only
+darkens the dim edge of a torch's reach and never adds light; the factor is
+floored at 0.4 so a far wall is never black, and it fades out with
+`vv_sunExposure * vvTerrainSunPresence()` so daylit blocks keep vanilla light.
+It is a reshaping of the game's value, not a new light: the light still comes
+only from where the game says it does. Blocks only; creatures, items and
+particles keep vanilla light, which can make a mob look brighter than the wall
+behind it at full slider.
+
+**Evidence.** I21 walks the shipped function statement by statement and fails
+if the slider at 0 changes anything, if it ever brightens, if it drops below
+its floor, if a brighter vanilla light can come out darker, or if it acts in
+full daylight; two mutations prove the floor and the daylight fade. L2, not seen
+in game; performance not measured (one pow per fragment).

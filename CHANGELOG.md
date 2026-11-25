@@ -24,6 +24,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   catches the light on the side facing the flame and the joints between
   stones fall into shade, at night and underground too, and only near the
   torch. Debug view 74 shows it alone.
+- **Torch light falloff (optional).** A new slider, Torch light falloff
+  (off by default), makes torchlight on blocks fade faster away from the
+  flame, so a room pools light around each torch instead of being evenly
+  lit. It never brightens anything and leaves daylight alone.
 - **Reflections on terrain are back.** Shiny and wet blocks now reflect a
   small, pixel-locked picture of what they face: the sky, the horizon and,
   with Scene reflections on, the actual trees and stone on screen. Rough

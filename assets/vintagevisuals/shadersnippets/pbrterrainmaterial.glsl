@@ -31,6 +31,7 @@ uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
 uniform vec3 vv_pbrOrigin;           // camera world position, wrapped to VV_TERRAIN_ORIGIN_PERIOD on the CPU
+uniform float vv_pbrTorchFalloff;    // steepens the game's torch falloff on blocks (D70); 0 is vanilla
 uniform float vv_pbrCreviceWater;    // water follows the texture's relief; 0 is the even film from before
 uniform float vv_weatherRain;        // how hard rain is falling, a fact; 0 means no streams
 
@@ -2427,6 +2428,35 @@ float vvTerrainEmissiveGlow(float glowLevel, vec2 materialUv)
     return vvEmissiveGlow(glowLevel) * vvTerrainSecondaryTexel(materialUv).a;
 }
 
+// Torch light falloff (D70, `pbr_torchfalloff`). Vanilla lights a block by
+// max(sun, block light) per vertex, and one torch reaches about 14 blocks, so
+// a few torches light a small room nearly evenly and nothing pools. This
+// steepens that falloff from the game's own per-vertex block light
+// (vv_blockLight): bright enough to be right by a flame (FULL) keeps all of
+// its light, and below that the light falls as a higher power of itself, so
+// the dim edge of a torch's reach gets darker while the flame's surroundings
+// do not change. It never adds light. FLOOR keeps the ratio from blowing up
+// near darkness, MIN bounds it, and it fades out where daylight reaches,
+// where vanilla's brightness is the sun's, not the torch's.
+// Zero at vv_pbrTorchFalloff 0, and an unset uniform reads as vanilla.
+// Blocks only: creatures and items keep vanilla light. No texture read.
+const float VV_TERRAIN_FALLOFF_FULL = 0.85;
+const float VV_TERRAIN_FALLOFF_POWER = 2.0;   // extra exponent at the slider's top
+const float VV_TERRAIN_FALLOFF_FLOOR = 0.08;
+const float VV_TERRAIN_FALLOFF_MIN = 0.4;
+
+float vvTerrainTorchFalloff(vec3 torch)
+{
+    float amount = clamp(vv_pbrTorchFalloff, 0.0, 1.0);
+    if (amount < 0.001) return 1.0;
+    float b = (torch.r + torch.g + torch.b) / 3.0;
+    if (b <= 0.0 || b >= VV_TERRAIN_FALLOFF_FULL) return 1.0;
+    float steep = VV_TERRAIN_FALLOFF_FULL * pow(b / VV_TERRAIN_FALLOFF_FULL, 1.0 + VV_TERRAIN_FALLOFF_POWER * amount);
+    float ratio = (steep + VV_TERRAIN_FALLOFF_FLOOR) / (b + VV_TERRAIN_FALLOFF_FLOOR);
+    float daylight = clamp(vv_sunExposure, 0.0, 1.0) * vvTerrainSunPresence();
+    return mix(1.0, max(ratio, VV_TERRAIN_FALLOFF_MIN), 1.0 - daylight);
+}
+
 vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                               vec2 materialUv, vec3 cameraRelativePos,
                               float shadowBrightness, float fogAmount,
@@ -2437,6 +2467,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     // Vanilla's blockLight is the sun and block colours mixed (or unwritten
     // with dynamic lights off); every torch term below wants the torch alone.
     blockLight = vvTerrainTorchLight();  // not vanilla's sun-mixed colour
+    litColor.rgb *= vvTerrainTorchFalloff(blockLight);
     if (vvTerrainIsFlora())
         return vvTerrainFloraShade(litColor, baseColor, faceNormal, cameraRelativePos,
                                    fogAmount, murkiness);

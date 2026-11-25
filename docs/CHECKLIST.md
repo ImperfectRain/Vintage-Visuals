@@ -120,6 +120,7 @@ from the source texture.
 | Water in crevices: local pools, wall streams (D64, retuned D65, rebuilt on load-time maps D67) | x | x | x | x | – | – | – | – | x |
 | Torchlight relief on per-pixel normals (D65) | x | x | x | x | – | – | – | – | x |
 | Crevice maps at load: joints, stone shape, rain paths (D67) | x | x | x | x | – | – | – | – | x |
+| Torch light falloff slider on terrain (D70) | x | x | x | x | – | – | – | – | x |
 
 ---
 

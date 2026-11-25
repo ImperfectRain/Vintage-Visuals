@@ -134,6 +134,7 @@ namespace VintageVisuals.Ui
             { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
             { "pbr_gusts", "Needs wind. Watch a grass field or crowns from a little way off." },
             { "pbr_contactshade", "Shows at the foot of grass, flowers and crops, close up." },
+            { "pbr_torchfalloff", "Shows in a room or cave lit by torches: walls beside a torch stay bright, walls between torches fall darker. Blocks only; creatures and items keep vanilla light." },
             { "pbr_crevicewater", "Shows on stone and brick open to the sky: pools in the joints between stones while the ground is wet, streams sliding down walls along each stone while it rains. Debug view 73 shows the joints and paths found, 75 the water." },
             { "pbr_damp", "Shows on rough stone, logs and soil under trees or in half-shade, in a rainy climate." },
             { "pbr_drips", "Stand under leaves during or just after rain." },
@@ -288,7 +289,7 @@ namespace VintageVisuals.Ui
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
                 "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
-                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_crevicewater", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
+                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_crevicewater", "pbr_torchfalloff", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 

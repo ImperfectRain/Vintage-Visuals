@@ -734,6 +734,18 @@
         "clientSide": true,
         "weight": 103
       },
+      "pbr_torchfalloff": {
+        "ingui": "Torch light falloff",
+        "comment": "Makes light pool around each torch, lantern and lava instead of filling a room evenly, by steepening the game's own falloff on blocks. It only takes light away from the dim edge of a torch's reach, never adds any. Needs Surface materials. 0 is vanilla.",
+        "default": 0.0,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 104
+      },
       "pbr_drips": {
         "ingui": "Drips from wet leaves",
         "comment": "Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.",
