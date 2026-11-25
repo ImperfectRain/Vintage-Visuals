@@ -3048,3 +3048,47 @@ runtime cost not measured.
 **Limits.** Basalt brick vertical joints and a few short dry-stone joints are
 missed. Paths are traced for an upright texture; a texture turned on its face
 gets wet joints and no streams. Pools stop at the block edge.
+
+## D68 - Torch terms read the block light alone; a stream is where paths merge
+
+**Context.** D67 in game (2026-11-25, four screenshots). On ashlar (the
+game's `stonebricks`, textures `block/stone/brick/*`) debug view 73 showed
+every flat stone face flooded with stream, hatched diagonally; view 75 showed
+chalk ashlar walls as cyan speckle. In a coral cobblestone room a wall torch
+changed nothing near it, and view 74 lit daylit walls bright and flat.
+
+**Cause - streams.** D67 scaled the raw count of rain through each texel. On
+a flat face every column carries the rain of every texel above it, so each
+column of a flat stone was as "full" as a real channel, and each column had
+its own path hash, so the drops on neighbouring columns were out of step:
+speckle. The diagonal hatching was the side preference letting paths wander
+on a flat face.
+
+**Cause - torch.** Every terrain torch term (relief, highlight, the reflected
+torch ceiling, views 9 and 74) read vanilla's `blockLight` varying. In
+`chunkopaque.vsh` that is written only when dynamic lights are on, and then
+holds `(2*bSun*sun + bBlock*block + ...) / (...)`: the sun and block light
+COLOURS mixed by brightness, about as bright in daylight as beside a torch.
+With dynamic lights off it is never written. Neither is the torch.
+
+**Decision.** `pbrterrainmaterial` carries its own varying, `vv_blockLight =
+rgbaLightIn.rgb` (the block light alone, with vanilla's falloff), in both
+terrain programs and in the same group as its fragment half; the terrain
+material path reads it through `vvTerrainTorchLight()`. Water-holding stone
+is shaded by its baked shape at full strength (the D66 softening was for the
+grainy luminance normal), `VV_TERRAIN_TORCH_SHAPE` 2.5, relief 1.6, cap 0.75.
+
+The flow amount is now convergence: rain through a texel over the length of
+the longest path reaching it plus one, which is exactly 1 on a column nothing
+joins. Streams start at 1.25 and are full at 3.25. Flat faces stay a film;
+water gathers along the joints and drips from their ends and from under
+stones. Ported to C# with the fixture regenerated; a check builds a flat
+striped face and fails if it carries any stream.
+
+**Evidence.** Previews of the reference on chalk, basalt and granite ashlar,
+coral, granite and chalk cobblestone and two dry stones
+(`/mnt/project-files/audit/crevice-v2-*`). Not seen in game.
+
+**Limits.** Coral cobblestone's joints are mostly missed: its pores are
+deeper in the top-hat than the gaps between its stones. The legacy pseudopbr
+path still reads vanilla's `blockLight`; it is not the active terrain path.

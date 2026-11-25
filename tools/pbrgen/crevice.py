@@ -23,8 +23,9 @@ several texels, so it is measured here, once, on the CPU:
   flow    for a wall face (rows run down): water takes the lowest of the three
           texels below it on the shape, so it slides off a bump's shoulder and
           gathers in channels; under a ledge it runs sideways along the joint;
-          rain lands everywhere and the paths that collect the most become the
-          visible streams. phase is how far along its path each texel is, plus
+          rain lands everywhere, and where paths MERGE (more rain through a
+          texel than one unjoined path would carry) is a visible stream; a
+          flat face, where every column runs alone, stays a film. phase is how far along its path each texel is, plus
           the path's own offset, so the shader can slide drops along it.
 
 Every array is HxW float64 in 0..1, indexed [y, x], tiling at the edges.
@@ -48,9 +49,13 @@ FLOW_SIDE_PREFERENCE = 0.015
 FLOW_LEDGE = 0.02
 FLOW_LEDGE_SLACK = 0.01
 FLOW_STEPS = 96
-FLOW_NORMALISE = 0.35
-FLOW_START = 0.15
-FLOW_RANGE = 0.35
+# D67b: a stream is where paths MERGE. Convergence is the rain through a
+# texel over the length of the longest path reaching it: exactly 1 on a
+# column nothing joins (every flat stone face), above 1 where paths meet.
+# D67 scaled the raw count instead, and on ashlar every column of a flat
+# face carried as much as a channel - the whole face read as a stream.
+FLOW_CONVERGE_START = 1.25
+FLOW_CONVERGE_RANGE = 2.0
 PHASE_PERIOD = 9.0
 
 
@@ -210,9 +215,8 @@ def flow(sh, keep):
                     S[y, x] = s
                     R[y, x] = x0 * 31 + y0
                 y, x = int(nxt[y, x, 0]), int(nxt[y, x, 1])
-    norm = np.log(1.0 + A.max() * FLOW_NORMALISE)
-    an = np.clip(np.log(1.0 + A) / norm, 0.0, 1.0)
-    amount = np.clip((an - FLOW_START) / FLOW_RANGE, 0.0, 1.0)
+    converge = A / (S + 1.0)
+    amount = np.clip((converge - FLOW_CONVERGE_START) / FLOW_CONVERGE_RANGE, 0.0, 1.0)
     phase = np.zeros((H, W))
     for y in range(H):
         for x in range(W):

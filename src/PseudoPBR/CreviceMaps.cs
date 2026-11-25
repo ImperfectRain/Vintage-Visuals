@@ -38,9 +38,12 @@ namespace VintageVisuals.PseudoPBR
         public const double FlowLedge = 0.02;
         public const double FlowLedgeSlack = 0.01;
         public const int FlowSteps = 96;
-        public const double FlowNormalise = 0.35;
-        public const double FlowStart = 0.15;
-        public const double FlowRange = 0.35;
+        /// <summary>D67b: a stream is where paths MERGE. Convergence is the
+        /// rain through a texel over the length of the longest path reaching
+        /// it, exactly 1 on a column nothing joins. D67 scaled the raw count,
+        /// and every column of a flat ashlar face read as a stream.</summary>
+        public const double FlowConvergeStart = 1.25;
+        public const double FlowConvergeRange = 2.0;
         public const double PhasePeriod = 9.0;
 
         /// <summary>Above this edge length a texture keeps the plain luminance
@@ -320,17 +323,12 @@ namespace VintageVisuals.PseudoPBR
                     }
                 }
 
-            double maxA = 0.0;
-            for (int i = 0; i < n; i++) if (a[i] > maxA) maxA = a[i];
-            double norm = Math.Log(1.0 + maxA * FlowNormalise);
-
             amount = new double[n];
             phase = new double[n];
             for (int i = 0; i < n; i++)
             {
-                double an = Math.Log(1.0 + a[i]) / norm;
-                an = an < 0.0 ? 0.0 : (an > 1.0 ? 1.0 : an);
-                double t = (an - FlowStart) / FlowRange;
+                double converge = a[i] / (s[i] + 1.0);
+                double t = (converge - FlowConvergeStart) / FlowConvergeRange;
                 amount[i] = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
                 double ph = (s[i] / PhasePeriod + Hash01(r[i])) % 1.0;
                 phase[i] = ph < 0.0 ? ph + 1.0 : ph;

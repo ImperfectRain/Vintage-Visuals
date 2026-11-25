@@ -38,6 +38,15 @@ uniform float vv_weatherRain;        // how hard rain is falling, a fact; 0 mean
 // the open. This group writes it in the vertex shader of the same program, so
 // both halves of the varying apply or roll back together.
 in float vv_sunExposure;
+// The block light alone, per vertex, from rgbaLightIn.rgb (D67b; see
+// pbrterrainmaterial.yaml for why vanilla's `blockLight` is not it). Zero
+// where no torch reaches, which is "no torch effect".
+in vec3 vv_blockLight;
+
+vec3 vvTerrainTorchLight()
+{
+    return clamp(vv_blockLight, vec3(0.0), vec3(2.0));
+}
 
 uniform float vv_pbrFoliage;   // light passing through leaves; 0 is vanilla
 uniform float vv_pbrDapple;        // canopy shade between sunflecks; 0 is vanilla
@@ -767,8 +776,8 @@ vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight, 
 // average stays vanilla's. Zero at vv_pbrBlockLight 0; bounded to a share of
 // what vanilla lit so it cannot invent light vanilla did not have.
 // Cost: one derivative-based direction per fragment, no texture read.
-const float VV_TERRAIN_TORCH_RELIEF = 1.2;
-const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.6;
+const float VV_TERRAIN_TORCH_RELIEF = 1.6;
+const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.75;
 // D66, after view 74 showed the D65 term as black-and-white salt and pepper
 // on a cobble wall beside a torch (in game, 2026-11-25). Two causes: the
 // recovered direction tilts up to ~70 degrees off the face for a torch
@@ -789,7 +798,7 @@ const float VV_TERRAIN_TORCH_HOLLOW = 0.8;
 // relief the approved preview showed (tools/pbrgen, crevice-torch-proposal).
 // The plain layout keeps the D66 behaviour. Four reads of the second atlas,
 // only where block light reaches a water-holding texel.
-const float VV_TERRAIN_TORCH_SHAPE = 2.0;     // tilt per unit of shape slope per texel
+const float VV_TERRAIN_TORCH_SHAPE = 2.5;     // tilt per unit of shape slope per texel
 
 vec3 vvTerrainTorchNormal(VvTerrainMaterial m, vec2 materialUv)
 {
@@ -807,7 +816,10 @@ vec3 vvTerrainTorchNormal(VvTerrainMaterial m, vec2 materialUv)
 float vvTerrainTorchShade(VvTerrainMaterial m, vec3 toTorch, vec3 reliefNormal)
 {
     vec3 l = vvTerrainSafeNormalize(mix(m.faceNormal, toTorch, VV_TERRAIN_TORCH_TILT), m.faceNormal);
-    vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, VV_TERRAIN_TORCH_NORMAL), m.faceNormal);
+    // The softening is for the luminance normal, which is mostly grain (D66).
+    // The stone shape is coherent by construction and is used as it is.
+    float soften = m.holdsWater > 0.5 ? 1.0 : VV_TERRAIN_TORCH_NORMAL;
+    vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, soften), m.faceNormal);
     float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);
     float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;
     return delta + hollow;
@@ -2411,6 +2423,9 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                               vec3 blockLight, float glowLevel)
 {
     if (vv_pbrEnabled < 0.5) return litColor;
+    // Vanilla's blockLight is the sun and block colours mixed (or unwritten
+    // with dynamic lights off); every torch term below wants the torch alone.
+    blockLight = vvTerrainTorchLight();  // not vanilla's sun-mixed colour
     if (vvTerrainIsFlora())
         return vvTerrainFloraShade(litColor, baseColor, faceNormal, cameraRelativePos,
                                    fogAmount, murkiness);
@@ -2477,6 +2492,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
 {
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode == 0) return color;
+    blockLight = vvTerrainTorchLight(); // as the shading reads it
 
     // Shading path: which code is actually shading each terrain fragment.
     // Blue is plant tissue on the foliage path (vanilla plus transmission only),

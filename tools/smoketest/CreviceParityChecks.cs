@@ -97,6 +97,7 @@ namespace VintageVisuals.SmokeTest
 
                 SpeckRule(maps, FixtureHeight(size), size, check);
                 FlowRule(maps, size, check);
+                FlatFaceRule(check);
             }
         }
 
@@ -141,6 +142,25 @@ namespace VintageVisuals.SmokeTest
             check("no kept joint is smaller than a joint can be", small == 0, small + " small components kept");
             check("a dark speck inside a stone never pools", specks > 0 && speckPools == 0,
                 speckPools + " of " + specks + " interior specks pool");
+        }
+
+        /// <summary>D67b: a flat stone face, where every column runs alone,
+        /// carries no stream; the water gathers in and below the joints. D67
+        /// scaled the raw count and flooded every flat ashlar face.</summary>
+        private static void FlatFaceRule(Action<string, bool, string> check)
+        {
+            const int n = 32;
+            var lum = new double[n * n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                    lum[y * n + x] = (y % 16 < 2 ? 40 : 150 + ((x * 3 + y * 5) % 3)) / 255.0;
+            CreviceMaps.Result maps = CreviceMaps.Build(MaterialAtlas2Builder.Normalise(lum), n, n);
+            double worst = 0.0;
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                    if (y % 16 >= 5 && y % 16 <= 12) worst = Math.Max(worst, maps.Flow[y * n + x]);
+            check("a flat stone face with nothing joining carries no stream", worst < 0.01,
+                "strongest stream on a flat face " + worst.ToString("F3"));
         }
 
         /// <summary>Streams gather: most of the face carries little water and

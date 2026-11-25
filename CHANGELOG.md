@@ -20,9 +20,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wet. Pools are dark, glossy and reflect the sky. New slider: Water in
   crevices (0 keeps the old even wet look). Debug view 73 shows the joints and
   rain paths the mod found, 75 where the water is right now.
-- **Torchlight shades the surface relief.** Near a torch, the bumps of a
-  block now catch the light on the side facing the flame and fall into shade
-  on the other, at night and underground too. Debug view 74 shows it alone.
+- **Torchlight shades the surface relief.** Near a torch, each stone now
+  catches the light on the side facing the flame and the joints between
+  stones fall into shade, at night and underground too, and only near the
+  torch. Debug view 74 shows it alone.
 - **Reflections on terrain are back.** Shiny and wet blocks now reflect a
   small, pixel-locked picture of what they face: the sky, the horizon and,
   with Scene reflections on, the actual trees and stone on screen. Rough

@@ -201,13 +201,29 @@ namespace VintageVisuals.SmokeTest
             check("torchlight shades each texel's normal in the diffuse and leaves a flat texel alone",
                 rDir >= 0 && rGate > rDir &&
                 relief.Contains("float shade = vvTerrainTorchShade(m, toTorch, vvTerrainTorchNormal(m, materialUv));") &&
-                shadeFn.Contains("vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, VV_TERRAIN_TORCH_NORMAL), m.faceNormal);") &&
+                shadeFn.Contains("vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, soften), m.faceNormal);") &&
                 (GlslEval.FunctionBody(materialCode, "vec3 vvTerrainTorchNormal(") ?? "").Contains("if (m.holdsWater < 0.5) return m.normal;") &&
                 shadeFn.Contains("float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);") &&
                 shadeFn.Contains("float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;") &&
                 relief.Contains("clamp(vv_pbrBlockLight, 0.0, 1.0)") &&
                 primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos, materialUv), vec3(0.0));"),
                 "without it a torch lights a cobble face evenly and its relief is shaded only by the sun, which is absent at night and underground");
+
+            // D67b: vanilla's `blockLight` varying is the sun and block light
+            // colours mixed by brightness (and unwritten with dynamic lights
+            // off), so a torch term reading it shades a daylit wall as hard as
+            // one beside the flame. The torch is rgbaLightIn.rgb, carried by
+            // this group's own varying in both programs.
+            string materialYaml = File.ReadAllText(Path.Combine(repo, "assets", "vintagevisuals", "shaderpatches", "pbrterrainmaterial.yaml"));
+            string debugFn = GlslEval.FunctionBody(materialCode, "vec4 vvTerrainMaterialPrimaryDebug(") ?? "";
+            check("terrain torch effects read the block light alone, not vanilla's sun-mixed colour",
+                primary.Contains("blockLight = vvTerrainTorchLight();") &&
+                debugFn.Contains("blockLight = vvTerrainTorchLight();") &&
+                materialCode.Contains("in vec3 vv_blockLight;") &&
+                materialYaml.Contains("vv_blockLight = rgbaLightIn.rgb; // chunkopaque") &&
+                materialYaml.Contains("vv_blockLight = rgbaLightIn.rgb; // chunktopsoil") &&
+                Regex.Matches(materialYaml, @"out vec3 vv_blockLight;").Count == 2,
+                "vanilla's blockLight is about as bright in daylight as beside a torch, so the relief lit whole rooms evenly");
 
             check("only the capture group defines the scene-capture switch",
                 !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&

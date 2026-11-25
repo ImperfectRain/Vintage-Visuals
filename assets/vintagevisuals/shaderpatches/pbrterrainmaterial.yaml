@@ -144,6 +144,13 @@
 #
 # rgbaLightIn.a is vanilla's per-vertex sun light level, 0 under a roof and 1 in
 # the open. It just never reaches the fragment stage on its own.
+#
+# rgbaLightIn.rgb is the BLOCK light alone - torches, lanterns, lava - with its
+# falloff, per vertex (D67b). Vanilla's own `blockLight` varying is not that:
+# it is written only when dynamic lights are on, and then holds the sun and
+# block colours MIXED by brightness, so it is about as bright in daylight as
+# beside a torch. Every terrain torch effect read it until D67b, which is why
+# a torch shaded a whole room evenly and nothing near the flame changed.
 
 - type: insert_after
   phase: Declarations
@@ -151,6 +158,7 @@
   tokens: out vec3 blockLight;
   content: |
     out float vv_sunExposure; // vintagevisuals: sky exposure for weather on terrain
+    out vec3 vv_blockLight;   // vintagevisuals: the torch light alone (D67b)
 
 - type: insert_after
   phase: Material
@@ -158,6 +166,7 @@
   tokens: rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, camPos);
   content: |
     vv_sunExposure = rgbaLightIn.a; // chunkopaque
+    vv_blockLight = rgbaLightIn.rgb; // chunkopaque
 
 - type: insert_after
   phase: Declarations
@@ -165,6 +174,7 @@
   tokens: out vec3 blockLight;
   content: |
     out float vv_sunExposure; // vintagevisuals: sky exposure for weather on terrain
+    out vec3 vv_blockLight;   // vintagevisuals: the torch light alone (D67b)
 
 - type: insert_after
   phase: Material
@@ -172,3 +182,4 @@
   tokens: rgba = applyLight(rgbaAmbientIn, rgbaLightIn, renderFlags, cameraPos);
   content: |
     vv_sunExposure = rgbaLightIn.a; // chunktopsoil
+    vv_blockLight = rgbaLightIn.rgb; // chunktopsoil
