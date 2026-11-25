@@ -35,6 +35,8 @@ namespace VintageVisuals.Water
         public const string OwnDropsUniform = "vv_waterOwnDrops";
         public const string GlintsUniform = "vv_waterGlints";
         public const string WavesUniform = "vv_waterWaves";
+        public const string CausticsUniform = "vv_waterCaustics";
+        public const string CausticWavesUniform = "vv_waterCausticWaves";
         public const string DebugUniform = "vv_waterDebug";
 
 
@@ -123,6 +125,8 @@ namespace VintageVisuals.Water
             // One drop system: vanilla's fixed-grid droplet rings step aside while ours are on.
             program.Uniform(OwnDropsUniform, config.RainRipples > 0.001f ? 1f : 0f);
             program.Uniform(GlintsUniform, config.Glints);
+            program.Uniform(CausticsUniform, config.Caustics);
+            program.Uniform(CausticWavesUniform, QualityTier.WaterCausticWaves);
             program.Uniform(DebugUniform, config.DebugView);
 
             // The scene vocabulary (scene.glsl) goes through the ONE shared

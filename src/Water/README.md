@@ -47,6 +47,13 @@ never reaches it.
    the texel normal, shadow-aware, hidden by the game's cloud cover, broken into
    per-texel glitter and shouldered at a luminance of 1.2 (D76). Vanilla's broad sun highlight steps back to a
    quarter at full strength (`vvWaterVanillaSpecularKeep`).
+6. **Caustics** (`Caustics`, D77): the bed seen through a top-face texel (from
+   vanilla's `depthTex`) gets the sunlight six short focusing waves gather onto
+   it, a refraction model (`vvWaterCausticGain`, 0 on flat water) sampled where
+   the refracted sun entered the surface, snapped to 1/32 block. Gated by the
+   glints' visible-sun term and the surface shadow, added to the colour after
+   the opacity is final. Fades by 8 blocks of depth and with distance. DATA
+   GAP: the bed's colour is assumed. Tier: 3 waves on Low, 6 above.
 
 Waves: four travelling waves with whole cycles per 4096 blocks plus two
 value-noise chop octaves on wrapped cells, so the CPU origin wrap is seamless.
@@ -69,7 +76,8 @@ Wind sets their height.
 ## Debug views (`Water.DebugView`)
 
 1 texel normal, 2 reflected sky image, 3 depth behind the surface (8 blocks is
-white), 4 reflected share x4, 5 glints alone, 6 the water texel grid.
+white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic
+light on the bed.
 
 ## Status
 

@@ -190,6 +190,9 @@ namespace VintageVisuals.Common
                 case "water_glints":
                     _mod.ConfigManager.Config.Water.Glints = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Glints);
                     break;
+                case "water_caustics":
+                    _mod.ConfigManager.Config.Water.Caustics = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Caustics);
+                    break;
                 case "water_debug":
                     _mod.ConfigManager.Config.Water.DebugView = tree.GetFloat("value", _mod.ConfigManager.Config.Water.DebugView);
                     break;

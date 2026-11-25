@@ -506,6 +506,10 @@ namespace VintageVisuals.Ui
                    "Sharp highlights of the sun and moon on the waves, one water pixel at a time. The game's own broad highlight steps back as these come in. 0 is off.",
                    R, "Water", 0f, 1f, 0.05f);
 
+            Slider("water_caustics", "Water.Caustics", "Caustics",
+                   "Moving lines of sunlight the waves focus onto the bottom of open water. They follow the game's sun colour, shadows and clouds, sharpen in a block or two of depth and fade out deeper. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
             // ---- DEBUG -------------------------------------------------------
             const SettingTab D = SettingTab.Debug;
 
@@ -522,12 +526,12 @@ namespace VintageVisuals.Ui
                    D, "Debug utilities", true, SettingCost.Free, false, true);
 
             Slider("water_debug", "Water.DebugView", "Water debug view",
-                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid.",
-                   D, "Water", 0f, 6f, 1f, null, false, SettingCost.Free, false, true);
+                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed.",
+                   D, "Water", 0f, 7f, 1f, null, false, SettingCost.Free, false, true);
 
             // ---- PERFORMANCE (on the Debug tab) -------------------------------
             Slider("perf_quality", "Performance.Quality", "Quality tier",
-                   "0 Low, 1 Medium, 2 High, 3 Ultra. Scales what the effects cost (canopy taps, detail distance, water blur and ripple layers), never switches on an effect that is off. 2 is the reference look.",
+                   "0 Low, 1 Medium, 2 High, 3 Ultra. Scales what the effects cost (canopy taps, detail distance, water blur, ripple layers and caustic waves), never switches on an effect that is off. 2 is the reference look.",
                    D, "Performance", 0f, 3f, 1f);
 
             Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",

@@ -250,7 +250,8 @@ outColor, outGlow              vanilla's own buffers
         |
 Water surface                  src/Water/         patched chunkliquid.fsh (OIT)
   water.glsl on vanilla's finished water colour, before vanilla's fog:
-  texel-locked sky reflection, depth from vanilla's depthTex, ripples, glints;
+  texel-locked sky reflection, depth from vanilla's depthTex, ripples, glints,
+  caustics on the bed behind each texel (same depthTex, no pass, no sampler);
   scene.glsl + pbrcore.glsl injected again, scene block via UploadSceneTo
         |
         |

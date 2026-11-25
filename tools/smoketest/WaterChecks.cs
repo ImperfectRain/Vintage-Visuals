@@ -36,6 +36,99 @@ namespace VintageVisuals.SmokeTest
             Tiers(check, repo);
             PerDropRipples(repo, check);
             EyeFromView(check);
+            Caustics(check, water);
+        }
+
+        /// <summary>
+        /// Caustics (D77): light the waves focus onto the bed, added by the
+        /// water pass. The interactions that matter are evaluated from the
+        /// shipped lines: flat water focuses nothing, a focus line is bright
+        /// but shoulders, the light needs the same visible sun the glints do,
+        /// and the addition never touches the water's opacity.
+        /// </summary>
+        static void Caustics(Action<string, bool, string> check, string water)
+        {
+            string gainBody = FunctionBody(water, "float vvWaterCausticGain(");
+            var gainStmts = Statements(gainBody);
+            int from = gainStmts.FindIndex(x => x.StartsWith("float lensDepth =", StringComparison.Ordinal));
+            var consts = new[] { "VV_WATER_CAUSTIC_FOCUS", "VV_WATER_ETA", "VV_WATER_CAUSTIC_SHARP",
+                                 "VV_WATER_CAUSTIC_SPREAD", "VV_WATER_CAUSTIC_PEAK" };
+            double Gain(double depth, Val h, double relief)
+            {
+                var sy = Syms("depth", depth, "relief", relief);
+                sy["h"] = h;
+                foreach (var c in consts) sy[c] = new Val(Const(water, c));
+                for (int i = Math.Max(0, from); i < gainStmts.Count; i++)
+                {
+                    string st = gainStmts[i];
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Scalar(Rhs(st), sy);
+                    var m = Regex.Match(st, @"^float (\w+) =");
+                    if (m.Success) sy[m.Groups[1].Value] = Eval(Rhs(st), sy);
+                }
+                return double.NaN;
+            }
+
+            double relief0 = Const(water, "VV_WATER_CAUSTIC_RELIEF");
+            double flatWorst = 0, surfaceWorst = 0;
+            foreach (double d in new[] { 0.25, 1.0, 2.5, 6.0 })
+                flatWorst = Math.Max(flatWorst, Math.Abs(Gain(d, Vec(0, 0, 0), relief0)));
+            foreach (var h in new[] { Vec(30, 5, -20), Vec(-40, 0, 40), Vec(10, 10, 10) })
+                surfaceWorst = Math.Max(surfaceWorst, Math.Abs(Gain(0.0, h, relief0)));
+            check("caustics: flat water, and a bed right at the surface, gather no light",
+                  from >= 0 && flatWorst < 1e-9 && surfaceWorst < 1e-9, "flat " + flatWorst + ", at the surface " + surfaceWorst);
+
+            // A curvature that puts the bed exactly at a focus (det J = 0)
+            // makes the brightest line; it must be bright and stay below peak.
+            double peak = Const(water, "VV_WATER_CAUSTIC_PEAK");
+            double depthAt = 2.0;
+            double lens = Scalar(Rhs(Statement(gainBody, "float lensDepth =")),
+                                 Syms("depth", depthAt, "VV_WATER_CAUSTIC_FOCUS", Const(water, "VV_WATER_CAUSTIC_FOCUS")));
+            double fAt = lens * (1.0 - Const(water, "VV_WATER_ETA")) * relief0;
+            double focus = fAt > 0 ? Gain(depthAt, Vec(1.0 / fAt, 0, 0), relief0) : 0;
+            check("caustics: a focus line is bright and shoulders below its peak", focus > 0.5 && focus < peak,
+                  "gain at focus " + focus + ", peak " + peak);
+
+            string surf = FunctionBody(water, "vec4 vvWaterSurface(");
+            var stmts = Statements(surf);
+            string sunLightExpr = Rhs(Statement(surf, "float sunLight ="));
+            Func<double, double, double, double> sun = (up, clear, shadow) =>
+                Scalar(sunLightExpr, Syms("sunUp", up, "clearSky", clear, "shadowBright", shadow));
+            check("caustics need a sun that is up, visible past the clouds, and not shadowed at the surface",
+                  sun(0, 1, 1) < 1e-12 && sun(1, 0, 1) < 1e-12 && sun(1, 1, 0) < 1e-12 && Math.Abs(sun(1, 1, 1) - 1) < 1e-12,
+                  sunLightExpr);
+
+            string lightStmt = Statement(surf, "causticLight = vv_waterSunColor");
+            var lightSyms = Syms("downTransmit", 1.0, "gain", 0.8, "fade", 1.0, "sunLight", 1.0, "caustics", 0.0);
+            lightSyms["vv_waterSunColor"] = Vec(1, 1, 1);
+            bool zeroOff = Eval(Rhs(lightStmt), lightSyms).X == 0;
+            lightSyms["caustics"] = new Val(0.6);
+            bool onLights = Eval(Rhs(lightStmt), lightSyms).X > 0;
+            check("caustics: the slider at 0 adds no light, and above 0 it does", zeroOff && onLights, lightStmt);
+
+            int addAt = stmts.FindIndex(x => x.StartsWith("premult += causticLight", StringComparison.Ordinal));
+            int lastAlpha = stmts.FindLastIndex(x => Regex.IsMatch(x, @"^(float )?outAlpha\s*[-+*/]?="));
+            int resultAt = stmts.FindIndex(x => x.StartsWith("vec4 result =", StringComparison.Ordinal));
+            string addExpr = addAt >= 0 ? stmts[addAt] : "";
+            bool alphaFree = addAt > lastAlpha && addAt < resultAt && lastAlpha >= 0 && !addExpr.Contains("outAlpha =");
+            double ab = Const(water, "VV_WATER_CAUSTIC_ALBEDO");
+            double At(double light, double alpha)
+            {
+                var sy = Syms("outAlpha", alpha, "VV_WATER_CAUSTIC_ALBEDO", ab);
+                sy["causticLight"] = Vec(light, light, light);
+                return addAt >= 0 ? Eval(Rhs(addExpr), sy).X : double.NaN;
+            }
+            check("caustics add to the colour only: the opacity is final before them, and none adds nothing",
+                  alphaFree && At(0, 0.5) == 0 && At(1, 0.5) > 0 && At(1, 1.0) == 0 && ab < 1.0,
+                  "add at " + addAt + ", last alpha at " + lastAlpha + ", result at " + resultAt);
+
+            var ks = Regex.Matches(gainBody, @"vec2\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)")
+                          .Select(m => (double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
+                                        double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture)))
+                          .ToList();
+            bool whole = ks.Count >= 8 && ks.All(k => k.Item1 == Math.Floor(k.Item1) && k.Item2 == Math.Floor(k.Item2));
+            check("caustic waves have whole cycles per 4096 blocks",
+                  whole && FunctionBody(water, "vec3 vvWaterCausticWave(").Contains("/ 4096.0") && gainBody.Contains("/ 4096.0"),
+                  ks.Count + " vectors: " + string.Join(" ", ks));
         }
 
         /// <summary>
