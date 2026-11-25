@@ -16,7 +16,7 @@ namespace VintageVisuals.PseudoPBR
     /// - Tries scale with the area tried, so the density near the player is
     ///   what v15 tuned in game, not diluted over the wider ring.
     /// - Beyond <see cref="NearFull"/> the spawn thins smoothly to
-    ///   <see cref="FarShare"/> at the reach: a leaf 50 blocks off is ten or so
+    ///   <see cref="FarShare"/> at the reach (0.3 in D78, 0.45 since D78b): a leaf 50 blocks off is ten or so
     ///   pixels tall and reads as forest motion, not as a leaf, so fewer do
     ///   the same job.
     /// - Beyond <see cref="ViewNear"/>, crowns behind the camera spawn
@@ -38,7 +38,7 @@ namespace VintageVisuals.PseudoPBR
         public const int LegacyCap = 400;
 
         public const float NearFull = 14f;
-        public const float FarShare = 0.3f;
+        public const float FarShare = 0.45f;
         public const float ViewNear = 10f;
         public const float BehindShare = 0.2f;
 
