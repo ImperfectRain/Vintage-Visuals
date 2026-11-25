@@ -21,6 +21,7 @@
 uniform float vv_pbrParticle;         // master, 0 is vanilla
 uniform float vv_pbrParticleSpecular; // how much lobe reaches the image
 uniform float vv_pbrRoughnessBias;    // the same global matte <-> gloss slider everything else uses
+uniform vec3 vv_pbrEye;               // the eye relative to the player origin worldPos uses; 0 is the feet
 
 // One dielectric reflectance for everything. A particle has no material atlas
 // and never will: it is a few pixels of a texture that was authored as a
@@ -58,7 +59,7 @@ vec4 vvApplyParticlePbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 camera
 
         vec3 n = normalize(faceNormal);
         vec3 l = normalize(lightPosition);
-        vec3 v = normalize(-cameraRelativePos);
+        vec3 v = normalize(vv_pbrEye - cameraRelativePos); // from the eye, not the feet (phase 0)
         vec3 h = normalize(l + v);
 
         float ndotl = max(dot(n, l), 0.0);

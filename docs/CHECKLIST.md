@@ -123,6 +123,7 @@ from the source texture.
 | Crevice maps at load: joints, stone shape, rain paths (D67) | x | x | x | x | – | – | – | – | x |
 | Torch light falloff slider on terrain (D70) | x | x | x | x | – | – | – | – | x |
 | Terrain view vectors from the eye (D74) | x | x | x | x | – | – | – | – | x |
+| Reflection phase 0: energy split, soft ceiling, eye distances (D80) | x | x | x | x | – | – | – | – | x |
 
 ---
 

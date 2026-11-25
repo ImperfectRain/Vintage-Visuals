@@ -193,6 +193,14 @@ vec3 vvTerrainToEye(vec3 p)
     return vv_pbrEye - p;
 }
 
+// How far a point is from the EYE, for every distance fade (detail, dapple,
+// flecks, rims, reflection reach). Fog is the exception and keeps vanilla's
+// own feet-origin distance, because the two must agree (reflection phase 0).
+float vvTerrainEyeDistance(vec3 p)
+{
+    return length(vvTerrainToEye(p));
+}
+
 vec2 vvTerrainSnap(vec2 materialUv)
 {
     vec2 size = max(vec2(1.0), vec2(textureSize(vv_materialTex, 0)));
@@ -222,7 +230,7 @@ float vvTerrainDetailFade(vec3 cameraRelativePos)
 {
     float far = max(4.0, vv_pbrDetailDistance);
     float near = far * 0.33;
-    return clamp((far - length(cameraRelativePos)) / max(1.0, far - near), 0.0, 1.0);
+    return clamp((far - vvTerrainEyeDistance(cameraRelativePos)) / max(1.0, far - near), 0.0, 1.0);
 }
 
 vec3 vvTerrainNormalFromTexel(vec4 primary, vec3 faceNormal, float detailFade)
@@ -997,6 +1005,20 @@ vec3 vvTerrainAmbientWeight(VvTerrainMaterial m, vec3 viewDir)
     return f * roughFade * specOcc * max(0.0, vv_pbrAmbient);
 }
 
+// The part of vvTerrainAmbientWeight that Fresnel adds over its head-on value:
+// zero facing the surface, rising toward grazing. Diffuse gives this up, so
+// the reflected and diffuse energy never add up past what arrived. The slider
+// is clamped to 1 here: a stronger reflection slider is a choice of look, and
+// must not drive the diffuse below zero.
+vec3 vvTerrainGrazingShare(VvTerrainMaterial m, vec3 viewDir, vec3 f0)
+{
+    vec3 f = vvFresnelSchlickTerrain(max(dot(m.normal, viewDir), 0.0), f0);
+    float roughFade = (1.0 - m.perceptualRoughness) * (1.0 - m.perceptualRoughness);
+    float specOcc = mix(m.ao, clamp(pow(max(m.ao, 0.02), 1.0 + roughFade), 0.0, 1.0),
+                        clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
+    return max(f - f0, vec3(0.0)) * roughFade * specOcc * clamp(vv_pbrAmbient, 0.0, 1.0);
+}
+
 // The scene lookup, or a miss saying why there was none. The march itself
 // lives in pbrterrainreflect, which owns the capture.
 VvTerrainSceneHit vvTerrainSceneLookup(vec3 origin, vec3 r, vec3 v, bool worthIt)
@@ -1051,7 +1073,7 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     // The scene is traced from the block FACE normal, not the material one:
     // it is geometry, and normal-map grain would steer rays into the floor.
     vec3 sceneR = vvTerrainSafeNormalize(reflect(-v, m.faceNormal), m.faceNormal);
-    float distance = length(cameraRelativePos);
+    float distance = vvTerrainEyeDistance(cameraRelativePos);
     float reach = 1.0 - smoothstep(VV_TREFLECT_MARCH_NEAR, VV_TREFLECT_MARCH_FAR, distance);
     float weight = vvTerrainLuma(vvTerrainAmbientWeight(m, viewDir)) * strength;
     bool worthIt = reach > 0.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;
@@ -1070,10 +1092,16 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     // reflected torch or forge against it erased exactly the reflection a wet
     // cave floor should show (D64).
     float ceiling = max(envLuma, vvTerrainLuma(blockLight)) * VV_TREFLECT_MAX;
-    if (sceneLuma > ceiling && sceneLuma > 1e-5)
+    // A soft knee, not a wall (phase 0): below the ceiling a hit keeps its
+    // full brightness, above it the excess is compressed and can never pass
+    // twice the ceiling. The hard clamp took a sunlit tree down by half; the
+    // knee still stops bloom in the capture from whitening a metal.
+    if (sceneLuma > ceiling && ceiling > 1e-5)
     {
-        sceneColor *= ceiling / sceneLuma;
-        sceneLuma = ceiling;
+        float over = (sceneLuma - ceiling) / ceiling;
+        float kneed = ceiling * (1.0 + over / (1.0 + over));
+        sceneColor *= kneed / sceneLuma;
+        sceneLuma = kneed;
     }
 
     float surfaceLuma = vvTerrainLuma(surfaceColor);
@@ -1420,7 +1448,7 @@ float vvTerrainCanopyDapple(vec3 cameraRelativePos, float fade, float sunVisibil
     if (vv_pbrDapple < 0.001) return 0.0;
     if (!vvTerrainIsCanopyReceiver()) return 0.0;
 
-    float resolvable = clamp(1.0 - (length(cameraRelativePos) - VV_TERRAIN_DAPPLE_FADE_START)
+    float resolvable = clamp(1.0 - (vvTerrainEyeDistance(cameraRelativePos) - VV_TERRAIN_DAPPLE_FADE_START)
                                    / VV_TERRAIN_DAPPLE_FADE_RANGE, 0.0, 1.0);
     if (resolvable * fade < 0.004) return 0.0;
 
@@ -1768,7 +1796,7 @@ vec2 vvTerrainSunfleck(vec3 cameraRelativePos, vec3 faceNormal, vec3 overhead, f
 
     float flatDistance = max(abs(cameraRelativePos.x), abs(cameraRelativePos.z));
     float resolvable = clamp(1.0 - (flatDistance - VV_TERRAIN_FLECK_FADE_START) / VV_TERRAIN_FLECK_FADE_RANGE, 0.0, 1.0)
-                     * (1.0 - smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, length(cameraRelativePos)));
+                     * (1.0 - smoothstep(VV_TERRAIN_FLECK_VIEW_LIMIT * 0.75, VV_TERRAIN_FLECK_VIEW_LIMIT, vvTerrainEyeDistance(cameraRelativePos)));
     if (resolvable < 0.004) return vec2(0.0);
 
     float clearSky = vvTerrainClearSky();
@@ -1846,7 +1874,7 @@ vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal,
 {
     if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;
     if (!vvTerrainIsCanopyReceiver()) return color;
-    if (length(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;
+    if (vvTerrainEyeDistance(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;
     if (vvTerrainFleckLight() < 0.01) return color;
 
     if (sunVisibility < 0.0) sunVisibility = vvTerrainSunVisibility();
@@ -1953,7 +1981,7 @@ float vvTerrainShaftLevel(vec3 cameraRelativePos, float fogDensity)
     float clearSky = vvTerrainClearSky();
     if (clearSky < 0.004) return 0.0;
 
-    float near = 1.0 - smoothstep(VV_TERRAIN_SHAFT_RIM_FAR * 0.5, VV_TERRAIN_SHAFT_RIM_FAR, length(cameraRelativePos));
+    float near = 1.0 - smoothstep(VV_TERRAIN_SHAFT_RIM_FAR * 0.5, VV_TERRAIN_SHAFT_RIM_FAR, vvTerrainEyeDistance(cameraRelativePos));
     if (near < 0.004) return 0.0;
     float rim = vvTerrainLeafRim();
     if (rim <= 0.0) return 0.0;
@@ -2040,17 +2068,19 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
     if (l.y < 0.06) return 0.0;
 
-    float dist = length(cameraRelativePos);
+    vec3 fromEye = -vvTerrainToEye(cameraRelativePos);   // the view ray starts at the eye
+    float dist = length(fromEye);
     if (dist < 0.5) return 0.0;
-    vec3 dir = cameraRelativePos / dist;
+    vec3 dir = fromEye / dist;
     float span = min(dist, VV_TERRAIN_BEAM_REACH);
     float ds = span / float(VV_TERRAIN_BEAM_STEPS);
     // v13: nothing to march where no crown stands along the marched span -
     // open country, where v12 still paid for every sample and drew beams over
     // scrub in full sun. Three leaf-map reads, no noise.
-    float crowns = max(max(vvTerrainCanopyCell(vv_pbrOrigin.xz).x,
-                           vvTerrainCanopyCell(vv_pbrOrigin.xz + dir.xz * (span * 0.5)).x),
-                       vvTerrainCanopyCell(vv_pbrOrigin.xz + dir.xz * span).x);
+    vec2 eyeXz = vv_pbrOrigin.xz + vv_pbrEye.xz;
+    float crowns = max(max(vvTerrainCanopyCell(eyeXz).x,
+                           vvTerrainCanopyCell(eyeXz + dir.xz * (span * 0.5)).x),
+                       vvTerrainCanopyCell(eyeXz + dir.xz * span).x);
     if (crowns < VV_TERRAIN_BEAM_CROWN) return 0.0;
     // Interleaved gradient noise: a fixed per-pixel offset of the samples,
     // so twelve steps read as a smooth integral rather than bands.
@@ -2058,7 +2088,7 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     float beam = 0.0;
     for (int i = 0; i < VV_TERRAIN_BEAM_STEPS; i++)
     {
-        vec3 rel = dir * ((float(i) + offset) * ds);
+        vec3 rel = vv_pbrEye + dir * ((float(i) + offset) * ds);
         vec3 p = rel + vv_pbrOrigin;
         float rise = vv_canopyPlaneY - p.y;
         if (rise < 0.5) continue;
@@ -2219,7 +2249,7 @@ float vvTerrainTranslucency(vec3 n, vec3 l, vec3 v)
 // Distance at which per-leaf detail stops being resolvable.
 float vvTerrainFloraLod(vec3 cameraRelativePos)
 {
-    return clamp(1.0 - (length(cameraRelativePos) - 18.0) / 54.0, 0.0, 1.0);
+    return clamp(1.0 - (vvTerrainEyeDistance(cameraRelativePos) - 18.0) / 54.0, 0.0, 1.0);
 }
 
 // Snow and frost are a surface over the tissue and stop the beam; water barely
@@ -2325,7 +2355,7 @@ vec3 vvTerrainBacklitRim(vec3 albedo, vec3 cameraRelativePos, vec3 l, float sunV
     if (sun < 0.01) return vec3(0.0);
     float back = smoothstep(0.35, 0.9, dot(vvTerrainSafeNormalize(cameraRelativePos, -l), l));
     if (back < 0.004) return vec3(0.0);
-    float near = 1.0 - smoothstep(VV_TERRAIN_RIM_FAR * 0.5, VV_TERRAIN_RIM_FAR, length(cameraRelativePos));
+    float near = 1.0 - smoothstep(VV_TERRAIN_RIM_FAR * 0.5, VV_TERRAIN_RIM_FAR, vvTerrainEyeDistance(cameraRelativePos));
     if (near < 0.004) return vec3(0.0);
     float thin = 0.0;
     if (vv_canopyMapValid > 0.5)
@@ -2514,7 +2544,13 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     // under the scene's light, and a metal's albedo is its reflectance, so
     // the metal keeps that as its body - less of it the smoother it is,
     // because a polished metal shows its reflection instead.
-    vec3 diffuseEnergy = (vec3(1.0) - f0 * 0.35) * (1.0 - m.metalness)
+    // Diffuse gives up what Fresnel adds at a glancing view (reflection
+    // phase 0). Head-on it keeps the old (1 - 0.35 F0), so vanilla's look is
+    // unchanged facing a block; toward grazing, the reflected share rises to
+    // F(view) and the diffuse loses exactly that rise, so a wet floor at a low
+    // angle no longer shows its diffuse AND a near-full reflection on top.
+    vec3 grazingShare = vvTerrainGrazingShare(m, viewDir, f0);
+    vec3 diffuseEnergy = max(vec3(1.0) - f0 * 0.35 - grazingShare, vec3(0.0)) * (1.0 - m.metalness)
                        + vec3(m.metalness * mix(VV_TERRAIN_METAL_BODY_SMOOTH, VV_TERRAIN_METAL_BODY_ROUGH,
                                                 m.perceptualRoughness));
 
@@ -2531,7 +2567,11 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                                                               environmentColor, litColor.rgb, viewDir, blockLight);
     vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, reflection.image);
 
-    float energyCap = mix(1.0, 1.18, clamp(vv_pbrEnergyCompensation, 0.0, 1.0));
+    // Multiple-scattering compensation is real only where the lobe is wide and
+    // the surface coloured: rough metals. It used to lift every highlight and
+    // reflection by up to 18%, a polished wet floor included (phase 0).
+    float energyCap = 1.0 + 0.18 * clamp(vv_pbrEnergyCompensation, 0.0, 1.0)
+                          * m.metalness * m.perceptualRoughness;
     vec3 color = diffuse + (directSpec + blockSpec + ambientSpec) * energyCap;
     color += vvTerrainEmission(m, glowLevel, cameraRelativePos);
     return vec4(clamp(color, 0.0, 8.0), litColor.a);

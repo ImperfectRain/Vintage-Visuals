@@ -52,6 +52,15 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 
 ## NEXT — highest priority unfinished work
 
+**0. Reflection redesign, in phases (D80, approved 2026-11-25).** Review:
+https://claude.ai/artifact/VmuoJ57XNtWe9zeqeXReua. Phase 0 (energy split, soft
+ceiling, eye distances) is L2. Next: 1, a shared `reflect.glsl` core plus water's
+screen reflection on the live opaque frame (water thread); 2, capture mips chosen
+by roughness, fog removed from hits, reflective pixels marked in the capture; 3,
+block volume v2 on the active path, relit per frame, own patch group and sampler;
+4, a seen-sky image in a corner of the capture. Each phase is seen in game
+before the next.
+
 **1. Validate the reflection.** It is the newest and least proven system, and
 several passes of correction have been driven entirely by screenshots. The
 specific scenes are listed in CHECKLIST.md under Reflections. Until those pass,

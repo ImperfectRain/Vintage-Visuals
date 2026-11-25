@@ -98,6 +98,7 @@ namespace VintageVisuals.SmokeTest
             Guarded("I20", () => I20_ACloudIsNoDarkerThanATree(check));
             Guarded("I21", () => I21_TorchFalloffOnlyDarkensTheEdge(repo, check));
             Guarded("I22", () => I22_TerrainLooksFromTheEye(repo, check));
+            Guarded("I23", () => I23_DiffusePaysForTheGrazingReflection(repo, check));
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
@@ -1668,10 +1669,109 @@ namespace VintageVisuals.SmokeTest
                     + Regex.Matches(bare, @"normalize\(\s*-\s*(cameraRelativePos|origin)\b").Count;
             check("I22 no terrain view vector is built from the feet", raw == 0,
                   raw + " view vector(s) still normalize -position");
+            int feetFades = Regex.Matches(bare, @"length\(\s*cameraRelativePos\s*\)").Count;
+            check("I22 terrain distance fades measure from the eye", feetFades == 0,
+                  feetFades + " fade(s) still use length(cameraRelativePos)");
+            string entity = StripComments(File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrentity.glsl")));
+            string particle = StripComments(File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrparticle.glsl")));
+            check("I22 creatures and particles look from the eye",
+                  entity.Contains("vec3 v = normalize(vv_pbrEye - cameraRelativePos);") &&
+                  particle.Contains("vec3 v = normalize(vv_pbrEye - cameraRelativePos);") &&
+                  !Regex.IsMatch(entity + particle, @"normalize\(\s*-\s*cameraRelativePos"),
+                  "an entity or particle view vector still starts at the feet");
+            check("I22 the eye reaches terrain, creatures and particles",
+                  Regex.Matches(binder, Regex.Escape("SetIfPresent(program, EyeUniform, Eye());")).Count >= 3,
+                  "one of the three programs declares vv_pbrEye but is never told it");
+
+            string kneeExpr = Rhs(Statement(material, "float kneed ="));
+            double Knee(double luma) => Scalar(kneeExpr, Syms("ceiling", 1.0, "over", luma - 1.0));
+            check("I22b a bright reflected tree keeps more than the old hard clamp, and stays bounded",
+                  Knee(1.5) > 1.25 && Knee(1.5) < 1.5 && Knee(1000.0) < 2.0 && Math.Abs(Knee(1.0) - 1.0) < 1e-9,
+                  $"1.5x ceiling -> {Knee(1.5):F3}, 1000x -> {Knee(1000.0):F3}");
+
+            string capExpr = Rhs(Statement(material, "float energyCap ="));
+            check("I22b multi-scatter boost is for rough metals only",
+                  Math.Abs(Scalar(capExpr.Replace("m.", "m_"), Syms("vv_pbrEnergyCompensation", 1.0, "m_metalness", 0.0, "m_perceptualRoughness", 0.9)) - 1.0) < 1e-9 &&
+                  Math.Abs(Scalar(capExpr.Replace("m.", "m_"), Syms("vv_pbrEnergyCompensation", 1.0, "m_metalness", 1.0, "m_perceptualRoughness", 0.05)) - 1.0) < 0.02 &&
+                  Scalar(capExpr.Replace("m.", "m_"), Syms("vv_pbrEnergyCompensation", 1.0, "m_metalness", 1.0, "m_perceptualRoughness", 0.9)) > 1.1,
+                  "a dielectric or a polished surface is boosted");
+
             check("I22 the terrain binder uploads the eye",
                   binder.Contains("SetIfPresent(program, EyeUniform, Eye());") &&
                   binder.Contains("ViewEye.FromView(_capi.Render.CameraMatrixOriginf, _eye);"),
                   "vv_pbrEye declared but not uploaded reads as the feet");
+        }
+
+        // -------------------------------------------------------------------
+        // I23: diffuse gives up what Fresnel adds at a glancing view, and only
+        // that (reflection phase 0).
+        //
+        // Two defects bound this from opposite sides. Before phase 0 diffuse
+        // kept 1 - 0.35 F0 at every angle while the reflection rose toward 1,
+        // so a polished wet floor at a low angle showed both (milky sheen).
+        // Before THAT, (1 - F) blackened every block at a grazing view,
+        // including rough stone that reflects almost nothing, and shipped. The
+        // share has to be zero head-on, small on rough stone, real on a
+        // polished wet floor, and never more than the reflection it pays for.
+        // -------------------------------------------------------------------
+        static void I23_DiffusePaysForTheGrazingReflection(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string share = FunctionBody(material, "vec3 vvTerrainGrazingShare(VvTerrainMaterial m, vec3 viewDir, vec3 f0)");
+            string weight = FunctionBody(material, "vec3 vvTerrainAmbientWeight(VvTerrainMaterial m, vec3 viewDir)");
+            string fresnel = Rhs(Statement(FunctionBody(material, "vec3 vvFresnelSchlickTerrain(float cosTheta, vec3 f0)"), "return"));
+            string fresnelPow = Rhs(Statement(FunctionBody(material, "vec3 vvFresnelSchlickTerrain(float cosTheta, vec3 f0)"), "float f ="));
+
+            Val Fres(double cos, double f0)
+            {
+                var syms = Syms("cosTheta", cos, "f0", f0);
+                syms["f"] = new Val(Scalar(fresnelPow, syms));
+                return Eval(fresnel, syms);
+            }
+
+            // Walks a body of float/vec3 locals ending in a return, with the
+            // struct fields flattened (m.x -> m_x) and the Fresnel call stubbed.
+            double Run(string body, double ndotv, double rough, double ao, double ambient, double specularFactor)
+            {
+                double f0 = 0.04 * (0.6 + 1.2 * specularFactor);
+                var syms = Syms("m_perceptualRoughness", rough, "m_ao", ao, "vv_pbrAmbient", ambient,
+                                "vv_pbrSpecOcclusion", 1.0, "f0", f0, "m_metalness", 0.0,
+                                "m_specularFactor", specularFactor, "VV_DIELECTRIC_F0", 0.04,
+                                "fresStub", Fres(ndotv, f0));
+                syms["m_baseColor"] = Vec(0.5, 0.5, 0.5);
+                foreach (string raw in Statements(body))
+                {
+                    string st = StubCall(raw.Replace("m.", "m_"), "vvFresnelSchlickTerrain", "fresStub");
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Eval(Rhs(st), syms).X;
+                    var decl = Regex.Match(st, @"^(?:float|vec3)\s+([A-Za-z_][A-Za-z_0-9]*)\s*=");
+                    if (!decl.Success) throw new ArgumentException("unexpected statement: " + st);
+                    syms[decl.Groups[1].Value] = Eval(Rhs(st), syms);
+                }
+                throw new ArgumentException("no return");
+            }
+
+            double headOn = Run(share, 1.0, 0.1, 1.0, 1.0, 0.5);
+            double roughGrazing = Run(share, 0.05, 0.85, 1.0, 1.0, 0.5);
+            double wetGrazing = Run(share, 0.05, 0.1, 1.0, 1.0, 0.5);
+            check("I23 head-on, diffuse loses nothing (vanilla's look facing a block)", Math.Abs(headOn) < 1e-9, headOn.ToString());
+            check("I23 rough stone at a grazing view keeps its diffuse", roughGrazing < 0.03, $"share {roughGrazing:F4}");
+            check("I23 a polished wet floor at a grazing view hands real energy to the reflection",
+                  wetGrazing > 0.4, $"share {wetGrazing:F3}");
+
+            bool neverMore = true; string worst = "";
+            foreach (double nv in new[] { 1.0, 0.6, 0.3, 0.1, 0.02 })
+                foreach (double r in new[] { 0.05, 0.3, 0.6, 0.95 })
+                    foreach (double ao in new[] { 1.0, 0.5, 0.1 })
+                    {
+                        double sh = Run(share, nv, r, ao, 1.0, 0.5);
+                        double w = Run(weight, nv, r, ao, 1.0, 0.5);
+                        if (sh > w + 1e-9) { neverMore = false; worst = $"N.V {nv} rough {r} ao {ao}: share {sh:F4} > reflection {w:F4}"; }
+                    }
+            check("I23 diffuse never gives up more than the reflection adds", neverMore, worst);
+            check("I23 the share is what the terrain's diffuse subtracts",
+                  material.Contains("vec3 diffuseEnergy = max(vec3(1.0) - f0 * 0.35 - grazingShare, vec3(0.0)) * (1.0 - m.metalness)"),
+                  "vvTerrainMaterialPrimary no longer subtracts it");
         }
     }
 }

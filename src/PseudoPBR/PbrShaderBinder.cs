@@ -563,6 +563,7 @@ namespace VintageVisuals.PseudoPBR
 
                 SetIfPresent(program, ParticleUniform, _look.ParticleLighting ? 1f : 0f);
                 SetIfPresent(program, ParticleSpecularUniform, _look.ParticleSpecular);
+                SetIfPresent(program, EyeUniform, Eye());
                 SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
                 SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
                 SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
@@ -837,6 +838,7 @@ namespace VintageVisuals.PseudoPBR
                 SetIfPresent(program, EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
                 SetIfPresent(program, EntityRoughnessUniform, _look.EntityRoughness);
                 SetIfPresent(program, EntitySpecularUniform, _look.EntitySpecular);
+                SetIfPresent(program, EyeUniform, Eye());
                 SetIfPresent(program, EntityDebugUniform, _look.EntityDebugView);
                 SetIfPresent(program, RoughnessBiasUniform, _look.RoughnessBias);
                 SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);

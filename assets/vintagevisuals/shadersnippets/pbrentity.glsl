@@ -27,6 +27,7 @@ uniform float vv_pbrEntity;          // master, 0 is vanilla
 uniform float vv_pbrEntityRoughness; // how matte a creature reads
 uniform float vv_pbrEntitySpecular;  // how much of the lobe reaches the image
 uniform float vv_pbrRoughnessBias;   // the same global matte <-> gloss slider terrain uses
+uniform vec3 vv_pbrEye;              // the eye relative to the player origin worldPos uses; 0 is the feet
 // Daylight, wetness and overcast come from scene.glsl, shared with the terrain
 // programs so a creature and the ground it stands on cannot disagree about the
 // weather.
@@ -82,7 +83,7 @@ vec4 vvApplyEntityPbr(vec4 litColor, vec3 albedo, vec3 faceNormal, vec3 cameraRe
 
     vec3 n = normalize(faceNormal);
     vec3 l = normalize(lightPosition);
-    vec3 v = normalize(-cameraRelativePos);
+    vec3 v = normalize(vv_pbrEye - cameraRelativePos); // from the eye, not the feet (phase 0)
     vec3 h = normalize(l + v);
 
     float ndotl = max(dot(n, l), 0.0);
