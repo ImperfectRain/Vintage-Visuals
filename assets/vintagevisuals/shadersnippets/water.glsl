@@ -95,10 +95,10 @@ const float VV_WATER_CAUSTIC_FOCUS = 2.0;    // blocks: the depth the lens settl
 const float VV_WATER_CAUSTIC_WARP = 0.3;     // blocks the web's cells are bent by
 const float VV_WATER_CAUSTIC_SHARP = 0.05;   // how soft a focus line is right under the surface
 const float VV_WATER_CAUSTIC_SPREAD = 0.05;  // ... and how much softer per block of depth
-const float VV_WATER_CAUSTIC_PEAK = 1.6;     // a line approaches this gain, never clips to it
-const float VV_WATER_CAUSTIC_ALBEDO = 0.45;  // the bed it lands on (DATA GAP above)
-const float VV_WATER_CAUSTIC_DEEP = 8.0;     // blocks: faded out by this depth
-const float VV_WATER_CAUSTIC_FAR = 0.08;     // blocks of bed per pixel where the web is gone
+const float VV_WATER_CAUSTIC_PEAK = 1.0;     // a line approaches this gain, never clips to it
+const float VV_WATER_CAUSTIC_ALBEDO = 0.35;  // the bed it lands on (DATA GAP above)
+const float VV_WATER_CAUSTIC_DEEP = 5.0;     // blocks: faded out by this depth, from 0.3 of it
+const float VV_WATER_CAUSTIC_FAR = 0.035;    // blocks of bed per pixel where the web is gone (about 30 blocks away)
 
 // Absorption per block of path, red first: what makes deep water blue-green
 // and shallow water clear. Scaled by vv_waterDepthTint.
@@ -422,6 +422,12 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float ownLinear = linearDepth(gl_FragCoord.z);
     float dlx = dFdx(ownLinear);
     float dly = dFdy(ownLinear);
+    // The bed behind this pixel, and how it slopes, for the caustics: light
+    // falls on a face by N.L, so a wall or a slope under the water takes less.
+    float behindPixel = linearDepth(texture(depthTex, gl_FragCoord.xy / frameSize).x);
+    vec3 bedPixel = vv_waterEye + (pos - vv_waterEye) * (behindPixel / max(ownLinear, 1e-6));
+    vec3 bedDx = dFdx(bedPixel);
+    vec3 bedDy = dFdy(bedPixel);
 
     if (vv_water < 0.5) return color;
 
@@ -558,7 +564,22 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
             // on its way down only loses a little red: enough to keep the lines
             // the colour of sunlight in water, not of a second tint.
             vec3 downTransmit = exp(-VV_WATER_ABSORB * sunPath * depthTint * 0.5);
-            float fade = 1.0 - smoothstep(VV_WATER_CAUSTIC_DEEP * 0.5, VV_WATER_CAUSTIC_DEEP, depth);
+            float fade = 1.0 - smoothstep(VV_WATER_CAUSTIC_DEEP * 0.3, VV_WATER_CAUSTIC_DEEP, depth);
+            // Seen through the water: the longer the view path, the less of
+            // the bed's light comes back, even where the water is kept clear.
+            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));
+            // The face the light lands on, from the bed's own screen slope;
+            // flat (facing the sun) where that slope is a depth edge.
+            // A block edge between this pixel and the next is a jump, not a
+            // slope: there the bed counts as flat rather than drawing a dark
+            // seam along every block.
+            vec3 bedCross = cross(bedDx, bedDy);
+            float reach = 9.0 * (behindPixel / max(ownLinear, 1e-6)) * (behindPixel / max(ownLinear, 1e-6));
+            bool jump = dot(bedDx, bedDx) > reach * a11 || dot(bedDy, bedDy) > reach * a22;
+            vec3 bedNormal = (!jump && dot(bedCross, bedCross) > 1e-12) ? normalize(bedCross) : vec3(0.0, 1.0, 0.0);
+            if (dot(bedNormal, vv_waterEye - bed) < 0.0) bedNormal = -bedNormal;
+            float facing = clamp(dot(bedNormal, -down), 0.0, 1.0);
+            fade *= facing;
             // A line is a few bed texels wide; once a texel is smaller than a
             // pixel the web only shimmers, so it gives way with distance.
             float footprint = sqrt(max(a11, a22)) * (behind / own);
