@@ -121,6 +121,25 @@ namespace VintageVisuals.SmokeTest
                   alphaFree && At(0, 0.5) == 0 && At(1, 0.5) > 0 && At(1, 1.0) == 0 && ab < 1.0,
                   "add at " + addAt + ", last alpha at " + lastAlpha + ", result at " + resultAt);
 
+            // Light falls on a face by N.L: a wall under the water takes less
+            // than the floor, and a face turned from the sun takes none.
+            string facingExpr = Rhs(Statement(surf, "float facing ="));
+            Func<Val, double> face = n => { var sy = Syms(); sy["bedNormal"] = n; sy["down"] = Vec(0.2, -0.95, 0.1); return Scalar(facingExpr, sy); };
+            double floorLit = face(Vec(0, 1, 0)), wallLit = face(Vec(1, 0, 0)), awayLit = face(Vec(-0.6, -0.8, 0));
+            check("caustics fall on a face by N.L: a wall takes less than the floor, a face turned away none",
+                  floorLit > 0.9 && wallLit < 0.5 * floorLit && awayLit == 0 && stmts.Any(x => x.StartsWith("fade *= facing", StringComparison.Ordinal)),
+                  "floor " + floorLit + ", wall " + wallLit + ", away " + awayLit);
+
+            // Gone by VV_WATER_CAUSTIC_DEEP, untouched in the shallows; and the
+            // view path through the water dims them as well.
+            string depthFade = Rhs(Statement(surf, "float fade =", "VV_WATER_CAUSTIC_DEEP"));
+            double deep = Const(water, "VV_WATER_CAUSTIC_DEEP");
+            Func<double, double> fd = dd => Scalar(depthFade, Syms("depth", dd, "VV_WATER_CAUSTIC_DEEP", deep));
+            check("caustics fade out with depth and with the view path through the water",
+                  fd(deep) < 1e-9 && Math.Abs(fd(1.0) - 1.0) < 1e-9 && deep <= 6.0 &&
+                  stmts.Any(x => x.StartsWith("fade *= dot(exp(-VV_WATER_ABSORB * path", StringComparison.Ordinal)),
+                  "deep " + deep + ", at 1 block " + fd(1.0));
+
             var ks = Regex.Matches(gainBody, @"vec2\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)")
                           .Select(m => (double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
                                         double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture)))

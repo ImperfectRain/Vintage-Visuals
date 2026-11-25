@@ -52,7 +52,9 @@ never reaches it.
    it, a refraction model (`vvWaterCausticGain`, 0 on flat water) sampled where
    the refracted sun entered the surface, snapped to 1/32 block. Gated by the
    glints' visible-sun term and the surface shadow, added to the colour after
-   the opacity is final. Fades by 8 blocks of depth and with distance. DATA
+   the opacity is final. Fades from 1.5 to 5 blocks of depth, with the view
+   path through the water and with distance, and falls on slopes and walls by
+   N.L (the bed's normal from its screen slope). DATA
    GAP: the bed's colour is assumed. Tier: 3 waves on Low, 6 above.
 
 Waves: four travelling waves with whole cycles per 4096 blocks plus two

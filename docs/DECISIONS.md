@@ -3454,3 +3454,20 @@ water were above it and the water body colours the view path. Sun shafts: the
 mod's shafts are read through the same shadow and canopy, no volumetric shaft
 in the water is drawn. L2: previewed offline on the game's sand and water
 textures, not seen in game; frame cost not measured.
+
+**Amendment (2026-11-25, after the first look in game).** Elijah's screenshots
+showed a high-contrast white web over the whole lake: as strong over deep water
+as over the shallows, the same near and far, and on the sloped and vertical
+faces under the water, so it read as a texture painted on top. Four causes, all
+changed: the line peak and assumed albedo were high (1.6 and 0.45, now 1.0 and
+0.35); the depth fade started at 4 blocks (now 1.5 to 5); nothing dimmed the bed
+with the view path through clear water (now the mean of
+`exp(-absorb * path * 2)`, the same absorption as the depth colour); and every
+face took the full light. Light now falls on a face by N.L against the refracted
+sun, with the bed's normal from the screen derivatives of the bed position
+behind each pixel (one extra `depthTex` read per water fragment, taken before
+the first branch); a block edge between two pixels counts as flat rather than
+drawing a seam. The distance fade moved from 0.08 to 0.035 blocks of bed per
+pixel. Previewed at the game's resolution: faint lines in the near shallows,
+gone in deep water and in the distance. Still L2.
+

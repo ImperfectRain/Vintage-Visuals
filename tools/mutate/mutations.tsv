@@ -283,10 +283,7 @@ rain knocks no leaves loose (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        pub
 autumn frost leaves the crowns alone (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        public const float LeafFrostBoost = 1f;	        public const float LeafFrostBoost = 0f;	leaf fall follows rain and autumn frost
 vanilla's fixed-grid droplets keep playing beside the mod's rings (D75)	assets/vintagevisuals/shadersnippets/water.glsl	    return 1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0);	    return 1.0;	vanilla's water droplets stay unless
 <<<<<<< HEAD
-<<<<<<< HEAD
-=======
 a grey sky still throws a white sun path on water (D76)	assets/vintagevisuals/shadersnippets/water.glsl	                       * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	                       * (1.0 - 0.0 * smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	water glints need a visible sun
->>>>>>> da8af6b (fix(water): glints glitter under a visible sun, far water shows the sky (D76))
 =======
 a grey sky still throws a white sun path on water (D76)	assets/vintagevisuals/shadersnippets/water.glsl	                   * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	                   * (1.0 - 0.0 * smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	water glints need a visible sun
 caustics raise the water's opacity and hide the bed (D77)	assets/vintagevisuals/shadersnippets/water.glsl	    premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha));	    premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha)); outAlpha = clamp(outAlpha + vvWaterLuma(causticLight), 0.0, 1.0);	caustics add to the colour only
@@ -296,3 +293,5 @@ caustic lines clip to white at the focus (D77)	assets/vintagevisuals/shadersnipp
 the caustics slider does nothing at 0 (D77)	assets/vintagevisuals/shadersnippets/water.glsl	(gain * fade * sunLight * caustics)	(gain * fade * sunLight)	caustics: the slider at 0
 a caustic wave seams at the origin wrap (D77)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(3860.0, 540.0)	vec2(3860.5, 540.0)	caustic waves have whole cycles
 >>>>>>> 0380f5a (feat(water): caustics on the bed seen through open water (D77))
+caustics light walls and slopes as brightly as the floor (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= facing;	            fade *= 1.0;	caustics fall on a face by N.L
+caustics carry on undimmed into deep water (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));	            fade *= 1.0;	caustics fade out with depth
