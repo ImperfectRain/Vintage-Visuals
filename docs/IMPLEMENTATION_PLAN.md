@@ -73,7 +73,7 @@ because the debug views for each already exist.
 
 | Work | Deferred because |
 |---|---|
-| Water reflections | The reflection geometry is not yet validated on terrain. Patching `chunkliquid.fsh` now means debugging two surfaces at once, and a wrong reflection in two places is harder to diagnose than in one |
+| Water SCENE reflections | The analytic water surface shipped (D71); the screen-space reflection on water waits for its own group and sampler, and for the terrain march to be seen in game, so a wrong reflection is not debugged in two places at once |
 | Parallax / height mapping | The height channel is packed and has no consumer. Needs the reflection work to settle first, as both compete for the same shader budget |
 | Entity reflections | Entities have no material atlas, so there is no texel grid to attach a reflection to. Needs a separate decision about entity texture identity |
 | Post-processing (bloom, DoF, camera FX) | Blocked on the colour-space problem below. Grading in the wrong space makes every subsequent image operation wrong too |

@@ -69,9 +69,10 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations. The all-groups pass now splits on mutually exclusive groups and verifies each set the game can apply; it used to skip chunkopaque and chunktopsoil outright, which hid a `pbrterrainbase` anchor collision (anchor text quoted in a shared snippet's comment) that the game log caught on 2026-11-22 |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[~]` | **Texture slot report** (`RuntimeShaderIntrospector`) | L2 | logs every active sampler of chunkopaque and chunktopsoil with its unit, after link and again 8 s later once binders have uploaded, and warns on a unit shared by two sampler types. The first version matched a StringBuilder overload OpenTK does not have and printed no samplers; smoke now resolves every query against the game's own OpenTK.Graphics.dll. Not yet read from a real log |
-| `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |
+| `[~]` | Quality tiers (Low / Medium / High / Ultra) | L2 | `Performance.Quality`, `QualityTier` ([D72](DECISIONS.md)). Scales cost only: terrain canopy ring radius and detail distance, water blur taps, ripple layers and caustic waves. High is exactly the previous build (every scale 1, checked). Never enables an effect that is off. Not seen in game, effect on frame time not measured |
+| `[~]` | **Frame-time readout and bench** (`src/Common/Diagnostics/`) | L2 | GPU timestamp queries at the start and end of every render stage and around the mod's own passes (scene capture, falling leaves), read 3 frames late without stalling; `.vvperf` toggles the readout, `.vvbench [s]` and `.vvbench tiers [s]` log a summary to `client-main.log`. Costs nothing while off (markers unregistered). Patched-shader cost is only visible by comparison, see [D72](DECISIONS.md). Not yet run in game |
 | `[ ]` | GPU/VRAM detection suggesting a tier | — | suggest, never force |
-| `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; a HUD does not |
+| `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; the frame-time readout is the only HUD so far |
 | `[x]` | **Visual language rules** (information ladder, hierarchy, budgets, blacklist) | — | [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md) |
 | `[x]` | **Visual test matrix and acceptance criteria** | — | [VISUAL-TESTS.md](VISUAL-TESTS.md). Makes L4 repeatable |
 | `[x]` | **Effect provenance report** (`WriteSceneReport`) | L2 | who removed what light, and why, in one file |
@@ -178,7 +179,7 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | Sky-exposure varying so rain cannot reach covered ground | L4 | lives in `pseudopbr.yaml` — a varying belongs to one group. The modular terrain path (`pbrterrainmaterial.yaml`) now declares its own copy inside its own group; that copy is **L2**, not yet seen in game |
 | `[~]` | Rain fog (terrain only, never the sky) | L2 | |
 | `[~]` | Cloud shadows from the game's own cloud tiles | L2 | **reported broken three times**; see §9. In-game audit 2026-11-23: at the player's strength 1 under a storm (87% of tiles covered) a forest at noon went black, and switching Weather response off brought it back. The shadow multiplied vanilla's brightness with no floor and dimmed torchlight too. Now a min against vanilla's own shadow, never deeper than a full sun shadow, block light kept ([D52](DECISIONS.md), invariant I20). Seen in game after the fix: the same storm at noon, 100% of tiles covered, strength 1, the forest is dim but readable. Second round (2026-11-23): a dim storm still read as dusk, because the shadow stacked on vanilla's own overcast dimming. The cloud shadow now fades out between 55% and 85% cover (`vvCloudShadowBrokenSky`, I20): a solid sky has no cloud edge to draw. Cover is the larger of the ambient figure and falling rain ([D53](DECISIONS.md); the cloud-tile mean was tried and read the same under a storm and a sunny sky), and the rain grade is cooler and softer rather than darker. Seen in game: a rainy noon is grey but readable. A clear noon still sat in cloud shadow, because the tiles are normalised against their own thickest, so an evenly thin sky reads as solid cloud. v6 ([D54](DECISIONS.md)): only tiles that stand out from the field's mean cast a shadow, so a uniform field casts none. Seen in game after D54 (2026-11-23): a sunny noon with Weather response on is lit normally. A broken sky's shadows were not checked. L2 |
-| `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured. Restored in the modular terrain path (2026-11-22, L2): gated on the sky-exposure varying, exactly off at a strength of zero or when dry |
+| `[~]` | Rain ripples in standing water | L2 | field scatter and phase spread measured. Restored in the modular terrain path (2026-11-22, L2): gated on the sky-exposure varying, exactly off at a strength of zero or when dry. D73 (2026-11-25): drops landed on the same spots every time; each drop is now hashed by its number (`vv_weatherRippleEpoch`), in all three copies. Known issue: terrain view vectors start at the player's feet, not the eye (D73); not changed here |
 | `[~]` | Overcast light response | L2 | direct lobe down, sky term up — redistribution, not darkening |
 | `[x]` | Snow as a derived state (`SnowTargetFor`) | L2 | consumed by the material snow film; real accumulated depth remains vanilla snow blocks |
 | `[~]` | **Snow film as a material response** | L2 | thin dusting on sky-exposed up-faces, cubed against the normal. Real accumulated depth is still vanilla's snow blocks |
@@ -237,7 +238,8 @@ so an unmodified install is untouched.
 ## 7. Water and reflections
 
 `src/Reflections/` holds the scene-capture bridge. See `src/Reflections/README.md`
-and DECISIONS D8-D13.
+and DECISIONS D8-D13. `src/Water/` holds the water surface on vanilla's liquid
+program (patch group `water`, [D71](DECISIONS.md), `src/Water/README.md`).
 
 | | Feature | Level | Notes |
 |---|---|---|---|
@@ -248,12 +250,17 @@ and DECISIONS D8-D13.
 | `[x]` | Reflection through the existing BRDF | **L2** | Substituted into `vvAmbientSpecular`, so Fresnel, metalness, specular occlusion and wetness all apply unchanged - D13 |
 | `[x]` | Wet surfaces reflect more strongly | **L2** | No reflection-specific code: `vvApplyEnvironmentLayers` lowers roughness and raises the specular mask, and both feed the reflection |
 | `[~]` | Local world-volume reflection fallback | **L2** | 128 x 64 x 128 classified block atlas, data-driven 2D slice layout, lit representative block colour for full cubes, block/chunk invalidation and hybrid source debug. Not profiled or seen in game from this environment |
-| `[ ]` | Water reflections | — | `chunkliquid.fsh` is in NO patch group. Deliberately deferred until the geometry is validated on terrain |
+| `[~]` | Water: texel-locked sky and horizon reflection | **L2** | `water.yaml` on `chunkliquid.fsh` ([D71](DECISIONS.md)). One colour per water texel (1/32 block, the water texture's pixel) and the terrain's sky cells and analytic horizon, copied and parity-checked. Composed by Fresnel over vanilla's own water colour. First seen in game 2026-11-25: near-white in daylight because the view vector started at the player's feet ([D73](DECISIONS.md)); now viewed from the eye (`vv_waterEye`), sky capped at its own brightness, near-horizon reflection replaced by a bank stand-in (DATA GAP). D73 previewed offline, not seen in game |
+| `[~]` | Water: subtle reflection blur | **L2** | `Water.ReflectionSoftness`, default 0.35: averages the reflection seen 3 texels away in four directions, so every texel stays one colour. Previewed offline at 0, 0.35 and 1 |
+| `[ ]` | Water: scene (screen-space) reflection | — | next, behind its own toggle and its own group: needs the capture sampler declared below vanilla's `liquidDepth` |
 | `[ ]` | Refraction | — | |
-| `[ ]` | Animated wave and micro-normals | — | vanilla animates water already; check before rebuilding |
-| `[ ]` | Depth colouration | — | |
-| `[ ]` | Rain disturbance of the water surface | — | the ripple field already exists and should be reused |
-| `[ ]` | Underwater: absorption, attenuation, caustics, distortion | — | |
+| `[~]` | Animated wave and micro-normals | **L2** | vanilla's vertex waves stay; the texel normal adds four travelling waves (whole cycles per 4096 blocks) plus value-noise chop, height from the wind |
+| `[~]` | Depth colouration | **L2** | the path behind each water texel from vanilla's own `depthTex` (no new sampler): red absorbed first, opacity grows with depth, shallows clearer (`Water.DepthTint`, `Water.ShallowClarity`) |
+| `[~]` | Rain disturbance of the water surface | **L2** | the terrain's ripple field, copied with a parity check; driven by rain falling, open water only. Seen in game 2026-11-25 landing on the same spots every time; D73 hashes each drop by its number across clock turns (`RippleEpoch`), and ring crests reflect at any angle so drops read looking down. D75: vanilla's fixed-grid droplet rings step aside while the mod's rings are on, so water and land show one drop system; capturing vanilla's splash positions rejected (they are random draws, not impacts). Not seen in game since |
+| `[~]` | Sun and moon glints on water | **L2** | GGX from `pbrcore.glsl` on the texel normal, shadow-aware; vanilla's broad sun highlight steps back to a quarter at full strength so the sun is not drawn twice. Seen in game 2026-11-25 as a flat white blob, even under grey sky; D76 hides it under cloud cover, glitters per texel and shoulders instead of clipping. Not seen in game since |
+| `[~]` | Water: caustics on the bed seen through open water | **L2** | `Water.Caustics` (0.6), [D77](DECISIONS.md). Drawn by the water pass onto the bed behind each texel (vanilla's `depthTex`, no sampler, no pass): six focusing waves refract the sun into a moving web, sharpening to a focus near 2 blocks, fading from 1.5 to 5 blocks, with the view path and with distance, by N.L on slopes and walls. Lit by the game's sun colour and gated by the same visible-sun and surface shadow as the glints. DATA GAP: the bed's colour is assumed. Low tier uses 3 waves. First seen in game 2026-11-25: far too strong, a white web over deep water and walls alike; the D77 amendment makes it subtler and ties it to depth, path, distance and facing. Not seen in game since; frame cost not measured |
+| `[~]` | Water: shorelines, rivers and far swells | **L2** | [D79](DECISIONS.md). `Water.Shore` (0.7): the water thins out over its last 0.06 block at a bank and a pixel foam line laps along it, measured across the surface behind each texel; vanilla's edge foam steps back to 0.35. Rivers: vanilla's flow vector streaks the waves along the current and quickens chop and glitter; still water in still air calms. Far swells blend in from 20 to 60 blocks. Screen-space limit: foam on banks facing the camera. Previewed offline; not seen in game; cost not measured |
+| `[ ]` | Underwater (camera below the surface): absorption, attenuation, caustics, distortion | — | |
 
 **Known limitations of the reflection, all current:**
 
@@ -992,8 +999,10 @@ roughness to 0.08 and the specular mask to 0.60 when wet, and both feed the same
 strongly than a dry one through the existing material path, with no reflection
 specific wetness code. That was the design intent and it holds.
 
-**Water is not patched at all.** `chunkliquid.fsh` appears in no patch group;
-the mod has never touched it. Giving it scene reflections means a new patch
+**Water was not patched at all** when this was written. (2026-11-25: it now
+has its own group, `water`, with the analytic sky reflection only - see
+[D71](DECISIONS.md). The scene reflection is still terrain-only.)
+`chunkliquid.fsh` appeared in no patch group; the mod had never touched it. Giving it scene reflections means a new patch
 group on a shader with its own animated normals and its own lighting, which is a
 second surface to debug at the same time as the first. The reflection geometry
 should be right on terrain before water inherits it - otherwise a wrong

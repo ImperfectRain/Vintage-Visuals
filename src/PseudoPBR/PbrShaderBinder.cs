@@ -4,6 +4,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.Reflections;
 
 namespace VintageVisuals.PseudoPBR
@@ -64,6 +65,7 @@ namespace VintageVisuals.PseudoPBR
         public const string RainCoverUniform = "vv_weatherRainCover";
         public const string RipplesUniform = "vv_weatherRipples";
         public const string RippleTimeUniform = "vv_weatherRippleTime";
+        public const string RippleEpochUniform = "vv_weatherRippleEpoch";
         public const string OvercastUniform = "vv_sceneOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
         public const string FoliageUniform = "vv_pbrFoliage";
@@ -456,14 +458,14 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, MetalResponseUniform, _look.MetalResponse);
             SetIfPresent(program, AmbientUniform, _look.AmbientSpecular);
             SetIfPresent(program, SpecularAaUniform, _look.SpecularAntiAliasing);
-            SetIfPresent(program, DetailDistanceUniform, _look.DetailDistance);
+            SetIfPresent(program, DetailDistanceUniform, TieredDetail);
             SetIfPresent(program, FoliageUniform, _look.FoliageTranslucency);
             SetIfPresent(program, CavityUniform, _look.CavityStrength);
             SetIfPresent(program, SpecOcclusionUniform, _look.SpecularOcclusion);
             SetIfPresent(program, EnergyCompensationUniform, _look.EnergyCompensation);
             SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
             SetIfPresent(program, DappleUniform, _look.SunDapple);
-            SetIfPresent(program, CanopyRadiusUniform, _look.CanopyRadius);
+            SetIfPresent(program, CanopyRadiusUniform, TieredCanopy);
             SetIfPresent(program, SunflecksUniform, _look.SunFlecks);
             SetIfPresent(program, MoonFlecksUniform, _look.MoonFlecks);
             UploadCanopyMap(program);
@@ -474,7 +476,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
             SetIfPresent(program, RainCoverUniform, _weather.RainCover);
             SetIfPresent(program, RipplesUniform, _weather.Ripples);
-            SetIfPresent(program, RippleTimeUniform, _weather.RippleTime);
+            UploadRippleClock(program);
             SetIfPresent(program, OriginUniform, _weather.Origin);
             UploadScene(program);
 
@@ -602,6 +604,29 @@ namespace VintageVisuals.PseudoPBR
         /// that one uniform's fate predicts the rest, and in a snippet shared by
         /// five programs that shade differently, it does not.
         /// </summary>
+        /// <summary>
+        /// The shared scene block for a program this binder does not own -
+        /// the water's chunkliquid (src/Water). One upload path for
+        /// scene.glsl, so a second program cannot drift from the terrain's
+        /// meaning of daylight, overcast or wind. Must be called with the
+        /// program bound. Values are this binder's latest SceneInputs.
+        /// </summary>
+        public void UploadSceneTo(IShaderProgram program)
+        {
+            UploadScene(program);
+        }
+
+        // The quality tier scales what these two cost; exactly 1 at High.
+        private float TieredDetail => _look.DetailDistance * QualityTier.DetailDistanceScale;
+        private float TieredCanopy => _look.CanopyRadius * QualityTier.CanopyRadiusScale;
+
+        /// <summary>The ripple clock and its whole turns: drops are counted with both.</summary>
+        private void UploadRippleClock(IShaderProgram program)
+        {
+            SetIfPresent(program, RippleTimeUniform, _weather.RippleTime);
+            SetIfPresent(program, RippleEpochUniform, _weather.RippleEpoch);
+        }
+
         private void UploadScene(IShaderProgram program)
         {
             SetIfPresent(program, DayLightUniform, _weather.DayLight);

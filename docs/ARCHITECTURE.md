@@ -63,6 +63,7 @@ state instead, and neither knows the other exists.
 | `src/Common/ConfigLibBridge.cs` | optional F7 panel, over the event bus, zero coupling |
 | `tools/verifypatches` | every patch against the game's own shaders, every define combination |
 | `tools/smoketest` | the engine and every pure rule, without a game |
+| `src/Common/Diagnostics/` | frame-time readout and bench (GPU timestamp queries per render stage), and the quality tier ([D72](DECISIONS.md)) |
 
 ### Scene Understanding
 
@@ -247,6 +248,14 @@ Terrain, entity, particle shading      patched vanilla fragment shaders
         v
 outColor, outGlow              vanilla's own buffers
         |
+Water surface                  src/Water/         patched chunkliquid.fsh (OIT)
+  water.glsl on vanilla's finished water colour, before vanilla's fog:
+  texel-locked sky reflection, depth from vanilla's depthTex, ripples, glints,
+  caustics on the bed behind each texel (same depthTex, no pass, no sampler),
+  shoreline foam and edge, flow-streaked waves, far swells;
+  scene.glsl + pbrcore.glsl injected again, scene block via UploadSceneTo
+        |
+        |
         v
 final.fsh                      src/ColorGrade/    GPU, post pass
   exposure, tonemap, contrast, saturation, white balance, adaptive stack
@@ -396,6 +405,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Moon direction and light | `MoonPosition`, `MoonPhaseBrightness` | normalised in double; light scaled by darkness | `vv_atmosMoonDir`, `vv_atmosMoonLight` | moon scattering |
 | Broken cloud | the same blended cloud density the shadows read | `4c(1-c)` | `vv_atmosBrokenCloud` | cloud-edge scattering |
 | Camera height above sea level, far plane | `DefaultShaderUniforms` | none | vanilla `playerToSealevelOffset`, `zFar` | `AtmosphereState` |
+| Water surface inputs (D71) | `AtmosphereState.SunDirection/SunColor/MoonDirection`, `EnvironmentState.CameraPosition` (wrapped) and `Rain`, `EnvironmentTracker.RippleClock` and `RippleEpoch` (D73, also to terrain as `vv_weatherRippleEpoch`), the eye from `CameraMatrixOriginf` (D73); scene block from `PbrShaderBinder.UploadSceneTo`; the opaque depth is vanilla's own `depthTex` | `WaterShaderBinder` at `Before` 0.2, config x tier | `vv_water*` uniforms on `chunkliquid`, no sampler | `water.glsl` |
 
 ### Configuration, which has three writers and one owner
 
@@ -456,9 +466,12 @@ quietly invalidate one of these.
 
 ## Performance contracts
 
-**Nothing here has been measured.** Every figure below is a count of operations
-or a resource size, not a profile. "Not measured" is the honest entry and it
-appears often.
+**Nothing here has been measured yet.** Every figure below is a count of
+operations or a resource size, not a profile. "Not measured" is the honest entry
+and it appears often. Since D72 the means exist: `.vvperf` shows GPU time per
+render stage and per mod pass, and `.vvbench tiers` records each quality tier in
+the same scene. Shader-patch costs live inside vanilla's stages and can only be
+measured by comparison.
 
 | System | Cost | Every frame? | Previous frame? | Scales with |
 |---|---|---|---|---|
@@ -476,6 +489,8 @@ appears often.
 | v14 forest haze | a few multiplies and a log | per fogged fragment while on | no | resolution |
 | v14 ground map | 9 columns per tick, 81 in all | CPU, while ground mist is on | no | — |
 | Colour grading | one fullscreen pass | yes | no | resolution |
+| Water surface (`water`, D71) | per water fragment: 4 waves + 2 value-noise octaves per tap, 1-5 taps (tier), one `depthTex` read, two GGX lobes; no sampler, no pass | per water fragment | no | water on screen |
+| Frame profiler (D72) | ~26 timestamp queries and reflected GL calls per frame | only while the readout or a bench is on | reads queries 3 frames old | — |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene
 capture, the local world-reflection/canopy scan, and terrain-wide shadow taps.

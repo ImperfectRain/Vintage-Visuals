@@ -43,6 +43,7 @@ namespace VintageVisuals.VerifyPatches
             ("NORMALVIEW", new[] { 0, 1 }),
             ("SHINYEFFECT", new[] { 0, 1 }),
             ("USEOIT", new[] { 0, 1 }),
+            ("FOAMEFFECT", new[] { 0, 1 }),
         };
 
         /// <summary>The defines a given shader actually mentions.</summary>

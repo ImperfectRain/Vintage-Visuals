@@ -3146,3 +3146,293 @@ if the slider at 0 changes anything, if it ever brightens, if it drops below
 its floor, if a brighter vanilla light can come out darker, or if it acts in
 full daylight; two mutations prove the floor and the daylight fade. L2, not seen
 in game; performance not measured (one pow per fragment).
+
+## D71 - Water gets its own patch group on chunkliquid, texel-locked, building on vanilla
+
+**Context.** Elijah picked water next (roadmap, 2026-11-25), with the fps
+baseline first. `chunkliquid.fsh` had never been patched. Vanilla's water
+already has fresnel alpha, foam from `depthTex`, vertex waves, rain droplets, a
+broad sun highlight and a lava branch. Elijah asked that water use the texel
+system from the terrain reflections, with a subtle blur if it looks good.
+
+**Decision.** A new group `water` (`water.yaml`, `water.glsl`, `src/Water/`)
+that runs on vanilla's FINISHED water colour just before vanilla's fog, and
+never on lava. It keeps every vanilla layer and adds, in the planned order: a
+sky and horizon reflection, depth colouring, the rain ripple field, and sun and
+moon glints. Every surface input is evaluated at the centre of the water texel
+(1/32 block, the water texture's pixel): wave normal, view vector, reflection
+direction, the depth sample (taken at the texel centre's screen position via a
+least-squares step on the screen derivatives) and the ripple. The sky is looked
+up in the terrain's direction cells. Composition follows the split of light at
+a surface: reflected share F (Schlick, F0 0.02, times the strength) plus the
+body (vanilla's colour, deepened with the path behind) over `1 - F`; out alpha
+is `F + a(1 - F)`.
+
+The blur is in TEXEL space: a texel's reflection is averaged with those seen 3
+texels away in four directions. Adjacent texels were tried first and blurred
+nothing, because the waves barely change over 1/32 block (offline preview). At
+the default 0.35 the stepped bands keep their texel edges with one intermediate
+step between them.
+
+Waves: four sines with integer wave numbers per 4096 blocks, so the CPU origin
+wrap lands on a phase boundary, plus value-noise chop on cells wrapped to the
+same period; the first preview with sines alone looked like regular stripes.
+Vanilla's broad sun highlight is multiplied by `vvWaterVanillaSpecularKeep()`
+(1 when the group is not live, a quarter at full glints) so the sun is not drawn
+twice.
+
+Shared code (terrain ripple field, sky cells, analytic horizon) is COPIED into
+water.glsl because each group must roll back alone; `WaterChecks` compares the
+bodies token for token after the prefix rename and fails on drift. The scene
+block goes through the one upload path (`PbrShaderBinder.UploadSceneTo`), as
+the uniform-wiring contract requires. The sun direction is the mod's own
+(`AtmosphereState.SunDirection`), not vanilla's `lightPosition`, which is not
+reliably uploaded to chunkliquid.
+
+**Rejected.** A screen-space blur of the reflection (breaks one colour per
+texel). Replacing vanilla's water colour (loses the climate tint, foam and the
+game's look). Adding the scene-capture reflection in the same group (it needs a
+sampler; it comes next, as its own group behind its own toggle).
+
+**Evidence.** `tools/verifypatches`: all anchors match the game's own
+chunkliquid.fsh and it compiles in every combination vanilla builds, with
+FOAMEFFECT 0 and 1 (FOAMEFFECT added to the swept defines). `WaterChecks`:
+parity, period tiling, zero-composes-to-vanilla, reflection never lowers alpha,
+colour stays between reflection and body, master gate first, never on lava, no
+sampler. Offline previews of the shipped GLSL in WebGL with the game's
+`water.png`, `stone/sand/granite.png` and `soil/muddygravel.png`: noon, low sun,
+rain, close-up, debug views, softness 0/0.35/1. L2. Not seen in game, not
+measured.
+
+## D72 - Frame time is measured with GPU timestamps per stage; quality is one tier that scales cost
+
+**Context.** Nothing in the mod had been profiled, and Elijah is fps-sensitive.
+The water and every later system need a baseline to be judged against.
+
+**Decision.** `src/Common/Diagnostics/`. `FrameProfiler` registers marker
+renderers at the start and end (orders -1e6 / +1e6) of every render stage and
+around the mod's own passes at their known orders (scene capture 1.0 in
+AfterPostProcessing, falling leaves 0.5 in Opaque). Each marker lays down a GPU
+timestamp (`glQueryCounter`, reached by reflection like the existing GL bridge)
+and a CPU stopwatch reading; results are read four frames later and only when
+available, so measuring never stalls. Timestamps rather than elapsed-time
+queries because those cannot nest. Markers exist only while the readout
+(`.vvperf`, `Performance.ShowFrameTimes`) or a bench (`.vvbench [s]`,
+`.vvbench tiers [s]`) needs them. Bench summaries go to chat and to
+`client-main.log` as `[VintageVisuals] bench ...`.
+
+`QualityTier` (`Performance.Quality`, 0 Low .. 3 Ultra, default 2 High) scales
+cost only: terrain canopy ring radius (0.5/0.75/1/1), terrain detail distance
+(0.5/0.75/1/1.25), water blur taps (1/3/5/5) and ripple layers (1/2/2/2), and a
+water march budget reserved for the scene reflection. High is exactly the
+previous build; a check fails if any scale is not 1 at High. A tier never
+enables a feature that is off.
+
+**Limits.** A stage figure includes vanilla's work and the mod's shader patches
+together; a patch's own cost is only visible by comparison (the tier sweep, or
+a feature toggled in the same scene). The profiler measures what it brackets,
+so a vanilla renderer sharing order 1.0 in AfterPostProcessing would be counted
+in "vv scene capture". L2: not yet run in game.
+
+## D73 - Water is viewed from the eye, rain drops are hashed per drop
+
+**Context.** First in-game look at the water (2026-11-25, Elijah's
+screenshots): in daylight a marsh pond read as near-white, like snow or milk,
+with the bottom hidden; in rain it was flat grey. Separately, rain drops on
+water AND terrain landed on the same spots every time.
+
+**Cause, water.** `chunkliquid`'s `fWorldPos` has the PLAYER at the origin,
+not the eye: the eye height and any third-person offset live only in the view
+matrix (`CameraMatrixOriginf`, the same fact `PbrShaderBinder` records for the
+scene reflection). `vvWaterSurface` took the view vector as `normalize(-pos)`,
+i.e. from the player's feet, so water at standing height was seen exactly
+edge-on, Fresnel went to 1, and the whole surface mirrored the sky. The offline
+previews placed the camera at the origin and so could not show it; the harness
+now reproduces it (eye 1.62 above the origin, old vs new).
+
+**Decision, water.** `WaterShaderBinder` recovers the eye from the view matrix
+(`-R^T t`, column-major) and uploads `vv_waterEye`; both view vectors start
+there. 0 is the previous build. The sky image is also capped at the sky's own
+luminance (the terrain fallback's horizon and toward-sun lift suit a rough
+surface, not a mirror), and below 0.32 of elevation the reflected sky gives way
+to the surroundings at 0.30 of the sky light: near-horizontal rays from a pond
+meet its banks and trees. DATA GAP: the banks are stood in for, not looked up,
+until water has a scene trace. Rain ring crests raise the reflected share to
+0.9 x ring at any angle, so drops read looking down as well as across; scaled
+by the ripple strength only, never by the reflection slider.
+
+**Cause, drops.** Every copy of the ripple field (`pseudopbr.glsl`,
+`pbrterrainmaterial.glsl`, `water.glsl`) hashed whether a cell is struck and
+where in it from the CELL alone, on a clock that wraps every 1.5 s. The drops
+replayed identically forever.
+
+**Decision, drops.** Each drop is hashed by its cell and its DROP NUMBER:
+`floor(phase) + epoch * rate`, where `EnvironmentTracker.RippleEpoch` counts
+whole turns of the ripple clock (mod 4096, even so the half-rate layer stays
+continuous; uploaded as `vv_weatherRippleEpoch` through `SceneInputs` and
+`vv_waterRippleEpoch`). Rain strength still decides how many cells are struck
+per drop, so light rain is sparse and heavy rain dense, but not which ones. The
+half-rate layer rebuilds its time and drop count from the epoch, which also
+removes the jump it had at every wrap. Epoch 0 still re-deals the drops within
+each 1.5 s turn. The 4096 wrap re-deals drops in flight once every ~1.7 hours.
+
+**Limits.** Terrain view vectors are built the same feet-relative way and are
+not changed here (the PBR thread owns them); recorded as a known issue in
+STATUS. L2: previews and checks only, not seen in game.
+
+## D75 - One rain-drop system: vanilla's droplet rings step aside, impact capture rejected
+
+**Context.** Elijah (2026-11-25) asked whether the PBR drops could trigger
+only where vanilla's raindrops land on water, with the same logic on land.
+
+**What vanilla does.** Two unrelated things. (1) `WeatherSimulationParticles.
+SpawnRainParticles` (VSEssentials) does not detect impacts: every spawner tick
+it picks 300 x precipitation random columns within 60 blocks (denser near the
+player), puts a splash particle on the rain-map top there, liquid or solid, and
+spawns it. (2) `chunkliquid`'s `dropletnoise` draws rings on a FIXED grid that
+replay in the same cells forever, scaled by `dropletIntensity`.
+
+**Decision.** The mod's ring field already follows (1)'s rule: random places
+per drop (D73), count linear in precipitation, only on sky-exposed top faces,
+water and land through the same parity-checked function. (2) is the
+fixed-spot pattern Elijah objected to, so while the ring slider is above 0 it is
+multiplied out on water (`vvWaterVanillaDropletKeep`, `vv_waterOwnDrops`; 1 when
+the group is not live or the slider is 0). One drop system covers both surfaces.
+
+**Rejected: capturing vanilla's splash positions.** Possible (a postfix on the
+particle manager's Spawn matching the public static `splashParticles`), but the
+splashes are themselves random draws rather than impacts, there are thousands
+a second, they are spawned off the main thread, and matching them per fragment
+needs either a loop over a uniform array on every wet terrain fragment or a new
+sampler in `chunkopaque` (CLAUDE.md: twice cost the world render). The result
+would be the same statistics at a large cost and a VintagestoryLib hook.
+
+**Limits.** Splash particles and rings are not at the same points, only drawn
+by the same rule. L2.
+
+## D76 - Water glints glitter under a visible sun; far water shows more sky
+
+**Context.** In game (2026-11-25, D75 build) the rings and shallows were
+right, but the sun path was a flat white blob, even under a fully grey sky, and
+distant water read flat.
+
+**Decision.** Glints now need the sun's disc: `clearSky` also fades with the
+game's cloud cover (`vv_sceneSkyCover`, 0.45 to 0.9), not only with the
+overcast softening. Each water texel carries a facet that re-deals with
+vanilla's wave counter: 38% glitter hard (x1.6), the rest softly (x0.3), so the
+path breaks into sparkle rather than one shape. The clip at 4 is replaced by a
+shoulder approaching a luminance of 1.2. The bank stand-in (D73) now starts
+below 0.18 of elevation at 0.42 of the sky light, so far water shows the
+reflected sky's variation. Supersedes D73's 0.32 / 0.30.
+
+**Limits.** The facets are a stand-in for sub-texel wave detail. L2: previewed
+offline, not seen in game.
+
+## D77 - Water caustics: the waves focus sunlight onto the bed, drawn by the water pass
+
+**Context.** Elijah asked for performance-friendly caustics that play with the
+game's lighting and the mod's (sun shafts, PBR, the sun visibility the glints
+use) (2026-11-25).
+
+**Decision.** The water pass draws them, onto the bed it already sees through
+each texel, rather than the terrain pass drawing them under the water. The bed
+point is the texel centre pushed along its view ray by `behind / own` (vanilla's
+`depthTex`, already read for the depth colour). The light is a refraction
+model, not a texture: six short focusing waves (about 0.9 to 1.6 blocks, whole
+cycles per 4096 blocks, bent by a slow warp so the lattice reads as cells) give
+the surface curvature H; a ray reaching a floor `d` down was displaced by
+`-d (1 - 1/1.33) grad h`, so the floor sees the surface through
+`J = I - f H` and light gathers where `det J -> 0`. The gain over flat water is
+`sqrt(1 + s^2) / sqrt(det^2 + s^2) - 1`, exactly 0 on flat water, softened by
+`s` that grows with depth (the sun is a disc), shouldered below 1.6. The lens
+settles at about 2 blocks of depth and holds instead of folding into noise.
+The sample point is where the refracted sun ray entered the surface, the bed
+texel is snapped to 1/32 block, and the pattern drifts with vanilla's flow.
+
+It reads only what the glints read: the game's sun colour, `sunUp` and
+`clearSky` (daylight, overcast and the game's cloud tiles), and the SURFACE's
+shadow (`shadowBright`), so a tree's shadow, a cloud's shadow on the shadow map
+and the mod's canopy dapple all take it away together. It is added to the
+colour after the opacity is final, scaled by `(1 - outAlpha)`, so it is light
+on what shows through and can never hide the bed. It fades past 4 to 8 blocks
+of depth and when a bed texel is smaller than a pixel (0.04 to 0.08 blocks per
+pixel), where the web only shimmers. `Water.Caustics` (0.6), zero is off;
+`QualityTier.WaterCausticWaves` 3 on Low, 6 above (the 3-wave set is 60
+degrees apart and its height scaled by sqrt 2 for the same curvature spread).
+Debug view 7 shows the light alone.
+
+**Rejected.** Caustics in `pbrterrainmaterial.glsl`, where the bed's albedo
+and PBR response are known: chunkopaque does not know the water level above a
+fragment without the water's own depth, and the change belongs to the PBR
+thread's files. A caustic texture or a second sampler: CLAUDE.md, and the water
+group declares none. Darkening between the lines: the water pass can only add
+to what lies behind it, so the light is put on the lines and the rest of the
+bed is left as the game lit it.
+
+**Limits.** DATA GAP: the bed's colour is assumed (albedo 0.45), not read, so
+lines on dark stone are as bright as on sand. The shadow is the surface's, not
+the bed's. Side faces (waterfalls, walls under water) get none. The light on
+its way down only loses a little red, because the game lights the bed as if no
+water were above it and the water body colours the view path. Sun shafts: the
+mod's shafts are read through the same shadow and canopy, no volumetric shaft
+in the water is drawn. L2: previewed offline on the game's sand and water
+textures, not seen in game; frame cost not measured.
+
+**Amendment (2026-11-25, after the first look in game).** Elijah's screenshots
+showed a high-contrast white web over the whole lake: as strong over deep water
+as over the shallows, the same near and far, and on the sloped and vertical
+faces under the water, so it read as a texture painted on top. Four causes, all
+changed: the line peak and assumed albedo were high (1.6 and 0.45, now 1.0 and
+0.35); the depth fade started at 4 blocks (now 1.5 to 5); nothing dimmed the bed
+with the view path through clear water (now the mean of
+`exp(-absorb * path * 2)`, the same absorption as the depth colour); and every
+face took the full light. Light now falls on a face by N.L against the refracted
+sun, with the bed's normal from the screen derivatives of the bed position
+behind each pixel (one extra `depthTex` read per water fragment, taken before
+the first branch); a block edge between two pixels counts as flat rather than
+drawing a seam. The distance fade moved from 0.08 to 0.035 blocks of bed per
+pixel. Previewed at the game's resolution: faint lines in the near shallows,
+gone in deep water and in the distance. Still L2.
+
+## D79 - Water shorelines, flow-aware rivers and far swells
+
+**Context.** Elijah was happy with the water and caustics and asked how to make
+it a polished stylistic alternative to vanilla's (2026-11-25). He picked the
+cheap pass first: shorelines, rivers against lakes, far-water detail; then
+reflections as their own step. (D78 is the leaf-fall thread's.)
+
+**Decision.** Shorelines: the distance from a texel to what lies behind it,
+measured across that surface (`abs(dot(centre - bed, bedNormal))`, using the
+bed point and normal D77 already derives), so the depth over a floor and the
+distance out from a bank wall, independent of the view angle; the view path
+alone made the band widen at grazing views. Over its last `0.06` block the
+water thins out, colour and opacity together, so the bank meets it softly. A
+foam line laps over it: its reach swings between 0.45 and 1 of `0.30` block with
+vanilla's wave counter, in a phase that wanders along the shore on 2-block value
+noise, and each texel foams while the lap covers its own hashed threshold, so
+the line advances and breaks per texel. Foam is lit by vanilla's vertex light
+and the shadow, composited OVER the water (opacity never drops), and fades out
+by 0.12 blocks of surface per pixel. Vanilla's own depth-edge foam steps back
+to 0.35 while it is on (`vvWaterVanillaFoamKeep`, a token patch like D75's
+droplets). `Water.Shore` (0.7), zero is vanilla.
+
+Rivers: vanilla's `flowVectorf` now reaches `vvWaterSurface`. A current cuts
+the wave slope along the flow by up to 0.65 and keeps it across (a linear map
+of the slope, so the waves still tile the period), triples the chop's clock and
+the glitter's re-deal rate. Still water in still air is calmed to 0.6 of the
+height. Far swells: two long waves (11 to 12 blocks, whole cycles per 4096)
+blending in from 20 to 60 blocks away, so open water keeps a texture where the
+short waves are sub-pixel. Both ride the `Water.Waves` slider rather than new
+ones. Debug view 8: foam red, flow green, swell blue.
+
+**Limits.** Screen-space: a bank is found only where the ray behind a texel hits
+it, so the line shows on banks facing the camera and around objects in the
+water, not on the near side of a pond seen from its shore (vanilla's edge foam
+has the same limit). DATA GAP: the scale of vanilla's flow vector is not
+documented; full flow is taken at a length of 0.5. A water block stands most of
+a block above its floor, so the soft edge acts at walls and raised beds rather
+than on a sloped beach. L2: previewed offline (the preview's depth is marched,
+so its bank normals are rough), not seen in game; frame cost not measured
+(about two value-noise and one hash per shore texel, two cosines per texel for
+the swells).
+

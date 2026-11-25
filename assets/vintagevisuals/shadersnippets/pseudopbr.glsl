@@ -180,6 +180,7 @@ uniform vec2 vv_reflectWorldAtlasSize;
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
+uniform float vv_weatherRippleEpoch; // whole wraps of that clock so far, mod 4096
 
 // Camera world position, WRAPPED to VV_ORIGIN_PERIOD on the CPU, so the ripple
 // field stays nailed to the ground rather than swimming with the player.
@@ -1366,26 +1367,12 @@ vec4 vvCellRandom(vec2 cell)
 // cell. The rings collapsed into a coarse stamp repeated identically
 // everywhere, which is exactly what it looked like. Wrapped, the coordinate
 // stays under five thousand and a cell holds two thousand positions.
-vec2 vvRippleSlope(vec2 p, float t, float density)
+vec2 vvRippleSlope(vec2 p, float t, float epoch, float density)
 {
     vec2 cell  = floor(p);
     vec2 local = fract(p);
 
     vec4 rnd = vvCellRandom(cell);
-
-    // Is this cell being rained into at all? This is what makes heavy rain
-    // visibly denser rather than merely faster - sampled, it takes the
-    // disturbed fraction of the ground from 8% in light rain to 36% in heavy.
-    if (rnd.x > density) return vec2(0.0);
-
-    // Where the drop landed, and how far its ring may travel without leaving
-    // the cell. A ring clipped by a cell boundary shows the boundary.
-    vec2 centre = vec2(0.5) + (rnd.yz - 0.5) * VV_RIPPLE_JITTER;
-    float reach = 0.5 - VV_RIPPLE_JITTER * 0.5;
-
-    vec2 offset = local - centre;
-    float r = length(offset);
-    if (r > reach) return vec2(0.0);
 
     // How often this cell is hit, as a whole number of drops per wrap of the
     // clock. Whole numbers rather than a continuous rate because the clock is
@@ -1394,7 +1381,28 @@ vec2 vvRippleSlope(vec2 p, float t, float density)
 
     // Phase from the cell's own position hash rather than a fifth random,
     // so neighbouring drops are out of step without another hash.
-    float age = fract(t * rate + rnd.y * 0.61 + rnd.z * 0.39);
+    float phase = t * rate + rnd.y * 0.61 + rnd.z * 0.39;
+    float age = fract(phase);
+
+    // WHICH drop this is. The count runs on across wraps of the clock (epoch
+    // is the number of wraps so far, a whole number), and each drop draws its
+    // own chance to fall and its own spot. Hashing the cell alone put every
+    // drop on the same spot of the same cells, forever (2026-11-25).
+    float drop = floor(phase) + epoch * rate;
+    vec4 hit = vvCellRandom(vec2(drop, floor(rnd.x * 1048576.0)));
+
+    // Is this cell being rained into this time? This is what makes heavy rain
+    // visibly denser rather than merely faster.
+    if (hit.x > density) return vec2(0.0);
+
+    // Where the drop landed, and how far its ring may travel without leaving
+    // the cell. A ring clipped by a cell boundary shows the boundary.
+    vec2 centre = vec2(0.5) + (hit.yz - 0.5) * VV_RIPPLE_JITTER;
+    float reach = 0.5 - VV_RIPPLE_JITTER * 0.5;
+
+    vec2 offset = local - centre;
+    float r = length(offset);
+    if (r > reach) return vec2(0.0);
 
     // The crest travels out from the impact and the whole ring dies as it
     // goes. Without the decay a drop reads as a permanent bump in the surface
@@ -1430,8 +1438,12 @@ vec2 vvRainRipples(vec2 worldXZ, float t, float density)
     // drops stutter, which is the opposite of what this is for.
     vec2 p = floor(worldXZ * VV_RIPPLE_TEXELS) / VV_RIPPLE_TEXELS;
 
-    return vvRippleSlope(p * 2.0, t, density)
-         + vvRippleSlope(p * 1.0 + vec2(31.43, 17.61), t * 0.5 + 0.37, density) * 0.7;
+    // The slow layer runs at half the clock. Its time and drop count are
+    // rebuilt from the epoch so both stay continuous when the clock wraps.
+    float u = mod(vv_weatherRippleEpoch, 2.0) * 0.5 + t * 0.5 + 0.37;
+    return vvRippleSlope(p * 2.0, t, vv_weatherRippleEpoch, density)
+         + vvRippleSlope(p * 1.0 + vec2(31.43, 17.61), fract(u),
+                         floor(vv_weatherRippleEpoch * 0.5) + floor(u), density) * 0.7;
 }
 
 // Perturbs the surface normal with rain landing in standing water.

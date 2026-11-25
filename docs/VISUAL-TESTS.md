@@ -191,6 +191,40 @@ The dapple field is derived from vanilla's shadow map and carries no clock or
 noise of its own, so it should move only because the leaves move. Anything that
 moves while the world is still is a defect, not a setting.
 
+## Performance baseline
+
+One fixed scene, so numbers from different builds compare like with like.
+
+- Flat ground beside a lake of at least 20 x 20 blocks, view distance as the
+  player normally plays, `/time set noon`, clear weather (`/weather clear`).
+- Stand on the shore 2 blocks above the water, facing across it, and do not
+  move or turn while a bench runs.
+- `.vvbench tiers 8` records Low, Medium, High and Ultra in turn; `.vvbench 10`
+  records the current settings. Results land in `client-main.log` as
+  `[VintageVisuals] bench ...`. Repeat once with `Water.Enabled` off for the
+  water's own cost (transparent stage, same scene).
+
+Report the GPU frame figure and the opaque and transparent stage figures, not
+the fps counter alone: fps folds in CPU and vsync.
+
+### Water
+
+- [ ] the water reflects the sky more at a glancing angle than looking down
+- [ ] the reflection is one colour per water pixel, with stepped edges (debug view 6 shows the grid)
+- [ ] Reflection softness 0 is hard steps; 0.35 keeps the steps with a softer transition; 1 is smoother but still pixelated
+- [ ] deep water is darker and bluer than the shallows, and the bed shows through near the shore
+- [ ] rain rings appear on open water only while rain falls; none under a roof
+- [ ] standing at the water's edge in daylight, the shallows show the bed and the water is never white or milky; the far water reflects the sky, the near-horizon band stays dark like the banks (D73)
+- [ ] rain rings land in new places all the time (watch one spot for ten seconds: no ring repeats there in step), on water and on wet stone, and light rain has visibly fewer than heavy rain (D73)
+- [ ] at noon and at a low sun the sun makes pixel glints along its path; the game's broad glow is reduced, not doubled
+- [ ] in sunlit water 1 to 3 blocks deep, a moving web of light lies on the bed, pixel-stepped like the textures; it is faint beside the bed's own texture, weaker on slopes and walls, gone in deep water and within a few dozen blocks; it goes when a cloud covers the sun or a tree shades the surface, and Caustics 0 removes it (D77)
+- [ ] facing a bank across water, a thin pixel foam line laps in and out where the water meets it, and the water thins just before the bank; Shorelines 0 restores the game's own edge foam (D79)
+- [ ] a flowing river shows waves streaked along the current and quicker glitter; a still pond in calm air is smoother than before (D79)
+- [ ] a large lake seen from a hill keeps a slow swell pattern in the distance instead of a flat colour (D79)
+- [ ] lava looks exactly as vanilla
+- [ ] Water surface off restores the game's water exactly
+- [ ] no seam or pattern jump when walking across a 4096-block boundary
+
 ## Reporting a result
 
 In `STATUS.md`, a feature moves to **L4** only with the scenes it was seen in.

@@ -245,7 +245,20 @@ Not yet validated, and each is a separate question:
 - [ ] performance cost of the capture measured
 - [ ] reflection survives a world reload
 
-**Water is not implemented at all.** `chunkliquid.fsh` is in no patch group.
+**Water** has its own patch group on `chunkliquid.fsh` since 2026-11-25 (D71):
+texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
+
+- [x] `water.yaml` matches and compiles against the game's own `chunkliquid.fsh` in every define combination, foam on and off (`tools/verifypatches`)
+- [x] composition, parity with the terrain copies and period tiling evaluated from the shipped GLSL (`WaterChecks`)
+- [ ] seen in game: reflection, depth colour, ripples in rain, glints at noon and at a low sun (first look 2026-11-25 failed: white from the feet-relative view vector, drops on fixed spots; D73 not yet seen)
+- [x] eye recovery from the view matrix tested on built matrices (`WaterChecks`); per-drop ripple hashing checked in all three copies
+- [ ] no seam when crossing a 4096-block boundary
+- [ ] frame cost measured with `.vvbench` at the water test scene
+- [x] caustics (D77): flat water and a surface bed gather nothing, a focus shoulders, the visible-sun gate, the slider at 0, opacity untouched and period tiling, evaluated from the shipped GLSL, each with a mutation that fails it
+- [x] caustics fall on a face by N.L and fade with depth and view path, evaluated from the shipped GLSL, each with a mutation
+- [x] shoreline, rivers and swells (D79): zero is vanilla, the edge only thins, foam composites over, no flow is the old waves, still-water calm only without wind, swells tile the period; evaluated from the shipped GLSL, each with a mutation
+- [ ] shoreline foam, river streaks and far swells seen in game
+- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow (first look 2026-11-25 failed: far too strong everywhere; amendment not yet seen)
 
 ---
 

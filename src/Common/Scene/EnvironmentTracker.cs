@@ -117,6 +117,7 @@ namespace VintageVisuals.Common.Scene
         /// camera position is.
         /// </summary>
         private double _rippleClock;
+        private long _rippleEpoch;
         private double _breezeClock;
 
         public EnvironmentTracker(ICoreClientAPI capi, ILogger logger)
@@ -136,6 +137,18 @@ namespace VintageVisuals.Common.Scene
         /// on the same frame. Which is what happened.
         /// </summary>
         public float RippleClock { get; private set; }
+
+        /// <summary>
+        /// Whole turns of <see cref="RippleClock"/> so far, wrapped to
+        /// <see cref="RippleEpochPeriod"/>. The shaders count drops with it, so
+        /// each drop picks a new spot instead of the clock replaying the same
+        /// drops every 1.5 s. A whole number held exactly in float32; the wrap
+        /// re-deals the drops in flight once every ~1.7 hours.
+        /// </summary>
+        public float RippleEpoch { get; private set; }
+
+        /// <summary>Even, so the half-rate ripple layer stays continuous across the wrap.</summary>
+        public const int RippleEpochPeriod = 4096;
 
         /// <summary>
         /// A much slower clock, wrapped to 0..1, for things that move at the
@@ -326,8 +339,12 @@ namespace VintageVisuals.Common.Scene
             SampleCanopy(deltaSeconds);
             SampleGround();
 
-            _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
+            double ripple = _rippleClock + deltaSeconds / RippleSeconds;
+            double turns = Math.Floor(ripple);
+            _rippleClock = ripple - turns;
+            _rippleEpoch = (_rippleEpoch + (long)turns) % RippleEpochPeriod;
             RippleClock = (float)_rippleClock;
+            RippleEpoch = _rippleEpoch;
 
             // Advanced by the WIND, not by the wall clock. Leaves are still in
             // still air and thrash in a gust, and the flecks they let through do
@@ -847,6 +864,8 @@ namespace VintageVisuals.Common.Scene
             _snow.Reset();
             _rippleClock = 0;
             RippleClock = 0f;
+            _rippleEpoch = 0;
+            RippleEpoch = 0f;
             BreezeClock = 0f;
             Current = EnvironmentState.Clear;
             Atmosphere = AtmosphereState.Clear;

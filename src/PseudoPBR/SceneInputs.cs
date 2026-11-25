@@ -38,6 +38,9 @@ namespace VintageVisuals.PseudoPBR
         /// <summary>Ripple animation clock, already wrapped to 0..1. See EnvironmentTracker.RippleClock.</summary>
         public readonly float RippleTime;
 
+        /// <summary>Whole turns of the ripple clock so far. See EnvironmentTracker.RippleEpoch.</summary>
+        public readonly float RippleEpoch;
+
         /// <summary>Slow clock for leaf-speed movement, wrapped to 0..1.</summary>
         public readonly float Breeze;
 
@@ -107,8 +110,10 @@ namespace VintageVisuals.PseudoPBR
                            float autumn = 0f, float winter = 0f,
                            float frost = 0f, float snow = 0f,
                            float skyCover = 0f, float wind = 0f, float moonLight = 0f,
-                           Vec2f windDirection = null, float humidity = 0f, float rain = 0f)
+                           Vec2f windDirection = null, float humidity = 0f, float rain = 0f,
+                           float rippleEpoch = 0f)
         {
+            RippleEpoch = rippleEpoch;
             Rain = rain;
             WindDirection = windDirection ?? new Vec2f(1f, 0f);
             Humidity = humidity;

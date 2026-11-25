@@ -1,0 +1,92 @@
+# Vintage Visuals - water surface on chunkliquid (patch group "water").
+#
+# The first patch group on the liquid program. It builds on vanilla's water -
+# texture, flow, foam, vertex waves, droplets, the lava branch - and runs on
+# the finished water colour, just before vanilla's own fog. See
+# shadersnippets/water.glsl for what it does and in which order.
+#
+# Its own group, gated on Water.Enabled, so "off" is vanilla's liquid source
+# and not this code multiplied by zero. It declares NO sampler: depthTex is
+# vanilla's own, which vanilla already reads for foam. The scene-capture
+# reflection will need one and will come as its own group, below vanilla's
+# last sampler (liquidDepth), the same rule as on terrain.
+#
+# scene.glsl and pbrcore.glsl are injected here separately rather than shared
+# with the terrain groups, so each group rolls back alone (CLAUDE.md).
+#
+# Verified against 1.22.x with tools/verifypatches.
+
+- type: assert
+  phase: Assertions
+  filename: chunkliquid.fsh
+  tokens: in vec4 rgbaFog;
+
+- type: assert
+  phase: Assertions
+  filename: chunkliquid.fsh
+  tokens: uniform vec3 lightPosition;
+
+- type: assert
+  phase: Assertions
+  filename: chunkliquid.fsh
+  tokens: uniform sampler2D depthTex;
+
+- type: replace
+  phase: Declarations
+  filename: chunkliquid.fsh
+  tokens: in vec4 rgbaFog;
+  snippet: scene.glsl
+
+- type: replace
+  phase: Declarations
+  filename: chunkliquid.fsh
+  tokens: uniform vec3 lightPosition;
+  snippet: pbrcore.glsl
+
+# Above main and below every include, so frameSize, depthTex, zFar,
+# linearDepth and waterWaveCounter are all declared before it.
+- type: insert_before
+  phase: Declarations
+  filename: chunkliquid.fsh
+  tokens: vec2 droplethash3( vec2 p )
+  snippet: water.glsl
+
+# Vanilla's broad sun highlight steps back as the texel glints take over, so
+# the sun is not drawn twice. The keep factor is exactly 1 while this group's
+# uniforms are unset.
+- type: token
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: float specular = pow(p, 50) * sunb;
+  content: |
+    float specular = pow(p, 50) * sunb * vvWaterVanillaSpecularKeep();
+
+# Vanilla's droplet rings stand aside while this mod's rain rings are on, so one
+# drop system covers water and land alike (D75). Keep is exactly 1 while this
+# group's uniforms are unset or the ring slider is 0.
+- type: token
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: f = dropletnoise(uv);
+  content: |
+    f = dropletnoise(uv) * vvWaterVanillaDropletKeep();
+
+# Vanilla's depth-edge foam steps back while this mod's foam line is on (D79).
+# Keep is exactly 1 while this group's uniforms are unset or the slider is 0.
+# The lava branch has its own line (x1000) and is untouched.
+- type: token
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: float diff = intensity * clamp(1 - diffTotal*1500 - noise1/2 + noise2/2, 0, 1);
+  content: |
+    float diff = intensity * clamp(1 - diffTotal*1500 - noise1/2 + noise2/2, 0, 1) * vvWaterVanillaFoamKeep();
+
+# On the finished water colour, before vanilla's fog. Outside the FOAMEFFECT
+# block on purpose: the surface works with the game's foam setting either way.
+- type: insert_before
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: texColor = applyFog(texColor, fogAmount);
+  content: |
+    if (!isLava) texColor = vvWaterSurface(texColor, fWorldPos, fragNormal, shadowBright, skyExposed,
+                                           flowVectorf * (1.5 * wfc), flowVectorf, rgbaFog.rgb);

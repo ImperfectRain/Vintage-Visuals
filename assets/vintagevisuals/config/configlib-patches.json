@@ -71,6 +71,20 @@
         "default": true,
         "clientSide": true,
         "weight": 73
+      },
+      "water_enabled": {
+        "ingui": "Water surface",
+        "comment": "This mod's water: texel-locked sky reflection, depth colour, rain ripples and sun glints, built on the game's own water. Off compiles the game's water untouched.",
+        "default": true,
+        "clientSide": true,
+        "weight": 105
+      },
+      "perf_frametimes": {
+        "ingui": "Frame-time readout",
+        "comment": "Shows milliseconds per render stage and mod pass in the top-left corner. Also .vvperf and .vvbench.",
+        "default": false,
+        "clientSide": true,
+        "weight": 115
       }
     },
     "float": {
@@ -1141,6 +1155,138 @@
           "max": 1.0,
           "step": 0.05
         }
+      },
+      "water_sky": {
+        "ingui": "Water reflection",
+        "comment": "How much of the sky and horizon the water reflects, more at a glancing angle. One colour per water pixel. 0 is off.",
+        "default": 0.75,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 106
+      },
+      "water_soft": {
+        "ingui": "Reflection softness",
+        "comment": "A subtle blur of the water reflection between neighbouring water pixels. 0 is the sharp pixel image.",
+        "default": 0.35,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 107
+      },
+      "water_waves": {
+        "ingui": "Wave relief",
+        "comment": "How much the small waves tilt the reflection and the glints. 0 is a flat mirror.",
+        "default": 1.0,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 108
+      },
+      "water_depthtint": {
+        "ingui": "Depth colour",
+        "comment": "Deep water turns blue-green and opaque; shallow water stays clear. 0 is off.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 109
+      },
+      "water_clarity": {
+        "ingui": "Shallow clarity",
+        "comment": "How see-through water less than about a block deep is. 0 keeps the game opacity.",
+        "default": 0.4,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 110
+      },
+      "water_ripples": {
+        "ingui": "Rain ripples on water",
+        "comment": "Rings where rain lands on open water, while rain is falling. 0 is off.",
+        "default": 0.8,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 111
+      },
+      "water_glints": {
+        "ingui": "Sun and moon glints",
+        "comment": "Sharp highlights of the sun and moon on the waves. 0 is off.",
+        "default": 0.7,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 112
+      },
+      "water_shore": {
+        "ingui": "Shorelines",
+        "comment": "A soft edge where the water is only a sliver deep, and a pixel foam line lapping along the bank. 0 is off.",
+        "default": 0.7,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 117
+      },
+      "water_caustics": {
+        "ingui": "Caustics",
+        "comment": "Moving lines of sunlight the waves focus onto the bottom of open water. 0 is off.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 116
+      },
+      "water_debug": {
+        "ingui": "Water debug view",
+        "comment": "0 off. 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam, flow and far swell.",
+        "default": 0.0,
+        "range": {
+          "min": 0.0,
+          "max": 8.0,
+          "step": 1.0
+        },
+        "clientSide": true,
+        "weight": 113
+      },
+      "perf_quality": {
+        "ingui": "Quality tier",
+        "comment": "0 Low, 1 Medium, 2 High, 3 Ultra. Scales effect cost; never enables an effect that is off. 2 is the reference.",
+        "default": 2.0,
+        "range": {
+          "min": 0.0,
+          "max": 3.0,
+          "step": 1.0
+        },
+        "clientSide": true,
+        "weight": 114
       }
     }
   }

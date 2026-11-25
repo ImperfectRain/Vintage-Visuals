@@ -69,6 +69,10 @@ namespace VintageVisuals.Common
 
         public AtmosphereConfig Atmosphere { get; set; } = new AtmosphereConfig();
 
+        public WaterConfig Water { get; set; } = new WaterConfig();
+
+        public PerformanceConfig Performance { get; set; } = new PerformanceConfig();
+
         /// <summary>
         /// Clamps every value into its supported range, returning a description
         /// of anything that had to be corrected.
@@ -89,6 +93,8 @@ namespace VintageVisuals.Common
             Weather.ClampToValidRanges(corrections);
             Reflections.ClampToValidRanges(corrections);
             Atmosphere.ClampToValidRanges(corrections);
+            Water.ClampToValidRanges(corrections);
+            Performance.ClampToValidRanges(corrections);
             return corrections;
         }
     }

@@ -124,6 +124,9 @@ namespace VintageVisuals.PseudoPBR
 
         public string Name => GroupName;
 
+        /// <summary>The uniform binder, for the one shared scene upload path (water uses it).</summary>
+        public PbrShaderBinder Binder => _binder;
+
         public void Initialize(VintageVisualsModSystem mod)
         {
             _mod = mod;
@@ -312,7 +315,8 @@ namespace VintageVisuals.PseudoPBR
                 Clamp01(world.MoonLight),
                 world.WindDirection,
                 Clamp01(world.Humidity),
-                Clamp01(world.Rain));
+                Clamp01(world.Rain),
+                _mod.Environment.RippleEpoch);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)
