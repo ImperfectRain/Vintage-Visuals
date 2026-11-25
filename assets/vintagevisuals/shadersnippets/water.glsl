@@ -37,6 +37,7 @@
 
 uniform float vv_water;            // master: 0 vanilla, 1 on
 uniform vec3  vv_waterOrigin;      // camera world position, wrapped on the CPU
+uniform vec3  vv_waterEye;         // the eye, relative to the player origin fWorldPos is measured from
 uniform vec3  vv_waterSunDir;      // unit, toward the sun (AtmosphereState.SunDirection)
 uniform vec3  vv_waterSunColor;    // the game's sun colour, already reddened at the horizon
 uniform vec3  vv_waterMoonDir;     // unit, toward the moon
@@ -47,6 +48,7 @@ uniform float vv_waterDepthTint;   // colour and opacity gained with depth
 uniform float vv_waterClarity;     // how clear the shallows are
 uniform float vv_waterRipples;     // rain falling x strength, 0 none
 uniform float vv_waterRippleTime;  // 0..1 clock, whole drops per wrap
+uniform float vv_waterRippleEpoch; // whole wraps of that clock so far, mod 4096
 uniform float vv_waterRippleLayers;// quality: 1 or 2 ripple scales
 uniform float vv_waterGlints;      // sun and moon highlight strength
 uniform float vv_waterWaves;       // texel wave relief strength
@@ -57,7 +59,16 @@ const float VV_WATER_F0 = 0.02;              // water's reflectance at normal in
 const float VV_WATER_ROUGHNESS = 0.10;       // perceptual roughness for the glint lobe
 const float VV_WATER_DEEP_PATH = 32.0;       // blocks: depth tint saturates well before this
 const float VV_WATER_SKY_CAVE = 0.15;
-const float VV_WATER_SOFT_RADIUS = 3.0;      // texels between a texel and each blur neighbour        // reflected sky left for water the sky cannot see
+const float VV_WATER_SOFT_RADIUS = 3.0;      // texels between a texel and each blur neighbour
+// A pond's near-horizontal reflections meet its own banks and trees, not the
+// sky: below VV_WATER_BANK_HIGH of elevation the reflected sky gives way to the
+// surroundings, lit by the same sky at a typical ground albedo. DATA GAP: the
+// banks are not looked up, only stood in for, until water has a scene trace.
+const float VV_WATER_BANK_LOW = 0.02;
+const float VV_WATER_BANK_HIGH = 0.32;
+const float VV_WATER_BANK_SHADE = 0.30;      // the surroundings, relative to the sky lighting them
+const float VV_WATER_GLINT_ALPHA = 0.6;
+const float VV_WATER_RING_SHARE = 0.9;       // reflected share a full ring crest reaches, at any view angle      // most a glint may add to the water's opacity
 const float VV_WATER_SPEC_KEEP = 0.25;       // vanilla's broad sun specular kept at full glints
 
 // Absorption per block of path, red first: what makes deep water blue-green
@@ -105,22 +116,30 @@ vec4 vvWaterCellRandom(vec2 cell)
                 float(vvWaterHashU(h ^ 0x9c8f2d3bu))) / 4294967295.0;
 }
 
-vec2 vvWaterRippleSlope(vec2 p, float t, float density)
+vec2 vvWaterRippleSlope(vec2 p, float t, float epoch, float density)
 {
     vec2 cell = floor(p);
     vec2 local = fract(p);
     vec4 rnd = vvWaterCellRandom(cell);
-    if (rnd.x > density) return vec2(0.0);
 
-    vec2 centre = vec2(0.5) + (rnd.yz - 0.5) * VV_WATER_RIPPLE_JITTER;
+    // Whole drops per wrap of the 0..1 clock, so the wrap cannot jump. The
+    // drop COUNT runs on across wraps (epoch = wraps so far, whole), and each
+    // drop draws its own chance to fall and its own spot in the cell: rain
+    // lands somewhere new every time, and the density decides how many cells
+    // are struck rather than which ones.
+    float rate = 1.0 + floor(rnd.w * 3.0);
+    float phase = t * rate + rnd.y * 0.61 + rnd.z * 0.39;
+    float age = fract(phase);
+    float drop = floor(phase) + epoch * rate;
+    vec4 hit = vvWaterCellRandom(vec2(drop, floor(rnd.x * 1048576.0)));
+    if (hit.x > density) return vec2(0.0);
+
+    vec2 centre = vec2(0.5) + (hit.yz - 0.5) * VV_WATER_RIPPLE_JITTER;
     float reach = 0.5 - VV_WATER_RIPPLE_JITTER * 0.5;
     vec2 offset = local - centre;
     float r = length(offset);
     if (r > reach) return vec2(0.0);
 
-    // Whole drops per wrap of the 0..1 clock, so the wrap cannot jump.
-    float rate = 1.0 + floor(rnd.w * 3.0);
-    float age = fract(t * rate + rnd.y * 0.61 + rnd.z * 0.39);
     float front = age * reach;
     float band = exp(-abs(r - front) * VV_WATER_RIPPLE_BAND);
     float decay = (1.0 - age) * (1.0 - age);
@@ -132,9 +151,15 @@ vec2 vvWaterRippleSlope(vec2 p, float t, float density)
 vec2 vvWaterRainRipples(vec2 worldXZ, float t, float density)
 {
     vec2 p = floor(worldXZ * VV_WATER_RIPPLE_TEXELS) / VV_WATER_RIPPLE_TEXELS;
-    vec2 slope = vvWaterRippleSlope(p * 2.0, t, density);
+    vec2 slope = vvWaterRippleSlope(p * 2.0, t, vv_waterRippleEpoch, density);
     if (vv_waterRippleLayers > 1.5)
-        slope += vvWaterRippleSlope(p + vec2(31.43, 17.61), t * 0.5 + 0.37, density) * 0.7;
+    {
+        // The slow layer runs at half the clock. Its time and drop count are
+        // rebuilt from the epoch so both stay continuous when the clock wraps.
+        float u = mod(vv_waterRippleEpoch, 2.0) * 0.5 + t * 0.5 + 0.37;
+        slope += vvWaterRippleSlope(p + vec2(31.43, 17.61), fract(u),
+                                    floor(vv_waterRippleEpoch * 0.5) + floor(u), density) * 0.7;
+    }
     return slope;
 }
 
@@ -216,16 +241,19 @@ vec2 vvWaterWaveSlope(vec2 world, float t)
 // The normal of one water texel: the face, tilted by the waves (top faces at
 // full height, falling water a little) and by the rain ripples (top faces in
 // the open only).
-vec3 vvWaterTexelNormal(vec3 faceNormal, vec3 world, vec2 flowOffset, float rippleAmount)
+vec3 vvWaterTexelNormal(vec3 faceNormal, vec3 world, vec2 flowOffset, float rippleAmount, out float ring)
 {
+    ring = 0.0;
     float top = clamp(faceNormal.y, 0.0, 1.0);
     vec2 slope = vvWaterWaveSlope(world.xz - flowOffset, waterWaveCounter)
                * clamp(vv_waterWaves, 0.0, 2.0) * mix(0.25, 1.0, top);
 
     if (rippleAmount > 0.001)
     {
-        slope += vvWaterRainRipples(world.xz, vv_waterRippleTime, clamp(vv_waterRipples, 0.0, 1.0))
-               * (VV_WATER_RIPPLE_DEPTH * rippleAmount);
+        vec2 rain = vvWaterRainRipples(world.xz, vv_waterRippleTime, clamp(vv_waterRipples, 0.0, 1.0))
+                  * (VV_WATER_RIPPLE_DEPTH * rippleAmount);
+        slope += rain;
+        ring = clamp(length(rain), 0.0, 1.0);
     }
 
     vec3 n = faceNormal + vec3(slope.x, 0.0, slope.y) * top
@@ -245,7 +273,18 @@ void vvWaterFaceAxes(vec3 faceNormal, out vec3 a, out vec3 b)
 // The analytic sky as one texel sees it along r.
 vec3 vvWaterSkyImage(vec3 r, vec3 environment)
 {
-    return vvWaterReflectionFallback(vvWaterReflectCell(r, VV_WATER_REFLECT_CELLS), environment);
+    vec3 cell = vvWaterReflectCell(r, VV_WATER_REFLECT_CELLS);
+    vec3 sky = vvWaterReflectionFallback(cell, environment);
+
+    // Never brighter than the sky itself: the terrain fallback's horizon and
+    // toward-sun lift suit a rough surface, and on a mirror they are what
+    // turned a pond white.
+    float skyLuma = dot(sky, vec3(0.2126, 0.7152, 0.0722));
+    float cap = dot(environment, vec3(0.2126, 0.7152, 0.0722));
+    if (skyLuma > cap && skyLuma > 1e-5) sky *= cap / skyLuma;
+
+    float open = smoothstep(VV_WATER_BANK_LOW, VV_WATER_BANK_HIGH, cell.y);
+    return mix(environment * VV_WATER_BANK_SHADE, sky, open);
 }
 
 float vvWaterLuma(vec3 c)
@@ -295,7 +334,11 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     if (vv_water < 0.5) return color;
 
     // Seen from below (camera underwater, looking up): leave vanilla's.
-    vec3 vFrag = normalize(-pos);
+    // fWorldPos is measured from the PLAYER, not the eye (the camera offset
+    // lives in the view matrix), so the view vector starts at vv_waterEye.
+    // From the feet, water at standing height is seen exactly edge-on and
+    // reflects the whole sky (2026-11-25). 0 is the previous build.
+    vec3 vFrag = normalize(vv_waterEye - pos);
     if (dot(vFrag, faceNormal) <= 0.0) return color;
 
     // --- the texel ---------------------------------------------------------
@@ -319,12 +362,13 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         screenStep = clamp(screenStep, vec2(-64.0), vec2(64.0));
     }
 
-    vec3 v = normalize(-centre);
+    vec3 v = normalize(vv_waterEye - centre);
     float top = clamp(faceNormal.y, 0.0, 1.0);
     float skyFactor = skyOpen > 0 ? 1.0 : VV_WATER_SKY_CAVE;
     float rippleAmount = skyOpen > 0 ? clamp(vv_waterRipples, 0.0, 1.0) * top : 0.0;
 
-    vec3 n = vvWaterTexelNormal(faceNormal, centreWorld, flowOffset, rippleAmount);
+    float ring;
+    vec3 n = vvWaterTexelNormal(faceNormal, centreWorld, flowOffset, rippleAmount, ring);
 
     // --- 1. sky and horizon reflection, texel-locked ------------------------
     vec3 r = reflect(-v, n);
@@ -344,7 +388,8 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         {
             if (i >= taps) break;
             vec3 dir = (i == 1) ? ax : (i == 2) ? -ax : (i == 3) ? bx : -bx;
-            vec3 nb = vvWaterTexelNormal(faceNormal, centreWorld + dir * step1, flowOffset, rippleAmount);
+            float ringTap;
+            vec3 nb = vvWaterTexelNormal(faceNormal, centreWorld + dir * step1, flowOffset, rippleAmount, ringTap);
             vec3 rb = reflect(-v, nb);
             if (rb.y < 0.0 && top > 0.5) rb = normalize(vec3(rb.x, -rb.y * 0.25, rb.z));
             sum += vvWaterSkyImage(rb, environment);
@@ -357,6 +402,13 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float ndotv = clamp(dot(n, v), 0.0, 1.0);
     float fresnel = VV_WATER_F0 + (1.0 - VV_WATER_F0) * pow(1.0 - ndotv, 5.0);
     float reflectShare = clamp(fresnel * clamp(vv_waterSky, 0.0, 1.0), 0.0, 1.0);
+
+    // A ring's crest is steep: it throws sky light back over its whole circle,
+    // not only where Fresnel is already high, so a drop reads looking down into
+    // the water as well as across it, the way vanilla's droplets brighten the
+    // water they hit. Scaled by the ripple strength alone (it is in ring), so
+    // the reflection slider at 0 does not take the rain with it.
+    reflectShare = max(reflectShare, VV_WATER_RING_SHARE * ring);
 
     // --- 2. depth colouring: the path behind this texel ----------------------
     vec3 body = color.rgb;
@@ -401,7 +453,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float outAlpha = reflectShare + bodyAlpha * (1.0 - reflectShare);
     vec3 premult = image * reflectShare + body * bodyAlpha * (1.0 - reflectShare) + glint;
     float glintAlpha = clamp(vvWaterLuma(glint), 0.0, 1.0);
-    outAlpha = clamp(outAlpha + glintAlpha * (1.0 - outAlpha), 0.0, 1.0);
+    outAlpha = clamp(outAlpha + min(glintAlpha, VV_WATER_GLINT_ALPHA) * (1.0 - outAlpha), 0.0, 1.0);
     vec4 result = vec4(premult / max(outAlpha, 1e-3), outAlpha);
 
     // --- debug views (Water.DebugView) -------------------------------------

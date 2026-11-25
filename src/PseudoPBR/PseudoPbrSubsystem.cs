@@ -315,7 +315,8 @@ namespace VintageVisuals.PseudoPBR
                 Clamp01(world.MoonLight),
                 world.WindDirection,
                 Clamp01(world.Humidity),
-                Clamp01(world.Rain));
+                Clamp01(world.Rain),
+                _mod.Environment.RippleEpoch);
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)

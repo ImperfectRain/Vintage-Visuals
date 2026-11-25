@@ -250,7 +250,8 @@ texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
 
 - [x] `water.yaml` matches and compiles against the game's own `chunkliquid.fsh` in every define combination, foam on and off (`tools/verifypatches`)
 - [x] composition, parity with the terrain copies and period tiling evaluated from the shipped GLSL (`WaterChecks`)
-- [ ] seen in game: reflection, depth colour, ripples in rain, glints at noon and at a low sun
+- [ ] seen in game: reflection, depth colour, ripples in rain, glints at noon and at a low sun (first look 2026-11-25 failed: white from the feet-relative view vector, drops on fixed spots; D73 not yet seen)
+- [x] eye recovery from the view matrix tested on built matrices (`WaterChecks`); per-drop ripple hashing checked in all three copies
 - [ ] no seam when crossing a 4096-block boundary
 - [ ] frame cost measured with `.vvbench` at the water test scene
 

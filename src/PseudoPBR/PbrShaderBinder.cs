@@ -65,6 +65,7 @@ namespace VintageVisuals.PseudoPBR
         public const string RainCoverUniform = "vv_weatherRainCover";
         public const string RipplesUniform = "vv_weatherRipples";
         public const string RippleTimeUniform = "vv_weatherRippleTime";
+        public const string RippleEpochUniform = "vv_weatherRippleEpoch";
         public const string OvercastUniform = "vv_sceneOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
         public const string FoliageUniform = "vv_pbrFoliage";
@@ -475,7 +476,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
             SetIfPresent(program, RainCoverUniform, _weather.RainCover);
             SetIfPresent(program, RipplesUniform, _weather.Ripples);
-            SetIfPresent(program, RippleTimeUniform, _weather.RippleTime);
+            UploadRippleClock(program);
             SetIfPresent(program, OriginUniform, _weather.Origin);
             UploadScene(program);
 
@@ -618,6 +619,13 @@ namespace VintageVisuals.PseudoPBR
         // The quality tier scales what these two cost; exactly 1 at High.
         private float TieredDetail => _look.DetailDistance * QualityTier.DetailDistanceScale;
         private float TieredCanopy => _look.CanopyRadius * QualityTier.CanopyRadiusScale;
+
+        /// <summary>The ripple clock and its whole turns: drops are counted with both.</summary>
+        private void UploadRippleClock(IShaderProgram program)
+        {
+            SetIfPresent(program, RippleTimeUniform, _weather.RippleTime);
+            SetIfPresent(program, RippleEpochUniform, _weather.RippleEpoch);
+        }
 
         private void UploadScene(IShaderProgram program)
         {

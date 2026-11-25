@@ -403,7 +403,7 @@ information ladder applies throughout: prefer what the game already computed.
 | Moon direction and light | `MoonPosition`, `MoonPhaseBrightness` | normalised in double; light scaled by darkness | `vv_atmosMoonDir`, `vv_atmosMoonLight` | moon scattering |
 | Broken cloud | the same blended cloud density the shadows read | `4c(1-c)` | `vv_atmosBrokenCloud` | cloud-edge scattering |
 | Camera height above sea level, far plane | `DefaultShaderUniforms` | none | vanilla `playerToSealevelOffset`, `zFar` | `AtmosphereState` |
-| Water surface inputs (D71) | `AtmosphereState.SunDirection/SunColor/MoonDirection`, `EnvironmentState.CameraPosition` (wrapped) and `Rain`, `EnvironmentTracker.RippleClock`; scene block from `PbrShaderBinder.UploadSceneTo`; the opaque depth is vanilla's own `depthTex` | `WaterShaderBinder` at `Before` 0.2, config x tier | `vv_water*` uniforms on `chunkliquid`, no sampler | `water.glsl` |
+| Water surface inputs (D71) | `AtmosphereState.SunDirection/SunColor/MoonDirection`, `EnvironmentState.CameraPosition` (wrapped) and `Rain`, `EnvironmentTracker.RippleClock` and `RippleEpoch` (D73, also to terrain as `vv_weatherRippleEpoch`), the eye from `CameraMatrixOriginf` (D73); scene block from `PbrShaderBinder.UploadSceneTo`; the opaque depth is vanilla's own `depthTex` | `WaterShaderBinder` at `Before` 0.2, config x tier | `vv_water*` uniforms on `chunkliquid`, no sampler | `water.glsl` |
 
 ### Configuration, which has three writers and one owner
 

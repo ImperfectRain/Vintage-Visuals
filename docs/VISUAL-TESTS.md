@@ -214,6 +214,8 @@ the fps counter alone: fps folds in CPU and vsync.
 - [ ] Reflection softness 0 is hard steps; 0.35 keeps the steps with a softer transition; 1 is smoother but still pixelated
 - [ ] deep water is darker and bluer than the shallows, and the bed shows through near the shore
 - [ ] rain rings appear on open water only while rain falls; none under a roof
+- [ ] standing at the water's edge in daylight, the shallows show the bed and the water is never white or milky; the far water reflects the sky, the near-horizon band stays dark like the banks (D73)
+- [ ] rain rings land in new places all the time (watch one spot for ten seconds: no ring repeats there in step), on water and on wet stone, and light rain has visibly fewer than heavy rain (D73)
 - [ ] at noon and at a low sun the sun makes pixel glints along its path; the game's broad glow is reduced, not doubled
 - [ ] lava looks exactly as vanilla
 - [ ] Water surface off restores the game's water exactly

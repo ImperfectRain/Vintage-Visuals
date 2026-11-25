@@ -21,7 +21,13 @@ never reaches it.
    horizon. One colour per water pixel, as on blocks. Composed by Fresnel
    (F0 0.02): the reflected share arrives as the sky colour, the rest meets the
    water body, and out alpha is `F + bodyAlpha * (1 - F)`, so a reflection can
-   never make water more transparent (checked).
+   never make water more transparent (checked). The view vector starts at the
+   EYE (`vv_waterEye`, recovered from `CameraMatrixOriginf`): `fWorldPos` has
+   the player at the origin, and from the feet a pond at standing height is
+   edge-on and mirrors the whole sky, which is how the first build looked
+   (D73). The sky image is capped at the sky's own brightness, and below about
+   0.32 of elevation it gives way to the surroundings at 0.30 of the sky light,
+   because near-horizontal rays meet the banks (DATA GAP until a scene trace).
 2. **Softness** (`ReflectionSoftness`): averages the reflection seen 3 texels
    away in four directions. Each texel stays one flat colour; neighbours step
    less sharply. Quality tier sets the taps (1 at Low = sharp only).
@@ -30,7 +36,10 @@ never reaches it.
    Red is absorbed first, opacity grows with depth, water under about a block
    is clearer than vanilla.
 4. **Rain ripples** (`RainRipples`): the terrain's ripple field, open water
-   only, while rain falls.
+   only, while rain falls. Each drop is hashed by its cell AND its drop number
+   (`RippleEpoch` counts turns of the 1.5 s clock), so drops land somewhere new
+   every time and the rain amount sets how many fall (D73). A ring's crest
+   raises the reflected share at any angle, so drops read looking down too.
 5. **Glints** (`Glints`): GGX from `pbrcore.glsl` for the sun and the moon on
    the texel normal, shadow-aware. Vanilla's broad sun highlight steps back to a
    quarter at full strength (`vvWaterVanillaSpecularKeep`).
@@ -62,7 +71,9 @@ white), 4 reflected share x4, 5 glints alone, 6 the water texel grid.
 
 L2: builds, compiles against the game's own `chunkliquid.fsh` in every define
 combination (foam on and off), checked by `WaterChecks`, previewed offline with
-the game's water texture. **Not seen in game. Performance not measured** - use
+the game's water texture. First seen in game 2026-11-25 and failed (white
+daylight water, drops on fixed spots); D73 fixes both and is **not yet seen in
+game. Performance not measured** - use
 `.vvbench` at the water test scene in `docs/VISUAL-TESTS.md`.
 
 Not done: scene (screen-space) reflection on water, refraction, underwater.

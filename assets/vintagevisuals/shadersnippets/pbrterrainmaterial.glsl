@@ -30,6 +30,7 @@ uniform float vv_pbrSpecOcclusion;
 uniform float vv_weatherRainCover;   // sky exposure a surface needs before rain reaches it
 uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
+uniform float vv_weatherRippleEpoch; // whole wraps of that clock so far, mod 4096
 uniform vec3 vv_pbrOrigin;           // camera world position, wrapped to VV_TERRAIN_ORIGIN_PERIOD on the CPU
 uniform float vv_pbrTorchFalloff;    // steepens the game's torch falloff on blocks (D70); 0 is vanilla
 uniform float vv_pbrCreviceWater;    // water follows the texture's relief; 0 is the even film from before
@@ -310,22 +311,30 @@ vec4 vvTerrainCellRandom(vec2 cell)
 // One drop impact per cell, returned as a slope. The coordinate MUST arrive
 // pre-wrapped: on a raw world position a float32 holds about sixteen positions
 // per ripple cell half a million blocks out.
-vec2 vvTerrainRippleSlope(vec2 p, float t, float density)
+vec2 vvTerrainRippleSlope(vec2 p, float t, float epoch, float density)
 {
     vec2 cell = floor(p);
     vec2 local = fract(p);
     vec4 rnd = vvTerrainCellRandom(cell);
-    if (rnd.x > density) return vec2(0.0);
 
-    vec2 centre = vec2(0.5) + (rnd.yz - 0.5) * VV_TERRAIN_RIPPLE_JITTER;
+    // Whole drops per wrap of the 0..1 clock, so the wrap cannot jump. The
+    // drop COUNT runs on across wraps (epoch = wraps so far, whole), and each
+    // drop draws its own chance to fall and its own spot in the cell: rain
+    // lands somewhere new every time, and the density decides how many cells
+    // are struck rather than which ones.
+    float rate = 1.0 + floor(rnd.w * 3.0);
+    float phase = t * rate + rnd.y * 0.61 + rnd.z * 0.39;
+    float age = fract(phase);
+    float drop = floor(phase) + epoch * rate;
+    vec4 hit = vvTerrainCellRandom(vec2(drop, floor(rnd.x * 1048576.0)));
+    if (hit.x > density) return vec2(0.0);
+
+    vec2 centre = vec2(0.5) + (hit.yz - 0.5) * VV_TERRAIN_RIPPLE_JITTER;
     float reach = 0.5 - VV_TERRAIN_RIPPLE_JITTER * 0.5;
     vec2 offset = local - centre;
     float r = length(offset);
     if (r > reach) return vec2(0.0);
 
-    // Whole drops per wrap of the 0..1 clock, so the wrap cannot jump.
-    float rate = 1.0 + floor(rnd.w * 3.0);
-    float age = fract(t * rate + rnd.y * 0.61 + rnd.z * 0.39);
     float front = age * reach;
     float band = exp(-abs(r - front) * VV_TERRAIN_RIPPLE_BAND);
     float decay = (1.0 - age) * (1.0 - age);
@@ -340,8 +349,12 @@ vec2 vvTerrainRippleSlope(vec2 p, float t, float density)
 vec2 vvTerrainRainRipples(vec2 worldXZ, float t, float density)
 {
     vec2 p = floor(worldXZ * VV_TERRAIN_RIPPLE_TEXELS) / VV_TERRAIN_RIPPLE_TEXELS;
-    return vvTerrainRippleSlope(p * 2.0, t, density)
-         + vvTerrainRippleSlope(p + vec2(31.43, 17.61), t * 0.5 + 0.37, density) * 0.7;
+    // The slow layer runs at half the clock. Its time and drop count are
+    // rebuilt from the epoch so both stay continuous when the clock wraps.
+    float u = mod(vv_weatherRippleEpoch, 2.0) * 0.5 + t * 0.5 + 0.37;
+    return vvTerrainRippleSlope(p * 2.0, t, vv_weatherRippleEpoch, density)
+         + vvTerrainRippleSlope(p + vec2(31.43, 17.61), fract(u),
+                                floor(vv_weatherRippleEpoch * 0.5) + floor(u), density) * 0.7;
 }
 
 // Rain landing in standing water: only where it is wet AND the face points up,

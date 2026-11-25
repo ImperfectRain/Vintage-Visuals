@@ -3233,3 +3233,50 @@ together; a patch's own cost is only visible by comparison (the tier sweep, or
 a feature toggled in the same scene). The profiler measures what it brackets,
 so a vanilla renderer sharing order 1.0 in AfterPostProcessing would be counted
 in "vv scene capture". L2: not yet run in game.
+
+## D73 - Water is viewed from the eye, rain drops are hashed per drop
+
+**Context.** First in-game look at the water (2026-11-25, Elijah's
+screenshots): in daylight a marsh pond read as near-white, like snow or milk,
+with the bottom hidden; in rain it was flat grey. Separately, rain drops on
+water AND terrain landed on the same spots every time.
+
+**Cause, water.** `chunkliquid`'s `fWorldPos` has the PLAYER at the origin,
+not the eye: the eye height and any third-person offset live only in the view
+matrix (`CameraMatrixOriginf`, the same fact `PbrShaderBinder` records for the
+scene reflection). `vvWaterSurface` took the view vector as `normalize(-pos)`,
+i.e. from the player's feet, so water at standing height was seen exactly
+edge-on, Fresnel went to 1, and the whole surface mirrored the sky. The offline
+previews placed the camera at the origin and so could not show it; the harness
+now reproduces it (eye 1.62 above the origin, old vs new).
+
+**Decision, water.** `WaterShaderBinder` recovers the eye from the view matrix
+(`-R^T t`, column-major) and uploads `vv_waterEye`; both view vectors start
+there. 0 is the previous build. The sky image is also capped at the sky's own
+luminance (the terrain fallback's horizon and toward-sun lift suit a rough
+surface, not a mirror), and below 0.32 of elevation the reflected sky gives way
+to the surroundings at 0.30 of the sky light: near-horizontal rays from a pond
+meet its banks and trees. DATA GAP: the banks are stood in for, not looked up,
+until water has a scene trace. Rain ring crests raise the reflected share to
+0.9 x ring at any angle, so drops read looking down as well as across; scaled
+by the ripple strength only, never by the reflection slider.
+
+**Cause, drops.** Every copy of the ripple field (`pseudopbr.glsl`,
+`pbrterrainmaterial.glsl`, `water.glsl`) hashed whether a cell is struck and
+where in it from the CELL alone, on a clock that wraps every 1.5 s. The drops
+replayed identically forever.
+
+**Decision, drops.** Each drop is hashed by its cell and its DROP NUMBER:
+`floor(phase) + epoch * rate`, where `EnvironmentTracker.RippleEpoch` counts
+whole turns of the ripple clock (mod 4096, even so the half-rate layer stays
+continuous; uploaded as `vv_weatherRippleEpoch` through `SceneInputs` and
+`vv_waterRippleEpoch`). Rain strength still decides how many cells are struck
+per drop, so light rain is sparse and heavy rain dense, but not which ones. The
+half-rate layer rebuilds its time and drop count from the epoch, which also
+removes the jump it had at every wrap. Epoch 0 still re-deals the drops within
+each 1.5 s turn. The 4096 wrap re-deals drops in flight once every ~1.7 hours.
+
+**Limits.** Terrain view vectors are built the same feet-relative way and are
+not changed here (the PBR thread owns them); recorded as a known issue in
+STATUS. L2: previews and checks only, not seen in game.
+

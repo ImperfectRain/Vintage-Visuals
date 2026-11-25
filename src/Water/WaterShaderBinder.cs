@@ -19,6 +19,7 @@ namespace VintageVisuals.Water
     {
         public const string MasterUniform = "vv_water";
         public const string OriginUniform = "vv_waterOrigin";
+        public const string EyeUniform = "vv_waterEye";
         public const string SunDirUniform = "vv_waterSunDir";
         public const string SunColorUniform = "vv_waterSunColor";
         public const string MoonDirUniform = "vv_waterMoonDir";
@@ -29,6 +30,7 @@ namespace VintageVisuals.Water
         public const string ClarityUniform = "vv_waterClarity";
         public const string RipplesUniform = "vv_waterRipples";
         public const string RippleTimeUniform = "vv_waterRippleTime";
+        public const string RippleEpochUniform = "vv_waterRippleEpoch";
         public const string RippleLayersUniform = "vv_waterRippleLayers";
         public const string GlintsUniform = "vv_waterGlints";
         public const string WavesUniform = "vv_waterWaves";
@@ -96,6 +98,7 @@ namespace VintageVisuals.Water
 
             program.Uniform(MasterUniform, config.Enabled ? 1f : 0f);
             program.Uniform(OriginUniform, world.CameraPosition);
+            program.Uniform(EyeUniform, EyeFromViewMatrix(_capi.Render.CameraMatrixOriginf));
 
             SetDir(program, SunDirUniform, air.SunDirection, 0f, 1f, 0f);
             SetDir(program, MoonDirUniform, air.MoonDirection, 0f, -1f, 0f);
@@ -114,6 +117,7 @@ namespace VintageVisuals.Water
             // the moment the shower does.
             program.Uniform(RipplesUniform, Clamp01(world.Rain) * config.RainRipples);
             program.Uniform(RippleTimeUniform, tracker != null ? tracker.RippleClock : 0f);
+            program.Uniform(RippleEpochUniform, tracker != null ? tracker.RippleEpoch : 0f);
             program.Uniform(RippleLayersUniform, QualityTier.WaterRippleLayers);
             program.Uniform(GlintsUniform, config.Glints);
             program.Uniform(DebugUniform, config.DebugView);
@@ -144,6 +148,35 @@ namespace VintageVisuals.Water
                 _v3.Set(dir.X * inv, dir.Y * inv, dir.Z * inv);
             }
             program.Uniform(name, _v3);
+        }
+
+        private readonly Vec3f _eye = new Vec3f();
+
+        /// <summary>
+        /// Where the eye is in the space chunkliquid's fWorldPos is measured
+        /// in. That space has the PLAYER at 0,0,0 (CameraMatrixOriginf is "the
+        /// player camera matrix with the player at the origin", and the chunk
+        /// vertex shader builds worldPos the same way), so the eye height and
+        /// any third-person offset live only in the matrix. The eye is the
+        /// point the view matrix maps to the origin: -R^T t, column-major.
+        /// Anything implausible uploads zero, the previous behaviour.
+        /// </summary>
+        internal Vec3f EyeFromViewMatrix(float[] m)
+        {
+            EyeFromView(m, _eye);
+            return _eye;
+        }
+
+        /// <summary>Pure form of <see cref="EyeFromViewMatrix"/>, for tools/smoketest.</summary>
+        public static void EyeFromView(float[] m, Vec3f into)
+        {
+            into.Set(0f, 0f, 0f);
+            if (m == null || m.Length < 16) return;
+            float x = -(m[0] * m[12] + m[1] * m[13] + m[2] * m[14]);
+            float y = -(m[4] * m[12] + m[5] * m[13] + m[6] * m[14]);
+            float z = -(m[8] * m[12] + m[9] * m[13] + m[10] * m[14]);
+            if (float.IsNaN(x + y + z) || x * x + y * y + z * z > 64f * 64f) return;
+            into.Set(x, y, z);
         }
 
         private static float Clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }

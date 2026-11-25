@@ -34,6 +34,39 @@ namespace VintageVisuals.SmokeTest
             Compose(check, water);
             Gates(check, water, yaml, repo);
             Tiers(check, repo);
+            PerDropRipples(repo, check);
+            EyeFromView(check);
+        }
+
+        /// <summary>
+        /// The eye recovered from a view matrix built the way a camera builds
+        /// one: rotate by yaw and pitch, translate by -R * eye. Column-major,
+        /// as Vintage Story stores CameraMatrixOriginf.
+        /// </summary>
+        static void EyeFromView(Action<string, bool, string> check)
+        {
+            double worst = 0;
+            foreach (var (yaw, pitch, ex, ey, ez) in new[] { (0.0, 0.0, 0.0, 1.62, 0.0), (0.7, -0.4, 0.0, 1.62, 0.0),
+                                                              (2.5, 0.9, 1.5, 2.3, -3.0), (-1.2, -1.3, -4.0, 1.0, 2.0) })
+            {
+                double cy = Math.Cos(yaw), sy = Math.Sin(yaw), cp = Math.Cos(pitch), sp = Math.Sin(pitch);
+                // R = Rx(pitch) * Ry(yaw), rows
+                double[,] r = { { cy, 0, -sy }, { sy * sp, cp, cy * sp }, { sy * cp, -sp, cy * cp } };
+                var m = new float[16];
+                for (int row = 0; row < 3; row++)
+                {
+                    for (int col = 0; col < 3; col++) m[col * 4 + row] = (float)r[row, col];
+                    m[12 + row] = (float)-(r[row, 0] * ex + r[row, 1] * ey + r[row, 2] * ez);
+                }
+                m[15] = 1f;
+                var eye = new Vintagestory.API.MathTools.Vec3f();
+                VintageVisuals.Water.WaterShaderBinder.EyeFromView(m, eye);
+                worst = Math.Max(worst, Math.Abs(eye.X - ex) + Math.Abs(eye.Y - ey) + Math.Abs(eye.Z - ez));
+            }
+            var none = new Vintagestory.API.MathTools.Vec3f(9, 9, 9);
+            VintageVisuals.Water.WaterShaderBinder.EyeFromView(null, none);
+            check("the water eye is recovered from the view matrix, and no matrix means the old origin",
+                  worst < 1e-4 && none.X == 0 && none.Y == 0 && none.Z == 0, "worst " + worst);
         }
 
         static string Normalise(string body, params (string From, string To)[] renames)
@@ -127,7 +160,8 @@ namespace VintageVisuals.SmokeTest
             string body = FunctionBody(water, "vec4 vvWaterSurface(");
             string alphaExpr = Rhs(Statement(body, "float outAlpha =", "reflectShare"));
             string premultExpr = Rhs(Statement(body, "vec3 premult ="));
-            string glintAlphaExpr = Rhs(Statement(body, "outAlpha = clamp(outAlpha + glintAlpha"));
+            string glintAlphaExpr = Rhs(Statement(body, "outAlpha = clamp(outAlpha + min(glintAlpha"));
+            double glintAlphaCap = Const(water, "VV_WATER_GLINT_ALPHA");
 
             double Alpha(double r, double a)
             {
@@ -140,7 +174,8 @@ namespace VintageVisuals.SmokeTest
                 double pre = Scalar(premultExpr.Replace("image", "imageS").Replace("body ", "bodyS ").Replace("glint", "glintS"),
                                     Syms("reflectShare", r, "imageS", image, "bodyS", bodyC, "bodyAlpha", a, "glintS", glint));
                 double ga = Math.Min(1, Math.Max(0, glint));
-                alpha = Scalar(glintAlphaExpr, Syms("outAlpha", alpha, "glintAlpha", ga));
+                alpha = Scalar(glintAlphaExpr, Syms("outAlpha", alpha, "glintAlpha", ga,
+                                                    "VV_WATER_GLINT_ALPHA", glintAlphaCap));
                 return pre / Math.Max(alpha, 1e-3);
             }
 
@@ -170,6 +205,64 @@ namespace VintageVisuals.SmokeTest
                   "worst alpha drop " + worstAlphaDrop);
             check("water colour stays between the reflection and the body", worstHull < 1e-9,
                   "worst " + worstHull);
+
+            // The ring crest raises the reflected share only: no ring is the
+            // Fresnel share exactly, a ring never lowers it, and it does not
+            // read the reflection slider (two toggles, two effects).
+            string ringExpr = Rhs(Statement(body, "reflectShare = max(reflectShare,"));
+            double ringShare = Const(water, "VV_WATER_RING_SHARE");
+            double ringWorst = 0;
+            bool ringRaises = !ringExpr.Contains("vv_waterSky");
+            if (!ringRaises) ringExpr = "reflectShare";
+            for (int fi = 0; fi <= 10; fi++)
+            {
+                double f = fi / 10.0;
+                double atZero = Scalar(ringExpr, Syms("reflectShare", f, "ring", 0.0, "VV_WATER_RING_SHARE", ringShare));
+                ringWorst = Math.Max(ringWorst, Math.Abs(atZero - f));
+                for (int ri = 1; ri <= 10; ri++)
+                    ringRaises &= Scalar(ringExpr, Syms("reflectShare", f, "ring", ri / 10.0, "VV_WATER_RING_SHARE", ringShare)) >= f - 1e-12;
+            }
+            check("water without a rain ring keeps the Fresnel share exactly", ringWorst < 1e-12, "worst " + ringWorst);
+            check("a rain ring never lowers the reflected share, and ignores the reflection slider",
+                  ringRaises && ringShare > 0 && !ringExpr.Contains("vv_waterSky"), ringExpr);
+
+            // The eye, not the player's feet: fWorldPos has the player at the
+            // origin, and from the feet water at standing height is edge-on.
+            check("the water view vector starts at the eye",
+                  Statement(body, "vec3 v =").Contains("vv_waterEye - centre") &&
+                  Statement(body, "vec3 vFrag =").Contains("vv_waterEye - pos"), "");
+
+            // Near-horizontal reflections meet the banks, and the sky image is
+            // never brighter than the sky.
+            string sky = FunctionBody(water, "vec3 vvWaterSkyImage(");
+            check("water reflections near the horizon give way to the banks",
+                  sky.Contains("VV_WATER_BANK_LOW") && sky.Contains("VV_WATER_BANK_HIGH") &&
+                  Const(water, "VV_WATER_BANK_SHADE") < 1.0, "");
+            string capIf = Statements(sky).FirstOrDefault(x => x.Contains("sky *= cap / skyLuma")) ?? "";
+            check("the reflected sky is capped at the sky's own brightness",
+                  capIf.StartsWith("if (skyLuma > cap && skyLuma > 1e-5) sky *= cap / skyLuma", StringComparison.Ordinal), capIf);
+        }
+
+        /// <summary>
+        /// Rain drops are hashed per DROP, not per cell: the drop count runs on
+        /// across clock wraps (the epoch), so a drop never lands on the same
+        /// spot twice. All three copies, since terrain shares the field.
+        /// </summary>
+        public static void PerDropRipples(string repo, Action<string, bool, string> check)
+        {
+            string dir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
+            foreach (var (file, fn) in new[] { ("water.glsl", "vec2 vvWaterRippleSlope("),
+                                               ("pbrterrainmaterial.glsl", "vec2 vvTerrainRippleSlope("),
+                                               ("pseudopbr.glsl", "vec2 vvRippleSlope(") })
+            {
+                string b = FunctionBody(File.ReadAllText(Path.Combine(dir, file)), fn);
+                string drop = Statement(b, "float drop =");
+                bool perDrop = drop.Contains("floor(phase)") && drop.Contains("epoch * rate")
+                               && Statement(b, "if (hit.x > density)").Length > 0
+                               && Statement(b, "vec2 centre =").Contains("hit.yz")
+                               && !b.Contains("rnd.x > density");
+                check("rain drops land somewhere new each time (" + file + ")", perDrop, drop);
+            }
         }
 
         static void Gates(Action<string, bool, string> check, string water, string yaml, string repo)
