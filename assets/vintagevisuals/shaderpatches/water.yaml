@@ -61,6 +61,16 @@
   content: |
     float specular = pow(p, 50) * sunb * vvWaterVanillaSpecularKeep();
 
+# Vanilla's droplet rings stand aside while this mod's rain rings are on, so one
+# drop system covers water and land alike (D75). Keep is exactly 1 while this
+# group's uniforms are unset or the ring slider is 0.
+- type: token
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: f = dropletnoise(uv);
+  content: |
+    f = dropletnoise(uv) * vvWaterVanillaDropletKeep();
+
 # On the finished water colour, before vanilla's fog. Outside the FOAMEFFECT
 # block on purpose: the surface works with the game's foam setting either way.
 - type: insert_before
