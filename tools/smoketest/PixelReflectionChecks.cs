@@ -225,6 +225,18 @@ namespace VintageVisuals.SmokeTest
                 Regex.Matches(materialYaml, @"out vec3 vv_blockLight;").Count == 2,
                 "vanilla's blockLight is about as bright in daylight as beside a torch, so the relief lit whole rooms evenly");
 
+            // D69: torch relief may darken far less than it brightens, and the
+            // joint term fades where the light has no direction. D68 let it
+            // take 0.75 of vanilla's light from every joint in a torch-lit
+            // room, which read as black mortar on every wall.
+            double capDark = GlslEval.Const(materialCode, "VV_TERRAIN_TORCH_RELIEF_CAP_DARK");
+            double capLight = GlslEval.Const(materialCode, "VV_TERRAIN_TORCH_RELIEF_CAP");
+            check("torch relief darkens joints only modestly, and less away from the flame",
+                capDark <= 0.4 && capDark < capLight &&
+                relief.Contains("return clamp(relief, -litColor * VV_TERRAIN_TORCH_RELIEF_CAP_DARK, litColor * VV_TERRAIN_TORCH_RELIEF_CAP);") &&
+                shadeFn.Contains("hollow *= mix(VV_TERRAIN_TORCH_HOLLOW_FAR, 1.0, direct);"),
+                $"dark cap {capDark} (at most 0.4 and below the light cap {capLight})");
+
             check("only the capture group defines the scene-capture switch",
                 !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&
                 reflectYaml.Contains("#define VV_TERRAIN_SCENE_CAPTURE 1") &&

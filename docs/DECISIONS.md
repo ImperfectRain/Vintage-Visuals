@@ -3092,3 +3092,30 @@ coral, granite and chalk cobblestone and two dry stones
 **Limits.** Coral cobblestone's joints are mostly missed: its pores are
 deeper in the top-hat than the gaps between its stones. The legacy pseudopbr
 path still reads vanilla's `blockLight`; it is not the active terrain path.
+
+## D69 - Torch relief darkens less than it brightens, and its joint shading fades with distance
+
+**Context.** D68 in game (2026-11-25, five screenshots): with the torch read
+correctly the relief finally showed, but a single wall torch turned every
+joint in a small coral room near-black, the ceiling included, and a smooth
+ashlar block set in the wall got thick black bars across its joints.
+
+**Cause.** The joint term (shape occlusion, 0.8 of what a joint lacks) applied
+wherever block light reached, and in a small room a torch reaches every wall,
+so it darkened mortar everywhere by up to the 0.75 cap of vanilla's lit
+colour. Near the flame that reads as relief; across the room the light has
+no clear direction and the same darkening reads as black paint. On ashlar the
+shape normal at full strength turned the three-texel rounded band either side
+of each joint fully away from the light.
+
+**Decision.** Darkening is capped at 0.35 of vanilla's lit colour and
+brightening at 0.6; the joint term is 0.4 of what the joint lacks and fades to
+0.3 of that where the recovered light direction is close to the face normal
+(directness `(1 - dot(toTorch, n)) * 3`); the shape normal is 0.8 of the way
+from flat at 1.6 per unit of slope; relief 1.5. Previewed near a torch and six
+blocks away on coral, chalk and granite ashlar and granite cobblestone
+(`/mnt/project-files/audit/torch-v3.png`), with D68 and vanilla beside it.
+
+**Evidence.** A check fails if the dark cap exceeds 0.4 or reaches the light
+cap, or if the joint term stops fading; two mutations prove it. Not seen in
+game.

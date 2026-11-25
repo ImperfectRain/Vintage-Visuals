@@ -776,8 +776,15 @@ vec3 vvTerrainBlockSpecular(VvTerrainMaterial m, vec3 viewDir, vec3 blockLight, 
 // average stays vanilla's. Zero at vv_pbrBlockLight 0; bounded to a share of
 // what vanilla lit so it cannot invent light vanilla did not have.
 // Cost: one derivative-based direction per fragment, no texture read.
-const float VV_TERRAIN_TORCH_RELIEF = 1.6;
-const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.75;
+const float VV_TERRAIN_TORCH_RELIEF = 1.5;
+const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.6;
+// D69, after D68 in game (2026-11-25): with the torch read correctly, a wall
+// torch turned every joint in a small room near-black, ceiling included, and a
+// smooth ashlar block got thick black bars. Darkening is now bounded harder
+// than brightening - relief may take at most CAP_DARK of what vanilla lit -
+// and the joint (hollow) term fades to HOLLOW_FAR of itself where the light
+// has no clear direction, which is everywhere but close to the flame.
+const float VV_TERRAIN_TORCH_RELIEF_CAP_DARK = 0.35;
 // D66, after view 74 showed the D65 term as black-and-white salt and pepper
 // on a cobble wall beside a torch (in game, 2026-11-25). Two causes: the
 // recovered direction tilts up to ~70 degrees off the face for a torch
@@ -790,7 +797,9 @@ const float VV_TERRAIN_TORCH_RELIEF_CAP = 0.75;
 // gap between cobbles) gets less torchlight, HOLLOW of what it lacks.
 const float VV_TERRAIN_TORCH_TILT = 0.6;
 const float VV_TERRAIN_TORCH_NORMAL = 0.6;
-const float VV_TERRAIN_TORCH_HOLLOW = 0.8;
+const float VV_TERRAIN_TORCH_HOLLOW = 0.4;
+const float VV_TERRAIN_TORCH_HOLLOW_FAR = 0.3;  // share of the joint shading kept where the light is diffuse
+const float VV_TERRAIN_TORCH_DIRECT = 3.0;      // how fast the light's tilt off the face makes it directional
 
 // D67: on a region carrying the crevice maps the torch reads the STONE SHAPE,
 // not the texture's luminance normal: each stone a pillow that turns toward
@@ -798,7 +807,8 @@ const float VV_TERRAIN_TORCH_HOLLOW = 0.8;
 // relief the approved preview showed (tools/pbrgen, crevice-torch-proposal).
 // The plain layout keeps the D66 behaviour. Four reads of the second atlas,
 // only where block light reaches a water-holding texel.
-const float VV_TERRAIN_TORCH_SHAPE = 2.5;     // tilt per unit of shape slope per texel
+const float VV_TERRAIN_TORCH_SHAPE = 1.6;     // tilt per unit of shape slope per texel
+const float VV_TERRAIN_TORCH_SHAPE_SOFTEN = 0.8; // of the way from flat to the shape normal (D69: 1.0 drew bars on ashlar)
 
 vec3 vvTerrainTorchNormal(VvTerrainMaterial m, vec2 materialUv)
 {
@@ -818,10 +828,12 @@ float vvTerrainTorchShade(VvTerrainMaterial m, vec3 toTorch, vec3 reliefNormal)
     vec3 l = vvTerrainSafeNormalize(mix(m.faceNormal, toTorch, VV_TERRAIN_TORCH_TILT), m.faceNormal);
     // The softening is for the luminance normal, which is mostly grain (D66).
     // The stone shape is coherent by construction and is used as it is.
-    float soften = m.holdsWater > 0.5 ? 1.0 : VV_TERRAIN_TORCH_NORMAL;
+    float soften = m.holdsWater > 0.5 ? VV_TERRAIN_TORCH_SHAPE_SOFTEN : VV_TERRAIN_TORCH_NORMAL;
     vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, soften), m.faceNormal);
     float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);
     float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;
+    float direct = clamp((1.0 - dot(toTorch, m.faceNormal)) * VV_TERRAIN_TORCH_DIRECT, 0.0, 1.0);
+    hollow *= mix(VV_TERRAIN_TORCH_HOLLOW_FAR, 1.0, direct);
     return delta + hollow;
 }
 
@@ -835,8 +847,7 @@ vec3 vvTerrainBlockRelief(VvTerrainMaterial m, vec3 litColor, vec3 blockLight, v
 
     float shade = vvTerrainTorchShade(m, toTorch, vvTerrainTorchNormal(m, materialUv));
     vec3 relief = m.baseColor * blockLight * (shade * strength * (1.0 - m.metalness));
-    vec3 cap = litColor * VV_TERRAIN_TORCH_RELIEF_CAP;
-    return clamp(relief, -cap, cap);
+    return clamp(relief, -litColor * VV_TERRAIN_TORCH_RELIEF_CAP_DARK, litColor * VV_TERRAIN_TORCH_RELIEF_CAP);
 }
 
 // ---------------------------------------------------------------------------
