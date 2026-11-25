@@ -12,8 +12,9 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Torchlight on terrain.** Highlights from torches, lanterns and lava now
   sit on the side of a block facing the light and slide across wet or polished
   surfaces as you move, and a wet cave floor can reflect a torch at night.
-- **Water in crevices.** Rain pools in the joints and pits of a block's top
-  and runs down the grooves and seams of its sides while it rains. Pools are
+- **Water in crevices.** On stone, brick, ceramic and metal, rain pools in
+  the joints and pits of a block's top and runs down the grooves of its sides
+  while it rains. Soil, grass, sand and wood just get wet. Pools are
   dark, glossy and reflect the sky. New slider: Water in crevices (0 keeps the
   old even wet look). Debug view 73 shows where the water is.
 - **Torchlight shades the surface relief.** Near a torch, the bumps of a

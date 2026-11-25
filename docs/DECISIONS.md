@@ -2949,3 +2949,45 @@ maximum is 74.
 
 **Cost, not measured.** Pools: four texture reads on a wet top face within the
 detail distance. Relief: one derivative-based direction per opaque fragment.
+
+## D66. Crevice water asks the game which materials hold water; torch relief is smoothed
+
+**Context.** In game with D65 (2026-11-25, rain, debug views 73 and 74):
+pools lit up as speckle across a whole meadow and across speckled stone, not
+along mortar joints; streams speckled walls and tree trunks; view 74 showed a
+cobble wall beside a torch as black-and-white per-texel noise, and in normal
+rendering the torch made little visible difference.
+
+**Cause.** The second atlas's height is the texture's normalised luminance.
+On grass, soil, sand, wood and speckled stone that field is colour noise, so
+"darker than its neighbours" is true of every speck. D65's absolute low band
+made it worse. For the torch, the direction recovered from a torch mounted on
+the wall tilts up to about 70 degrees off the face, and against a grain-level
+normal N.L swung from 0 to 1 between neighbouring texels.
+
+**Decision - materials.** Ask the game first (the information ladder). The
+second atlas's red byte now carries metalness in its top seven bits and a
+hold-water flag in the lowest (`MaterialAtlas2Builder.PackMetalWater`,
+format version 2, the flag hashed into the cache fingerprint). The flag comes
+from the texture's resolved `EnumBlockMaterial` through
+`MaterialProfiles.HoldsWater`: Stone, Mantle, Ceramic, Brick, Metal, Ore.
+Everything else keeps D64's even wet film. A neutral texel (red 0) is neither
+metal nor water-holding. Metalness loses one bit of precision (127 levels),
+which nothing can see: it is per-region and takes three values in practice.
+
+**Decision - structure.** On a top face, a joint is low against both
+neighbours across it (by 0.06, full at 0.16) and runs on along it (its
+along-neighbours no more than 0.05-0.125 higher); a pit is below all four.
+No absolute height band. On a wall, a channel must be lower than BOTH side
+neighbours (0.03-0.09); the low-seam term is gone; rivulets stay.
+
+**Decision - torch relief.** `vvTerrainTorchShade` lights a softened normal
+(0.6 of the way from flat to the texel's) from a bounded direction (0.6 of
+the way from the face normal to the recovered one), and adds a coherent term
+from the baked occlusion: a texel below its two-texel neighbourhood takes
+0.8 of what it lacks less torchlight, which is what puts joints in shadow and
+stone faces in light. Strength 1.2, still bounded to 0.6 of vanilla's lit
+colour and 0 at `vv_pbrBlockLight` 0. View 74 now shows exactly this term.
+
+**Cost, not measured.** Unchanged from D65: four reads on a wet top face of a
+water-holding block, none on any other material.

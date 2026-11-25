@@ -435,6 +435,7 @@ quietly invalidate one of these.
 | Any patch group | applied | group disabled, rest load | a failure must not take the world render | that subsystem is vanilla |
 | Material atlas | sampled | `vv_pbrEnabled` 0 | unpatched or rolled back | vanilla shading |
 | Second atlas | sampled | `vv_material2Valid` 0, neutral material | atlas absent or failed | dielectric response, emission everywhere |
+| Hold-water flag (second atlas red, lowest bit, D66) | from `EnumBlockMaterial` | red 0: no pools or streams | material not stone, brick, ceramic, metal or ore | even wet film |
 | Atlas page | bind hook selects | page 0 | single-page installs need no swap | correct on one page |
 | Sun visibility | shadow map | returns 1.0 | `SHADOWQUALITY 0` — no shadow data exists | no dapple, rather than a dark world |
 | Canopy structure | ring of taps | returns 0 | shadows off | no dapple |

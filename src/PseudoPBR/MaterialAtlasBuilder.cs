@@ -38,6 +38,16 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public float GlowLevel;
 
+        /// <summary>
+        /// Whether rain can stand in this texture's crevices (D66): the
+        /// texture's resolved EnumBlockMaterial is a hard, non-absorbent
+        /// substance - stone, brick, ceramic, metal, ore. Soil, sand, gravel,
+        /// grass, wood and leaves take the water in, so their low texels are
+        /// albedo noise, not basins. The game's classification decides this,
+        /// never the pixels.
+        /// </summary>
+        public bool HoldsWater;
+
         /// <summary>For logging and the cache key. Not used in the maths.</summary>
         public string Name;
     }

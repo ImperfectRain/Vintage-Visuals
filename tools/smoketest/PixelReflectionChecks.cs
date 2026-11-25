@@ -139,13 +139,23 @@ namespace VintageVisuals.SmokeTest
                 double film = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_FILM");
                 double Wet(double pool) => GlslEval.Scalar(expr, GlslEval.Syms(
                     "w", 1.0, "p", pool, "amount", 1.0, "VV_TERRAIN_POOL_FILM", film));
-                double level = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_LEVEL");
                 double contrast = Wet(1.0) - Wet(0.0);
-                contrastOk = contrast >= 0.6 && level <= 0.3 &&
-                             crevice.Contains("float dip = max(0.5 * (hl + hr), 0.5 * (hu + hd)) - h;");
-                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6), low band {level:0.00} (at most 0.3), local dip test present: {crevice.Contains("float dip")}";
+                // No threshold on the raw height: an absolute band is not a
+                // basin on a per-texture normalised luminance.
+                bool structural = crevice.Contains("float pool = max(max(jointX, jointY), pit)") &&
+                                  !Regex.IsMatch(crevice, @"smoothstep\([^;]*,\s*(m\.height|h)\s*\)");
+                contrastOk = contrast >= 0.6 && structural;
+                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6); pools from joints and pits only, no absolute low band: {structural}";
             }
             check("a crevice pool stands out against the film around it", contrastOk, contrastWhy);
+
+            // D66: only materials the game says can hold water pool or stream.
+            // On grass, soil and speckled stone the height is colour noise,
+            // and every dark speck became a pool (seen in game, 2026-11-25).
+            check("crevice water only forms on materials that hold water",
+                crevice.Contains("if (m.holdsWater < 0.5) return vec2(0.0);") &&
+                materialCode.Contains("m.holdsWater = redByte - metalLevel * 2.0;"),
+                "without the game's material gate, a meadow's dark texels read as puddles");
 
             check("water in a crevice is a mirror its own crevice cannot occlude",
                 weather.Contains("m.ao = mix(m.ao, 1.0, max(m.pool, m.stream * 0.6));") &&
@@ -159,9 +169,12 @@ namespace VintageVisuals.SmokeTest
             string primary = GlslEval.FunctionBody(materialCode, "vec4 vvTerrainMaterialPrimary(") ?? "";
             int rDir = relief.IndexOf("vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);", StringComparison.Ordinal);
             int rGate = relief.IndexOf("if (strength < 0.001 || intensity < 0.004) return vec3(0.0);", StringComparison.Ordinal);
+            string shadeFn = GlslEval.FunctionBody(materialCode, "float vvTerrainTorchShade(") ?? "";
             check("torchlight shades each texel's normal in the diffuse and leaves a flat texel alone",
                 rDir >= 0 && rGate > rDir &&
-                relief.Contains("float delta = max(dot(m.normal, toTorch), 0.0) - max(dot(m.faceNormal, toTorch), 0.0);") &&
+                relief.Contains("float shade = vvTerrainTorchShade(m, toTorch);") &&
+                shadeFn.Contains("float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);") &&
+                shadeFn.Contains("float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;") &&
                 relief.Contains("clamp(vv_pbrBlockLight, 0.0, 1.0)") &&
                 primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos), vec3(0.0));"),
                 "without it a torch lights a cobble face evenly and its relief is shaded only by the sun, which is absent at night and underground");

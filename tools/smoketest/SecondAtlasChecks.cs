@@ -102,6 +102,21 @@ namespace VintageVisuals.SmokeTest
             check("the second atlas is the size it was asked for", pixels.Length == 32 * 32,
                 pixels.Length.ToString());
 
+            // D66: red carries metalness in its top seven bits and the
+            // hold-water flag in its lowest. Decoded exactly as the shader
+            // decodes it, so the two cannot drift apart.
+            var waterRegion = Region(0, 0, 8, profile, 0f);
+            waterRegion.HoldsWater = true;
+            int[] withWater = MaterialAtlas2Builder.Build(32, 32, new List<AtlasRegion> { waterRegion }, out written, out skipped);
+            int redDry = pixels[0] & 0xFF, redWet = withWater[0] & 0xFF;
+            check("the water flag rides the lowest red bit and leaves metalness intact",
+                (redDry & 1) == 0 && (redWet & 1) == 1 && (redDry >> 1) == (redWet >> 1) &&
+                Math.Abs((redWet >> 1) / 127f - MaterialAtlas2Builder.MetalnessFor(waterRegion)) < 0.01f &&
+                MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Stone) &&
+                !MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Soil) &&
+                !MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Plant),
+                "red dry " + redDry + ", red wet " + redWet);
+
             // Everything is a byte channel, so bounds are structural - but the
             // point is that no generator step can push a value out of range
             // before packing clamps it, which would silently wrap.

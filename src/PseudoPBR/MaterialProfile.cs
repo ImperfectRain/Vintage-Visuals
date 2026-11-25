@@ -223,6 +223,29 @@ namespace VintageVisuals.PseudoPBR
             { EnumBlockMaterial.Other, Default },
         };
 
+        /// <summary>
+        /// Whether rain stands in this substance's crevices rather than soaking
+        /// in (D66). Hard, non-absorbent materials only: the shader pools and
+        /// streams water on these and leaves every other material with the
+        /// even wet film, because on soil, grass or sand the texture's dark
+        /// texels are colour noise, not basins (seen in game, 2026-11-25).
+        /// </summary>
+        public static bool HoldsWater(EnumBlockMaterial material)
+        {
+            switch (material)
+            {
+                case EnumBlockMaterial.Stone:
+                case EnumBlockMaterial.Mantle:
+                case EnumBlockMaterial.Ceramic:
+                case EnumBlockMaterial.Brick:
+                case EnumBlockMaterial.Metal:
+                case EnumBlockMaterial.Ore:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static MaterialProfile For(EnumBlockMaterial material)
         {
             MaterialProfile profile;

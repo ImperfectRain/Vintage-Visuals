@@ -269,7 +269,7 @@ void main()
             check("Stage C terrain material decodes the primary and secondary atlas channels",
                 resolved.Contains("struct VvTerrainMaterial") &&
                 resolved.Contains("VvTerrainMaterial vvDecodeTerrainMaterial") &&
-                resolved.Contains("m.metalness = clamp(secondary.r") &&
+                resolved.Contains("float redByte = floor(secondary.r * 255.0 + 0.5);") &&
                 resolved.Contains("m.height = clamp(secondary.g") &&
                 resolved.Contains("m.ao = clamp(secondary.b") &&
                 resolved.Contains("m.emissionMask = vv_material2Valid < 0.5 ? 1.0"),
