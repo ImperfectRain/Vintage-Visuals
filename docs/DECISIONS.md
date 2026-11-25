@@ -3280,3 +3280,29 @@ each 1.5 s turn. The 4096 wrap re-deals drops in flight once every ~1.7 hours.
 not changed here (the PBR thread owns them); recorded as a known issue in
 STATUS. L2: previews and checks only, not seen in game.
 
+
+## D74 - Terrain view vectors start at the eye, not the player's feet
+
+**Context.** D73 found on water that chunk positions have the player's FEET at
+the origin (`CameraMatrixOriginf` is the player camera matrix with the player
+at 0,0,0; the eye height lives only in the matrix), so `normalize(-pos)` looks
+from 1.6 blocks too low. Terrain built every view vector the same way, so a
+floor at standing height near the player was shaded as if seen almost
+edge-on: Fresnel, wet sheen and sky reflection pushed toward their grazing
+values close to the player, the opposite of how a floor looks underfoot.
+
+**Decision.** One helper, `vvTerrainToEye(p) = vv_pbrEye - p`, and every
+terrain view vector goes through it (specular, ambient, the pixel reflection
+march's direction, foliage transmission, flora, debug views). The eye comes
+from `ViewEye.FromView` in `src/Common/Scene` (the water's `-R^T t`, moved
+there so PseudoPBR does not depend on Water; `WaterShaderBinder.EyeFromView`
+now delegates to it). Positions and distances stay in the feet-origin space,
+which is the space the reflection capture's matrix also uses, so only the
+direction changes. Unset, the uniform is zero and the vector is the old one.
+
+**Evidence.** I22 evaluates the shipped helper (a floor three blocks away has
+N.V above 0.4 from the eye, 0 from the feet), requires no terrain view vector
+to normalise a raw negated position, and requires the binder to upload the
+eye; two mutations prove it. Entities, particles and the legacy pseudopbr path
+are not changed and their position space was not checked. L2, not seen in
+game; cost is one vec3 uniform and a subtraction.

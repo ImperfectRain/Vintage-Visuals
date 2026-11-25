@@ -32,6 +32,7 @@ uniform float vv_weatherRipples;     // 0 still water, 1 rain landing in it
 uniform float vv_weatherRippleTime;  // ripple clock, pre-wrapped to 0..1 on the CPU
 uniform float vv_weatherRippleEpoch; // whole wraps of that clock so far, mod 4096
 uniform vec3 vv_pbrOrigin;           // camera world position, wrapped to VV_TERRAIN_ORIGIN_PERIOD on the CPU
+uniform vec3 vv_pbrEye;              // the eye relative to the player origin positions are measured from (D74); 0 is the feet, as before
 uniform float vv_pbrTorchFalloff;    // steepens the game's torch falloff on blocks (D70); 0 is vanilla
 uniform float vv_pbrCreviceWater;    // water follows the texture's relief; 0 is the even film from before
 uniform float vv_weatherRain;        // how hard rain is falling, a fact; 0 means no streams
@@ -181,6 +182,15 @@ vec3 vvTerrainSafeNormalize(vec3 v, vec3 fallback)
     float len2 = dot(v, v);
     if (!(len2 > 1e-12) || len2 > 1e24) return fallback;
     return v * inversesqrt(len2);
+}
+
+// From a point to the EYE. Positions here have the player's feet at the
+// origin; the eye height lives only in the view matrix, so -p looks from the
+// feet and a floor at standing height reads edge-on (D74). Every view vector
+// on terrain starts here.
+vec3 vvTerrainToEye(vec3 p)
+{
+    return vv_pbrEye - p;
 }
 
 vec2 vvTerrainSnap(vec2 materialUv)
@@ -1032,7 +1042,7 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     // The view vector is the TEXEL's, which is what makes the reflection one
     // colour per texture pixel rather than a gradient inside it.
     vec3 origin = vvTerrainTexelCentrePos(cameraRelativePos, materialUv);
-    vec3 v = vvTerrainSafeNormalize(-origin, viewDir);
+    vec3 v = vvTerrainSafeNormalize(vvTerrainToEye(origin), viewDir);
     vec3 r = vvTerrainSafeNormalize(reflect(-v, m.normal), m.normal);
     o.direction = r;
 
@@ -2227,7 +2237,7 @@ vec3 vvTerrainFoliageTransmission(vec3 albedo, vec3 faceNormal, vec3 cameraRelat
     float tissue = vvTerrainFloraTissue();
     if (tissue < 0.001) return vec3(0.0);
 
-    vec3 v = vvTerrainSafeNormalize(-cameraRelativePos, vec3(0.0, 1.0, 0.0));
+    vec3 v = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), vec3(0.0, 1.0, 0.0));
     vec3 n = vvTerrainSafeNormalize(faceNormal, vec3(0.0, 1.0, 0.0));
     // Cross quads are seen from both sides; shade the side facing the camera.
     if (dot(n, v) < 0.0) n = -n;
@@ -2348,7 +2358,7 @@ vec3 vvTerrainGustSheen(vec3 color, vec3 cameraRelativePos, float sunVisibility)
 vec4 vvTerrainFloraShade(vec4 litColor, vec3 baseColor, vec3 faceNormal, vec3 cameraRelativePos,
                          float fogAmount, float murkiness)
 {
-    vec3 v = vvTerrainSafeNormalize(-cameraRelativePos, vec3(0.0, 1.0, 0.0));
+    vec3 v = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), vec3(0.0, 1.0, 0.0));
     vec3 n = vvTerrainSafeNormalize(faceNormal, vec3(0.0, 1.0, 0.0));
     if (dot(n, v) < 0.0) n = -n;
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
@@ -2487,7 +2497,7 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(litColor, baseColor, faceNormal,
                                                   materialUv, cameraRelativePos);
-    vec3 viewDir = vvTerrainSafeNormalize(-cameraRelativePos, m.faceNormal);
+    vec3 viewDir = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), m.faceNormal);
 
     float directionalRelief = vvDirectionalShadeTerrain(m.normal) -
                               vvDirectionalShadeTerrain(m.faceNormal);
@@ -2681,7 +2691,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(color, baseColor, faceNormal,
                                                   materialUv, cameraRelativePos);
-    vec3 viewDir = vvTerrainSafeNormalize(-cameraRelativePos, m.faceNormal);
+    vec3 viewDir = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), m.faceNormal);
     vec3 f0 = mix(vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor),
                   m.baseColor, m.metalness);
 
@@ -2757,7 +2767,7 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     {
         float intensity = dot(blockLight, VV_PBR_LUMA);
         vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);
-        vec3 v = vvTerrainSafeNormalize(-cameraRelativePos, m.faceNormal);
+        vec3 v = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), m.faceNormal);
         float shade = vvTerrainTorchShade(m, toTorch, vvTerrainTorchNormal(m, materialUv));
         vec3 clay = vec3(clamp(intensity * (0.55 + 1.2 * shade), 0.0, 1.0));
         vec3 glint = vvTerrainBlockSpecular(m, v, blockLight, cameraRelativePos);

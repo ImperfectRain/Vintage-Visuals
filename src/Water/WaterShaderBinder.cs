@@ -169,15 +169,7 @@ namespace VintageVisuals.Water
 
         /// <summary>Pure form of <see cref="EyeFromViewMatrix"/>, for tools/smoketest.</summary>
         public static void EyeFromView(float[] m, Vec3f into)
-        {
-            into.Set(0f, 0f, 0f);
-            if (m == null || m.Length < 16) return;
-            float x = -(m[0] * m[12] + m[1] * m[13] + m[2] * m[14]);
-            float y = -(m[4] * m[12] + m[5] * m[13] + m[6] * m[14]);
-            float z = -(m[8] * m[12] + m[9] * m[13] + m[10] * m[14]);
-            if (float.IsNaN(x + y + z) || x * x + y * y + z * z > 64f * 64f) return;
-            into.Set(x, y, z);
-        }
+            => VintageVisuals.Common.Scene.ViewEye.FromView(m, into);
 
         private static float Clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
 

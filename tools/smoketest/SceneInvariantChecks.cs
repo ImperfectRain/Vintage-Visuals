@@ -97,6 +97,7 @@ namespace VintageVisuals.SmokeTest
             Guarded("I13", () => I13_AToleranceIsNotFinerThanItsData(repo, check));
             Guarded("I20", () => I20_ACloudIsNoDarkerThanATree(check));
             Guarded("I21", () => I21_TorchFalloffOnlyDarkensTheEdge(repo, check));
+            Guarded("I22", () => I22_TerrainLooksFromTheEye(repo, check));
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
@@ -1633,6 +1634,44 @@ namespace VintageVisuals.SmokeTest
             check("I21 the falloff is applied to the terrain's lit colour",
                   material.Contains("litColor.rgb *= vvTerrainTorchFalloff(blockLight);"),
                   "vvTerrainMaterialPrimary no longer applies it");
+        }
+
+        // -------------------------------------------------------------------
+        // I22: terrain view vectors start at the EYE (D74). Positions have the
+        // player's feet at the origin, so -p looks from 1.6 blocks too low and
+        // a floor near the player reads edge-on: Fresnel and wet sheen near 1.
+        // The water found it first (D73). Every view vector goes through one
+        // helper, and the helper must actually use the uploaded eye.
+        // -------------------------------------------------------------------
+        static void I22_TerrainLooksFromTheEye(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string binder = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+            string bare = StripComments(material);
+
+            string expr = Rhs(Statement(FunctionBody(material, "vec3 vvTerrainToEye(vec3 p)"), "return"));
+            var eye = Vec(0.0, 1.62, 0.0);
+            var floor = Vec(3.0, 0.0, 0.0);
+            var syms = Syms("vv_pbrEye", eye, "p", floor);
+            Val to = Eval(expr, syms);
+            double len = Math.Sqrt(to.X * to.X + to.Y * to.Y + to.Z * to.Z);
+            double ndotv = to.Y / len;
+            check("I22 a floor three blocks away is seen from eye height, not edge-on",
+                  ndotv > 0.4, $"N.V {ndotv:F3} (from the feet it would be 0)");
+
+            var feetOnly = Eval(expr, Syms("vv_pbrEye", Vec(0, 0, 0), "p", floor));
+            check("I22 an unset eye is the old feet-origin vector",
+                  Math.Abs(feetOnly.X + 3.0) < 1e-9 && Math.Abs(feetOnly.Y) < 1e-9, "");
+
+            int raw = Regex.Matches(bare, @"Normalize\(\s*-\s*(cameraRelativePos|origin)\b").Count
+                    + Regex.Matches(bare, @"normalize\(\s*-\s*(cameraRelativePos|origin)\b").Count;
+            check("I22 no terrain view vector is built from the feet", raw == 0,
+                  raw + " view vector(s) still normalize -position");
+            check("I22 the terrain binder uploads the eye",
+                  binder.Contains("SetIfPresent(program, EyeUniform, Eye());") &&
+                  binder.Contains("ViewEye.FromView(_capi.Render.CameraMatrixOriginf, _eye);"),
+                  "vv_pbrEye declared but not uploaded reads as the feet");
         }
     }
 }

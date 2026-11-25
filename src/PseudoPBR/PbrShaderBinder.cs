@@ -4,6 +4,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Scene;
 using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.Reflections;
 
@@ -68,6 +69,7 @@ namespace VintageVisuals.PseudoPBR
         public const string RippleEpochUniform = "vv_weatherRippleEpoch";
         public const string OvercastUniform = "vv_sceneOvercast";
         public const string OriginUniform = "vv_pbrOrigin";
+        public const string EyeUniform = "vv_pbrEye";
         public const string FoliageUniform = "vv_pbrFoliage";
         public const string CavityUniform = "vv_pbrCavity";
         public const string SpecOcclusionUniform = "vv_pbrSpecOcclusion";
@@ -478,6 +480,7 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, RipplesUniform, _weather.Ripples);
             UploadRippleClock(program);
             SetIfPresent(program, OriginUniform, _weather.Origin);
+            SetIfPresent(program, EyeUniform, Eye());
             UploadScene(program);
 
             program.Stop();
@@ -604,6 +607,19 @@ namespace VintageVisuals.PseudoPBR
         /// that one uniform's fate predicts the rest, and in a snippet shared by
         /// five programs that shade differently, it does not.
         /// </summary>
+        private readonly Vec3f _eye = new Vec3f();
+
+        /// <summary>
+        /// The eye in the player-origin space the terrain's positions use, so
+        /// view vectors start at the eye and not the feet (D74). Zero when the
+        /// matrix is unavailable, which is the old behaviour.
+        /// </summary>
+        private Vec3f Eye()
+        {
+            ViewEye.FromView(_capi.Render.CameraMatrixOriginf, _eye);
+            return _eye;
+        }
+
         /// <summary>
         /// The shared scene block for a program this binder does not own -
         /// the water's chunkliquid (src/Water). One upload path for

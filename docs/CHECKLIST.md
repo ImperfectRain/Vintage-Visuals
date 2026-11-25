@@ -121,6 +121,7 @@ from the source texture.
 | Torchlight relief on per-pixel normals (D65) | x | x | x | x | – | – | – | – | x |
 | Crevice maps at load: joints, stone shape, rain paths (D67) | x | x | x | x | – | – | – | – | x |
 | Torch light falloff slider on terrain (D70) | x | x | x | x | – | – | – | – | x |
+| Terrain view vectors from the eye (D74) | x | x | x | x | – | – | – | – | x |
 
 ---
 
