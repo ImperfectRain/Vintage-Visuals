@@ -217,6 +217,7 @@ the fps counter alone: fps folds in CPU and vsync.
 - [ ] standing at the water's edge in daylight, the shallows show the bed and the water is never white or milky; the far water reflects the sky, the near-horizon band stays dark like the banks (D73)
 - [ ] rain rings land in new places all the time (watch one spot for ten seconds: no ring repeats there in step), on water and on wet stone, and light rain has visibly fewer than heavy rain (D73)
 - [ ] at noon and at a low sun the sun makes pixel glints along its path; the game's broad glow is reduced, not doubled
+- [ ] in sunlit water 1 to 3 blocks deep, a moving web of light lies on the bed, pixel-stepped like the textures; it goes when a cloud covers the sun or a tree shades the surface, fades in deep water, and Caustics 0 removes it (D77)
 - [ ] lava looks exactly as vanilla
 - [ ] Water surface off restores the game's water exactly
 - [ ] no seam or pattern jump when walking across a 4096-block boundary

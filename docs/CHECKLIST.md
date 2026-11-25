@@ -256,6 +256,8 @@ texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
 - [x] eye recovery from the view matrix tested on built matrices (`WaterChecks`); per-drop ripple hashing checked in all three copies
 - [ ] no seam when crossing a 4096-block boundary
 - [ ] frame cost measured with `.vvbench` at the water test scene
+- [x] caustics (D77): flat water and a surface bed gather nothing, a focus shoulders, the visible-sun gate, the slider at 0, opacity untouched and period tiling, evaluated from the shipped GLSL, each with a mutation that fails it
+- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow
 
 ---
 

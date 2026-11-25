@@ -36,7 +36,13 @@ namespace VintageVisuals.Common
         /// <summary>Sun and moon highlights on the texel waves.</summary>
         public float Glints { get; set; } = 0.7f;
 
-        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid.</summary>
+        /// <summary>
+        /// Sunlight the waves focus onto the bed under open water, in moving
+        /// lines that follow the game's sun colour, shadows and cloud cover. 0 is off.
+        /// </summary>
+        public float Caustics { get; set; } = 0.6f;
+
+        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics.</summary>
         public float DebugView { get; set; } = 0f;
 
         public void ClampToValidRanges(List<string> corrections)
@@ -48,7 +54,8 @@ namespace VintageVisuals.Common
             ShallowClarity = ColorGradeConfig.Clamp(ShallowClarity, 0f, 1f, "Water.ShallowClarity", corrections);
             RainRipples = ColorGradeConfig.Clamp(RainRipples, 0f, 1f, "Water.RainRipples", corrections);
             Glints = ColorGradeConfig.Clamp(Glints, 0f, 1f, "Water.Glints", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 6f, "Water.DebugView", corrections);
+            Caustics = ColorGradeConfig.Clamp(Caustics, 0f, 1f, "Water.Caustics", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 7f, "Water.DebugView", corrections);
         }
     }
 }
