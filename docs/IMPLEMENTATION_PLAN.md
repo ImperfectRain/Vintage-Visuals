@@ -54,8 +54,10 @@ Levels are as defined in STATUS.md. **L2 means it has never been seen working.**
 
 **0. Reflection redesign, in phases (D80, approved 2026-11-25).** Review:
 https://claude.ai/artifact/VmuoJ57XNtWe9zeqeXReua. Phase 0 (energy split, soft
-ceiling, eye distances) is L2. Next: 1, a shared `reflect.glsl` core plus water's
-screen reflection on the live opaque frame (water thread); 2, capture mips chosen
+ceiling, eye distances) is L2. Phase 1's terrain half is L2 (D81: the shared
+`reflect.glsl` core, a reflection roughness with a mirror floor, blur by
+roughness); its water half, the screen reflection on the live opaque frame, is
+the water thread's D82. Next: 2, capture mips chosen
 by roughness, fog removed from hits, reflective pixels marked in the capture; 3,
 block volume v2 on the active path, relit per frame, own patch group and sampler;
 4, a seen-sky image in a corner of the capture. Each phase is seen in game

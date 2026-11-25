@@ -114,7 +114,10 @@ hierarchy, the budgets, and what this project deliberately does not build.
   entity and particle shading programs; a smoke check
   asserts it is defined exactly once. `scene.glsl` is the ONE description of
   the conditions it runs in, injected at the same three anchors. Anything that
-  shades a surface uses both rather than copying either.
+  shades a surface uses both rather than copying either. `reflect.glsl` is
+  the ONE description of a reflection (direction cells, weight fit, analytic
+  sky, screen march over a caller-chosen image); terrain and water each inject
+  it, and anything that reflects calls it rather than copying it (D81).
 - `assets/vintagevisuals/shaders/` — our own standalone shader programs.
 - `tools/pbrgen/` — offline PBR prototype (Python). Content-authoring aid, **not**
   runtime code; never reference it from the C# build. `src/PseudoPBR/` is a

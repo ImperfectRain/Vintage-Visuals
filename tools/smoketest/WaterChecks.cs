@@ -29,7 +29,8 @@ namespace VintageVisuals.SmokeTest
             string terrain = File.ReadAllText(Path.Combine(dir, "pbrterrainmaterial.glsl"));
             string yaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/water.yaml"));
 
-            Parity(check, water, terrain);
+            string core = File.ReadAllText(Path.Combine(dir, "reflect.glsl"));
+            Parity(check, water, terrain, core);
             Periodic(check, water);
             Compose(check, water);
             Gates(check, water, yaml, repo);
@@ -268,36 +269,52 @@ namespace VintageVisuals.SmokeTest
             return Regex.Replace(s, @"\s+", " ").Trim();
         }
 
-        static void Parity(Action<string, bool, string> check, string water, string terrain)
+        static void Parity(Action<string, bool, string> check, string water, string terrain, string core)
         {
             var pairs = new[]
             {
                 ("uint vvWaterHashU(", "uint vvTerrainHashU("),
                 ("vec4 vvWaterCellRandom(", "vec4 vvTerrainCellRandom("),
                 ("vec2 vvWaterRippleSlope(", "vec2 vvTerrainRippleSlope("),
-                ("vec3 vvWaterReflectCell(", "vec3 vvTerrainReflectCell("),
-                ("vec3 vvWaterReflectionFallback(", "vec3 vvTerrainReflectionFallback("),
             };
             var renames = new[]
             {
                 ("vvTerrain", "vvWater"),
                 ("VV_TERRAIN_RIPPLE_", "VV_WATER_RIPPLE_"),
-                ("VV_TREFLECT_TWO_PI", "VV_WATER_TWO_PI"),
-                ("VV_TREFLECT_HORIZON_LIFT", "VV_WATER_HORIZON_LIFT"),
-                ("VV_TREFLECT_HORIZON", "VV_WATER_HORIZON"),
-                ("VV_TREFLECT_GROUND", "VV_WATER_GROUND"),
-                ("VV_TREFLECT_TOWARD", "VV_WATER_TOWARD"),
-                ("VV_TREFLECT_MAX", "VV_WATER_MAX"),
-                // The ONE intended difference: terrain reads the sun azimuth
-                // from vanilla's lightPosition, water from its own uniform
-                // (lightPosition is not reliably uploaded to chunkliquid).
-                ("lightPosition.xz", "vv_waterSunDir.xz"),
             };
             foreach (var (w, t) in pairs)
             {
                 string a = Normalise(FunctionBody(water, w));
                 string b = Normalise(FunctionBody(terrain, t), renames);
                 check("water copy of " + t.TrimEnd('(').Split(' ').Last() + " matches terrain", a == b,
+                      a == b ? "" : "bodies differ after the prefix rename");
+            }
+
+            // The sky and the direction cells moved into the shared core
+            // (reflect.glsl, D81). Until water calls the core itself, any copy
+            // it still carries must match the core. Once the copy is gone the
+            // question is answered by construction and these drop out.
+            var coreRenames = new[]
+            {
+                ("vvReflect", "vvWater"),
+                ("VV_REFLECT_SKY_MAX", "VV_WATER_MAX"),
+                ("VV_REFLECT_", "VV_WATER_"),
+                // The caller passes what water reads from its own uniforms
+                // (lightPosition is not reliably uploaded to chunkliquid).
+                ("sunDir.xz", "vv_waterSunDir.xz"),
+                ("clamp(dayLight,", "clamp(vv_sceneDayLight,"),
+            };
+            var corePairs = new[]
+            {
+                ("vec3 vvWaterReflectCell(", "vec3 vvReflectCell("),
+                ("vec3 vvWaterReflectionFallback(", "vec3 vvReflectSky("),
+            };
+            foreach (var (w, c) in corePairs)
+            {
+                if (!water.Contains(w)) continue;
+                string a = Normalise(FunctionBody(water, w));
+                string b = Normalise(FunctionBody(core, c), coreRenames);
+                check("water copy of " + c.TrimEnd('(').Split(' ').Last() + " matches the shared core", a == b,
                       a == b ? "" : "bodies differ after the prefix rename");
             }
 
@@ -308,15 +325,23 @@ namespace VintageVisuals.SmokeTest
                 ("VV_WATER_RIPPLE_WAVE", "VV_TERRAIN_RIPPLE_WAVE"),
                 ("VV_WATER_RIPPLE_JITTER", "VV_TERRAIN_RIPPLE_JITTER"),
                 ("VV_WATER_RIPPLE_TEXELS", "VV_TERRAIN_RIPPLE_TEXELS"),
-                ("VV_WATER_REFLECT_CELLS", "VV_TREFLECT_CELLS_SHARP"),
-                ("VV_WATER_HORIZON", "VV_TREFLECT_HORIZON"),
-                ("VV_WATER_GROUND", "VV_TREFLECT_GROUND"),
-                ("VV_WATER_HORIZON_LIFT", "VV_TREFLECT_HORIZON_LIFT"),
-                ("VV_WATER_TOWARD", "VV_TREFLECT_TOWARD"),
-                ("VV_WATER_MAX", "VV_TREFLECT_MAX"),
             };
+            var coreConsts = new[]
+            {
+                ("VV_WATER_REFLECT_CELLS", "VV_REFLECT_CELLS_SHARP"),
+                ("VV_WATER_HORIZON", "VV_REFLECT_HORIZON"),
+                ("VV_WATER_GROUND", "VV_REFLECT_GROUND"),
+                ("VV_WATER_HORIZON_LIFT", "VV_REFLECT_HORIZON_LIFT"),
+                ("VV_WATER_TOWARD", "VV_REFLECT_TOWARD"),
+                ("VV_WATER_MAX", "VV_REFLECT_SKY_MAX"),
+            };
+            bool HasConst(string src, string name) => Regex.IsMatch(src, @"const\s+float\s+" + name + @"\b");
             var drift = consts.Where(c => Math.Abs(Const(water, c.Item1) - Const(terrain, c.Item2)) > 1e-9)
-                              .Select(c => c.Item1 + " vs " + c.Item2).ToList();
+                              .Select(c => c.Item1 + " vs " + c.Item2)
+                              .Concat(coreConsts.Where(c => HasConst(water, c.Item1) &&
+                                                            Math.Abs(Const(water, c.Item1) - Const(core, c.Item2)) > 1e-9)
+                                                .Select(c => c.Item1 + " vs " + c.Item2))
+                              .ToList();
             check("water ripple and sky-cell constants match terrain", drift.Count == 0, string.Join(", ", drift));
         }
 

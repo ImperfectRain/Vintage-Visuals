@@ -229,8 +229,8 @@ void main()
                 patches.Count(p => p.Content.Contains("in float vv_sunExposure;")) == 2,
                 "");
 
-            check("pbrterrainmaterial.yaml parsed into twenty-four patches",
-                patches.Count == 24,
+            check("pbrterrainmaterial.yaml parsed into twenty-six patches",
+                patches.Count == 26,
                 patches.Count.ToString());
             check("pbrterrainmaterial group is isolated",
                 patches.All(p => p.Group == "pbrterrainmaterial"),

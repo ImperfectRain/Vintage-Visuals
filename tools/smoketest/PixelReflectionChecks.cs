@@ -88,14 +88,22 @@ namespace VintageVisuals.SmokeTest
 
             check("the modular march runs only where the reflection can show",
                 Regex.IsMatch(pixel, @"bool worthIt = reach > 0\.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;") &&
-                pixel.Contains("vvTerrainSceneLookup(origin, sceneR, v, worthIt)") &&
-                Regex.IsMatch(materialCode, @"if \(!worthIt\) \{ miss\.reason = VV_TSSR_SKIPPED; return miss; \}"),
+                pixel.Contains("vvTerrainSceneLookup(origin, sceneR, v, worthIt, blur)") &&
+                Regex.IsMatch(materialCode, @"if \(!worthIt\) \{ miss\.reason = VV_REFLECT_SKIPPED; return miss; \}"),
                 "an ungated march costs every opaque fragment up to 40 capture reads for nothing");
 
-            string march = GlslEval.FunctionBody(GlslEval.StripComments(reflect), "VvTerrainSceneHit vvTerrainSceneMarch(") ?? "";
+            // D81: the march is the shared core's; terrain passes its capture
+            // as both image and depth. The core's every read is textureLod.
+            string march = GlslEval.FunctionBody(GlslEval.StripComments(reflect), "VvReflectHit vvTerrainSceneMarch(") ?? "";
+            string core = GlslEval.StripComments(File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/reflect.glsl")));
+            string coreReads = (GlslEval.FunctionBody(core, "VvReflectHit vvReflectMarch(") ?? "")
+                             + (GlslEval.FunctionBody(core, "float vvReflectSceneDepth(") ?? "")
+                             + (GlslEval.FunctionBody(core, "vec3 vvReflectSceneColor(") ?? "");
             check("the modular march reads the capture with textureLod only",
-                march.Length > 0 && march.Contains("textureLod(vv_reflectScene") &&
-                !Regex.IsMatch(march, @"(?<![A-Za-z_])texture\(vv_reflectScene"),
+                march.Contains("vvReflectMarch(vv_reflectScene, vv_reflectScene, 0.0,") &&
+                coreReads.Contains("textureLod(image") && coreReads.Contains("textureLod(depthTex") &&
+                !Regex.IsMatch(coreReads, @"(?<![A-Za-z_])texture\(") &&
+                !Regex.IsMatch(march, @"(?<![A-Za-z_])texture\("),
                 "implicit derivatives are undefined inside the march's divergent loop");
 
             // D64: a reflected torch must not be capped against a black night sky.

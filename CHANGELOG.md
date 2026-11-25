@@ -14,6 +14,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (a milky sheen); rough stone is unchanged. Bright things such as sunlit trees
   and torches keep more of their brightness in reflections. Creatures and
   particles now take their highlights from your eyes rather than your feet.
+- **Clearer reflections on water, wet stone and polished blocks.** Still
+  pools, running water and smooth materials now reflect as mirrors instead of
+  being held at the same blur as ordinary stone, so a puddle at a low angle
+  shows the trees and sky clearly. Rough blocks lose the faint sky sheen they
+  had. Rough surfaces show a softer reflection, smooth ones a sharp one.
 
 ### Added
 - **Torchlight on terrain.** Highlights from torches, lanterns and lava now

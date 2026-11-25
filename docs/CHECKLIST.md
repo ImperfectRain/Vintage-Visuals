@@ -124,6 +124,7 @@ from the source texture.
 | Torch light falloff slider on terrain (D70) | x | x | x | x | – | – | – | – | x |
 | Terrain view vectors from the eye (D74) | x | x | x | x | – | – | – | – | x |
 | Reflection phase 0: energy split, soft ceiling, eye distances (D80) | x | x | x | x | – | – | – | – | x |
+| Reflection phase 1: shared core, reflection roughness with a mirror floor (D81) | x | x | x | x | – | – | – | – | x |
 
 ---
 

@@ -1730,20 +1730,47 @@ namespace VintageVisuals.SmokeTest
                 return Eval(fresnel, syms);
             }
 
-            // Walks a body of float/vec3 locals ending in a return, with the
-            // struct fields flattened (m.x -> m_x) and the Fresnel call stubbed.
-            double Run(string body, double ndotv, double rough, double ao, double ambient, double specularFactor)
+            // D81: the weight is built from the shared core's fit and mirror
+            // term, evaluated from reflect.glsl's own bodies, not retyped.
+            string core = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/reflect.glsl"));
+            var callees = new Dictionary<string, (string Body, string[] Params, string Source)>
             {
-                double f0 = 0.04 * (0.6 + 1.2 * specularFactor);
-                var syms = Syms("m_perceptualRoughness", rough, "m_ao", ao, "vv_pbrAmbient", ambient,
-                                "vv_pbrSpecOcclusion", 1.0, "f0", f0, "m_metalness", 0.0,
-                                "m_specularFactor", specularFactor, "VV_DIELECTRIC_F0", 0.04,
-                                "fresStub", Fres(ndotv, f0));
-                syms["m_baseColor"] = Vec(0.5, 0.5, 0.5);
+                ["vvReflectEnvBrdf"] = (FunctionBody(core, "vec3 vvReflectEnvBrdf(vec3 f0, float roughness, float ndotv)"),
+                                        new[] { "f0", "roughness", "ndotv" }, core),
+                ["vvReflectMirror"] = (FunctionBody(core, "float vvReflectMirror(float roughness)"),
+                                       new[] { "roughness" }, core),
+                ["vvTerrainReflectSlider"] = (FunctionBody(material, "float vvTerrainReflectSlider()"),
+                                              new string[0], material),
+            };
+
+            // Walks a body of float/vec3 locals ending in a return, with the
+            // struct fields flattened (m.x -> m_x). A call to one of the
+            // callees above, with plain identifiers or literals for
+            // arguments, is evaluated by walking that callee's body.
+            Val Walk(string body, Dictionary<string, Val> syms, string source)
+            {
                 foreach (string raw in Statements(body))
                 {
-                    string st = StubCall(raw.Replace("m.", "m_"), "vvFresnelSchlickTerrain", "fresStub");
-                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Eval(Rhs(st), syms).X;
+                    string st = raw.Replace("m.", "m_");
+                    foreach (var kv in callees)
+                    {
+                        int guard = 0;
+                        Match call;
+                        while ((call = Regex.Match(st, @"(?<![A-Za-z_0-9])" + kv.Key + @"\(([^()]*)\)")).Success && guard++ < 8)
+                        {
+                            string[] args = call.Groups[1].Value.Length == 0 ? new string[0]
+                                : call.Groups[1].Value.Split(',').Select(a => a.Trim()).ToArray();
+                            var inner = new Dictionary<string, Val>(syms);
+                            for (int i = 0; i < kv.Value.Params.Length; i++) inner[kv.Value.Params[i]] = Eval(args[i], syms);
+                            string stub = "callStub" + syms.Count + "_" + guard;
+                            syms[stub] = Walk(kv.Value.Body, inner, kv.Value.Source);
+                            st = st.Substring(0, call.Index) + stub + st.Substring(call.Index + call.Length);
+                        }
+                    }
+                    foreach (Match c in Regex.Matches(st, @"\bVV_[A-Z0-9_]+\b"))
+                        if (!syms.ContainsKey(c.Value)) syms[c.Value] = new Val(Const(source, c.Value));
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Eval(Rhs(st), syms);
                     var decl = Regex.Match(st, @"^(?:float|vec3)\s+([A-Za-z_][A-Za-z_0-9]*)\s*=");
                     if (!decl.Success) throw new ArgumentException("unexpected statement: " + st);
                     syms[decl.Groups[1].Value] = Eval(Rhs(st), syms);
@@ -1751,9 +1778,28 @@ namespace VintageVisuals.SmokeTest
                 throw new ArgumentException("no return");
             }
 
-            double headOn = Run(share, 1.0, 0.1, 1.0, 1.0, 0.5);
-            double roughGrazing = Run(share, 0.05, 0.85, 1.0, 1.0, 0.5);
-            double wetGrazing = Run(share, 0.05, 0.1, 1.0, 1.0, 0.5);
+            double Run(string body, double ndotv, double rough, double ao, double ambient, double specularFactor)
+            {
+                double f0 = 0.04 * (0.6 + 1.2 * specularFactor);
+                // The direct lobe keeps its floor; the reflection does not.
+                var syms = Syms("m_perceptualRoughness", Math.Max(rough, 0.18), "m_reflectRoughness", rough, "m_ao", ao,
+                                "vv_pbrAmbient", ambient, "vv_pbrSpecOcclusion", 1.0, "f0", f0,
+                                "m_metalness", 0.0, "m_specularFactor", specularFactor, "VV_DIELECTRIC_F0", 0.04);
+                syms["m_baseColor"] = Vec(0.5, 0.5, 0.5);
+                syms["m_normal"] = Vec(0.0, 1.0, 0.0);
+                syms["viewDir"] = Vec(Math.Sqrt(Math.Max(0.0, 1.0 - ndotv * ndotv)), ndotv, 0.0);
+                return Walk(body, syms, material).X;
+            }
+
+            // The slider at its shipped default is the physical answer.
+            double neutral = Const(material, "VV_TERRAIN_AMBIENT_NEUTRAL");
+            check("I23 the terrain reflection slider is neutral at the shipped default",
+                  Math.Abs(neutral - new VintageVisuals.Common.PseudoPbrConfig().AmbientSpecular) < 1e-6,
+                  $"VV_TERRAIN_AMBIENT_NEUTRAL {neutral} vs PseudoPBR.AmbientSpecular default");
+
+            double headOn = Run(share, 1.0, 0.1, 1.0, neutral, 0.5);
+            double roughGrazing = Run(share, 0.05, 0.85, 1.0, neutral, 0.5);
+            double wetGrazing = Run(share, 0.05, 0.1, 1.0, neutral, 0.5);
             check("I23 head-on, diffuse loses nothing (vanilla's look facing a block)", Math.Abs(headOn) < 1e-9, headOn.ToString());
             check("I23 rough stone at a grazing view keeps its diffuse", roughGrazing < 0.03, $"share {roughGrazing:F4}");
             check("I23 a polished wet floor at a grazing view hands real energy to the reflection",
@@ -1764,14 +1810,69 @@ namespace VintageVisuals.SmokeTest
                 foreach (double r in new[] { 0.05, 0.3, 0.6, 0.95 })
                     foreach (double ao in new[] { 1.0, 0.5, 0.1 })
                     {
-                        double sh = Run(share, nv, r, ao, 1.0, 0.5);
-                        double w = Run(weight, nv, r, ao, 1.0, 0.5);
+                        double sh = Run(share, nv, r, ao, neutral, 0.5);
+                        double w = Run(weight, nv, r, ao, neutral, 0.5);
                         if (sh > w + 1e-9) { neverMore = false; worst = $"N.V {nv} rough {r} ao {ao}: share {sh:F4} > reflection {w:F4}"; }
                     }
             check("I23 diffuse never gives up more than the reflection adds", neverMore, worst);
             check("I23 the share is what the terrain's diffuse subtracts",
                   material.Contains("vec3 diffuseEnergy = max(vec3(1.0) - f0 * 0.35 - grazingShare, vec3(0.0)) * (1.0 - m.metalness)"),
                   "vvTerrainMaterialPrimary no longer subtracts it");
+
+            // ---------------------------------------------------------------
+            // I24: a mirror reflects like one, and rough stone does not
+            // (reflection phase 1, D81).
+            //
+            // Reflections read faint because still water, wet stone and
+            // polished blocks were all floored at the direct lobe's 0.18 and
+            // weighted F x (1 - r)^2 - and the obvious fix, a bigger weight,
+            // is exactly what paints a milky sheen over every rough block. So
+            // the two ends are bounded together, from the shipped weight, and
+            // the picture's sharpness has to follow the same roughness.
+            // ---------------------------------------------------------------
+            double mirrorR = Const(material, "VV_TERRAIN_MIRROR_ROUGHNESS");
+            double minR = Const(material, "VV_TERRAIN_MIN_ROUGHNESS");
+            double mirrorLow = Run(weight, 0.2, mirrorR, 1.0, neutral, 0.8);
+            double flooredLow = Run(weight, 0.2, minR, 1.0, neutral, 0.8);
+            double mirrorHead = Run(weight, 1.0, mirrorR, 1.0, neutral, 0.8);
+            check("I24 still water seen at a low angle reflects most of what it sees",
+                  mirrorLow > 0.3, $"weight {mirrorLow:F3} at N.V 0.2, roughness {mirrorR}");
+            check("I24 the mirror floor reflects more than the old 0.18 floor allowed",
+                  mirrorLow > flooredLow * 1.1, $"mirror {mirrorLow:F3} vs floored {flooredLow:F3}");
+            check("I24 head-on, a mirror shows its Fresnel and no more",
+                  mirrorHead > 0.02 && mirrorHead < 0.12, $"weight {mirrorHead:F3}");
+            double roughWorst = 0;
+            foreach (double nv in new[] { 1.0, 0.5, 0.2, 0.05 })
+                roughWorst = Math.Max(roughWorst, Run(weight, nv, 0.85, 1.0, neutral, 0.5));
+            check("I24 dry rough stone shows no reflection picture at any angle (no milky sheen)",
+                  roughWorst < 0.01, $"worst weight {roughWorst:F4} at roughness 0.85");
+
+            string decode = FunctionBody(material, "VvTerrainMaterial vvDecodeTerrainMaterial(");
+            check("I24 a polished block's reflection is floored at the mirror, not the highlight",
+                  decode.Contains("clamp(primary.b + vv_pbrRoughnessBias, VV_TERRAIN_MIRROR_ROUGHNESS, 1.0),") &&
+                  decode.Contains("m.normal, VV_TERRAIN_MIRROR_ROUGHNESS);") && mirrorR < minR * 0.5,
+                  "a block authored as a mirror would reflect like 0.18 stone");
+
+            string weather = FunctionBody(material, "VvTerrainMaterial vvTerrainApplyWeather(");
+            check("I24 open water reflects as a mirror whatever the stone under it",
+                  weather.Contains("m.reflectRoughness = mix(m.reflectRoughness, VV_TERRAIN_MIRROR_ROUGHNESS, water);"),
+                  "pools and streams would keep the stone's roughness in their reflection");
+            check("I24 the direct lobe keeps its floor",
+                  Regex.IsMatch(weather, @"m\.perceptualRoughness = mix\(m\.perceptualRoughness, VV_TERRAIN_MIN_ROUGHNESS, water\);"),
+                  "a GGX peak sharper than 0.18 on a 16-pixel texture is one flickering pixel");
+
+            string pixel = FunctionBody(material, "VvTerrainReflection vvTerrainPixelReflection(");
+            string blur = Rhs(Statement(pixel, "float blur ="));
+            double Blur(double r) => Scalar(blur.Replace("m.reflectRoughness", "rr"), Syms(
+                "rr", r, "VV_TREFLECT_BLUR_TEXELS", Const(material, "VV_TREFLECT_BLUR_TEXELS"),
+                "VV_TREFLECT_BLUR_SHARP", Const(material, "VV_TREFLECT_BLUR_SHARP"),
+                "VV_TREFLECT_BLUR_SOFT", Const(material, "VV_TREFLECT_BLUR_SOFT")));
+            check("I24 a mirror's scene reflection is sharp and a rough one soft",
+                  Blur(mirrorR) < 0.01 && Blur(0.7) > 2.0 && Blur(0.3) < Blur(0.5),
+                  $"blur {Blur(mirrorR):F2} / {Blur(0.3):F2} / {Blur(0.5):F2} / {Blur(0.7):F2} texels");
+            check("I24 cells and blur follow the reflection roughness, not the lobe's",
+                  pixel.Contains("o.cells = vvReflectCells(m.reflectRoughness);"),
+                  "the picture would stay as coarse as the floored highlight");
         }
     }
 }

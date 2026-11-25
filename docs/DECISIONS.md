@@ -3559,3 +3559,72 @@ reflection it pays for). I22 now also requires eye-measured fades and
 eye-origin creature and particle vectors and evaluates the knee and the
 rough-metal boost. Seven mutations. L2, not seen in game; performance not
 measured (one extra Fresnel evaluation per terrain fragment).
+
+## D81 - Reflection phase 1: one shared core, and a reflection roughness with a mirror floor
+
+**Context.** After phase 0, Elijah saw reflections in game as "faint but
+there" and asked for wet and mirror-finish surfaces to show clear, balanced
+reflections, with water getting the same care. The faintness was arithmetic:
+the terrain weighted its reflection `F x (1 - r)^2 x specOcc x slider`, every
+texel's roughness was floored at 0.18 (the direct lobe's floor, there so a GGX
+peak does not become one flickering pixel), still water and pools were mixed
+TOWARD that 0.18 rather than below it, and the slider default was 0.35. A pool
+at a low angle reflected about 0.08 of what it saw at Elijah's settings. The
+sky model and direction cells also existed twice (terrain, water), held equal
+only by a parity check, and the march lived in the terrain group alone, so
+water could not use it.
+
+**Decision.**
+- `assets/vintagevisuals/shadersnippets/reflect.glsl` is the ONE description
+  of a reflection: the texel cells, the split-sum weight fit
+  (`vvReflectEnvBrdf`, Karis's analytic form, in scalar floats so the smoke
+  test evaluates it), where a reflection reads as a picture
+  (`vvReflectMirror`: full at roughness 0.30 or below, none from 0.80), the
+  analytic sky (`vvReflectSky`, the caller passes its sun and daylight), and
+  the screen march (`vvReflectMarch`) over an image the CALLER chooses, with
+  depth either in the image's alpha (terrain's capture) or a window-depth
+  texture (water's live opaque frame). It declares no sampler and no uniform,
+  so injecting it cannot move a texture unit. Each group injects its own copy,
+  like `pbrcore.glsl`, so each still rolls back alone. Terrain injects it
+  inside the material snippet, above the scene-capture marker; the water
+  thread injects it into `chunkliquid` (its D82).
+- The terrain material carries `reflectRoughness` beside the GGX roughness. It
+  is floored at `VV_TERRAIN_MIRROR_ROUGHNESS` (0.04) instead of 0.18, takes
+  the same specular-AA widening, is moved by the same wet, snow and frost
+  layers, and goes to the mirror floor under pools and streams. The direct
+  lobe keeps its 0.18. Stream texels also flatten half of the wall's grain
+  (pools already flattened fully).
+- The reflection weight is `vvReflectEnvBrdf(F0, rr, N.V) x vvReflectMirror(rr)
+  x specOcc x slider`, and the diffuse pays back the part of it a glancing view
+  adds over the head-on value. The slider is read relative to its shipped
+  default (`VV_TERRAIN_AMBIENT_NEUTRAL` = 0.35, pinned to the config default by
+  a check), so the default is the physical answer on terrain while entities
+  and particles, which share the uniform, keep the meaning they were tuned with.
+- A scene hit is softened by roughness: no blur at or below 0.06, up to five
+  capture texels (four taps, deterministic) from 0.55. Direction cells follow
+  `rr` too.
+
+**Effect at the shipped default** (smoke-test arithmetic, not seen): still
+water at N.V 0.2 reflects 0.34 of the scene (was 0.26 at slider 1, 0.08 at
+Elijah's 0.3); head-on 0.085 (was 0.055); roughness 0.5 at N.V 0.3, 0.07 (was
+0.05); dry rough stone at 0.75, 0.001 (was 0.013) - so the clearer mirror does
+not come with a sheen on every rough block.
+
+**Alternatives rejected.** Raising the slider default to 1.0 and calling that
+neutral: the entity and particle sky highlight shares the uniform and has no
+mirror term, so it would nearly triple on every creature. Lowering the 0.18
+floor itself: that floor exists for the direct highlight's aliasing, which a
+reflection picture does not have.
+
+**Evidence.** I24 (seven interaction checks: a mirror at a low angle reflects
+most of what it sees, more than the old floor allowed, head-on shows only its
+Fresnel, dry rough stone shows no picture at any angle, open water and
+polished blocks get the mirror floor, the direct lobe keeps its floor, blur is
+sharp on a mirror and soft on rough); I23 re-evaluated on the core's fit;
+PixelReflectionChecks and WaterChecks moved to the core. Eight new mutations,
+and six stale mutation rows repaired (four left stale by phase 0 and D74).
+`tools/verifypatches` compiles every combination. L2, not seen in game;
+performance not measured (the march is unchanged in cost; the blur adds three
+capture reads per hit on rough surfaces only, and the weight one more fit
+evaluation per terrain fragment).
+

@@ -57,6 +57,18 @@
   tokens: uniform sampler2D liquidDepth;
   snippet: pbrterrainmaterial.glsl
 
+# The shared reflection core (D81): the sky, the direction cells, the weight
+# fit and the screen march, one copy for terrain and water. It declares no
+# sampler and no uniform, so where it lands cannot move a texture unit. It
+# goes INSIDE the material snippet, directly above the scene-capture marker,
+# because the material code below the marker is its first caller; hence the
+# later phase, which runs after the snippet is in.
+- type: insert_before
+  phase: SharedFunctions
+  filename: chunkopaque.fsh
+  tokens: "// vintagevisuals-hook: terrain scene capture define"
+  snippet: reflect.glsl
+
 - type: insert_before
   phase: Material
   filename: chunkopaque.fsh
@@ -121,6 +133,18 @@
   filename: chunktopsoil.fsh
   tokens: uniform sampler2D liquidDepth;
   snippet: pbrterrainmaterial.glsl
+
+# The shared reflection core (D81): the sky, the direction cells, the weight
+# fit and the screen march, one copy for terrain and water. It declares no
+# sampler and no uniform, so where it lands cannot move a texture unit. It
+# goes INSIDE the material snippet, directly above the scene-capture marker,
+# because the material code below the marker is its first caller; hence the
+# later phase, which runs after the snippet is in.
+- type: insert_before
+  phase: SharedFunctions
+  filename: chunktopsoil.fsh
+  tokens: "// vintagevisuals-hook: terrain scene capture define"
+  snippet: reflect.glsl
 
 - type: insert_before
   phase: Material

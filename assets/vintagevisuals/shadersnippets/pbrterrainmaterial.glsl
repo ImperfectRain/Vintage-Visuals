@@ -92,27 +92,16 @@ uniform float vv_pbrPixelReflect;
 // analytic environment alone.
 // vintagevisuals-hook: terrain scene capture define
 
-struct VvTerrainSceneHit
-{
-    vec3 color;
-    float valid;   // 0..1 confidence; 0 is a miss
-    float reason;  // VV_TSSR_* below, for debug view 48
-};
-
-#define VV_TSSR_NO_CAPTURE   0.0
-#define VV_TSSR_FACING       1.0
-#define VV_TSSR_ORIGIN_OFF   2.0
-#define VV_TSSR_FAR_OFF      3.0
-#define VV_TSSR_NO_CROSSING  4.0
-#define VV_TSSR_TOO_THICK    5.0
-#define VV_TSSR_HIT          6.0
-#define VV_TSSR_SKIPPED      7.0
+// The hit and its reason codes are the shared core's (reflect.glsl, D81),
+// which this group injects directly above the marker.
 
 #ifdef VV_TERRAIN_SCENE_CAPTURE
-VvTerrainSceneHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v);
+VvReflectHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v, float blur);
 #endif
 
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
+// The floor for the reflection alone: still water, a polished metal, glass.
+const float VV_TERRAIN_MIRROR_ROUGHNESS = 0.04;
 
 // How much of vanilla's lit colour a metal keeps as its body (D63): a polished
 // one less, a rough one more. Never 1, so a metal still reads darker and more
@@ -175,6 +164,12 @@ struct VvTerrainMaterial
     float flowPhase;  // baked: how far along its path, for drops sliding down it (D67)
     float pool;     // standing water filling this texel (top faces, D65)
     float stream;   // water running down this texel (side faces, D65)
+    // What the REFLECTION sees (phase 1, D81). The direct lobe keeps the
+    // 0.18 floor, because a sharper GGX peak on a 16-pixel texture is a
+    // single flickering pixel. A reflection has no such problem - it is a
+    // picture - and the floor was what kept still water, wet stone and
+    // polished blocks from ever showing a clear one.
+    float reflectRoughness;
 };
 
 vec3 vvTerrainSafeNormalize(vec3 v, vec3 fallback)
@@ -240,14 +235,21 @@ vec3 vvTerrainNormalFromTexel(vec4 primary, vec3 faceNormal, float detailFade)
     return vvTerrainSafeNormalize(vvTerrainFrame(faceNormal) * vec3(xy, z), faceNormal);
 }
 
-float vvTerrainFilteredRoughness(float perceptualRoughness, vec3 n)
+// Normal variance across the pixel widens the lobe, for the highlight and
+// the reflection alike; only the floor differs between them.
+float vvTerrainFilteredRoughnessFloor(float perceptualRoughness, vec3 n, float floorValue)
 {
     if (vv_pbrSpecularAA < 0.5) return perceptualRoughness;
     vec3 dx = dFdx(n);
     vec3 dy = dFdy(n);
     float variance = clamp(max(dot(dx, dx), dot(dy, dy)), 0.0, 1.0);
     return clamp(sqrt(perceptualRoughness * perceptualRoughness + variance * 0.32),
-                 VV_TERRAIN_MIN_ROUGHNESS, 1.0);
+                 floorValue, 1.0);
+}
+
+float vvTerrainFilteredRoughness(float perceptualRoughness, vec3 n)
+{
+    return vvTerrainFilteredRoughnessFloor(perceptualRoughness, n, VV_TERRAIN_MIN_ROUGHNESS);
 }
 
 // --- Weather on terrain -------------------------------------------------------
@@ -549,6 +551,14 @@ VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelative
     m.snow = vvTerrainSnow(m.faceNormal);
     m.frost = clamp(vv_sceneFrost, 0.0, 1.0);
 
+    // Running water is a film over the wall's grain: it keeps half of it.
+    // (Pools were flattened above, fully.)
+    float streamFlat = m.stream * 0.5 * (1.0 - clamp(m.snow + m.frost, 0.0, 1.0));
+    if (streamFlat > 0.001)
+    {
+        m.normal = vvTerrainSafeNormalize(mix(m.normal, m.faceNormal, streamFlat), m.faceNormal);
+    }
+
     // Ripples land only on open water when crevices are on.
     float rippleWater = mix(m.wetness, crevice.x, step(0.001, amount) * step(0.5, vv_material2Valid));
     vec2 slope = vvTerrainRippleField(m.faceNormal, cameraRelativePos, rippleWater, m.detailFade);
@@ -565,6 +575,11 @@ VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelative
         base.roughness = m.perceptualRoughness;
         base.specular = m.specularFactor;
         VvSurface layered = vvApplyEnvironmentLayers(base, m.wetness, m.snow, m.frost, 0.0);
+        // The same layers over the reflection's own roughness: a water film
+        // smooths what it reflects, snow and frost roughen it.
+        base.roughness = m.reflectRoughness;
+        m.reflectRoughness = clamp(vvApplyEnvironmentLayers(base, m.wetness, m.snow, m.frost, 0.0).roughness,
+                                   VV_TERRAIN_MIRROR_ROUGHNESS, 1.0);
         m.perceptualRoughness = clamp(layered.roughness, VV_TERRAIN_MIN_ROUGHNESS, 1.0);
         m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
                                m.perceptualRoughness * m.perceptualRoughness);
@@ -578,6 +593,7 @@ VvTerrainMaterial vvTerrainApplyWeather(VvTerrainMaterial m, vec3 cameraRelative
         m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
                                m.perceptualRoughness * m.perceptualRoughness);
         m.specularFactor = max(m.specularFactor, 0.8 * water);
+        m.reflectRoughness = mix(m.reflectRoughness, VV_TERRAIN_MIRROR_ROUGHNESS, water);
     }
     return m;
 }
@@ -596,6 +612,9 @@ VvTerrainMaterial vvDecodeTerrainMaterial(vec4 litColor, vec3 baseColor,
     m.normal = vvTerrainNormalFromTexel(primary, m.faceNormal, detailFade);
     m.perceptualRoughness = clamp(primary.b + vv_pbrRoughnessBias, VV_TERRAIN_MIN_ROUGHNESS, 1.0);
     m.perceptualRoughness = vvTerrainFilteredRoughness(m.perceptualRoughness, m.normal);
+    m.reflectRoughness = vvTerrainFilteredRoughnessFloor(
+        clamp(primary.b + vv_pbrRoughnessBias, VV_TERRAIN_MIRROR_ROUGHNESS, 1.0),
+        m.normal, VV_TERRAIN_MIRROR_ROUGHNESS);
     m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
                            m.perceptualRoughness * m.perceptualRoughness);
     m.specularFactor = clamp(primary.a * max(0.0, vv_pbrSpecularStrength), 0.0, 1.0);
@@ -905,14 +924,16 @@ vec3 vvTerrainBlockRelief(VvTerrainMaterial m, vec3 litColor, vec3 blockLight, v
 // blocks. Wet stone, metal, polished and glazed blocks are where it runs.
 // ---------------------------------------------------------------------------
 
-const float VV_TREFLECT_CELLS_SHARP = 16.0;
-const float VV_TREFLECT_CELLS_ROUGH = 3.0;
-const float VV_TREFLECT_HORIZON = 0.14;      // half-width of the horizon band in r.y
-const float VV_TREFLECT_GROUND = 0.34;       // dim fallback below the horizon
-const float VV_TREFLECT_HORIZON_LIFT = 1.15; // the horizon is the brightest band
-const float VV_TREFLECT_TOWARD = 0.30;       // the sun's half of the sky, brighter
+// The sky, the direction cells, the weight fit and the march are the shared
+// core's (reflect.glsl, D81), so terrain and water cannot drift apart.
 const float VV_TREFLECT_MAX = 2.0;           // capture colour ceiling vs. the environment
-const float VV_TREFLECT_TWO_PI = 6.28318530718;
+
+// How far the scene hit is softened by roughness, in capture texels (the
+// capture is half resolution): none on a mirror, this many from the middle
+// of the range up. Four taps, deterministic.
+const float VV_TREFLECT_BLUR_TEXELS = 5.0;
+const float VV_TREFLECT_BLUR_SHARP = 0.06;   // at or below: a crisp picture
+const float VV_TREFLECT_BLUR_SOFT = 0.55;    // at or above: the full blur
 
 // The march is worth its cost only where the reflected image can change the
 // pixel visibly. This is the luminance of the reflection's own weight -
@@ -955,81 +976,71 @@ vec3 vvTerrainTexelCentrePos(vec3 cameraRelativePos, vec2 materialUv)
     return cameraRelativePos + dFdx(cameraRelativePos) * a + dFdy(cameraRelativePos) * b;
 }
 
-// The analytic environment as a COLOUR: sky above, a lifted horizon band, dim
-// ground below, the sun's half of the sky a little brighter. No sun disc - the
-// direct lobe already draws the sun, and a disc here would count it twice.
-vec3 vvTerrainReflectionFallback(vec3 direction, vec3 environment)
-{
-    float lift = direction.y > VV_TREFLECT_HORIZON
-        ? 1.0
-        : (direction.y < -VV_TREFLECT_HORIZON ? VV_TREFLECT_GROUND : VV_TREFLECT_HORIZON_LIFT);
+// How much of the reflected image can reach the pixel (phase 1, D81): the
+// split-sum share of the environment at the REFLECTION roughness, times where
+// that reads as a picture, times specular occlusion and the slider. Shared so
+// the march gate and the shading can never disagree about what is visible.
+//
+// It replaced F x (1 - r)^2, which was two-thirds of Fresnel at the 0.18
+// floor every texel had, so still water and wet stone reflected at most a
+// fifth of what they should.
+//
+// The slider is read RELATIVE to its shipped default, so the default is the
+// physical answer here. The same uniform scales the entity and particle sky
+// highlight, which keep the meaning they were tuned with; one slider, one
+// look per program, and 0 still means none anywhere.
+const float VV_TERRAIN_AMBIENT_NEUTRAL = 0.35; // = PseudoPBR.AmbientSpecular's default
 
-    vec2 sunAzimuth = lightPosition.xz;
-    if (dot(sunAzimuth, sunAzimuth) > 1e-6 && dot(direction.xz, direction.xz) > 1e-6)
-    {
-        float toward = dot(normalize(direction.xz), normalize(sunAzimuth));
-        lift *= 1.0 + VV_TREFLECT_TOWARD * toward * clamp(vv_sceneDayLight, 0.0, 1.0);
-    }
-    return environment * clamp(lift, 0.0, VV_TREFLECT_MAX);
+float vvTerrainReflectSlider()
+{
+    return max(0.0, vv_pbrAmbient) / VV_TERRAIN_AMBIENT_NEUTRAL;
 }
 
-float vvTerrainReflectCells(float roughness)
-{
-    return max(2.0, mix(VV_TREFLECT_CELLS_SHARP, VV_TREFLECT_CELLS_ROUGH, clamp(roughness, 0.0, 1.0)));
-}
-
-// The reflection direction snapped to its cell, so the analytic image steps
-// in what the texel is looking at.
-vec3 vvTerrainReflectCell(vec3 r, float cells)
-{
-    float elevation = (floor((clamp(r.y, -1.0, 1.0) * 0.5 + 0.5) * cells) + 0.5) / cells;
-    float azimuth = (floor((atan(r.z, r.x) / VV_TREFLECT_TWO_PI + 0.5) * cells * 2.0) + 0.5)
-                  / (cells * 2.0);
-    float y = elevation * 2.0 - 1.0;
-    float theta = (azimuth - 0.5) * VV_TREFLECT_TWO_PI;
-    float radius = sqrt(max(0.0, 1.0 - y * y));
-    return vec3(cos(theta) * radius, y, sin(theta) * radius);
-}
-
-// How much of the reflected image can reach the pixel: the same factors
-// vvTerrainAmbientSpecular applies, as one luminance. Shared so the march gate
-// and the shading can never disagree about what is visible.
 vec3 vvTerrainAmbientWeight(VvTerrainMaterial m, vec3 viewDir)
 {
     vec3 f0 = mix(vec3(VV_DIELECTRIC_F0) * mix(0.6, 1.8, m.specularFactor),
                   m.baseColor, m.metalness);
-    vec3 f = vvFresnelSchlickTerrain(max(dot(m.normal, viewDir), 0.0), f0);
-    float roughFade = (1.0 - m.perceptualRoughness) * (1.0 - m.perceptualRoughness);
+    float ndv = max(dot(m.normal, viewDir), 0.0);
+    float rr = m.reflectRoughness;
+    vec3 env = vvReflectEnvBrdf(f0, rr, ndv);
+    float mirror = vvReflectMirror(rr);
+    float roughFade = (1.0 - rr) * (1.0 - rr);
     float specOcc = mix(m.ao, clamp(pow(max(m.ao, 0.02), 1.0 + roughFade), 0.0, 1.0),
                         clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
-    return f * roughFade * specOcc * max(0.0, vv_pbrAmbient);
+    return env * mirror * specOcc * vvTerrainReflectSlider();
 }
 
-// The part of vvTerrainAmbientWeight that Fresnel adds over its head-on value:
-// zero facing the surface, rising toward grazing. Diffuse gives this up, so
-// the reflected and diffuse energy never add up past what arrived. The slider
-// is clamped to 1 here: a stronger reflection slider is a choice of look, and
-// must not drive the diffuse below zero.
+// The part of vvTerrainAmbientWeight that a glancing view adds over the
+// head-on value: zero facing the surface, rising toward grazing. Diffuse gives
+// this up, so the reflected and diffuse energy never add up past what arrived.
+// The slider is clamped to 1 here: a stronger reflection slider is a choice of
+// look, and must not drive the diffuse below zero.
 vec3 vvTerrainGrazingShare(VvTerrainMaterial m, vec3 viewDir, vec3 f0)
 {
-    vec3 f = vvFresnelSchlickTerrain(max(dot(m.normal, viewDir), 0.0), f0);
-    float roughFade = (1.0 - m.perceptualRoughness) * (1.0 - m.perceptualRoughness);
+    float ndv = max(dot(m.normal, viewDir), 0.0);
+    float rr = m.reflectRoughness;
+    float one = 1.0;
+    vec3 env = vvReflectEnvBrdf(f0, rr, ndv);
+    vec3 envHeadOn = vvReflectEnvBrdf(f0, rr, one);
+    float mirror = vvReflectMirror(rr);
+    float roughFade = (1.0 - rr) * (1.0 - rr);
     float specOcc = mix(m.ao, clamp(pow(max(m.ao, 0.02), 1.0 + roughFade), 0.0, 1.0),
                         clamp(vv_pbrSpecOcclusion, 0.0, 1.0));
-    return max(f - f0, vec3(0.0)) * roughFade * specOcc * clamp(vv_pbrAmbient, 0.0, 1.0);
+    return max(env - envHeadOn, vec3(0.0)) * mirror * specOcc * min(vvTerrainReflectSlider(), 1.0);
 }
 
 // The scene lookup, or a miss saying why there was none. The march itself
 // lives in pbrterrainreflect, which owns the capture.
-VvTerrainSceneHit vvTerrainSceneLookup(vec3 origin, vec3 r, vec3 v, bool worthIt)
+VvReflectHit vvTerrainSceneLookup(vec3 origin, vec3 r, vec3 v, bool worthIt, float blur)
 {
-    VvTerrainSceneHit miss;
+    VvReflectHit miss;
     miss.color = vec3(0.0);
     miss.valid = 0.0;
-    miss.reason = VV_TSSR_NO_CAPTURE;
+    miss.travel = 0.0;
+    miss.reason = VV_REFLECT_NO_SOURCE;
 #ifdef VV_TERRAIN_SCENE_CAPTURE
-    if (!worthIt) { miss.reason = VV_TSSR_SKIPPED; return miss; }
-    return vvTerrainSceneMarch(origin, r, v);
+    if (!worthIt) { miss.reason = VV_REFLECT_SKIPPED; return miss; }
+    return vvTerrainSceneMarch(origin, r, v, blur);
 #else
     return miss;
 #endif
@@ -1041,7 +1052,7 @@ struct VvTerrainReflection
     vec3 direction;  // the texel's reflection direction (unquantised)
     float cells;     // direction cells across elevation
     float scene;     // 0..1, how much of the image is the captured scene
-    float reason;    // VV_TSSR_* of the march
+    float reason;    // VV_REFLECT_* of the march
 };
 
 // Strength 0 returns the flat environment the path used before, so the slider
@@ -1054,9 +1065,9 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     vec3 rFlat = reflect(-viewDir, m.normal);
     o.image = mix(environment * 0.48, environment, clamp(rFlat.y * 0.5 + 0.5, 0.0, 1.0));
     o.direction = rFlat;
-    o.cells = vvTerrainReflectCells(m.perceptualRoughness);
+    o.cells = vvReflectCells(m.reflectRoughness);
     o.scene = 0.0;
-    o.reason = VV_TSSR_SKIPPED;
+    o.reason = VV_REFLECT_SKIPPED;
 
     float strength = clamp(vv_pbrPixelReflect, 0.0, 1.0);
     if (strength < 0.001) return o;
@@ -1068,7 +1079,7 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     vec3 r = vvTerrainSafeNormalize(reflect(-v, m.normal), m.normal);
     o.direction = r;
 
-    vec3 fallback = vvTerrainReflectionFallback(vvTerrainReflectCell(r, o.cells), environment);
+    vec3 fallback = vvReflectSky(vvReflectCell(r, o.cells), environment, lightPosition, vv_sceneDayLight);
 
     // The scene is traced from the block FACE normal, not the material one:
     // it is geometry, and normal-map grain would steer rays into the floor.
@@ -1078,7 +1089,9 @@ VvTerrainReflection vvTerrainPixelReflection(VvTerrainMaterial m, vec3 cameraRel
     float weight = vvTerrainLuma(vvTerrainAmbientWeight(m, viewDir)) * strength;
     bool worthIt = reach > 0.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;
 
-    VvTerrainSceneHit hit = vvTerrainSceneLookup(origin, sceneR, v, worthIt);
+    float blur = VV_TREFLECT_BLUR_TEXELS
+               * smoothstep(VV_TREFLECT_BLUR_SHARP, VV_TREFLECT_BLUR_SOFT, m.reflectRoughness);
+    VvReflectHit hit = vvTerrainSceneLookup(origin, sceneR, v, worthIt, blur);
     o.reason = hit.reason;
 
     // The capture is the finished, graded frame: cap it by LUMINANCE against
@@ -2830,12 +2843,12 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         if (mode == 34) return vec4(rf.image, color.a);
         if (mode == 35) return vec4(vvTerrainAmbientSpecular(m, viewDir, rf.image) * 4.0, color.a);
         if (mode == 36) return vec4(vec3(1.0 - rf.scene), color.a);
-        if (mode == 37) return vec4(vec3((VV_TREFLECT_CELLS_SHARP - rf.cells) /
-                                         (VV_TREFLECT_CELLS_SHARP - VV_TREFLECT_CELLS_ROUGH)), color.a);
+        if (mode == 37) return vec4(vec3((VV_REFLECT_CELLS_SHARP - rf.cells) /
+                                         (VV_REFLECT_CELLS_SHARP - VV_REFLECT_CELLS_ROUGH)), color.a);
         if (mode == 39)
         {
-            if (rf.reason == VV_TSSR_NO_CAPTURE) return vec4(0.0, 0.0, 0.6, color.a);
-            if (rf.reason == VV_TSSR_SKIPPED) return vec4(0.0, 0.0, 0.18, color.a);
+            if (rf.reason == VV_REFLECT_NO_SOURCE) return vec4(0.0, 0.0, 0.6, color.a);
+            if (rf.reason == VV_REFLECT_SKIPPED) return vec4(0.0, 0.0, 0.18, color.a);
             return vec4(mix(vec3(0.85, 0.08, 0.05), vec3(0.1, 0.9, 0.15), rf.scene), color.a);
         }
         // 48: green hit, yellow found a surface and rejected it as too thick,
@@ -2843,13 +2856,13 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
         // the origin off the captured frame, magenta pointing back at the
         // camera, dark blue skipped as not worth a march, blue no capture.
         float why = rf.reason;
-        vec3 c = why == VV_TSSR_HIT        ? vec3(0.1, 0.9, 0.15)
-               : why == VV_TSSR_TOO_THICK  ? vec3(0.95, 0.85, 0.1)
-               : why == VV_TSSR_NO_CROSSING? vec3(0.9, 0.1, 0.05)
-               : why == VV_TSSR_FAR_OFF    ? vec3(1.0, 0.5, 0.05)
-               : why == VV_TSSR_ORIGIN_OFF ? vec3(0.45, 0.02, 0.02)
-               : why == VV_TSSR_FACING     ? vec3(0.9, 0.1, 0.9)
-               : why == VV_TSSR_SKIPPED    ? vec3(0.0, 0.0, 0.18)
+        vec3 c = why == VV_REFLECT_HIT        ? vec3(0.1, 0.9, 0.15)
+               : why == VV_REFLECT_TOO_THICK  ? vec3(0.95, 0.85, 0.1)
+               : why == VV_REFLECT_NO_CROSSING? vec3(0.9, 0.1, 0.05)
+               : why == VV_REFLECT_FAR_OFF    ? vec3(1.0, 0.5, 0.05)
+               : why == VV_REFLECT_ORIGIN_OFF ? vec3(0.45, 0.02, 0.02)
+               : why == VV_REFLECT_FACING     ? vec3(0.9, 0.1, 0.9)
+               : why == VV_REFLECT_SKIPPED    ? vec3(0.0, 0.0, 0.18)
                :                             vec3(0.0, 0.0, 0.6);
         return vec4(c, color.a);
     }

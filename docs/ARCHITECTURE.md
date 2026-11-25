@@ -155,6 +155,16 @@ README beside the code.
 shaded programs. `scene.glsl` is the one description of the conditions it runs
 in, injected at the same three anchors.
 
+A third, `reflect.glsl` (D81), is the one description of a reflection: the
+texel direction cells, the split-sum weight fit, where a reflection reads as a
+picture, the analytic sky, and the screen march. It declares no sampler and no
+uniform; the caller passes the image to march (terrain: last frame's capture,
+linear depth in alpha; water: the live opaque frame and `depthTex`) and its
+own sun direction. Terrain injects it inside `pbrterrainmaterial.glsl` above
+the scene-capture marker, water into `chunkliquid`, each its own copy so each
+group still rolls back alone. Terrain reflections are weighted by a
+`reflectRoughness` floored at 0.04, separate from the highlight's 0.18.
+
 The rule matters more than either file: **a new shader maps its inputs into
 these names and reads these lanes.** It does not invent a local meaning for wet,
 cold, enclosed, night, restrained or readable. Without that, five subsystems
@@ -238,6 +248,7 @@ Material atlases 1 and 2      src/PseudoPBR/      GPU, units 15 and 14
 Terrain, entity, particle shading      patched vanilla fragment shaders
   pbrcore.glsl  - the ONE Cook-Torrance evaluation
   scene.glsl    - the ONE description of the conditions it runs in
+  reflect.glsl  - the ONE reflection core (terrain, water)       D81
   pseudopbr.glsl- terrain material, dapple, ripples, reflection
         |
         +---- vanilla shadow map -> sun visibility -> canopy dapple, shafts

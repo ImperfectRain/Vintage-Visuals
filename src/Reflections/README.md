@@ -41,7 +41,12 @@ AfterPostProcessing  ---> capture ---> reflection ray
 
 The consumer on the active terrain path is `vvTerrainPixelReflection` in
 `../../assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl`, which
-calls the march `vvTerrainSceneMarch` in `pbrterrainreflect.glsl` (D62). The
+calls `vvTerrainSceneMarch` in `pbrterrainreflect.glsl` (D62), which projects
+the ray into the capture and hands it to the shared core's `vvReflectMarch` in
+`../../assets/vintagevisuals/shadersnippets/reflect.glsl` (D81). That core also
+holds the sky, the direction cells and the weight fit, for terrain and water
+alike. Terrain reflections read the material's `reflectRoughness`, floored at
+0.04 (a mirror) rather than the direct highlight's 0.18. The
 legacy `vvSceneReflection` in `pseudopbr.glsl` is the only reader of the world
 volume below, and that path is switched off. The phased redesign (one shared
 reflection core, screen then block volume then seen sky) is recorded in D80
@@ -271,7 +276,8 @@ they inspect the bridge. See `docs/CHECKLIST.md` for the specific scenes still
 outstanding.
 
 **Water reflects the analytic sky only** (`src/Water`, D71/D73), texel-locked,
-with no scene source. Its screen reflection is phase 1 of D80: the water pass
+with no scene source. Its screen reflection is phase 1 of D80, built on the
+shared core (D81) by the water thread (D82): the water pass
 draws in the transparent pass and can read the finished opaque frame and depth
 live, so it needs no capture and has no frame lag.
 
