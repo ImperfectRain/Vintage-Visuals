@@ -22,7 +22,8 @@
 //
 // Order of the layers, as planned: the sky and horizon reflection, then the
 // depth colouring, then the rain ripples, then the sun and moon glints, then
-// the caustics the waves focus onto what lies beneath (D77). A
+// the caustics the waves focus onto what lies beneath (D77), then the
+// shoreline: a soft edge and a lapping foam line (D79). A
 // screen-space reflection of the world is NOT here yet; it needs its own
 // sampler and its own group.
 //
@@ -56,6 +57,7 @@ uniform float vv_waterGlints;      // sun and moon highlight strength
 uniform float vv_waterWaves;       // texel wave relief strength
 uniform float vv_waterCaustics;    // sunlight the waves focus onto the bed, 0 none
 uniform float vv_waterCausticWaves;// quality: 3 or 6 focusing waves
+uniform float vv_waterShore;      // shoreline soft edge and foam line, 0 none
 uniform float vv_waterDebug;       // debug views, 0 off
 
 const float VV_WATER_TEXELS = 32.0;          // water texels per block: the water texture is 32x32
@@ -99,6 +101,33 @@ const float VV_WATER_CAUSTIC_PEAK = 1.0;     // a line approaches this gain, nev
 const float VV_WATER_CAUSTIC_ALBEDO = 0.35;  // the bed it lands on (DATA GAP above)
 const float VV_WATER_CAUSTIC_DEEP = 5.0;     // blocks: faded out by this depth, from 0.3 of it
 const float VV_WATER_CAUSTIC_FAR = 0.035;    // blocks of bed per pixel where the web is gone (about 30 blocks away)
+
+// Shoreline (D79). Where the water behind a texel is only a sliver deep, the
+// surface thins out over two texels so the bank meets it softly, and a foam
+// line laps in and out: its reach swings with vanilla's wave counter, in a
+// phase that wanders along the shore, and it breaks up per texel, dense at the
+// edge and sparse further out. Lit by vanilla's own vertex light and shadow.
+const float VV_WATER_SHORE_SOFT = 0.06;      // blocks of depth the edge thins over
+const float VV_WATER_SHORE_FOAM = 0.30;      // blocks of depth the foam reaches at the top of a lap
+const float VV_WATER_SHORE_ALPHA = 0.8;      // a foam texel's opacity
+const float VV_WATER_SHORE_ALBEDO = 0.85;
+const float VV_WATER_SHORE_KEEP = 0.35;      // vanilla's depth-edge foam kept while the foam line is on
+const float VV_WATER_SHORE_FAR = 0.12;       // blocks of surface per pixel where the line is gone
+
+// Rivers and far water (D79). Vanilla's flow vector turns the waves into
+// streaks along the current (their slope across it is kept, along it is
+// reduced: a linear map of the slope, so the waves still tile the period) and
+// quickens the chop and the glitter; still water in still air goes calmer.
+// DATA GAP: the flow vector's scale is the game's and undocumented; it is
+// treated as full flow by VV_WATER_FLOW_FULL.
+const float VV_WATER_FLOW_FULL = 0.5;
+const float VV_WATER_FLOW_STREAK = 0.65;     // share of the along-flow slope removed in full flow
+const float VV_WATER_STILL_CALM = 0.6;       // wave height on still water in still air
+// Far swells: two long slow waves (about 11 and 12 blocks) that only come in
+// with distance, so open water keeps its texture where the short waves are
+// sub-pixel. Whole cycles per 4096 blocks.
+const float VV_WATER_SWELL_NEAR = 20.0;      // blocks: no swell nearer than this
+const float VV_WATER_SWELL_FAR = 60.0;       // blocks: full swell from here
 
 // Absorption per block of path, red first: what makes deep water blue-green
 // and shallow water clear. Scaled by vv_waterDepthTint.
@@ -251,7 +280,7 @@ vec2 vvWaterChop(vec2 world, float t)
 // blocks on both axes (integer wave numbers below), so the CPU's origin wrap
 // lands on a phase boundary of every one of them. Wind sets the height; it
 // cannot turn them, because a rotated wave stops tiling the period.
-vec2 vvWaterWaveSlope(vec2 world, float t)
+vec2 vvWaterWaveSlope(vec2 world, float t, float flowAmount)
 {
     const float K = VV_WATER_TWO_PI / 4096.0;
     const vec2 k0 = vec2(900.0, 420.0) * K;     // ~4.1 blocks
@@ -263,8 +292,27 @@ vec2 vvWaterWaveSlope(vec2 world, float t)
            + k1 * cos(dot(k1, world) - t * 1.35) * 0.024
            + k2 * cos(dot(k2, world) - t * 1.90) * 0.014
            + k3 * cos(dot(k3, world) - t * 2.05) * 0.012;
-    float height = 0.45 + 1.1 * clamp(vv_sceneWind, 0.0, 1.0);
-    return (s + vvWaterChop(world, t)) * height;
+    float wind = clamp(vv_sceneWind, 0.0, 1.0);
+    float height = 0.45 + 1.1 * wind;
+    height *= mix(1.0, VV_WATER_STILL_CALM, (1.0 - flowAmount) * (1.0 - wind));
+    return (s + vvWaterChop(world, t * (1.0 + 2.0 * flowAmount))) * height;
+}
+
+// The long swells for far water, as a slope.
+vec2 vvWaterSwellSlope(vec2 world, float t)
+{
+    const float K = VV_WATER_TWO_PI / 4096.0;
+    const vec2 s0 = vec2(300.0, 170.0) * K;     // ~11.9 blocks
+    const vec2 s1 = vec2(-150.0, 330.0) * K;    // ~11.3 blocks
+    return s0 * cos(dot(s0, world) - t * 0.45) * 0.10
+         + s1 * cos(dot(s1, world) - t * 0.38) * 0.09;
+}
+
+// Streaks along a current: the slope across the flow is kept, along it is
+// cut, so the normals vary mostly across the stream.
+vec2 vvWaterStreak(vec2 slope, vec2 flowDir, float flowAmount)
+{
+    return slope - flowDir * dot(slope, flowDir) * (VV_WATER_FLOW_STREAK * flowAmount);
 }
 
 // One focusing wave's curvature. A travelling sine of unit height has the
@@ -322,12 +370,17 @@ float vvWaterCausticGain(vec2 world, float t, float depth, float waves)
 // The normal of one water texel: the face, tilted by the waves (top faces at
 // full height, falling water a little) and by the rain ripples (top faces in
 // the open only).
-vec3 vvWaterTexelNormal(vec3 faceNormal, vec3 world, vec2 flowOffset, float rippleAmount, out float ring)
+//
+// look: xy the flow direction (unit, or zero), z how much it flows (0..1),
+// w how far the texel is in swell terms (0 near, 1 far).
+vec3 vvWaterTexelNormal(vec3 faceNormal, vec3 world, vec2 flowOffset, vec4 look, float rippleAmount, out float ring)
 {
     ring = 0.0;
     float top = clamp(faceNormal.y, 0.0, 1.0);
-    vec2 slope = vvWaterWaveSlope(world.xz - flowOffset, waterWaveCounter)
-               * clamp(vv_waterWaves, 0.0, 2.0) * mix(0.25, 1.0, top);
+    vec2 slope = vvWaterWaveSlope(world.xz - flowOffset, waterWaveCounter, look.z);
+    if (look.w > 0.001) slope += vvWaterSwellSlope(world.xz - flowOffset, waterWaveCounter) * look.w;
+    slope = vvWaterStreak(slope, look.xy, look.z)
+          * clamp(vv_waterWaves, 0.0, 2.0) * mix(0.25, 1.0, top);
 
     if (rippleAmount > 0.001)
     {
@@ -386,6 +439,15 @@ float vvWaterVanillaSpecularKeep()
 // rain systems that disagree on one surface. While this mod's rings are on they
 // replace vanilla's, so water and land show the same drops (D75). 1 (vanilla)
 // whenever this group is not live or the ring slider is 0.
+// Vanilla's own depth-edge foam steps back while the foam line is on, so the
+// shore is not foamed twice. 1 (vanilla) whenever this group is not live or
+// the shoreline slider is 0.
+float vvWaterVanillaFoamKeep()
+{
+    if (vv_water < 0.5) return 1.0;
+    return mix(1.0, VV_WATER_SHORE_KEEP, clamp(vv_waterShore, 0.0, 1.0));
+}
+
 float vvWaterVanillaDropletKeep()
 {
     if (vv_water < 0.5) return 1.0;
@@ -414,7 +476,7 @@ vec3 vvWaterGlint(vec3 n, vec3 v, vec3 l, vec3 lightColor)
 // the path length behind) is what it meets. Out alpha is F plus the body's
 // opacity over the remaining (1 - F).
 vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
-                    int skyOpen, vec2 flowOffset, vec3 environment)
+                    int skyOpen, vec2 flowOffset, vec2 flow, vec3 environment)
 {
     // Derivatives FIRST, in uniform control flow: everything below branches.
     vec3 dpx = dFdx(pos);
@@ -465,8 +527,15 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float skyFactor = skyOpen > 0 ? 1.0 : VV_WATER_SKY_CAVE;
     float rippleAmount = skyOpen > 0 ? clamp(vv_waterRipples, 0.0, 1.0) * top : 0.0;
 
+    // Rivers and far water (D79): vanilla's flow vector, and the distance.
+    float flowLen = length(flow);
+    float flowAmount = smoothstep(0.0, VV_WATER_FLOW_FULL, flowLen);
+    vec2 flowDir = flowLen > 1e-4 ? flow / flowLen : vec2(0.0);
+    float far = smoothstep(VV_WATER_SWELL_NEAR, VV_WATER_SWELL_FAR, length(vv_waterEye - centre));
+    vec4 look = vec4(flowDir, flowAmount, far);
+
     float ring;
-    vec3 n = vvWaterTexelNormal(faceNormal, centreWorld, flowOffset, rippleAmount, ring);
+    vec3 n = vvWaterTexelNormal(faceNormal, centreWorld, flowOffset, look, rippleAmount, ring);
 
     // --- 1. sky and horizon reflection, texel-locked ------------------------
     vec3 r = reflect(-v, n);
@@ -487,7 +556,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
             if (i >= taps) break;
             vec3 dir = (i == 1) ? ax : (i == 2) ? -ax : (i == 3) ? bx : -bx;
             float ringTap;
-            vec3 nb = vvWaterTexelNormal(faceNormal, centreWorld + dir * step1, flowOffset, rippleAmount, ringTap);
+            vec3 nb = vvWaterTexelNormal(faceNormal, centreWorld + dir * step1, flowOffset, look, rippleAmount, ringTap);
             vec3 rb = reflect(-v, nb);
             if (rb.y < 0.0 && top > 0.5) rb = normalize(vec3(rb.x, -rb.y * 0.25, rb.z));
             sum += vvWaterSkyImage(rb, environment);
@@ -524,7 +593,10 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     float depthTint = clamp(vv_waterDepthTint, 0.0, 1.0);
     float caustics = clamp(vv_waterCaustics, 0.0, 1.0);
     vec3 causticLight = vec3(0.0);
-    if (depthTint > 0.001 || vv_waterClarity > 0.001 || caustics > 0.001 || vv_waterDebug > 0.5)
+    vec3 bedNormal = vec3(0.0, 1.0, 0.0);
+    float shoreGap = VV_WATER_DEEP_PATH;
+    float shore = clamp(vv_waterShore, 0.0, 1.0);
+    if (depthTint > 0.001 || vv_waterClarity > 0.001 || caustics > 0.001 || shore > 0.001 || vv_waterDebug > 0.5)
     {
         vec2 uv = (gl_FragCoord.xy + screenStep) / frameSize;
         float behind = linearDepth(texture(depthTex, clamp(uv, vec2(0.0), vec2(1.0))).x);
@@ -543,14 +615,27 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         float clear = clamp(vv_waterClarity, 0.0, 1.0) * (1.0 - smoothstep(0.25, 2.0, path));
         bodyAlpha = mix(bodyAlpha * (1.0 - 0.55 * clear), max(bodyAlpha, 0.92), absorbed * depthTint);
 
+        // The bed behind this texel. Points on one view ray scale with view
+        // depth, so it is the texel centre pushed along the ray by behind /
+        // own. Its normal comes from the bed's screen slope behind each pixel;
+        // a block edge between two pixels is a jump, not a slope, and there
+        // the bed counts as flat rather than drawing a seam along every block.
+        vec3 bed = vv_waterEye + (centre - vv_waterEye) * (behind / max(own, 1e-6));
+        vec3 bedCross = cross(bedDx, bedDy);
+        float bedReach = 9.0 * (behindPixel / max(ownLinear, 1e-6)) * (behindPixel / max(ownLinear, 1e-6));
+        bool jump = dot(bedDx, bedDx) > bedReach * a11 || dot(bedDy, bedDy) > bedReach * a22;
+        bedNormal = (!jump && dot(bedCross, bedCross) > 1e-12) ? normalize(bedCross) : vec3(0.0, 1.0, 0.0);
+        if (dot(bedNormal, vv_waterEye - bed) < 0.0) bedNormal = -bedNormal;
+        // How far the texel is from what lies behind it, measured across that
+        // surface: the depth over a floor, the distance out from a bank wall.
+        // Unlike the view path it does not change with the angle of view.
+        shoreGap = abs(dot(centre - bed, bedNormal));
+
         // --- 5. caustics on the bed seen through this texel ----------------
-        // Points on one view ray scale with view depth, so the bed is the
-        // texel centre pushed along the ray by behind / own. Top faces in the
-        // open, under a sun that is up and visible, only.
+        // Top faces in the open, under a sun that is up and visible, only.
         float sunLight = sunUp * clearSky * shadowBright;
         if (caustics > 0.001 && skyOpen > 0 && top > 0.5 && sunLight > 0.001 && own > 1e-6)
         {
-            vec3 bed = vv_waterEye + (centre - vv_waterEye) * (behind / own);
             float depth = max(centre.y - bed.y, 0.0);
             // Where the sunlight that reaches this bed point entered the
             // water: back up the refracted sun ray to the surface.
@@ -568,16 +653,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
             // Seen through the water: the longer the view path, the less of
             // the bed's light comes back, even where the water is kept clear.
             fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));
-            // The face the light lands on, from the bed's own screen slope;
-            // flat (facing the sun) where that slope is a depth edge.
-            // A block edge between this pixel and the next is a jump, not a
-            // slope: there the bed counts as flat rather than drawing a dark
-            // seam along every block.
-            vec3 bedCross = cross(bedDx, bedDy);
-            float reach = 9.0 * (behindPixel / max(ownLinear, 1e-6)) * (behindPixel / max(ownLinear, 1e-6));
-            bool jump = dot(bedDx, bedDx) > reach * a11 || dot(bedDy, bedDy) > reach * a22;
-            vec3 bedNormal = (!jump && dot(bedCross, bedCross) > 1e-12) ? normalize(bedCross) : vec3(0.0, 1.0, 0.0);
-            if (dot(bedNormal, vv_waterEye - bed) < 0.0) bedNormal = -bedNormal;
+            // The face the light lands on.
             float facing = clamp(dot(bedNormal, -down), 0.0, 1.0);
             fade *= facing;
             // A line is a few bed texels wide; once a texel is smaller than a
@@ -601,7 +677,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
         // lobe to break up on its own, so each texel carries a facet that
         // twinkles with the waves - some catch the sun hard, the rest softly.
         vec2 facetCell = floor(centreWorld.xz * VV_WATER_TEXELS);
-        float twinkle = mod(floor(waterWaveCounter * VV_WATER_GLINT_TWINKLE), 4096.0);
+        float twinkle = mod(floor(waterWaveCounter * VV_WATER_GLINT_TWINKLE * (1.0 + 2.0 * flowAmount)), 4096.0);
         float facet = vvWaterCellRandom(facetCell + vec2(twinkle * 7.0, twinkle * 3.0)).x;
         glint *= glints * (facet > VV_WATER_GLINT_FACETS ? VV_WATER_GLINT_HARD : VV_WATER_GLINT_SOFT);
 
@@ -620,6 +696,36 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     // they add to the colour and leave the opacity alone, so they can never
     // hide what is beneath. Zero is exactly the composition above.
     premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha));
+
+    // --- 6. shoreline (D79) ---------------------------------------------------
+    // How far the texel is from the bank or bed behind it (shoreGap). A water
+    // block stands most of a block above its floor, so in practice the line
+    // runs where the surface meets a bank wall or a raised bed. Top faces in
+    // clear view only; far away the depth buffer cannot tell a sliver from a step.
+    float foam = 0.0;
+    if (shore > 0.001 && top > 0.5)
+    {
+        float shoreDepth = shoreGap;
+        float shoreFade = 1.0 - smoothstep(VV_WATER_SHORE_FAR * 0.5, VV_WATER_SHORE_FAR, sqrt(max(a11, a22)));
+        // The edge thins: what the water lays over the bed fades toward the
+        // waterline, colour and opacity together.
+        float edge = mix(1.0, smoothstep(0.0, VV_WATER_SHORE_SOFT, shoreDepth), shore * shoreFade);
+        premult *= edge;
+        outAlpha *= edge;
+
+        // The lap: reach swings with the waves, its phase wandering along the
+        // shore on 2-block value noise; each texel foams while the lap covers
+        // its own threshold, so the line advances and breaks up per texel.
+        float phase = vvWaterValueNoise(centreWorld.xz * 0.5, 2048.0).x * VV_WATER_TWO_PI;
+        float lap = 0.5 + 0.5 * sin(waterWaveCounter * 0.9 + phase);
+        float reach = VV_WATER_SHORE_FOAM * (0.45 + 0.55 * lap) * (0.8 + 0.4 * clamp(vv_sceneWind, 0.0, 1.0));
+        float threshold = vvWaterCellRandom(floor(centreWorld.xz * VV_WATER_TEXELS) + vec2(5003.0, 7019.0)).x;
+        float cover = 1.0 - shoreDepth / max(reach, 1e-4);
+        foam = (cover > threshold * 0.85 + 0.1 ? 1.0 : 0.0) * shore * shoreFade * VV_WATER_SHORE_ALPHA;
+        vec3 foamColor = rgba.rgb * mix(0.55, 1.0, shadowBright) * VV_WATER_SHORE_ALBEDO;
+        premult = foamColor * foam + premult * (1.0 - foam);
+        outAlpha = foam + outAlpha * (1.0 - foam);
+    }
     vec4 result = vec4(premult / max(outAlpha, 1e-3), outAlpha);
 
     // --- debug views (Water.DebugView) -------------------------------------
@@ -631,5 +737,6 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     if (mode == 5) return vec4(glint, 1.0);                                 // glints alone
     if (mode == 6) return vec4(fract(centreWorld.xz * VV_WATER_TEXELS / 2.0) * 0.8 + 0.1, top, 1.0); // texel grid
     if (mode == 7) return vec4(causticLight, 1.0);                          // caustic light reaching the bed
+    if (mode == 8) return vec4(foam, flowAmount, far, 1.0);                 // foam line, flow, far swell
     return result;
 }

@@ -218,6 +218,9 @@ the fps counter alone: fps folds in CPU and vsync.
 - [ ] rain rings land in new places all the time (watch one spot for ten seconds: no ring repeats there in step), on water and on wet stone, and light rain has visibly fewer than heavy rain (D73)
 - [ ] at noon and at a low sun the sun makes pixel glints along its path; the game's broad glow is reduced, not doubled
 - [ ] in sunlit water 1 to 3 blocks deep, a moving web of light lies on the bed, pixel-stepped like the textures; it is faint beside the bed's own texture, weaker on slopes and walls, gone in deep water and within a few dozen blocks; it goes when a cloud covers the sun or a tree shades the surface, and Caustics 0 removes it (D77)
+- [ ] facing a bank across water, a thin pixel foam line laps in and out where the water meets it, and the water thins just before the bank; Shorelines 0 restores the game's own edge foam (D79)
+- [ ] a flowing river shows waves streaked along the current and quicker glitter; a still pond in calm air is smoother than before (D79)
+- [ ] a large lake seen from a hill keeps a slow swell pattern in the distance instead of a flat colour (D79)
 - [ ] lava looks exactly as vanilla
 - [ ] Water surface off restores the game's water exactly
 - [ ] no seam or pattern jump when walking across a 4096-block boundary

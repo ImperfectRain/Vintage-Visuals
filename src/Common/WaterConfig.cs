@@ -42,7 +42,13 @@ namespace VintageVisuals.Common
         /// </summary>
         public float Caustics { get; set; } = 0.6f;
 
-        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics.</summary>
+        /// <summary>
+        /// Shorelines: the water thins out where it is only a sliver deep, and a
+        /// pixel foam line laps in and out along the bank. 0 is off (vanilla's own foam).
+        /// </summary>
+        public float Shore { get; set; } = 0.7f;
+
+        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam (red), flow (green), far swell (blue).</summary>
         public float DebugView { get; set; } = 0f;
 
         public void ClampToValidRanges(List<string> corrections)
@@ -55,7 +61,8 @@ namespace VintageVisuals.Common
             RainRipples = ColorGradeConfig.Clamp(RainRipples, 0f, 1f, "Water.RainRipples", corrections);
             Glints = ColorGradeConfig.Clamp(Glints, 0f, 1f, "Water.Glints", corrections);
             Caustics = ColorGradeConfig.Clamp(Caustics, 0f, 1f, "Water.Caustics", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 7f, "Water.DebugView", corrections);
+            Shore = ColorGradeConfig.Clamp(Shore, 0f, 1f, "Water.Shore", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 8f, "Water.DebugView", corrections);
         }
     }
 }

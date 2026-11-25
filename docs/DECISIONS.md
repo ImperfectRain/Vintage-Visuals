@@ -3394,3 +3394,45 @@ drawing a seam. The distance fade moved from 0.08 to 0.035 blocks of bed per
 pixel. Previewed at the game's resolution: faint lines in the near shallows,
 gone in deep water and in the distance. Still L2.
 
+## D79 - Water shorelines, flow-aware rivers and far swells
+
+**Context.** Elijah was happy with the water and caustics and asked how to make
+it a polished stylistic alternative to vanilla's (2026-11-25). He picked the
+cheap pass first: shorelines, rivers against lakes, far-water detail; then
+reflections as their own step. (D78 is the leaf-fall thread's.)
+
+**Decision.** Shorelines: the distance from a texel to what lies behind it,
+measured across that surface (`abs(dot(centre - bed, bedNormal))`, using the
+bed point and normal D77 already derives), so the depth over a floor and the
+distance out from a bank wall, independent of the view angle; the view path
+alone made the band widen at grazing views. Over its last `0.06` block the
+water thins out, colour and opacity together, so the bank meets it softly. A
+foam line laps over it: its reach swings between 0.45 and 1 of `0.30` block with
+vanilla's wave counter, in a phase that wanders along the shore on 2-block value
+noise, and each texel foams while the lap covers its own hashed threshold, so
+the line advances and breaks per texel. Foam is lit by vanilla's vertex light
+and the shadow, composited OVER the water (opacity never drops), and fades out
+by 0.12 blocks of surface per pixel. Vanilla's own depth-edge foam steps back
+to 0.35 while it is on (`vvWaterVanillaFoamKeep`, a token patch like D75's
+droplets). `Water.Shore` (0.7), zero is vanilla.
+
+Rivers: vanilla's `flowVectorf` now reaches `vvWaterSurface`. A current cuts
+the wave slope along the flow by up to 0.65 and keeps it across (a linear map
+of the slope, so the waves still tile the period), triples the chop's clock and
+the glitter's re-deal rate. Still water in still air is calmed to 0.6 of the
+height. Far swells: two long waves (11 to 12 blocks, whole cycles per 4096)
+blending in from 20 to 60 blocks away, so open water keeps a texture where the
+short waves are sub-pixel. Both ride the `Water.Waves` slider rather than new
+ones. Debug view 8: foam red, flow green, swell blue.
+
+**Limits.** Screen-space: a bank is found only where the ray behind a texel hits
+it, so the line shows on banks facing the camera and around objects in the
+water, not on the near side of a pond seen from its shore (vanilla's edge foam
+has the same limit). DATA GAP: the scale of vanilla's flow vector is not
+documented; full flow is taken at a length of 0.5. A water block stands most of
+a block above its floor, so the soft edge acts at walls and raised beds rather
+than on a sloped beach. L2: previewed offline (the preview's depth is marched,
+so its bank normals are rough), not seen in game; frame cost not measured
+(about two value-noise and one hash per shore texel, two cosines per texel for
+the swells).
+

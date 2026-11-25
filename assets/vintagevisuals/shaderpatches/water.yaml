@@ -71,6 +71,16 @@
   content: |
     f = dropletnoise(uv) * vvWaterVanillaDropletKeep();
 
+# Vanilla's depth-edge foam steps back while this mod's foam line is on (D79).
+# Keep is exactly 1 while this group's uniforms are unset or the slider is 0.
+# The lava branch has its own line (x1000) and is untouched.
+- type: token
+  phase: Material
+  filename: chunkliquid.fsh
+  tokens: float diff = intensity * clamp(1 - diffTotal*1500 - noise1/2 + noise2/2, 0, 1);
+  content: |
+    float diff = intensity * clamp(1 - diffTotal*1500 - noise1/2 + noise2/2, 0, 1) * vvWaterVanillaFoamKeep();
+
 # On the finished water colour, before vanilla's fog. Outside the FOAMEFFECT
 # block on purpose: the surface works with the game's foam setting either way.
 - type: insert_before
@@ -79,4 +89,4 @@
   tokens: texColor = applyFog(texColor, fogAmount);
   content: |
     if (!isLava) texColor = vvWaterSurface(texColor, fWorldPos, fragNormal, shadowBright, skyExposed,
-                                           flowVectorf * (1.5 * wfc), rgbaFog.rgb);
+                                           flowVectorf * (1.5 * wfc), flowVectorf, rgbaFog.rgb);

@@ -282,3 +282,10 @@ the caustics slider does nothing at 0 (D77)	assets/vintagevisuals/shadersnippets
 a caustic wave seams at the origin wrap (D77)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(3860.0, 540.0)	vec2(3860.5, 540.0)	caustic waves have whole cycles
 caustics light walls and slopes as brightly as the floor (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= facing;	            fade *= 1.0;	caustics fall on a face by N.L
 caustics carry on undimmed into deep water (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));	            fade *= 1.0;	caustics fade out with depth
+the shore edge thickens the water instead of thinning it (D79)	assets/vintagevisuals/shadersnippets/water.glsl	smoothstep(0.0, VV_WATER_SHORE_SOFT, shoreDepth), shore * shoreFade);	1.0 + smoothstep(0.0, VV_WATER_SHORE_SOFT, shoreDepth), shore * shoreFade);	shoreline at 0 leaves
+the foam line draws at a slider of 0 (D79)	assets/vintagevisuals/shadersnippets/water.glsl	? 1.0 : 0.0) * shore * shoreFade * VV_WATER_SHORE_ALPHA;	? 1.0 : 0.0) * shoreFade * VV_WATER_SHORE_ALPHA;	the foam line is off at 0
+foam thins the water under it (D79)	assets/vintagevisuals/shadersnippets/water.glsl	        outAlpha = foam + outAlpha * (1.0 - foam);	        outAlpha = outAlpha * (1.0 - foam);	the foam line is off at 0
+vanilla's edge foam vanishes with the slider at 0 (D79)	assets/vintagevisuals/shadersnippets/water.glsl	    return mix(1.0, VV_WATER_SHORE_KEEP, clamp(vv_waterShore, 0.0, 1.0));	    return VV_WATER_SHORE_KEEP;	vanilla's edge foam is untouched
+still water is streaked as if it flowed (D79)	assets/vintagevisuals/shadersnippets/water.glsl	(VV_WATER_FLOW_STREAK * flowAmount);	(VV_WATER_FLOW_STREAK);	with no flow the waves are untouched
+windy still water is calmed too (D79)	assets/vintagevisuals/shadersnippets/water.glsl	(1.0 - flowAmount) * (1.0 - wind));	(1.0 - flowAmount));	only still water in still air
+a far swell seams at the origin wrap (D79)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(300.0, 170.0) * K	vec2(300.5, 170.0) * K	far swells have whole cycles
