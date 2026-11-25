@@ -37,6 +37,81 @@ namespace VintageVisuals.SmokeTest
             PerDropRipples(repo, check);
             EyeFromView(check);
             Caustics(check, water);
+            ShoreAndFlow(check, water, yaml);
+        }
+
+        /// <summary>
+        /// Shoreline, rivers and far swells (D79), evaluated from the shipped
+        /// lines: zero is vanilla, the edge only ever thins the water, foam is
+        /// laid over (never under) what is there, no flow is exactly the old
+        /// waves, and the swells tile the origin period.
+        /// </summary>
+        static void ShoreAndFlow(Action<string, bool, string> check, string water, string yaml)
+        {
+            string surf = FunctionBody(water, "vec4 vvWaterSurface(");
+            double soft = Const(water, "VV_WATER_SHORE_SOFT");
+            string edgeExpr = Rhs(Statement(surf, "float edge ="));
+            double Edge(double depth, double shore, double fade) =>
+                Scalar(edgeExpr, Syms("shoreDepth", depth, "shore", shore, "shoreFade", fade, "VV_WATER_SHORE_SOFT", soft));
+            double edgeZero = 0, edgeOver = 0;
+            foreach (double d in new[] { 0.0, 0.01, 0.03, 0.1, 1.0 })
+            {
+                edgeZero = Math.Max(edgeZero, Math.Abs(Edge(d, 0, 1) - 1));
+                foreach (double sh in new[] { 0.3, 1.0 }) edgeOver = Math.Max(edgeOver, Edge(d, sh, 1) - 1);
+            }
+            check("shoreline at 0 leaves the water untouched, and its edge only ever thins the water",
+                  edgeZero < 1e-12 && edgeOver <= 1e-12 && Edge(0, 1, 1) < 1e-9 && Math.Abs(Edge(1, 1, 1) - 1) < 1e-9,
+                  "worst at 0 " + edgeZero + ", worst over " + edgeOver);
+
+            string foamStmt = Statement(surf, "foam = (cover > threshold");
+            var fs = Syms("cover", 1.0, "threshold", 0.2, "shore", 0.0, "shoreFade", 1.0, "VV_WATER_SHORE_ALPHA", Const(water, "VV_WATER_SHORE_ALPHA"));
+            bool foamOff = Scalar(Rhs(foamStmt), fs) == 0;
+            fs["shore"] = new Val(1.0);
+            bool foamOn = Scalar(Rhs(foamStmt), fs) > 0;
+            string overStmt = Statements(surf).FirstOrDefault(x => x.StartsWith("outAlpha = foam + outAlpha", StringComparison.Ordinal));
+            string overExpr = overStmt != null ? Rhs(overStmt) : "outAlpha * 0.5";
+            bool over = overStmt != null;
+            foreach (double f in new[] { 0.0, 0.4, 0.8 })
+                foreach (double a in new[] { 0.0, 0.5, 1.0 })
+                    over &= Scalar(overExpr, Syms("foam", f, "outAlpha", a)) >= a - 1e-12;
+            check("the foam line is off at 0, and is laid over the water without thinning it", foamOff && foamOn && over, foamStmt);
+
+            string keep = FunctionBody(water, "float vvWaterVanillaFoamKeep(");
+            var ks = Statements(keep);
+            double keepAtZero = Scalar(Rhs("x = " + ks.Last().Substring("return ".Length)),
+                                       Syms("vv_waterShore", 0.0, "VV_WATER_SHORE_KEEP", Const(water, "VV_WATER_SHORE_KEEP")));
+            check("vanilla's edge foam is untouched unless the foam line replaces it",
+                  yaml.Contains("noise2/2, 0, 1) * vvWaterVanillaFoamKeep();") &&
+                  ks.Count > 0 && ks[0].StartsWith("if (vv_water < 0.5) return 1.0", StringComparison.Ordinal) &&
+                  Math.Abs(keepAtZero - 1) < 1e-12, "keep at 0 " + keepAtZero);
+
+            // No flow, or wind: the waves are the previous build's exactly.
+            string streak = Rhs(Statements(FunctionBody(water, "vec2 vvWaterStreak(")).Last());
+            var ss = Syms("flowAmount", 0.0, "VV_WATER_FLOW_STREAK", Const(water, "VV_WATER_FLOW_STREAK"));
+            ss["slope"] = Vec(0.3, -0.2, 0); ss["flowDir"] = Vec(0.6, 0.8, 0);
+            Val still = Eval(streak, ss);
+            ss["flowAmount"] = new Val(1.0);
+            Val river = Eval(streak, ss);
+            double along = river.X * 0.6 + river.Y * 0.8, alongStill = 0.3 * 0.6 - 0.2 * 0.8;
+            double across = -river.X * 0.8 + river.Y * 0.6, acrossStill = -0.3 * 0.8 - 0.2 * 0.6;
+            check("with no flow the waves are untouched; a current cuts their slope along it and keeps it across",
+                  Math.Abs(still.X - 0.3) < 1e-12 && Math.Abs(still.Y + 0.2) < 1e-12 &&
+                  Math.Abs(along) < Math.Abs(alongStill) - 1e-6 && Math.Abs(across - acrossStill) < 1e-9, streak);
+
+            string calm = Rhs(Statement(FunctionBody(water, "vec2 vvWaterWaveSlope("), "height *= mix("));
+            Func<double, double, double> calmAt = (flow, wind) => Scalar(calm, Syms("flowAmount", flow, "wind", wind,
+                "VV_WATER_STILL_CALM", Const(water, "VV_WATER_STILL_CALM")));
+            check("only still water in still air is calmed",
+                  Math.Abs(calmAt(1, 0) - 1) < 1e-12 && Math.Abs(calmAt(0, 1) - 1) < 1e-12 && calmAt(0, 0) < 1, calm);
+
+            string swell = FunctionBody(water, "vec2 vvWaterSwellSlope(");
+            var sk = Regex.Matches(swell, @"vec2\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)\s*\*\s*K")
+                          .Select(m => (double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
+                                        double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture)))
+                          .ToList();
+            check("far swells have whole cycles per 4096 blocks",
+                  sk.Count == 2 && sk.All(k => k.Item1 == Math.Floor(k.Item1) && k.Item2 == Math.Floor(k.Item2)) && swell.Contains("4096.0"),
+                  string.Join(" ", sk));
         }
 
         /// <summary>
@@ -106,10 +181,15 @@ namespace VintageVisuals.SmokeTest
             check("caustics: the slider at 0 adds no light, and above 0 it does", zeroOff && onLights, lightStmt);
 
             int addAt = stmts.FindIndex(x => x.StartsWith("premult += causticLight", StringComparison.Ordinal));
-            int lastAlpha = stmts.FindLastIndex(x => Regex.IsMatch(x, @"^(float )?outAlpha\s*[-+*/]?="));
+            // The opacity the glints leave is set before the caustics, and no
+            // assignment to it reads the caustic light (the shoreline edits
+            // opacity later, from its own depth, not from the caustics).
+            var alphaSets = stmts.Select((x, i) => (x, i)).Where(t => Regex.IsMatch(t.x, @"^(float )?outAlpha\s*[-+*/]?=")).ToList();
+            int lastAlpha = alphaSets.Where(t => t.i < addAt).Select(t => t.i).DefaultIfEmpty(-1).Max();
             int resultAt = stmts.FindIndex(x => x.StartsWith("vec4 result =", StringComparison.Ordinal));
             string addExpr = addAt >= 0 ? stmts[addAt] : "";
-            bool alphaFree = addAt > lastAlpha && addAt < resultAt && lastAlpha >= 0 && !addExpr.Contains("outAlpha =");
+            bool alphaFree = addAt > lastAlpha && addAt < resultAt && lastAlpha >= 0 && !addExpr.Contains("outAlpha =")
+                             && !alphaSets.Any(t => t.x.Contains("causticLight"));
             double ab = Const(water, "VV_WATER_CAUSTIC_ALBEDO");
             double At(double light, double alpha)
             {

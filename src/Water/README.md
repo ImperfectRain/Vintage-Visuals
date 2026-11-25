@@ -56,6 +56,14 @@ never reaches it.
    path through the water and with distance, and falls on slopes and walls by
    N.L (the bed's normal from its screen slope). DATA
    GAP: the bed's colour is assumed. Tier: 3 waves on Low, 6 above.
+7. **Shoreline** (`Shore`, D79): the distance from the texel to the bank or bed
+   behind it, measured across that surface; the water thins out over the last
+   0.06 block, and a per-texel foam line laps in and out, composited over the
+   water. Vanilla's edge foam steps back to 0.35 (`vvWaterVanillaFoamKeep`).
+
+Rivers (D79): vanilla's flow vector streaks the wave slope along the current
+and quickens the chop and the glitter; still water in still air calms to 0.6.
+Far swells (two ~12-block waves) blend in from 20 to 60 blocks.
 
 Waves: four travelling waves with whole cycles per 4096 blocks plus two
 value-noise chop octaves on wrapped cells, so the CPU origin wrap is seamless.
@@ -79,7 +87,7 @@ Wind sets their height.
 
 1 texel normal, 2 reflected sky image, 3 depth behind the surface (8 blocks is
 white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic
-light on the bed.
+light on the bed, 8 foam (red), flow (green) and far swell (blue).
 
 ## Status
 

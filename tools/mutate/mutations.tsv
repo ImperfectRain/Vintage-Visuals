@@ -282,9 +282,6 @@ leaf batches allocated and uploaded at the cap (D78)	src/PseudoPBR/LeafRenderer.
 rain knocks no leaves loose (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        public const float LeafRainKnock = 0.12f;	        public const float LeafRainKnock = 0f;	leaf fall follows rain and autumn frost
 autumn frost leaves the crowns alone (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        public const float LeafFrostBoost = 1f;	        public const float LeafFrostBoost = 0f;	leaf fall follows rain and autumn frost
 vanilla's fixed-grid droplets keep playing beside the mod's rings (D75)	assets/vintagevisuals/shadersnippets/water.glsl	    return 1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0);	    return 1.0;	vanilla's water droplets stay unless
-<<<<<<< HEAD
-a grey sky still throws a white sun path on water (D76)	assets/vintagevisuals/shadersnippets/water.glsl	                       * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	                       * (1.0 - 0.0 * smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	water glints need a visible sun
-=======
 a grey sky still throws a white sun path on water (D76)	assets/vintagevisuals/shadersnippets/water.glsl	                   * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	                   * (1.0 - 0.0 * smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	water glints need a visible sun
 caustics raise the water's opacity and hide the bed (D77)	assets/vintagevisuals/shadersnippets/water.glsl	    premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha));	    premult += causticLight * (VV_WATER_CAUSTIC_ALBEDO * (1.0 - outAlpha)); outAlpha = clamp(outAlpha + vvWaterLuma(causticLight), 0.0, 1.0);	caustics add to the colour only
 caustics shine under a clouded-over sun (D77)	assets/vintagevisuals/shadersnippets/water.glsl	        float sunLight = sunUp * clearSky * shadowBright;	        float sunLight = sunUp * shadowBright;	caustics need a sun
@@ -292,6 +289,12 @@ flat water lights the whole bed as a caustic (D77)	assets/vintagevisuals/shaders
 caustic lines clip to white at the focus (D77)	assets/vintagevisuals/shadersnippets/water.glsl	    return gain * VV_WATER_CAUSTIC_PEAK / (VV_WATER_CAUSTIC_PEAK + gain);	    return gain;	caustics: a focus line
 the caustics slider does nothing at 0 (D77)	assets/vintagevisuals/shadersnippets/water.glsl	(gain * fade * sunLight * caustics)	(gain * fade * sunLight)	caustics: the slider at 0
 a caustic wave seams at the origin wrap (D77)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(3860.0, 540.0)	vec2(3860.5, 540.0)	caustic waves have whole cycles
->>>>>>> 0380f5a (feat(water): caustics on the bed seen through open water (D77))
 caustics light walls and slopes as brightly as the floor (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= facing;	            fade *= 1.0;	caustics fall on a face by N.L
 caustics carry on undimmed into deep water (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));	            fade *= 1.0;	caustics fade out with depth
+the shore edge thickens the water instead of thinning it (D79)	assets/vintagevisuals/shadersnippets/water.glsl	smoothstep(0.0, VV_WATER_SHORE_SOFT, shoreDepth), shore * shoreFade);	1.0 + smoothstep(0.0, VV_WATER_SHORE_SOFT, shoreDepth), shore * shoreFade);	shoreline at 0 leaves
+the foam line draws at a slider of 0 (D79)	assets/vintagevisuals/shadersnippets/water.glsl	? 1.0 : 0.0) * shore * shoreFade * VV_WATER_SHORE_ALPHA;	? 1.0 : 0.0) * shoreFade * VV_WATER_SHORE_ALPHA;	the foam line is off at 0
+foam thins the water under it (D79)	assets/vintagevisuals/shadersnippets/water.glsl	        outAlpha = foam + outAlpha * (1.0 - foam);	        outAlpha = outAlpha * (1.0 - foam);	the foam line is off at 0
+vanilla's edge foam vanishes with the slider at 0 (D79)	assets/vintagevisuals/shadersnippets/water.glsl	    return mix(1.0, VV_WATER_SHORE_KEEP, clamp(vv_waterShore, 0.0, 1.0));	    return VV_WATER_SHORE_KEEP;	vanilla's edge foam is untouched
+still water is streaked as if it flowed (D79)	assets/vintagevisuals/shadersnippets/water.glsl	(VV_WATER_FLOW_STREAK * flowAmount);	(VV_WATER_FLOW_STREAK);	with no flow the waves are untouched
+windy still water is calmed too (D79)	assets/vintagevisuals/shadersnippets/water.glsl	(1.0 - flowAmount) * (1.0 - wind));	(1.0 - flowAmount));	only still water in still air
+a far swell seams at the origin wrap (D79)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(300.0, 170.0) * K	vec2(300.5, 170.0) * K	far swells have whole cycles

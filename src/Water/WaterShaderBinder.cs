@@ -37,6 +37,7 @@ namespace VintageVisuals.Water
         public const string WavesUniform = "vv_waterWaves";
         public const string CausticsUniform = "vv_waterCaustics";
         public const string CausticWavesUniform = "vv_waterCausticWaves";
+        public const string ShoreUniform = "vv_waterShore";
         public const string DebugUniform = "vv_waterDebug";
 
 
@@ -127,6 +128,7 @@ namespace VintageVisuals.Water
             program.Uniform(GlintsUniform, config.Glints);
             program.Uniform(CausticsUniform, config.Caustics);
             program.Uniform(CausticWavesUniform, QualityTier.WaterCausticWaves);
+            program.Uniform(ShoreUniform, config.Shore);
             program.Uniform(DebugUniform, config.DebugView);
 
             // The scene vocabulary (scene.glsl) goes through the ONE shared

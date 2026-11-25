@@ -1240,6 +1240,18 @@
         "clientSide": true,
         "weight": 112
       },
+      "water_shore": {
+        "ingui": "Shorelines",
+        "comment": "A soft edge where the water is only a sliver deep, and a pixel foam line lapping along the bank. 0 is off.",
+        "default": 0.7,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 117
+      },
       "water_caustics": {
         "ingui": "Caustics",
         "comment": "Moving lines of sunlight the waves focus onto the bottom of open water. 0 is off.",
@@ -1254,11 +1266,11 @@
       },
       "water_debug": {
         "ingui": "Water debug view",
-        "comment": "0 off. 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics.",
+        "comment": "0 off. 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam, flow and far swell.",
         "default": 0.0,
         "range": {
           "min": 0.0,
-          "max": 7.0,
+          "max": 8.0,
           "step": 1.0
         },
         "clientSide": true,

@@ -487,7 +487,7 @@ namespace VintageVisuals.Ui
                    R, "Water", 0f, 1f, 0.05f, null, false, SettingCost.Low);
 
             Slider("water_waves", "Water.Waves", "Wave relief",
-                   "How much the small waves tilt the reflection and the glints, per water pixel. Wind makes them taller. 0 is a flat mirror.",
+                   "How much the small waves tilt the reflection and the glints, per water pixel. Wind makes them taller, rivers stretch them into streaks along the current, still ponds calm them, and long swells come in on far water. 0 is a flat mirror.",
                    R, "Water", 0f, 2f, 0.05f);
 
             Slider("water_depthtint", "Water.DepthTint", "Depth colour",
@@ -504,6 +504,10 @@ namespace VintageVisuals.Ui
 
             Slider("water_glints", "Water.Glints", "Sun and moon glints",
                    "Sharp highlights of the sun and moon on the waves, one water pixel at a time. The game's own broad highlight steps back as these come in. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_shore", "Water.Shore", "Shorelines",
+                   "The water thins out over its last sliver of depth so the bank meets it softly, and a pixel foam line laps in and out along the edge. The game's own edge foam steps back while it is on. 0 is off.",
                    R, "Water", 0f, 1f, 0.05f);
 
             Slider("water_caustics", "Water.Caustics", "Caustics",
@@ -526,8 +530,8 @@ namespace VintageVisuals.Ui
                    D, "Debug utilities", true, SettingCost.Free, false, true);
 
             Slider("water_debug", "Water.DebugView", "Water debug view",
-                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed.",
-                   D, "Water", 0f, 7f, 1f, null, false, SettingCost.Free, false, true);
+                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed, 8 foam line (red), river flow (green) and far swell (blue).",
+                   D, "Water", 0f, 8f, 1f, null, false, SettingCost.Free, false, true);
 
             // ---- PERFORMANCE (on the Debug tab) -------------------------------
             Slider("perf_quality", "Performance.Quality", "Quality tier",
