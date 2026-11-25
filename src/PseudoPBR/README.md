@@ -1410,11 +1410,13 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   The season comes from `EnvironmentState.LeafFall`, continuous across the
   handovers (D59), and leaves draw at 0.35 to 0.55.
   Since D78 they reach 50 blocks (by quality tier, `LeafBudget`): as dense as
-  v15 near the player, thinning to 0.3 at the reach and to 0.2 behind the
+  v15 near the player, thinning to 0.45 at the reach and to 0.2 behind the
   camera, with far leaves held to 70% of the cap and landing far leaves fading
   instead of lying. Beyond the shader's 32-block leaf map, crowns come from
   `LeafSourceMap` (Common/Scene, CPU only). Rain and autumn frost shed leaves
   too. `.vvbench leaves` compares no leaves, the old reach and the new one.
+  D78b: measured under 0.1 ms with 35 flying, so every crown now sheds 3x
+  v15d's rate (`LeafAbundance`) and the far share is 0.45.
 - **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
   quantity of the game's `fireflyParticles` while ours are on and restores it
   when they are off. Ours are swarms flashing together in waves, each flash a

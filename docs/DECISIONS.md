@@ -3513,3 +3513,12 @@ so its bank normals are rough), not seen in game; frame cost not measured
 (about two value-noise and one hash per shore texel, two cosines per texel for
 the swells).
 
+**Measured (2026-11-25, D78b).** Elijah's `.vvbench leaves` at High in a
+forest (a 24 fps scene bound by the opaque pass): no leaves 40.86 ms a frame,
+v15's reach 41.11 ms with 20 flying, D78's reach 41.05 ms with 35 flying. The
+vv.leaves segment was 0.01, 0.06 and 0.09 ms CPU, 0.00 GPU: about 2.3 us per
+flying leaf, so the 500 cap is worth about 1.2 ms at most. The cost was within
+noise and the forest still read sparse, so D78b multiplies every crown's shed
+by 3 (`ForestLifeSpawner.LeafAbundance`; the bench's legacy run keeps 1) and
+raises `LeafBudget.FarShare` from 0.3 to 0.45. The rate's shape over season,
+wind, rain and frost is unchanged. D78b is L2, not seen in game.

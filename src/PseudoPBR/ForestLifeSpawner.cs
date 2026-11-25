@@ -123,6 +123,16 @@ namespace VintageVisuals.PseudoPBR
         public const float LeafStillAir = 0.04f;
 
         /// <summary>
+        /// D78b. How many more leaves each crown sheds than v15d's rate gave.
+        /// The first D78 bench in game (2026-11-25) measured the whole leaf
+        /// system at under 0.1 ms of CPU with 35 flying and found the forest
+        /// still sparse, so the rate, not the cost, was holding it back. The
+        /// rate's shape across season, wind, rain and frost is unchanged; this
+        /// only scales it, and the tier cap still bounds the count.
+        /// </summary>
+        public const float LeafAbundance = 3f;
+
+        /// <summary>
         /// D78. A downpour knocks leaves loose even in still air: at full rain
         /// this share of the autumn peak, a third of it in the green seasons.
         /// </summary>
@@ -469,7 +479,8 @@ namespace VintageVisuals.PseudoPBR
                 if (density < 1 || lowest < player.Pos.Y - below || lowest > player.Pos.Y + above) continue;
 
                 float gust = GustField.At(Wrap(x), Wrap(z), gusts, world.WindSpeed, breeze, dir.X, dir.Y);
-                float rate = slider * LeafRate(world, gust) * (0.4f + 0.6f * Math.Min(1f, density / 7f));
+                float abundance = legacy ? 1f : LeafAbundance;
+                float rate = slider * abundance * LeafRate(world, gust) * (0.4f + 0.6f * Math.Min(1f, density / 7f));
                 if (_random.NextDouble() > rate) continue;
 
                 pos.Set(bx, lowest, bz);

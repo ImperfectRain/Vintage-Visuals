@@ -590,7 +590,8 @@ namespace VintageVisuals.SmokeTest
                           LeafBudget.LitterReach < LeafRenderer.KeepRange;
             LeafBudget.HeightWindow(0f, out float below0, out float above0);
             LeafBudget.HeightWindow(50f, out float below50, out float above50);
-            bool height = below0 == 8f && above0 == 24f && below50 > below0 && above50 > above0;
+            bool height = below0 == 8f && above0 == 24f && below50 > below0 && above50 > above0 &&
+                          ForestLifeSpawner.LeafAbundance >= 2f;
             check("falling leaves reach 50 blocks, as dense as before near the player, thinning far and behind (D78)",
                   tiers && density && distance && view && budget && height,
                   $"tiers {tiers}, tries {tries} ({perBlock:0.0000}/block vs {legacyPerBlock:0.0000}), distance {distance}, view {view}, budget {budget}, height {height}");
