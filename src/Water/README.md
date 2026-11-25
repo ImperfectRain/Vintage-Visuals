@@ -26,7 +26,7 @@ never reaches it.
    the player at the origin, and from the feet a pond at standing height is
    edge-on and mirrors the whole sky, which is how the first build looked
    (D73). The sky image is capped at the sky's own brightness, and below about
-   0.32 of elevation it gives way to the surroundings at 0.30 of the sky light,
+   0.18 of elevation it gives way to the surroundings at 0.42 of the sky light (D76),
    because near-horizontal rays meet the banks (DATA GAP until a scene trace).
 2. **Softness** (`ReflectionSoftness`): averages the reflection seen 3 texels
    away in four directions. Each texel stays one flat colour; neighbours step
@@ -44,7 +44,8 @@ never reaches it.
    that replays in the same cells) are multiplied out, so water and land show
    one drop system (D75).
 5. **Glints** (`Glints`): GGX from `pbrcore.glsl` for the sun and the moon on
-   the texel normal, shadow-aware. Vanilla's broad sun highlight steps back to a
+   the texel normal, shadow-aware, hidden by the game's cloud cover, broken into
+   per-texel glitter and shouldered at a luminance of 1.2 (D76). Vanilla's broad sun highlight steps back to a
    quarter at full strength (`vvWaterVanillaSpecularKeep`).
 
 Waves: four travelling waves with whole cycles per 4096 blocks plus two

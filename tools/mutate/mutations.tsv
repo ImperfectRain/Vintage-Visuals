@@ -272,7 +272,6 @@ rain drops land on the same spot every time in pseudopbr (2026-11-25)	assets/vin
 the reflection slider takes the rain rings with it (2026-11-25)	assets/vintagevisuals/shadersnippets/water.glsl	    reflectShare = max(reflectShare, VV_WATER_RING_SHARE * ring);	    reflectShare = max(reflectShare, VV_WATER_RING_SHARE * ring * vv_waterSky);	a rain ring never lowers the reflected share
 the water mirrors a sky brighter than the sky (2026-11-25)	assets/vintagevisuals/shadersnippets/water.glsl	    if (skyLuma > cap && skyLuma > 1e-5) sky *= cap / skyLuma;	    if (false) sky *= cap / skyLuma;	the reflected sky is capped
 the eye is read from the wrong matrix row (2026-11-25)	src/Water/WaterShaderBinder.cs	            float y = -(m[4] * m[12] + m[5] * m[13] + m[6] * m[14]);	            float y = -(m[1] * m[12] + m[5] * m[13] + m[9] * m[14]);	the water eye is recovered from the view matrix
-<<<<<<< HEAD
 terrain looks from the player's feet again (D74)	assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl	    return vv_pbrEye - p;	    return -p;	I22 a floor three blocks away
 one terrain view vector skips the eye helper (D74)	assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl	    vec3 v = vvTerrainSafeNormalize(vvTerrainToEye(origin), viewDir);	    vec3 v = vvTerrainSafeNormalize(-origin, viewDir);	I22 no terrain view vector is built from the feet
 falling leaves spawn at one weight to the reach (D78)	src/PseudoPBR/LeafBudget.cs	            return 1f + (FarShare - 1f) * t;	            return 1f;	falling leaves reach 50 blocks
@@ -282,6 +281,8 @@ the leaf source column walks the whole search depth (D78)	src/Common/Scene/LeafS
 leaf batches allocated and uploaded at the cap (D78)	src/PseudoPBR/LeafRenderer.cs	        public const int FirstBatch = 64;	        public const int FirstBatch = LeafBudget.MaxCap;	the leaf source map reads one crown
 rain knocks no leaves loose (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        public const float LeafRainKnock = 0.12f;	        public const float LeafRainKnock = 0f;	leaf fall follows rain and autumn frost
 autumn frost leaves the crowns alone (D78)	src/PseudoPBR/ForestLifeSpawner.cs	        public const float LeafFrostBoost = 1f;	        public const float LeafFrostBoost = 0f;	leaf fall follows rain and autumn frost
-=======
 vanilla's fixed-grid droplets keep playing beside the mod's rings (D75)	assets/vintagevisuals/shadersnippets/water.glsl	    return 1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0);	    return 1.0;	vanilla's water droplets stay unless
->>>>>>> 93b596c (fix(water): one rain-drop system on water and land (D75))
+<<<<<<< HEAD
+=======
+a grey sky still throws a white sun path on water (D76)	assets/vintagevisuals/shadersnippets/water.glsl	                       * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	                       * (1.0 - 0.0 * smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,	water glints need a visible sun
+>>>>>>> da8af6b (fix(water): glints glitter under a visible sun, far water shows the sky (D76))
