@@ -73,6 +73,10 @@ namespace VintageVisuals.PseudoPBR
         public const string GrainUniform = "vv_pbrGrain";
         public const string DappleUniform = "vv_pbrDapple";
         public const string CanopyRadiusUniform = "vv_pbrCanopyRadius";
+        public const string SunflecksUniform = "vv_pbrSunflecks";
+        public const string CanopyMapUniform = "vv_canopyMap";
+        public const string CanopyMapValidUniform = "vv_canopyMapValid";
+        public const string CanopyPlaneUniform = "vv_canopyPlaneY";
         public const string PixelReflectUniform = "vv_pbrPixelReflect";
 
         // The render-stage bridge. See SceneCaptureRenderer.
@@ -90,6 +94,14 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
         public const string ShaftUniform = "vv_pbrShafts";
+        public const string GustsUniform = "vv_pbrGusts";
+        public const string WindDirUniform = "vv_pbrWindDir";
+        public const string ContactShadeUniform = "vv_pbrContactShade";
+        public const string DampUniform = "vv_pbrDamp";
+        public const string HumidityUniform = "vv_pbrHumidity";
+        public const string CreviceWaterUniform = "vv_pbrCreviceWater";
+        public const string TorchFalloffUniform = "vv_pbrTorchFalloff";
+        public const string RainUniform = "vv_weatherRain";
 
         // Entity programme only. Named apart from the terrain controls because
         // they describe a different material: entities have no derived atlas, so
@@ -107,6 +119,10 @@ namespace VintageVisuals.PseudoPBR
         public const string ReadabilityUniform = "vv_sceneReadability";
         public const string ClockUniform = "vv_sceneClock";
         public const string BreezeUniform = "vv_sceneBreeze";
+        public const string SkyCoverUniform = "vv_sceneSkyCover";
+        public const string WindUniform = "vv_sceneWind";
+        public const string MoonLightUniform = "vv_sceneMoonLight";
+        public const string MoonFlecksUniform = "vv_pbrMoonFlecks";
         public const string FrostUniform = "vv_sceneFrost";
         public const string SnowUniform = "vv_sceneSnow";
 
@@ -182,6 +198,7 @@ namespace VintageVisuals.PseudoPBR
         private bool _reportedNoSecond;
         private bool _secondAtlasReady;
         private bool _reportedMissingUniform;
+        private bool _reportedCanopyArray;
         private bool _reportedActive;
         private bool _reportedBusy;
         private bool _reportedEntities;
@@ -197,6 +214,14 @@ namespace VintageVisuals.PseudoPBR
         /// a validity of 0, which every consumer reads as "use the fallback".
         /// </summary>
         public SceneCaptureRenderer SceneCapture { get; set; }
+
+        /// <summary>
+        /// The leaf map, owned by the environment tracker. Null, or not yet
+        /// fully scanned, uploads a validity of 0 and the shader draws no
+        /// sunflecks - the vanilla answer.
+        /// </summary>
+        public VintageVisuals.Common.Scene.CanopyMap Canopy { get; set; }
+
 
         /// <summary>Debug-only nearby block volume for the isolated world-DDA proof.</summary>
         public WorldReflectionVolume WorldVolume { get; set; }
@@ -439,8 +464,12 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, GrainUniform, _look.GrainAnisotropy);
             SetIfPresent(program, DappleUniform, _look.SunDapple);
             SetIfPresent(program, CanopyRadiusUniform, _look.CanopyRadius);
+            SetIfPresent(program, SunflecksUniform, _look.SunFlecks);
+            SetIfPresent(program, MoonFlecksUniform, _look.MoonFlecks);
+            UploadCanopyMap(program);
             SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
+            UploadForest(program);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
             SetIfPresent(program, RainCoverUniform, _weather.RainCover);
@@ -451,6 +480,64 @@ namespace VintageVisuals.PseudoPBR
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// v14 forest pass: gusts, plant-base shade and damp, and the two world
+        /// facts they read (wind direction and climate rainfall). Zero is
+        /// vanilla for each strength.
+        /// </summary>
+        private void UploadForest(IShaderProgram program)
+        {
+            SetIfPresent(program, GustsUniform, _look.WindGusts);
+            SetIfPresent(program, WindDirUniform, _weather.WindDirection);
+            SetIfPresent(program, ContactShadeUniform, _look.ContactShade);
+            SetIfPresent(program, DampUniform, _look.Damp);
+            SetIfPresent(program, HumidityUniform, _weather.Humidity);
+            SetIfPresent(program, CreviceWaterUniform, _look.CreviceWater);
+            SetIfPresent(program, TorchFalloffUniform, _look.TorchFalloff);
+            SetIfPresent(program, RainUniform, _weather.Rain);
+        }
+
+        /// <summary>
+        /// Uploads the leaf map as a uniform array: no texture unit, no
+        /// sampler, nothing that can shift vanilla's samplers. Asks the tracker
+        /// to keep scanning only while a canopy effect is on.
+        /// </summary>
+        private void UploadCanopyMap(IShaderProgram program)
+        {
+            var map = Canopy;
+            bool wanted = _look.SunFlecks > 0.001f || _look.SunDapple > 0.001f || _look.SunShafts > 0.001f || _look.MoonFlecks > 0.001f || _look.Damp > 0.001f;
+            if (map != null && wanted) map.Request(_capi.ElapsedMilliseconds);
+
+            bool valid = map != null && wanted && map.Valid;
+            SetIfPresent(program, CanopyMapValidUniform, valid ? 1f : 0f);
+            if (!valid) return;
+            SetIfPresent(program, CanopyPlaneUniform, map.PlaneY);
+
+            // A binder that silently skips is indistinguishable from one that
+            // works, so a missing array name is said once rather than skipped.
+            if (!program.HasUniform(CanopyMapUniform))
+            {
+                if (!_reportedCanopyArray && program.HasUniform(CanopyMapValidUniform))
+                {
+                    _reportedCanopyArray = true;
+                    _capi.Logger.Warning("[VintageVisuals] pseudopbr: the terrain shader declares " +
+                        CanopyMapValidUniform + " but the program does not list " + CanopyMapUniform +
+                        "; sunflecks and leaf-map shade will not draw.");
+                }
+                return;
+            }
+
+            // Every bind, not only on change: the array is per program and a
+            // shader reload starts it at zero. 128 vec4s is cheap.
+            program.Uniforms4(CanopyMapUniform, VintageVisuals.Common.Scene.CanopyMap.PackedVectors, map.Packed);
+            if (!_reportedCanopyArray)
+            {
+                _reportedCanopyArray = true;
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: leaf map uploaded to the terrain shader (" +
+                    VintageVisuals.Common.Scene.CanopyMap.PackedVectors + " vec4).");
+            }
         }
 
         /// <summary>
@@ -525,6 +612,9 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, ReadabilityUniform, _weather.Readability);
             SetIfPresent(program, ClockUniform, _weather.RippleTime);
             SetIfPresent(program, BreezeUniform, _weather.Breeze);
+            SetIfPresent(program, SkyCoverUniform, _weather.SkyCover);
+            SetIfPresent(program, WindUniform, _weather.Wind);
+            SetIfPresent(program, MoonLightUniform, _weather.MoonLight);
             SetIfPresent(program, FrostUniform, _weather.Frost);
             SetIfPresent(program, SnowUniform, _weather.Snow);
 

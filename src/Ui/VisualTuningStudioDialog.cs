@@ -297,6 +297,16 @@ namespace VintageVisuals.Ui
                     .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
                         CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
 
+            // The forest light presets, on the tab whose sliders they move.
+            if (_tab == SettingTab.Materials)
+            {
+                SingleComposer
+                    .AddButton("Subtle", () => Guard(generation, "PresetSubtle", () => OnPresetClicked("Subtle")),
+                        ElementBounds.Fixed(DialogWidth - 270, 548, 60, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-subtle")
+                    .AddButton("Cinematic", () => Guard(generation, "PresetCinematic", () => OnPresetClicked("Cinematic")),
+                        ElementBounds.Fixed(DialogWidth - 206, 548, 66, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-cinematic");
+            }
+
             AddTabs(generation);
 
             if (_tab == SettingTab.Overview) AddOverview();
@@ -371,6 +381,15 @@ namespace VintageVisuals.Ui
             return true;
         }
 
+        private bool OnPresetClicked(string name)
+        {
+            Log("ENTER Preset " + name);
+            LocalEdit(() => _controller.ApplyPreset(name));
+            ComposeDialog();
+            Log("EXIT Preset " + name);
+            return true;
+        }
+
         private bool OnResetTabClicked()
         {
             Log("ENTER ResetTab");
@@ -433,7 +452,7 @@ namespace VintageVisuals.Ui
             bool reflectionsUnavailable = StateByCode("reflections_scene") == NotInThisBuild;
             AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
                 reflectionsUnavailable
-                    ? "Needs the legacy terrain shader, which is off."
+                    ? "Needs Surface materials, which draws the reflections."
                     : "Scene reflections " + StateByCode("reflections_scene") + " · Strength " + StateByCode("pbr_pixelreflect"),
                 "Open scene reflection controls.", y);
         }
@@ -504,8 +523,10 @@ namespace VintageVisuals.Ui
         private IEnumerable<RowItem> RowsFor(SettingTab tab)
         {
             string currentSection = null;
+            bool any = false;
             foreach (VisualSetting setting in ShownSettings(tab))
             {
+                any = true;
                 if (!string.Equals(currentSection, setting.Section, StringComparison.Ordinal))
                 {
                     currentSection = setting.Section;
@@ -513,7 +534,23 @@ namespace VintageVisuals.Ui
                 }
                 yield return RowItem.ForSetting(setting);
             }
+            // A tab whose every row is unavailable used to open completely
+            // blank (Reflections, seen in game), which reads as a broken
+            // dialog rather than as "nothing here works yet".
+            if (!any && !_advanced)
+            {
+                // Plain text, not a section header: the orange header style
+                // read as an error (in-game audit, 2026-11-23).
+                bool reflections = tab == SettingTab.Reflections;
+                yield return RowItem.ForNote(reflections ? ReflectionsTabLine1 : EmptyTabLine1);
+                yield return RowItem.ForNote(reflections ? ReflectionsTabLine2 : EmptyTabLine2);
+            }
         }
+
+        public const string EmptyTabLine1 = "Nothing on this tab changes the picture in this build.";
+        public const string EmptyTabLine2 = "Tick Show advanced below to see why.";
+        public const string ReflectionsTabLine1 = "Reflections are at stage one: debug views 41 and 42";
+        public const string ReflectionsTabLine2 = "on the Debug tab. Tick Show advanced for the sliders.";
 
         private SettingAvailability Availability(VisualSetting setting)
         {
@@ -570,7 +607,7 @@ namespace VintageVisuals.Ui
             {
                 if (row.IsSection)
                 {
-                    AddSection(row.Section, y);
+                    AddSection(row.Section, y, row.IsNote);
                     y += HeaderHeight;
                 }
                 else
@@ -606,9 +643,9 @@ namespace VintageVisuals.Ui
             _rowsContainer.Add(element);
         }
 
-        private void AddSection(string label, double y)
+        private void AddSection(string label, double y, bool note = false)
         {
-            AddRowElement(new GuiElementDynamicText(capi, label, SectionFont(),
+            AddRowElement(new GuiElementDynamicText(capi, label, note ? CairoFont.WhiteSmallText() : SectionFont(),
                 ElementBounds.Fixed(RowLeft, y + 4, ContentWidth - 20, 20)));
         }
 
@@ -1054,14 +1091,19 @@ namespace VintageVisuals.Ui
         private bool IsDebugViewAvailable(int value)
         {
             if (_debugOwnerPath != DebugViewRegistry.PbrPath) return true;
-            if (FullTerrainDebugAvailable()) return true;
-            if (!PrimaryTerrainMaterialDebugAvailable()) return value == 0;
+            if (value == 0) return true;
 
-            return value == 0 || value == 1 || value == 2 || value == 3 ||
-                   value == 4 || value == 5 || value == 6 || value == 7 ||
-                   value == 8 || value == 10 || value == 12 || value == 14 ||
-                   value == 19 || value == 20 || value == 21 || value == 22 ||
-                   value == 23 || value == 33 || value == 52;
+            // Which views exist is read from the registry, which tools/smoketest
+            // ties to the mode arms of each terrain shader. A hand-kept list
+            // here drifted from the shader as soon as a view was added.
+            DebugView view = DebugViewRegistry.Current(DebugViewRegistry.PbrPath, value);
+            if (view == null) return false;
+            if (FullTerrainDebugAvailable()) return view.InLegacyTerrain;
+            if (!PrimaryTerrainMaterialDebugAvailable()) return false;
+            if (view.RequiresSceneCapture &&
+                !(PseudoPbrSubsystem.TerrainReflectPatchEnabled && _controller.Config.Reflections.SceneReflections))
+                return false;
+            return view.InModularTerrain;
         }
 
         private static bool FullTerrainDebugAvailable()
@@ -1263,12 +1305,20 @@ namespace VintageVisuals.Ui
             public readonly string Section;
             public readonly VisualSetting Setting;
 
+            public readonly bool IsNote;
+
             public bool IsSection { get { return Section != null; } }
 
-            private RowItem(string section, VisualSetting setting)
+            private RowItem(string section, VisualSetting setting, bool note = false)
             {
                 Section = section;
                 Setting = setting;
+                IsNote = note;
+            }
+
+            public static RowItem ForNote(string text)
+            {
+                return new RowItem(text, null, true);
             }
 
             public static RowItem ForSection(string section)

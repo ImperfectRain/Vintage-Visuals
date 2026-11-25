@@ -130,7 +130,7 @@ namespace VintageVisuals.PseudoPBR
                         }
 
                         AtlasRegion region = TryBuildRegion(capi, source, position, resolution.Profile,
-                            glowLevel, atlasWidth, atlasHeight, name, out reason, out rescaled);
+                            glowLevel, MaterialProfiles.HoldsWater(resolution.Material), atlasWidth, atlasHeight, name, out reason, out rescaled);
                         if (rescaled) resized++;
 
                         if (region != null)
@@ -283,7 +283,7 @@ namespace VintageVisuals.PseudoPBR
 
         private static AtlasRegion TryBuildRegion(ICoreClientAPI capi, AssetLocation source,
                                                   TextureAtlasPosition position, MaterialProfile profile,
-                                                  float glowLevel,
+                                                  float glowLevel, bool holdsWater,
                                                   int atlasWidth, int atlasHeight, string name,
                                                   out string skipReason, out bool rescaled)
         {
@@ -342,6 +342,7 @@ namespace VintageVisuals.PseudoPBR
                         Texture = texture,
                         Profile = profile,
                         GlowLevel = glowLevel,
+                        HoldsWater = holdsWater,
                         Name = name,
                     };
                 }

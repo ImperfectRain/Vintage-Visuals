@@ -98,6 +98,28 @@ namespace VintageVisuals.Common.Scene
         /// <summary>SAMPLED. How far into winter the world is, 0..1. See <see cref="Autumn"/>.</summary>
         public readonly float Winter;
 
+        /// <summary>
+        /// v14. SAMPLED. How far into spring and into summer the world is, 0..1,
+        /// the same way as <see cref="Autumn"/>. Read by the seasonal light
+        /// grade and by the pollen and firefly spawner; like Autumn, nothing
+        /// driven by them recolours a surface.
+        /// </summary>
+        public readonly float Spring;
+
+        /// <summary>v14. SAMPLED. See <see cref="Spring"/>.</summary>
+        public readonly float Summer;
+
+        /// <summary>
+        /// v15. SAMPLED. Where the year is in the leaves' fall, 0..1, from the
+        /// same calendar reading as the season depths but continuous across the
+        /// handovers, which the depths are not (all four are 0 at a handover,
+        /// exactly when the crowns have just turned): rising through late summer,
+        /// 0.25 at the start of autumn to 1 at its end, falling back to 0 across
+        /// winter, 0 in spring. DATA GAP: the game drops no leaves, so the shape
+        /// is this mod's; the date is the game's.
+        /// </summary>
+        public readonly float LeafFall;
+
         /// <summary>SAMPLED. Air temperature at the player, in degrees C.</summary>
         public readonly float Temperature;
 
@@ -174,8 +196,12 @@ namespace VintageVisuals.Common.Scene
                                 float temperature, float humidity,
                                 float skyExposure, float depth, float underwater,
                                 Vec3f cameraPosition, float proximity = 0f,
-                                float autumn = 0f, float winter = 0f)
+                                float autumn = 0f, float winter = 0f,
+                                float spring = 0f, float summer = 0f, float leafFall = 0f)
         {
+            Spring = spring;
+            Summer = summer;
+            LeafFall = leafFall;
             DayLight = dayLight;
             MoonLight = moonLight;
             CloudCover = cloudCover;

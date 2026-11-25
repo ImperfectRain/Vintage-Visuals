@@ -55,6 +55,21 @@ namespace VintageVisuals.Atmosphere
         public readonly float Moon;
         public readonly float Dapple;
 
+        /// <summary>
+        /// FEATURE 12 (v14): forest haze. The slider times how much canopy is
+        /// over the camera (the game's leaf blocks, AtmosphereState.CanopyCover)
+        /// times how humid the climate is, and only where the sky still reaches
+        /// the camera at all - a tunnel under a forest is not a forest.
+        /// </summary>
+        public readonly float ForestHaze;
+
+        /// <summary>
+        /// Extinction per block the forest haze adds at strength 1. Under the
+        /// shared <see cref="MaxAddedDensity"/>: about 13% of a trunk 30 blocks
+        /// away at full strength under a closed crown, never a fog bank.
+        /// </summary>
+        public const float ForestHazeDensity = 0.0045f;
+
         // --- Normalised world state -----------------------------------------
 
         /// <summary>Unit vector toward the sun, camera-relative frame.</summary>
@@ -158,8 +173,10 @@ namespace VintageVisuals.Atmosphere
             Vec3f sunDirection, Vec3f sunColor, float sunElevation,
             Vec3f moonDirection, float moonLight,
             float rain, float snow, float overcast, float brokenCloud,
-            float baseDensity, float altitude, float skyExposure, float debugView)
+            float baseDensity, float altitude, float skyExposure, float debugView,
+            float forestHaze = 0f)
         {
+            ForestHaze = forestHaze;
             Aerial = aerial;
             Horizon = horizon;
             SunScatter = sunScatter;
@@ -288,7 +305,9 @@ namespace VintageVisuals.Atmosphere
                 baseDensity: air.FogDensity,
                 altitude: altitude,
                 skyExposure: sky,
-                debugView: config.AirDebugView);
+                debugView: config.AirDebugView,
+                forestHaze: Clamp01(config.ForestHaze) * Clamp01(air.CanopyCover)
+                            * (0.6f + 0.4f * Clamp01(air.Humidity)) * SmoothStep(0.1f, 0.35f, sky));
         }
 
         /// <summary>
@@ -307,6 +326,12 @@ namespace VintageVisuals.Atmosphere
             if (quality < 0.5f) return 0.4f;
             if (quality < 1.5f) return 0.7f;
             return 1f;
+        }
+
+        private static float SmoothStep(float edge0, float edge1, float x)
+        {
+            float t = Clamp01((x - edge0) / (edge1 - edge0));
+            return t * t * (3f - 2f * t);
         }
 
         private static float Clamp01(float v)

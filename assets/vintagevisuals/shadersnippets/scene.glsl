@@ -17,7 +17,7 @@
 // evaluation of the lighting maths, this is the one description of the
 // conditions it runs in.
 //
-// The anchor is `in vec4 rgbaFog;`, which all three target shaders declare and
+// The anchor is vanilla's rgbaFog input declaration, which all three target shaders declare and
 // which sits above every other injection this mod makes into them. Replacement
 // content is literal rather than a regex template, so the anchor is pasted back
 // below or the declaration goes with the match.
@@ -54,6 +54,20 @@ uniform float vv_sceneClock;
 // as light through leaves. Anything reading either clock must be periodic in
 // it, so the wrap is invisible.
 uniform float vv_sceneBreeze;
+
+// How much of the sky the game's own cloud tiles cover around the player,
+// 0 clear to 1 solid. NOT config-scaled: it is what the sky is doing, where
+// vv_sceneOvercast is the player's "overcast softening" applied to it. A
+// sunfleck needs the sun's disc and closes as this rises. 0 is a clear sky.
+uniform float vv_sceneSkyCover;
+
+// The game's wind where the player is, 0 still to 1 strong. Drives leaf
+// flutter in the flecks; 0 is still air.
+uniform float vv_sceneWind;
+
+// How bright the moon is, already 0 by day (EnvironmentState.MoonLight).
+// 0 is no moon, which is what vanilla draws.
+uniform float vv_sceneMoonLight;
 
 // --- season -----------------------------------------------------------------
 //

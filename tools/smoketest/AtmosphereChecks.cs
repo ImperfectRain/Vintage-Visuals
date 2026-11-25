@@ -693,6 +693,7 @@ namespace VintageVisuals.SmokeTest
                 ("PrecipitationScattering", c => c.PrecipitationScattering = 0f, i => i.Precipitation),
                 ("MoonScattering",          c => c.MoonScattering = 0f,          i => i.Moon),
                 ("DappleInteraction",       c => c.DappleInteraction = 0f,       i => i.Dapple),
+                ("ForestHaze",              c => c.ForestHaze = 0f,              i => i.ForestHaze),
             };
 
             var leaked = new System.Collections.Generic.List<string>();
@@ -1077,7 +1078,7 @@ namespace VintageVisuals.SmokeTest
                 "AerialPerspective", "HorizonScattering", "SunScattering", "HeightAttenuation",
                 "HeightHaze", "WeatherExtinction", "WeatherTint", "CloudAtmosphere",
                 "CloudEdgeScattering", "Godrays", "GodrayQuality", "PrecipitationScattering",
-                "MoonScattering", "DappleInteraction", "AirDebugView",
+                "MoonScattering", "DappleInteraction", "AirDebugView", "ForestHaze", "GroundMist",
             };
 
             var missing = properties.Where(p => !bridge.Contains("atmosphere." + p + " =")).ToList();
@@ -1151,6 +1152,8 @@ namespace VintageVisuals.SmokeTest
                 PrecipitationScattering = 0.6f,
                 MoonScattering = 0.6f,
                 DappleInteraction = 0.6f,
+                ForestHaze = 0.6f,
+                GroundMist = 0.6f,
             };
         }
 
@@ -1176,7 +1179,8 @@ namespace VintageVisuals.SmokeTest
                 ambientColor: new Vec3f(1f, 1f, 1f),
                 heightAboveSeaLevel: 40f,
                 viewDistance: 1500f,
-                skyExposure: 1f);
+                skyExposure: 1f,
+                canopyCover: 0.6f);
         }
 
         private static AtmosphereState AtAltitude(float blocks)

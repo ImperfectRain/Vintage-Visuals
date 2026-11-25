@@ -102,6 +102,62 @@ namespace VintageVisuals.SmokeTest
             check("the second atlas is the size it was asked for", pixels.Length == 32 * 32,
                 pixels.Length.ToString());
 
+            // D66: red carries metalness in its top seven bits and the
+            // hold-water flag in its lowest. Decoded exactly as the shader
+            // decodes it, so the two cannot drift apart.
+            var waterRegion = Region(0, 0, 8, profile, 0f);
+            waterRegion.HoldsWater = true;
+            int[] withWater = MaterialAtlas2Builder.Build(32, 32, new List<AtlasRegion> { waterRegion }, out written, out skipped);
+            int redDry = pixels[0] & 0xFF, redWet = withWater[0] & 0xFF;
+            check("the water flag rides the lowest red bit and leaves metalness intact",
+                (redDry & 1) == 0 && (redWet & 1) == 1 && (redDry >> 1) == (redWet >> 1) &&
+                Math.Abs((redWet >> 1) / 127f - MaterialAtlas2Builder.MetalnessFor(waterRegion)) < 0.01f &&
+                MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Stone) &&
+                !MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Soil) &&
+                !MaterialProfiles.HoldsWater(Vintagestory.API.Common.EnumBlockMaterial.Plant),
+                "red dry " + redDry + ", red wet " + redWet);
+
+            // D67: the flag now means "this region carries the crevice
+            // layout", and the layout is the crevice maps, packed exactly as
+            // the shader unpacks them. A glowing or oversized region keeps the
+            // plain layout, because its alpha is the emission mask.
+            {
+                var cobble = Region(0, 0, 32, profile, 0f);
+                for (int y = 0; y < 32; y++)
+                    for (int x = 0; x < 32; x++)
+                    {
+                        double v = CreviceParityChecks.Texel(x, y) / 255.0;
+                        cobble.Texture.R[y * 32 + x] = v; cobble.Texture.G[y * 32 + x] = v; cobble.Texture.B[y * 32 + x] = v;
+                    }
+                cobble.HoldsWater = true;
+                int[] page = MaterialAtlas2Builder.Build(32, 32, new List<AtlasRegion> { cobble }, out written, out skipped);
+                double[] height = MaterialAtlas2Builder.Normalise(PbrMapGenerator.Luminance(cobble.Texture));
+                CreviceMaps.Result maps = CreviceMaps.Build(height, 32, 32);
+                int wrong = 0;
+                for (int i = 0; i < 32 * 32; i++)
+                {
+                    int px = page[i];
+                    int g = (px >> 8) & 0xFF, bl = (px >> 16) & 0xFF, al = (px >> 24) & 0xFF;
+                    int poolN = bl >> 4, flowN = bl & 15;
+                    if ((px & 1) != 1 ||
+                        Math.Abs(g / 255.0 - maps.Shape[i]) > 0.5 / 255.0 + 1e-9 ||
+                        Math.Abs(poolN / 15.0 - maps.Pool[i]) > 0.5 / 15.0 + 1e-9 ||
+                        Math.Abs(flowN / 15.0 - maps.Flow[i]) > 0.5 / 15.0 + 1e-9 ||
+                        Math.Abs(al / 255.0 - maps.Phase[i]) > 0.5 / 255.0 + 1e-9) wrong++;
+                }
+                check("a water-holding region carries its crevice maps, packed as the shader unpacks them",
+                    MaterialAtlas2Builder.CarriesCrevices(cobble) && wrong == 0, wrong + " texels mispacked");
+
+                cobble.GlowLevel = 4f;
+                int[] glowing = MaterialAtlas2Builder.Build(32, 32, new List<AtlasRegion> { cobble }, out written, out skipped);
+                var big = Region(0, 0, CreviceMaps.MaxSize + 8, profile, 0f);
+                big.HoldsWater = true;
+                check("a glowing or oversized region keeps its emission and gets no crevice layout",
+                    !MaterialAtlas2Builder.CarriesCrevices(cobble) && (glowing[0] & 1) == 0 &&
+                    !MaterialAtlas2Builder.CarriesCrevices(big),
+                    "glowing red " + (glowing[0] & 0xFF));
+            }
+
             // Everything is a byte channel, so bounds are structural - but the
             // point is that no generator step can push a value out of range
             // before packing clamps it, which would silently wrap.

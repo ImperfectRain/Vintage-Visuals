@@ -47,6 +47,14 @@ namespace VintageVisuals.PseudoPBR
         // the material atlas lie.
         private static readonly bool PerDrawMaterialBindingEnabled = true;
         private static readonly bool PerDrawAuxiliaryBindingEnabled = false;
+
+        // The scene capture alone, for the pbrterrainreflect bridge. Read back
+        // from a real 1.22.7 client (texture slot report, 2026-11-22): vanilla
+        // terrain units are 0..6, the material atlases 15 and 14, and unit 13
+        // is free. Bound only into a program that declares vv_reflectScene,
+        // which exists only while that group is applied, and inside the same
+        // active-texture save/restore as the material pages.
+        private static readonly bool PerDrawSceneCaptureBindingEnabled = true;
         private static readonly Lazy<GlTextureStateApi> GlTextureState =
             new Lazy<GlTextureStateApi>(GlTextureStateApi.TryCreate);
 
@@ -346,12 +354,8 @@ namespace VintageVisuals.PseudoPBR
                                           MaterialAtlasTexture.SecondTextureUnit);
                 }
 
-                if (PerDrawAuxiliaryBindingEnabled)
+                if (PerDrawSceneCaptureBindingEnabled || PerDrawAuxiliaryBindingEnabled)
                 {
-                    // The captured scene and world volume are deliberately
-                    // still fenced off. Re-enabling them is a separate
-                    // resource checkpoint, because they add failure modes that
-                    // base material PBR does not need.
                     int captureId = _captureTextureId;
 
                     if (captureId != 0 && program.HasUniform(PbrShaderBinder.ReflectSceneUniform))
@@ -359,7 +363,13 @@ namespace VintageVisuals.PseudoPBR
                         program.BindTexture2D(PbrShaderBinder.ReflectSceneUniform, captureId,
                                               SceneCaptureRenderer.TextureUnit);
                     }
+                }
 
+                if (PerDrawAuxiliaryBindingEnabled)
+                {
+                    // The world volume is deliberately still fenced off. It is
+                    // the next resource checkpoint, after the capture bridge
+                    // has been seen to work in game.
                     int worldReflectionId = _worldReflectionTextureId;
 
                     if (worldReflectionId != 0 && program.HasUniform(PbrShaderBinder.ReflectWorldUniform))

@@ -101,3 +101,17 @@ Before changing the runtime constants:
    the calculation.
 4. Note that `_label_colour_regions` is a scalar Python flood fill. It is fine
    for single textures; the runtime path uses different atlas-scale plumbing.
+
+## Crevice maps (D67)
+
+`crevice.py` is the reference for `src/PseudoPBR/CreviceMaps.cs`: the joint
+network, stone shape and rain flow paths of one tiling stone texture. It was
+tuned by eye on the game's own cobblestone, brick and dry stone before the C#
+was written. `crevice_fixture.py` writes `crevice_fixture.json`, which
+`tools/smoketest` compares with the port texel for texel. A retune means
+editing both, regenerating the fixture, and bumping
+`MaterialAtlas2Builder.FormatVersion` so cached atlases rebuild.
+
+```sh
+python3 crevice_fixture.py
+```

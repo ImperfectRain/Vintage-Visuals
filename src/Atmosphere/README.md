@@ -98,7 +98,7 @@ gains **sum** and are capped once. Both ceilings appear twice - once in GLSL,
 once in C# - and a check keeps the pair honest, because a shader cannot read a
 field.
 
-## The eleven features
+## The twelve features
 
 | # | Feature | State | Where it runs |
 |---|---|---|---|
@@ -107,6 +107,7 @@ field.
 | 3 | Sun-aware scattering | implemented | inscatter gain |
 | 4 | Height attenuation | implemented | extinction multiplier |
 | - | Height haze | implemented | **vanilla's own height fog**, via the ambient stack |
+| - | Ground mist (v14) | implemented | **the same vanilla plane** as height haze, combined in `AmbientBridge.Combine` |
 | 5 | Weather extinction | implemented | extinction, and the colour drain |
 | 6 | Cloud-atmosphere coupling | implemented | damps the directional gains |
 | 7 | Cloud-edge scattering | **foundation only** | inscatter gain, keyed on partial cover |
@@ -114,6 +115,7 @@ field.
 | 9 | Precipitation scattering | implemented | inscatter gain |
 | 10 | Moon scattering | implemented | inscatter gain |
 | 11 | Dapple interaction | **foundation only** | strength arrives, nothing reads it |
+| 12 | Forest haze (v14) | implemented | extinction, and a shade tint on its own share of the inscatter |
 
 Every one is a single strength with no separate enabled flag. Zero is already the
 "behave like vanilla" value, it is what an unset GLSL uniform reads as, and a
@@ -517,3 +519,32 @@ entirely.
 
 **Water and sprite particles are excluded.** Named in `atmosphere.yaml` so they
 read as excluded rather than forgotten.
+
+## v14: forest haze and ground mist (D57)
+
+**Forest haze (feature 12)** is a medium like the others: `VV_ATMOS_FOREST_DENSITY`
+(0.0045 per block at full strength, equal to `AtmosphereInputs.ForestHazeDensity`
+by a check) summed into `vvAtmosAddedDensity` under the shared ceiling. Its
+strength is the slider times `AtmosphereState.CanopyCover` - the mean leaf
+density of the leaf-map cells within 10 blocks whose lowest leaf is above the
+camera, eased over 3 seconds in `EnvironmentTracker` - times 0.6 to 1 by the
+climate's humidity, gated off where the sky no longer reaches the camera (a
+tunnel under a forest is not a forest). Only the forest's share of the optical
+depth tints the inscatter, toward shaded green-grey, so vanilla's own fog colour
+is untouched. The leaf map is scanned while this is on. Cost: a few multiplies
+and one log per fogged fragment, not measured. Not seen in game.
+
+**Ground mist** is not a shader feature and not a second layer. Vanilla's height
+fog is one plane for the frame, so `AmbientBridge.Combine` adds the mist's
+density (`MistDensityAtFullStrength`, -0.07) to the haze's and moves the plane's
+top toward the mist's, weighted by how much each contributes; mist 0 gives the
+haze alone exactly. The mist's top is `MistDepth` (4) blocks above the low ground
+around the player, from `GroundMap` in `src/Common/Scene/`: 81 columns 8 blocks
+apart, each the game's terrain height or the water surface where the rain map
+ends on a liquid, reduced to the mean of the lowest quarter, held within 3 blocks
+and eased, never below sea level minus one. `SceneArbiter.MistPressure` gates it
+on the climate's humidity, lingering wetness, nearby water, still air, the night
+and early morning, and open sky. It shares the haze's budget grant. DATA GAP: the
+game has no notion of a hollow, and one plane can only lie in one - the player's.
+Not seen in game.
+

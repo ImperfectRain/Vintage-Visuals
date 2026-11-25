@@ -100,7 +100,27 @@ from the source texture.
 | Shafts collapse under overcast | x | x | x | x | – | – | – | – | x |
 | Block-light specular | x | x | x | x | x | – | – | x | x |
 | Sun dapple | x | x | x | x | x | – | – | – | x |
+| Modular plant lighting and canopy dapple (`pbrterrainmaterial`, D49) | x | x | x | x | – | – | – | – | x |
+| Sunflecks from the leaf map (D50, D51) | x | x | x | x | x | – | – | – | x |
 | God-ray shafts | x | x | x | x | – | – | – | – | x |
+| Sun shafts on the modular path (godrayLevel) | x | x | x | x | – | – | – | – | x |
+| Dust motes in sun shafts | x | x | x | x | – | – | – | – | x |
+| Travelling gusts, linked to fleck flutter (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Plant base shade, and the one-block tissue gradient fix (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Backlit rim light on leaf-hole rims (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Wide-cone leaf translucency (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Damp and moss on sheltered rough faces (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Drips, pollen and fireflies (`ForestLifeSpawner`, v14, D57) | x | x | x | x | – | – | – | – | x |
+| Falling leaves (`ForestLifeSpawner`, `GustField`, v15, D58) | x | x | x | x | – | – | – | – | x |
+| Textured falling leaves (`LeafRenderer`, `LeafSprites`, `LeafFlight`, v15, D60) | x | x | x | x | x | – | – | – | x |
+| Batched leaves, leaf litter, leaves on currents (`LeafRenderer`, v15d, D61) | x | x | x | x | – | – | – | – | x |
+| Fireflies replace vanilla's (`VanillaFireflies`, swarms, v15, D59) | x | x | x | x | – | – | – | – | x |
+| Moonlight flecks | x | x | x | x | – | – | – | – | x |
+| Cloud cover from ambient and falling rain (D53) | x | x | x | x | – | – | – | – | x |
+| Water in crevices: local pools, wall streams (D64, retuned D65, rebuilt on load-time maps D67) | x | x | x | x | – | – | – | – | x |
+| Torchlight relief on per-pixel normals (D65) | x | x | x | x | – | – | – | – | x |
+| Crevice maps at load: joints, stone shape, rain paths (D67) | x | x | x | x | – | – | – | – | x |
+| Torch light falloff slider on terrain (D70) | x | x | x | x | – | – | – | – | x |
 
 ---
 
@@ -137,6 +157,8 @@ must not glow green.
 Edge cases exercised: rain ripples anchored to the world rather than the camera
 (regression pinned by call-order test); cloud shadows when the game's cloud
 renderer cannot be read — falls back to off rather than to invented shadows.
+Found in the 2026-11-23 in-game audit: a storm at cloud-shadow strength 1
+turned a forest black at noon (fixed by D52, and seen readable in the same storm after the fix).
 
 ---
 
@@ -149,6 +171,8 @@ renderer cannot be read — falls back to off rather than to invented shadows.
 | Transport model | x | x | x | x | – | – | – | – | x |
 | Ambient stack bridge | x | x | x | x | – | – | – | n/a | x |
 | Height haze | x | x | x | x | – | – | – | – | x |
+| 12 Forest haze (v14, D57) | x | x | x | x | – | – | – | – | x |
+| Ground mist on the height-haze plane (`GroundMap`, v14, D57) | x | x | x | x | – | – | – | – | x |
 | 1 Aerial perspective | x | x | x | x | – | – | – | – | x |
 | 2 Horizon scattering | x | x | x | x | – | – | – | – | x |
 | 3 Sun-aware scattering | x | x | x | x | – | – | – | – | x |
@@ -232,6 +256,7 @@ Not yet validated, and each is a separate question:
 | Colour grading | x | x | x | x | x | – | – | x | x |
 | Adaptive exposure | x | x | x | x | – | – | – | – | x |
 | Adaptive grading | x | x | x | x | – | – | – | – | x |
+| Seasonal light in the grade (v14, D57) | x | x | x | x | – | – | – | – | x |
 | Tonemap | x | x | x | x | – | – | – | – | x |
 | Post-processing (bloom, DoF, camera FX) | – | – | – | – | – | – | – | – | x |
 
@@ -308,8 +333,8 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | Tab changes rebuilding inside native callback dispatch | runtime crash report | `UiChecks` | x |
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
-**55 mutations, 55 caught, 0 missed** at `HEAD` when the mutation harness was
-last run on a clean tree.
+**136 mutations, 136 caught, 0 missed** (127 on a clean tree at 1301bee; the cover rows and the v7/v8 fleck, shaft and mote rows run singly) at `HEAD` when the mutation harness was
+last run on a clean tree. Since then the four v9 canopy-shade rows and the corrected sunfleck-tint row (stale after v8) were run singly: all caught. v10 added nine rows and refreshed four whose literals moved (leaf-map validity, humid air in the shader and the spawner, the shaft cap): all run singly, all caught. v11 added six beam-march rows, v12 three more (and refreshed three), v13 three more (and refreshed two), run singly, all caught.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

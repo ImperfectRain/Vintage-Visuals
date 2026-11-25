@@ -153,6 +153,10 @@ namespace VintageVisuals.Ui
                    "Heat, cold, aridity and lushness colouring the light where you are standing.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
+            Slider("grade_season", "AdaptiveGrade.SeasonStrength", "Season",
+                   "The colour of the light through the year, cooler and crisper in winter. Never recolours leaves or grass; the game does that itself.",
+                   C, "World-responsive colour", 0f, 2.0f, 0.05f);
+
             Slider("grade_indoor", "AdaptiveGrade.IndoorStrength", "Indoors",
                    "How differently light reads under a roof or inside a building.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
@@ -193,12 +197,16 @@ namespace VintageVisuals.Ui
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_blocklight", "PseudoPBR.BlockLightSpecular", "Torch and lava highlights",
-                   "Whether firelight makes a proper highlight on nearby surfaces rather than only brightening them.",
+                   "Whether firelight makes a proper highlight on nearby surfaces, and shades their relief toward the flame (up to 1), rather than only brightening them.",
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_blocklightdir", "PseudoPBR.BlockLightDirectionality", "Torch highlight direction",
                    "How strongly a firelight highlight points back at the flame rather than sitting flat on the surface.",
                    M, "Light response", 0f, 1f, 0.05f, null, true);
+
+            Slider("pbr_torchfalloff", "PseudoPBR.TorchFalloff", "Torch light falloff",
+                   "Makes light pool around each torch instead of filling a room evenly, by steepening the game's own falloff. Only takes light from the dim edge of a torch's reach. 0 is vanilla.",
+                   M, "Light response", 0f, 1f, 0.05f);
 
             Slider("pbr_roughnessbias", "PseudoPBR.RoughnessBias", "Roughness bias",
                    "Shifts every surface toward polished or toward worn. 0 uses the material as it was measured.",
@@ -225,16 +233,56 @@ namespace VintageVisuals.Ui
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
             Slider("pbr_foliage", "PseudoPBR.FoliageTranslucency", "Foliage translucency",
-                   "Light coming THROUGH leaves rather than off them. Strongest with a low sun behind the canopy, and it needs a clear sky - an overcast one has no beam to shine through.",
+                   "Light coming THROUGH leaves, plus a faint glow on their sunlit side. Strongest with a low sun behind the canopy, and it needs a clear sky - an overcast one has no beam to shine through.",
                    M, "Foliage", 0f, 2f, 0.05f);
 
             Slider("pbr_dapple", "PseudoPBR.SunDapple", "Sun dapple",
                    "Sunflecks and green shade on the ground under trees, measured from the game's own shadow map. It leaves torchlight alone.",
                    M, "Foliage", 0f, 2f, 0.05f);
 
+            Slider("pbr_sunflecks", "PseudoPBR.SunFlecks", "Sunflecks",
+                   "Spots and pools of sunlight inside the shade under trees, stretched by a low sun and swaying in the wind. Only under leaves, never under a roof or heavy cloud, and never brighter than open sunlight. Needs shadows on.",
+                   M, "Foliage", 0f, 1.5f, 0.05f);
+
+            Slider("pbr_moonflecks", "PseudoPBR.MoonFlecks", "Moonlight flecks",
+                   "A faint, cool version of the sunflecks by moonlight, as bright as the game says the moon is and always far dimmer than the sun's.",
+                   M, "Foliage", 0f, 1f, 0.05f);
+
             Slider("pbr_shafts", "PseudoPBR.SunShafts", "Sun shafts",
-                   "Beams of light picked out where the sun breaks through a canopy.",
+                   "Beams of light from real gaps in a canopy, strongest looking toward the sun and in humid air. Needs god-rays on in the game's graphics settings.",
                    M, "Foliage", 0f, 2f, 0.05f);
+
+            Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
+                   "A few specks of dust drifting in the sun shafts under a canopy. None under cloud or at night.",
+                   M, "Foliage", 0f, 1f, 0.05f);
+
+            Slider("pbr_gusts", "PseudoPBR.WindGusts", "Wind gusts",
+                   "Gusts rolling downwind across grass and crowns, brightening the bent tips and fluttering the sunflecks. The game's own wind direction and speed; none in still air.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_contactshade", "PseudoPBR.ContactShade", "Plant base shade",
+                   "Darkens the foot of grass, flowers and crops where stems crowd, so plants sit in the ground.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_damp", "PseudoPBR.Damp", "Damp and moss",
+                   "Sheltered rough stone, wood and soil under trees or in half-shade go a little darker and greener, most on north faces and in rainy climates.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_drips", "PseudoPBR.LeafDrips", "Leaf drips",
+                   "Drops falling from the leaves overhead during and after rain, until they dry.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_pollen", "PseudoPBR.Pollen", "Pollen",
+                   "Pale specks drifting downwind over vegetation on warm dry days in spring and summer.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_fireflies", "PseudoPBR.Fireflies", "Fireflies",
+                   "Swarms flashing together low over grass at dusk and on warm, humid summer nights. Replaces the game's fireflies; 0 brings them back.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_leaves", "PseudoPBR.FallingLeaves", "Falling leaves",
+                   "Leaves in each tree's own colours drifting down and along the wind; a few on still days, a flurry in an autumn gust.",
+                   M, "Foliage", 0f, 1.0f, 0.05f);
 
             Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
                    "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees.",
@@ -299,6 +347,10 @@ namespace VintageVisuals.Ui
                    "Rings spreading on wet surfaces while it rains.",
                    W, "Rain and wetness", 0f, 1f, 0.05f);
 
+            Slider("pbr_crevicewater", "PseudoPBR.CreviceWater", "Water in crevices",
+                   "On stone and brick, rain pools in the joints between stones on a block's top and slides down its sides around each stone while it rains. 0 is an even wet film.",
+                   W, "Rain and wetness", 0.0f, 1.0f, 0.05f);
+
             Slider("weather_fogstrength", "Weather.FogStrength", "Rain fog",
                    "How much falling rain thickens the air and shortens the view.",
                    W, "Fog", 0f, 1f, 0.05f);
@@ -361,6 +413,14 @@ namespace VintageVisuals.Ui
             Slider("atmosphere_heighthaze", "Atmosphere.HeightHaze", "Ground haze",
                    "Haze pooling in low ground and valleys. Rendered by the game's own fog rather than by this mod, so it costs nothing extra.",
                    A, "Height", 0f, 1f, 0.05f);
+
+            Slider("atmosphere_foresthaze", "Atmosphere.ForestHaze", "Forest haze",
+                   "A soft haze in the air under a canopy, so trunks fade into depth. Strongest under thick crowns in humid air.",
+                   A, "Height", 0f, 1.0f, 0.05f);
+
+            Slider("atmosphere_groundmist", "Atmosphere.GroundMist", "Ground mist",
+                   "A shallow mist settling into nearby low ground and over water on still, humid nights and mornings and after rain. The game's own height fog.",
+                   A, "Height", 0f, 1.0f, 0.05f);
 
             Slider("atmosphere_heightattenuation", "Atmosphere.HeightAttenuation", "Thin mountain air",
                    "Air thinning with altitude, so a mountain top sees further than a valley floor.",

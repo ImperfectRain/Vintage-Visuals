@@ -136,6 +136,11 @@ namespace VintageVisuals.Common
         /// <summary>Heat, cold, aridity and lushness at the player's position.</summary>
         public float BiomeStrength { get; set; } = 0.7f;
 
+        /// <summary>
+        /// v14. The colour of the light through the year: a touch fresher in spring, warmer in summer, softer in autumn, cooler and crisper in winter. Never recolours leaves or grass, which the game does itself. 0 is vanilla.
+        /// </summary>
+        public float SeasonStrength { get; set; } = 0.7f;
+
         /// <summary>Firelight warmth and harder shadows in an enclosed space.</summary>
         public float IndoorStrength { get; set; } = 0.8f;
 
@@ -165,6 +170,8 @@ namespace VintageVisuals.Common
                 "AdaptiveGrade.WeatherStrength", corrections);
             BiomeStrength = ColorGradeConfig.Clamp(BiomeStrength, 0.0f, 2.0f,
                 "AdaptiveGrade.BiomeStrength", corrections);
+            SeasonStrength = ColorGradeConfig.Clamp(SeasonStrength, 0.0f, 2.0f,
+                "AdaptiveGrade.SeasonStrength", corrections);
             IndoorStrength = ColorGradeConfig.Clamp(IndoorStrength, 0.0f, 2.0f,
                 "AdaptiveGrade.IndoorStrength", corrections);
             DepthStrength = ColorGradeConfig.Clamp(DepthStrength, 0.0f, 2.0f,
@@ -296,6 +303,16 @@ namespace VintageVisuals.Common
         public float HeightHaze { get; set; } = 0.4f;
 
         /// <summary>
+        /// v14. A soft, slightly darker haze in the air under a canopy, so trunks fade into depth as you look into a forest. Strongest under thick crowns in humid air; none in the open or underground. 0 is vanilla.
+        /// </summary>
+        public float ForestHaze { get; set; } = 0.5f;
+
+        /// <summary>
+        /// v14. A shallow mist that settles into the low ground around you and over nearby water on still, humid nights and mornings and after rain, then burns off. Drawn by the game's own height fog, the same layer as Ground haze. 0 is vanilla.
+        /// </summary>
+        public float GroundMist { get; set; } = 0.5f;
+
+        /// <summary>
         /// Rain and snow thickening the air.
         ///
         /// EXTINCTION only - how much of a distant surface survives the trip.
@@ -418,7 +435,7 @@ namespace VintageVisuals.Common
                        (AerialPerspective > 0f || HorizonScattering > 0f || SunScattering > 0f ||
                         HeightAttenuation > 0f || WeatherExtinction > 0f || CloudAtmosphere > 0f ||
                         CloudEdgeScattering > 0f || Godrays > 0f || PrecipitationScattering > 0f ||
-                        MoonScattering > 0f || DappleInteraction > 0f || AirDebugView > 0f);
+                        MoonScattering > 0f || DappleInteraction > 0f || ForestHaze > 0f || AirDebugView > 0f);
             }
         }
 
@@ -429,6 +446,8 @@ namespace VintageVisuals.Common
             SunScattering = ColorGradeConfig.Clamp(SunScattering, 0f, 1f, "Atmosphere.SunScattering", corrections);
             HeightAttenuation = ColorGradeConfig.Clamp(HeightAttenuation, 0f, 1f, "Atmosphere.HeightAttenuation", corrections);
             HeightHaze = ColorGradeConfig.Clamp(HeightHaze, 0f, 1f, "Atmosphere.HeightHaze", corrections);
+            ForestHaze = ColorGradeConfig.Clamp(ForestHaze, 0f, 1.0f, "Atmosphere.ForestHaze", corrections);
+            GroundMist = ColorGradeConfig.Clamp(GroundMist, 0f, 1.0f, "Atmosphere.GroundMist", corrections);
             WeatherExtinction = ColorGradeConfig.Clamp(WeatherExtinction, 0f, 1f, "Atmosphere.WeatherExtinction", corrections);
             WeatherTint = ColorGradeConfig.Clamp(WeatherTint, 0f, 1f, "Atmosphere.WeatherTint", corrections);
             CloudAtmosphere = ColorGradeConfig.Clamp(CloudAtmosphere, 0f, 1f, "Atmosphere.CloudAtmosphere", corrections);
@@ -878,6 +897,77 @@ namespace VintageVisuals.Common
         public float SunDapple { get; set; } = 0.35f;
 
         /// <summary>
+        /// Soft sunflecks inside canopy shade: round spots where sunlight gets
+        /// through the leaves, projected along the real sun direction. Gated on
+        /// the game's own leaf blocks overhead and its shadow map; only ever
+        /// restores the ground to vanilla's sunlit brightness. 0 is vanilla.
+        /// </summary>
+        public float SunFlecks { get; set; } = 0.6f;
+
+        /// <summary>
+        /// The moon's faint, cool version of the sunflecks, through the same
+        /// gaps and vanilla's own moon shadow. Scaled by how bright the game
+        /// says the moon is, and capped well under the sun's. 0 is none.
+        /// </summary>
+        public float MoonFlecks { get; set; } = 0.5f;
+
+        /// <summary>
+        /// Dust motes drifting in the sun shafts under a canopy: a few small
+        /// particles spawned only where the leaf map has a gap the sun shines
+        /// through. Never under cloud, never at night. 0 spawns none.
+        /// </summary>
+        public float DustMotes { get; set; } = 0.5f;
+
+        /// <summary>
+        /// v14. Patches of stronger wind rolling downwind across grass, crops and crowns: plants brighten a little at the tips as a gust bends them, and the sunflecks under a crown flutter as it passes. Direction and speed are the game's own wind; none in still air. 0 is vanilla.
+        /// </summary>
+        public float WindGusts { get; set; } = 0.6f;
+
+        /// <summary>
+        /// v14. Darkens the foot of grass, flowers and crops where the stems crowd together, so plants sit in the ground instead of floating on it. Never brighter, in any light. 0 is vanilla.
+        /// </summary>
+        public float ContactShade { get; set; } = 0.5f;
+
+        /// <summary>
+        /// v14. Rough stone, wood and soil faces under a crown or in half-shade go slightly darker and greener in patches, most on north faces and in rainy climates. None on metal, under snow, or in dry climates. 0 is vanilla.
+        /// </summary>
+        public float Damp { get; set; } = 0.5f;
+
+        /// <summary>
+        /// D64. Rain follows each texture's own relief: on top faces water pools in the low texels first and rises with how wet the ground is; on side faces it runs down the vertical grooves while rain is falling. 0 is the even wet film from before.
+        /// </summary>
+        public float CreviceWater { get; set; } = 0.8f;
+
+        /// <summary>
+        /// D70. Steepens the game's own torch falloff on terrain, so light
+        /// pools around each torch instead of filling a room evenly. Works
+        /// only from the block light vanilla already computed per vertex; it
+        /// never adds light, only takes it from the dim edge of a torch's
+        /// reach. 0 is vanilla.
+        /// </summary>
+        public float TorchFalloff { get; set; } = 0.0f;
+
+        /// <summary>
+        /// v14. Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.
+        /// </summary>
+        public float LeafDrips { get; set; } = 0.6f;
+
+        /// <summary>
+        /// v14. A few pale specks drifting downwind over grass and flowers on warm, dry days in spring and summer. None in rain, cold, autumn, winter or at night. 0 spawns none.
+        /// </summary>
+        public float Pollen { get; set; } = 0.5f;
+
+        /// <summary>
+        /// v14. Swarms of fireflies flashing together low over grass at dusk and on warm summer nights, most in humid places; replaces the game's own fireflies while on. None in rain, cold or winter. 0 gives the game's own fireflies back.
+        /// </summary>
+        public float Fireflies { get; set; } = 0.6f;
+
+        /// <summary>
+        /// v15. Leaves falling from the trees around you, coloured from each tree's own leaf texture and season tint, carried along the wind. A leaf now and then on a still spring day; a flurry when a gust crosses an autumn wood. Evergreens shed a few small needles. 0 spawns none.
+        /// </summary>
+        public float FallingLeaves { get; set; } = 0.6f;
+
+        /// <summary>
         /// Ring radius, in shadow-map texels, for the canopy test.
         ///
         /// A slider rather than a constant because it is a fact about the
@@ -1037,13 +1127,37 @@ namespace VintageVisuals.Common
                 "PseudoPBR.GrainAnisotropy", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
+            SunFlecks = ColorGradeConfig.Clamp(SunFlecks, 0.0f, 1.5f,
+                "PseudoPBR.SunFlecks", corrections);
+            MoonFlecks = ColorGradeConfig.Clamp(MoonFlecks, 0.0f, 1.0f,
+                "PseudoPBR.MoonFlecks", corrections);
+            DustMotes = ColorGradeConfig.Clamp(DustMotes, 0.0f, 1.0f,
+                "PseudoPBR.DustMotes", corrections);
+            WindGusts = ColorGradeConfig.Clamp(WindGusts, 0.0f, 1.0f,
+                "PseudoPBR.WindGusts", corrections);
+            ContactShade = ColorGradeConfig.Clamp(ContactShade, 0.0f, 1.0f,
+                "PseudoPBR.ContactShade", corrections);
+            Damp = ColorGradeConfig.Clamp(Damp, 0.0f, 1.0f,
+                "PseudoPBR.Damp", corrections);
+            CreviceWater = ColorGradeConfig.Clamp(CreviceWater, 0.0f, 1.0f,
+                "PseudoPBR.CreviceWater", corrections);
+            TorchFalloff = ColorGradeConfig.Clamp(TorchFalloff, 0.0f, 1.0f,
+                "PseudoPBR.TorchFalloff", corrections);
+            LeafDrips = ColorGradeConfig.Clamp(LeafDrips, 0.0f, 1.0f,
+                "PseudoPBR.LeafDrips", corrections);
+            Pollen = ColorGradeConfig.Clamp(Pollen, 0.0f, 1.0f,
+                "PseudoPBR.Pollen", corrections);
+            Fireflies = ColorGradeConfig.Clamp(Fireflies, 0.0f, 1.0f,
+                "PseudoPBR.Fireflies", corrections);
+            FallingLeaves = ColorGradeConfig.Clamp(FallingLeaves, 0.0f, 1.0f,
+                "PseudoPBR.FallingLeaves", corrections);
             CanopyRadius = ColorGradeConfig.Clamp(CanopyRadius, 0.0f, 16.0f,
                 "PseudoPBR.CanopyRadius", corrections);
             PixelReflection = ColorGradeConfig.Clamp(PixelReflection, 0.0f, 1.0f,
                 "PseudoPBR.PixelReflection", corrections);
             SunShafts = ColorGradeConfig.Clamp(SunShafts, 0.0f, 2.0f,
                 "PseudoPBR.SunShafts", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 62.0f,
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0.0f, 75.0f,
                 "PseudoPBR.DebugView", corrections);
             RoughnessBias = ColorGradeConfig.Clamp(RoughnessBias, -0.5f, 0.5f,
                 "PseudoPBR.RoughnessBias", corrections);

@@ -18,20 +18,51 @@ namespace VintageVisuals.Ui
         /// <summary>Heading in the dropdown, e.g. "Canopy audit".</summary>
         public string Group { get; }
 
-        public DebugView(string ownerPath, int value, string displayName, string description, string group)
+        /// <summary>
+        /// Terrain views only: which terrain shader implements this number.
+        /// The legacy terrain patch and the modular material path number their
+        /// views alike but do not implement the same set, and the Studio offers
+        /// only what the active path can draw. Always Both for other owners.
+        /// </summary>
+        public TerrainPaths Paths { get; }
+
+        public DebugView(string ownerPath, int value, string displayName, string description, string group,
+                         TerrainPaths paths = TerrainPaths.Both)
         {
             OwnerPath = ownerPath;
             Value = value;
             DisplayName = displayName;
             Description = description;
             Group = group;
+            Paths = paths;
         }
+
+        /// <summary>
+        /// Drawn on the modular path only by pbrterrainreflect, which exists in
+        /// source only while Reflections.SceneReflections is on. The Studio
+        /// hides such a view otherwise rather than offer one that draws nothing.
+        /// </summary>
+        public bool RequiresSceneCapture
+        {
+            get { return OwnerPath == DebugViewRegistry.PbrPath && (Value == 41 || Value == 42); }
+        }
+
+        public bool InLegacyTerrain { get { return (Paths & TerrainPaths.Legacy) != 0; } }
+        public bool InModularTerrain { get { return (Paths & TerrainPaths.Modular) != 0; } }
 
         /// <summary>What the dropdown row reads, group included so a long list stays navigable.</summary>
         public string Label
         {
             get { return Value == 0 ? DisplayName : Group + ": " + DisplayName; }
         }
+    }
+
+    [System.Flags]
+    public enum TerrainPaths
+    {
+        Legacy = 1,
+        Modular = 2,
+        Both = Legacy | Modular,
     }
 
     /// <summary>
@@ -55,6 +86,12 @@ namespace VintageVisuals.Ui
     /// present in the shipped GLSL, in both directions. A view added to a shader
     /// and not named here fails; a name here with no shader behind it fails too.
     /// That is what keeps a friendly label from quietly pointing at nothing.
+    ///
+    /// Terrain views say which terrain shader draws them. The legacy patch
+    /// (pseudopbr.glsl) is checked against the views marked Legacy, the modular
+    /// material path (pbrterrainmaterial.glsl) against the views marked Modular,
+    /// and the Studio offers only the set the active path implements, so the
+    /// list a player sees is read from this table instead of a second list.
     /// </summary>
     public static class DebugViewRegistry
     {
@@ -82,8 +119,24 @@ namespace VintageVisuals.Ui
         {
             var v = new List<DebugView>();
 
+            // Views only the legacy terrain patch draws. Everything else is
+            // drawn by both terrain paths unless marked otherwise.
+            var legacyOnly = new HashSet<int> {
+                6, 17, 18, 23,
+                26, 27, 28,
+                38, 40, 43,
+                45, 46,
+                49, 50, 51,
+                53, 54, 55, 56, 57, 58,
+                59, 60, 61, 62,
+            };
+
             void Pbr(int n, string name, string desc, string group)
-                => v.Add(new DebugView(PbrPath, n, name, desc, group));
+                => v.Add(new DebugView(PbrPath, n, name, desc, group,
+                                       legacyOnly.Contains(n) ? TerrainPaths.Legacy : TerrainPaths.Both));
+
+            void ModularPbr(int n, string name, string desc, string group)
+                => v.Add(new DebugView(PbrPath, n, name, desc, group, TerrainPaths.Modular));
 
             const string Off = "Normal rendering";
 
@@ -137,8 +190,8 @@ namespace VintageVisuals.Ui
             Pbr(38, "Captured-frame coordinate", "Where on the captured frame each texel is reading.", Bridge);
             Pbr(39, "Validity traffic light", "Green means this pixel really is reflecting the world. Read this one first.", Bridge);
             Pbr(40, "Raw scene sample", "The captured colour before any material response.", Bridge);
-            Pbr(41, "The capture itself", "Last frame, shrunk. Should look like the world, not like a texture atlas.", Bridge);
-            Pbr(42, "Camera movement", "How far the camera has moved since the capture.", Bridge);
+            Pbr(41, "The capture itself", "The last normal frame, frozen while debug views are on. Should look like the world and slide off it as you walk.", Bridge);
+            Pbr(42, "Camera movement", "How far you have moved since leaving normal rendering. Black until you walk.", Bridge);
             Pbr(43, "Capture coordinate", "Red is U, green is V. The view that exposes a wrong reprojection.", Bridge);
 
             const string Flora = "Flora taxonomy";
@@ -166,6 +219,21 @@ namespace VintageVisuals.Ui
             Pbr(60, "World canopy color", "The actual lit leaf colour stored for the current column.", Forest);
             Pbr(61, "Forest ambient filter", "The low-frequency canopy shade and colour filter applied before local-light terms.", Forest);
             Pbr(62, "Vegetation LOD", "How much foliage transmission and cuticle detail survive at this distance.", Forest);
+
+            const string Path = "Terrain path";
+            ModularPbr(64, "Sunflecks", "Grey to white where a sunfleck lands in canopy shade (grey a dim dapple, white full sun), orange its bounce light, dim red where leaves are overhead but no fleck. Stand in shade under trees with the sun up.", Canopy);
+            ModularPbr(66, "Sun shaft sources", "Yellow on leaf texels lining a hole in the leaves at a real gap, above a lit sunfleck, which feed the game's god-rays; blue on leaves that do not. Look toward the sun through a canopy, within about 30 blocks.", Canopy);
+            ModularPbr(68, "Sun beams in the air", "The light the beams add between you and each surface, white at its cap. A beam is the air above a bright sunfleck, along the sun. Look across a forest with the sun up; strongest toward the sun.", Canopy);
+            ModularPbr(69, "Wind gusts", "White where a gust is crossing, moving downwind; dark blue to teal where calm, shaded by the wind's direction. Needs wind; watch from a little way off.", Canopy);
+            ModularPbr(70, "Damp and moss", "Green on rough stone, wood and soil faces taking damp and moss, by how much. Look at sheltered faces under trees or in half-shade.", Canopy);
+            ModularPbr(71, "Plant base shade", "On grass, flowers and crops: red the shade taken at the foot, green the height up the plant. Black on everything else.", Canopy);
+            ModularPbr(72, "Backlit rim light", "White on the leaf texels lining a hole when the sun is behind them, by how much light the rim adds. Look toward the sun through leaves, within about 24 blocks.", Canopy);
+            ModularPbr(67, "Fleck light", "Red is the clear-sky gate (black is too cloudy for flecks), green the wind shimmer, blue the moon's share at night.", Canopy);
+            ModularPbr(65, "Leaf map", "The leaves the sun ray passes through, read from the world's blocks: green is how dense, blue how high. Grey means the map is not loaded yet.", Canopy);
+            ModularPbr(73, "Crevice maps", "What the mod found in each stone texture at load: grey the stone shape, blue the joints between stones, cyan the paths rain takes down a wall. Black on materials that hold no water. Works in any weather.", Layers);
+            ModularPbr(74, "Torchlight on the normals", "The terrain lit by block light alone, as untextured clay through each texel's own normal, with the torch highlight on top. Relief that turns as you carry a torch past is the normal map being shaded. Black where no block light reaches; try at night.", Layers);
+            ModularPbr(75, "Water in crevices", "Grey is the damp film, blue standing water pooled in the joints of top faces, cyan water running down a wall along its paths. Needs rain, and Water in crevices above 0.", Layers);
+            ModularPbr(63, "Shading path", "Green is the full material, orange is missing the second atlas, blue is plant tissue on the foliage path. Read this one first.", Path);
 
             void Entity(int n, string name, string desc)
                 => v.Add(new DebugView(EntityPath, n, name, desc, "Entities"));

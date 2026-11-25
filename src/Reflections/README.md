@@ -42,12 +42,17 @@ AfterPostProcessing  ---> capture ---> reflection ray
 The consuming code is `vvSceneReflection` in
 `../../assets/vintagevisuals/shadersnippets/pseudopbr.glsl`.
 
-**The capture runs only while something can sample it.** Only `pseudopbr.glsl`
-reads it, and that shader is gated off by
+**The capture runs only while something can sample it.** Two shaders can:
+the legacy `pseudopbr.glsl`, gated off by
 `PseudoPbrSubsystem.TerrainShaderPatchesEnabled` during the staged terrain
-recovery. `ReflectionsSubsystem.Apply` therefore keeps the capture stopped while
-that gate is off, whatever the config says, and the Tuning Studio shows both
-reflection rows as unavailable.
+recovery, and the modular path's `pbrterrainreflect` group, which is stage one
+of the reflection restoration ([D48](../../docs/DECISIONS.md)): the capture
+sampler and debug views 41 and 42, nothing else. That group is applied only
+while `Reflections.SceneReflections` is on, and the capture runs under the same
+switch (`PseudoPbrSubsystem.TerrainSceneCaptureConsumerPossible`). The capture
+is rebound per terrain draw by `TerrainTextureBindInterceptor`, inside its
+active-texture save/restore. No reflection is drawn yet, so the Tuning Studio
+still lists the switch as not a working control, with that reason.
 
 ## What the capture holds
 

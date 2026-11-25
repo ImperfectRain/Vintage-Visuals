@@ -85,6 +85,43 @@ namespace VintageVisuals.Ui
             return true;
         }
 
+        /// <summary>
+        /// The forest light presets: one look for each of the canopy
+        /// sliders, applied together. Subtle sits under the defaults for a
+        /// player who wants the forest to read first; Cinematic leans on
+        /// every one of them. Neither goes past a slider's own range, so the
+        /// brightness caps in the shaders still hold.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, float>> SunlightPresets =
+            new Dictionary<string, IReadOnlyDictionary<string, float>>(StringComparer.Ordinal)
+            {
+                { "Subtle", new Dictionary<string, float>(StringComparer.Ordinal)
+                    { { "pbr_sunflecks", 0.4f }, { "pbr_dapple", 0.25f }, { "pbr_shafts", 0.2f },
+                      { "pbr_motes", 0.2f }, { "pbr_moonflecks", 0.3f } } },
+                { "Cinematic", new Dictionary<string, float>(StringComparer.Ordinal)
+                    { { "pbr_sunflecks", 1.0f }, { "pbr_dapple", 0.6f }, { "pbr_shafts", 1.0f },
+                      { "pbr_motes", 0.9f }, { "pbr_moonflecks", 0.8f } } },
+            };
+
+        /// <summary>Applies one of <see cref="SunlightPresets"/>; returns how many settings changed.</summary>
+        public int ApplyPreset(string name)
+        {
+            if (!SunlightPresets.TryGetValue(name, out IReadOnlyDictionary<string, float> values)) return 0;
+            VintageVisualsConfig config = Config;
+            int changed = 0;
+            foreach (KeyValuePair<string, float> pair in values)
+            {
+                VisualSetting setting = VisualSettingRegistry.ByCode(pair.Key);
+                if (setting == null) continue;
+                float before = ConfigAccess.Get(config, setting.Path);
+                if (ConfigAccess.Set(config, setting.Path, pair.Value) && Math.Abs(before - pair.Value) > 1e-6f) changed++;
+            }
+            if (changed == 0) return 0;
+            config.ClampToValidRanges();
+            _notifyChanged();
+            return changed;
+        }
+
         public int ResetTab(SettingTab tab, bool advanced)
         {
             int changed = 0;

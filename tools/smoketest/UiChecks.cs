@@ -306,9 +306,15 @@ namespace VintageVisuals.SmokeTest
                   liveButHidden.Count == 0, string.Join(", ", liveButHidden));
 
             string reflections = File.ReadAllText(Path.Combine(repo, "src/Reflections/ReflectionsSubsystem.cs"));
+            string pbrSubsystem = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PseudoPbrSubsystem.cs"));
+            string modSystem = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
             check("the scene capture stays off while no compiled shader samples it",
-                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainShaderPatchesEnabled\s*;"),
-                  "only pseudopbr.glsl samples the capture; with its gate off the capture copies every frame for nothing");
+                  Regex.IsMatch(reflections, @"bool wanted =[^;]*PseudoPbrSubsystem\.TerrainSceneCaptureConsumerPossible\s*;") &&
+                  pbrSubsystem.Contains("return TerrainShaderPatchesEnabled ||") &&
+                  pbrSubsystem.Contains("(TerrainMaterialPrimaryPatchEnabled && TerrainReflectPatchEnabled)") &&
+                  modSystem.Contains("ConfigManager.Config.Reflections.SceneReflections;"),
+                  "the capture copies the frame every frame; it may run only while pseudopbr.glsl or pbrterrainreflect " +
+                  "can sample it, and pbrterrainreflect must be gated on the same SceneReflections switch");
 
             // Turning a parent off must say so rather than leave a live-looking row.
             var off = new VintageVisualsConfig();
@@ -400,9 +406,10 @@ namespace VintageVisuals.SmokeTest
             string Snippet(string n) => File.ReadAllText(
                 Path.Combine(repo, "assets/vintagevisuals/shadersnippets", n));
 
-            void Compare(string label, string ownerPath, string function, string source)
+            void Compare(string label, string ownerPath, string function, string source,
+                         Func<DebugView, bool> drawnHere = null)
             {
-                var named = DebugViewRegistry.For(ownerPath).ToList();
+                var named = DebugViewRegistry.For(ownerPath).Where(drawnHere ?? (_ => true)).ToList();
                 check("the " + label + " diagnostics have names", named.Count > 1, named.Count + " named");
 
                 string body;
@@ -411,6 +418,7 @@ namespace VintageVisuals.SmokeTest
 
                 var inShader = new HashSet<int>(
                     Regex.Matches(body, @"mode\s*==\s*(\d+)").Select(m => int.Parse(m.Groups[1].Value)));
+                inShader.Remove(0);
 
                 // 0 is "off" and is a UI concept: the shader reaches its debug
                 // function only when the value is non-zero, so it has no arm.
@@ -431,7 +439,32 @@ namespace VintageVisuals.SmokeTest
                 check("no two " + label + " diagnostics share a name", sameName.Count == 0, string.Join(" | ", sameName));
             }
 
-            Compare("material", DebugViewRegistry.PbrPath, "vec4 vvDebugView(", Snippet("pseudopbr.glsl"));
+            Compare("material", DebugViewRegistry.PbrPath, "vec4 vvDebugView(", Snippet("pseudopbr.glsl"),
+                    v => v.InLegacyTerrain);
+            // The modular terrain path draws its own subset under the same
+            // numbers. The Studio offers exactly the views marked Modular, so
+            // this comparison is what keeps that list honest.
+            // Two groups draw modular terrain views: the material path, and the
+            // capture bridge (pbrterrainreflect), which appends its own debug
+            // function after the material one. The set is their union.
+            string modularDebug;
+            try
+            {
+                modularDebug = "vec4 vvModularDebug() {\n" +
+                    GlslEval.FunctionBody(Snippet("pbrterrainmaterial.glsl"), "vec4 vvTerrainMaterialPrimaryDebug(") + "\n" +
+                    GlslEval.FunctionBody(Snippet("pbrterrainreflect.glsl"), "vec4 vvTerrainReflectDebug(") + "\n}\n";
+            }
+            catch (Exception ex) { modularDebug = ""; check("the modular debug functions are readable", false, ex.Message); }
+            Compare("modular terrain", DebugViewRegistry.PbrPath, "vec4 vvModularDebug(",
+                    modularDebug, v => v.InModularTerrain);
+            var bridgeOnly = new HashSet<int>(
+                Regex.Matches(Snippet("pbrterrainreflect.glsl"), @"mode\s*==\s*(\d+)").Select(m => int.Parse(m.Groups[1].Value))
+                    .Where(n => n != 0 && !Regex.IsMatch(Snippet("pbrterrainmaterial.glsl"), @"mode\s*==\s*" + n + @"\b")));
+            var gated = new HashSet<int>(DebugViewRegistry.All.Where(v => v.RequiresSceneCapture).Select(v => v.Value));
+            check("the capture views are offered only while their group can be applied",
+                  bridgeOnly.Count > 0 && bridgeOnly.SetEquals(gated),
+                  "drawn only by pbrterrainreflect: " + string.Join(",", bridgeOnly.OrderBy(n => n)) +
+                  "; gated on SceneReflections: " + string.Join(",", gated.OrderBy(n => n)));
             Compare("entity", DebugViewRegistry.EntityPath, "vec4 vvEntityDebugView(", Snippet("pbrentity.glsl"));
             Compare("atmosphere", DebugViewRegistry.AtmospherePath, "vec4 vvAtmosDebug(", Snippet("atmosphere.glsl"));
 
@@ -524,7 +557,7 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("_scrollContentBounds = ElementBounds.Fixed(0, -_currentScroll") &&
                   dialog.Contains("_scrollContentBounds.fixedY = -_currentScroll") &&
                   dialog.Contains("double y = 0") &&
-                  dialog.Contains("AddSection(row.Section, y)") &&
+                  dialog.Contains("AddSection(row.Section, y, row.IsNote)") &&
                   dialog.Contains("AddSettingRow(row.Setting, y)") &&
                   !dialog.Contains("AddSettingRow(row.Setting, y, bodyY, bodyHeight)"),
                   "BeginClip children are positioned inside the clip, not in dialog coordinates");
@@ -598,9 +631,8 @@ namespace VintageVisuals.SmokeTest
                   dialog.Contains("PbrTerrainDebugLimited()") &&
                   dialog.Contains("Safe terrain path: material and secondary atlas masks are available.") &&
                   dialog.Contains("blocked unavailable terrain debug view") &&
-                  dialog.Contains("value == 0 || value == 1 || value == 2 || value == 3") &&
-                  dialog.Contains("value == 19 || value == 20 || value == 21 || value == 22") &&
-                  dialog.Contains("value == 33 || value == 52"),
+                  dialog.Contains("view.InModularTerrain") &&
+                  dialog.Contains("view.InLegacyTerrain"),
                   "only debug views backed by the current modular terrain shader should be selectable");
 
             check("dialog lifecycle logging is high-granularity",

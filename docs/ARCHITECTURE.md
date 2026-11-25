@@ -329,8 +329,10 @@ SceneCaptureRenderer   src/Reflections/
         |                                        |
         +----------------- unit 13 -------------->
                                                  |
-                                    vvSceneReflection  (pseudopbr.glsl)
-                                      ray from texel centre
+                                    vvSceneReflection  (pseudopbr.glsl, legacy, gated off)
+                                    vvTerrainReflectDebug (pbrterrainreflect, modular:
+                                      views 41/42 only; rebound per terrain draw)
+                                      ray from texel centre (legacy)
                                       screen-space march
                                       crossing + bisection
                                                  |
@@ -369,10 +371,24 @@ information ladder applies throughout: prefer what the game already computed.
 | Glow level | vertex `renderFlags` | bit unpack | `glowLevel` | emission |
 | Wind | `GetWindSpeedAt` | tracked, clocked | `vv_sceneBreeze` | foliage response |
 | Cloud placement | game's cloud renderer tiles | `CloudTileReader`, Beer-Lambert | uniform array | cloud shadows |
+| Cloud cover | `Ambient.BlendedCloudDensity` and current precipitation (`GetClimateAt().Rainfall`); the tile mean is reported by `WeatherSubsystem` to `EnvironmentTracker.ReportCloudField` as a logged diagnostic only | `max(ambient, precipitation)` (D53 and its amendment: the tile mean read the same under a storm and a sunny broken sky) | `EnvironmentState.CloudCover`, `vv_cloudCover`, `vv_sceneSkyCover` | cloud-shadow broken-sky fade, sunfleck clear-sky gate, grades, motes |
+| Sun beams in the air (v11, D56) | the leaf map (`vv_canopyMap`, `vv_canopyPlaneY`), `lightPosition`, the scene's wetness, cover and dampen | `vvTerrainBeamInscatter` in `chunkopaque` and `chunktopsoil`: eight samples along the view ray within 20 blocks (v12), each projected up the sun ray to the canopy plane and tested against the two field layers that place the bright patches (`vvTerrainBeamDensity`); since v13 only in shaded air below a crown, blocked by a crown halfway up the sun ray, and skipped where no crown stands along the span | added to the terrain colour through `1 - fogAmount`, at most 0.3 of the sun's colour; no pass, target, sampler or uniform | sun shafts slider, debug view 68 |
+| Dust motes | `CanopyMap.TryCell`, `EnvironmentState` cover, daylight and wetness, `AtmosphereState.SunDirection` | `DustMoteSpawner`, an `IRenderer` at `EnumRenderStage.Before`, up to 24 leaf-map lookups every 0.2 s; no world query, no GL | game particles via `SpawnParticles`, at most 40 alive, scaled by the shafts' humid-air term (`BeamHumidity`, mirrored from the shader) | sun shafts (visual only) |
 | Season / temperature / rainfall | calendar + climate | `EnvironmentTracker` | scene uniforms | material response |
+| Wind direction (v14) | `GetWindSpeedAt`, normalised in `EnvironmentTracker` | `SceneInputs.WindDirection` | `vv_pbrWindDir` | travelling gusts (`vvTerrainGust`), pollen drift |
+| Climate rainfall at the player (v14) | `EnvironmentState.Humidity` | `SceneInputs.Humidity` | `vv_pbrHumidity` | damp and moss |
+| Plant height (v14) | vanilla `renderFlags` windData and `worldPos.y + playerpos.y`, as vanilla's bend reads them | none | vanilla uniforms and varyings | plant base shade, tissue gradient, gust sheen |
+| Canopy cover over the camera (v14) | the leaf map, `CanopyMap.CoverAround` over 10 blocks | eased over 3 s in `EnvironmentTracker` | `AtmosphereState.CanopyCover` -> `vv_atmosForest` (with the slider and humidity, in `AtmosphereInputs`) | forest haze |
+| Low ground and water near the player (v14) | `GetTerrainMapheightAt`, `GetRainMapHeightAt`, liquid at the rain-map top | `GroundMap`: lowest quarter of 81 columns, held and eased | the ground haze's vanilla height-fog plane via `AmbientBridge.Combine` | ground mist |
+| Season depth: spring, summer, autumn, winter | `GetSeason`, `GetSeasonRel` | `EnvironmentTracker` | none (CPU) | seasonal grade, pollen and firefly gates |
+| Forest particles (v14) | `CanopyMap.TryCell` for drips; Plant blocks at the rain-map top for pollen and fireflies; `EnvironmentState` gates | `ForestLifeSpawner`, an `IRenderer` at `EnumRenderStage.Before`, up to 8 lookups per kind every 0.2 s | game particles | drips, pollen, fireflies |
+| Falling leaves (v15) | `CanopyMap.TryCell` for the crown underside; `Block.GetRandomColor` for the colour (texture texel, climate and season tint); season, wind, day from `EnvironmentState`; gust from `GustField` (CPU port of `vvTerrainGust`, constants checked against the GLSL) | `ForestLifeSpawner`, 36 leaf-map tries every 0.2 s, cap 400 textured / 160 coloured | game particles, wind-affected | falling leaves |
+| Textured leaves (v15) | the leaf block's PNG (`Block.Textures`, baked name), `Block.GetRandomColor` for the tint, `GetLightRGBs` per leaf, the block and fluid at each leaf for landing | `LeafRenderer`, an `IRenderer` at `EnumRenderStage.Opaque` 0.5: CPU flight (`LeafFlight`); per leaf texture seen, one sprite-sheet texture (48x48 for 64x64) and two preallocated meshes, flying (400 quads, `UpdateMesh` every frame) and litter (1500 quads, rebuilt at most 2/s when changed), both created at `Before` with no shader bound and freed on dispose; two draws per sheet through `PreparedStandardShader`; litter is session-only, 40 checked per frame (decay, support, gust lift, range 64); floating leaves read the water's push vector (D61) | the game's standard shader (no mod GLSL, no sampler, no pass, no target) | falling leaves with real shapes, leaf litter, leaves on currents |
+| Vanilla fireflies (v15) | `ModSystemAmbientParticles.fireflyParticles`, read by reflection | `VanillaFireflies`: quantity zeroed while this mod's fireflies are on, restored when off | none | fireflies (ours replace the game's) |
 | Framebuffer colour + depth | `IRenderAPI.CurrentFrameBuffer`, falling back to `FrameBuffers[Primary]` | half-res copy, depth to alpha | capture texture, unit 13 | `vvSceneReflection` |
 | Local reflection volume | `IBlockAccessor` over a bounded player-centred block region | classified block cells, representative colour multiplied by block light, 2D Z-slice atlas | world volume texture, unit 12 | `vvWorldReflection` |
 | Canopy context | `WorldReflectionVolume` CPU scan over the same local region | low-frequency leaf density and representative canopy colour | 128 x 128 texture; terrain binding disabled pending sampler audit | shader fallback only until binding is proven safe |
+| Leaf map | `IBlockAccessor`, leaf blocks (`EnumBlockMaterial.Leaves`) in both diagonal columns of each 2x2 cell, searched 20 blocks either side of each column's rain-map height (falling back to a window around the player where the rain map reads 0), 32 x 32 cells around the player | `CanopyMap` in `EnvironmentTracker`, rolling scan of 128 cells per tick while a consumer requests it, toroidal storage; `PlaneY` is the mean lowest leaf + 1.5, held until that mean moves 3 blocks (v10, `PlaneHold`) and then eased over about two seconds | `vv_canopyMap[128]` uniform array (no sampler), `vv_canopyMapValid`, `vv_canopyPlaneY` | canopy shade, sunflecks, moon flecks and shaft sources on the modular terrain path (D50, D51), dust motes; since v10 the flecks also add a faint bloom to vanilla's glow channel (`vv_fleckGlow`, no new output or pass) |
 | Camera matrices | `CurrentProjectionMatrix` x `CameraMatrixOriginf` | multiplied, stored per capture | `vv_reflectViewProj` | reflection projection |
 | Fog colour, density, floor | `IAmbientManager.Blended*` | none | vanilla `rgbaFog`, `fogDensityIn`, `fogMinIn` | `AtmosphereState` |
 | Height fog | `BlendedFlatFogDensity` / `...YPosForShader` | none | vanilla `flatFogDensity`, `flatFogStart` | `AtmosphereState`, and written back by `AmbientBridge` |
@@ -419,11 +435,15 @@ quietly invalidate one of these.
 | Any patch group | applied | group disabled, rest load | a failure must not take the world render | that subsystem is vanilla |
 | Material atlas | sampled | `vv_pbrEnabled` 0 | unpatched or rolled back | vanilla shading |
 | Second atlas | sampled | `vv_material2Valid` 0, neutral material | atlas absent or failed | dielectric response, emission everywhere |
+| Hold-water flag (second atlas red, lowest bit, D66) | from `EnumBlockMaterial` | red 0: no pools or streams | material not stone, brick, ceramic, metal or ore | even wet film |
+| Torch light on terrain (`vv_blockLight`, D68) | `rgbaLightIn.rgb` per vertex, a varying in `pbrterrainmaterial` | 0: no torch relief, highlight or reflected torch | no block light reaches the vertex | vanilla lighting |
+| Crevice layout (second atlas G/B/A where the flag is set, D67) | `CreviceMaps` at atlas build: G stone shape, B joint depth (high nibble) and flow (low nibble), A flow phase | flag 0, plain layout (luminance height, box-mean AO, emission mask) | material holds no water, the block glows, or the texture exceeds 128 px | no pools or streams; torch relief from the luminance normal |
 | Atlas page | bind hook selects | page 0 | single-page installs need no swap | correct on one page |
 | Sun visibility | shadow map | returns 1.0 | `SHADOWQUALITY 0` — no shadow data exists | no dapple, rather than a dark world |
 | Canopy structure | ring of taps | returns 0 | shadows off | no dapple |
 | Cloud shadows | game's cloud tiles | **off**, not substituted | invented clouds correspond to nothing | vanilla sky lighting |
 | Scene capture | previous frame | `vv_reflectValid` 0 | shader, framebuffer or texture id failed | analytic sky fallback |
+| Capture bridge (`pbrterrainreflect`) | own group, asserts `pbrterrainmaterial` tokens | group absent: vanilla material-path source | `SceneReflections` off, material group rolled back, or anchor missing | material path unaffected; views 41/42 hidden in the Studio |
 | Reflection ray | scene hit | analytic sky/horizon/ground | off screen, occluded, or facing the camera | plain sky instead of wrong geometry |
 | World reflection volume | local scanned volume | `vv_worldReflectValid` 0 | scan or upload failed | scene hit or analytic fallback only |
 | Canopy context | disabled during terrain recovery | compiled out of terrain shader | sampler/state contract not proven | no forest ambient context; shadow-map flecks still work |
@@ -450,6 +470,11 @@ appears often.
 | Sun visibility | 9-18 shadow taps | per terrain fragment | no | resolution |
 | Canopy structure | 12 shadow taps, gated behind its strength slider | per terrain fragment when dapple on | no | resolution |
 | Cloud shadows | uniform array lookup, no sampler | per terrain fragment | no | resolution |
+| v14 gusts | two value-noise reads (8 hashes) | per plant fragment and per fleck evaluation, while the slider and the wind are up | no | resolution |
+| v14 backlit rim | four `textureLod` reads, shared with the shaft sources | per leaf fragment within 24 blocks looking toward the sun | no | resolution |
+| v14 damp and moss | one leaf-map read, one value-noise read | per rough non-metal terrain fragment while sheltered | no | resolution |
+| v14 forest haze | a few multiplies and a log | per fogged fragment while on | no | resolution |
+| v14 ground map | 9 columns per tick, 81 in all | CPU, while ground mist is on | no | — |
 | Colour grading | one fullscreen pass | yes | no | resolution |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene

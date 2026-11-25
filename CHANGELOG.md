@@ -9,6 +9,30 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Torchlight on terrain.** Highlights from torches, lanterns and lava now
+  sit on the side of a block facing the light and slide across wet or polished
+  surfaces as you move, and a wet cave floor can reflect a torch at night.
+- **Water in crevices.** On stone, brick, ceramic and metal, rain pools in
+  the joints between stones on a block's top, and runs down its sides while it
+  rains, sliding off each stone and gathering in the gaps between them rather
+  than falling in straight lines. The mod finds the joints and the shape of
+  each stone once, when textures load. Soil, grass, sand and wood just get
+  wet. Pools are dark, glossy and reflect the sky. New slider: Water in
+  crevices (0 keeps the old even wet look). Debug view 73 shows the joints and
+  rain paths the mod found, 75 where the water is right now.
+- **Torchlight shades the surface relief.** Near a torch, each stone now
+  catches the light on the side facing the flame and the joints between
+  stones fall into shade, at night and underground too, and only near the
+  torch. Debug view 74 shows it alone.
+- **Torch light falloff (optional).** A new slider, Torch light falloff
+  (off by default), makes torchlight on blocks fade faster away from the
+  flame, so a room pools light around each torch instead of being evenly
+  lit. It never brightens anything and leaves daylight alone.
+- **Reflections on terrain are back.** Shiny and wet blocks now reflect a
+  small, pixel-locked picture of what they face: the sky, the horizon and,
+  with Scene reflections on, the actual trees and stone on screen. Rough
+  ground, grass and leaves skip the expensive part, so the cost lands only on
+  surfaces that can show it. Reflection strength 0 is exactly the old look.
 - Repository scaffold, build definition, and project documentation.
 - Shader patch engine: YAML-defined regex/token patches against vanilla shaders,
   grouped per subsystem so one bad patch disables only its own subsystem.

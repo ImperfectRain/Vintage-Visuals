@@ -67,6 +67,7 @@ uniform float vv_atmosGodray;      // 8  contribution to vanilla's godray pass
 uniform float vv_atmosPrecip;      // 9  precipitation scattering
 uniform float vv_atmosMoon;        // 10 moonlight scattering
 uniform float vv_atmosDapple;      // 11 dapple interaction - FOUNDATION ONLY
+uniform float vv_atmosForest;      // 12 forest haze: slider x canopy over the camera x humidity (v14)
 
 uniform float vv_atmosWeatherTint; // how much rain drains colour from the air
 
@@ -161,6 +162,12 @@ const float VV_ATMOS_AERIAL_DENSITY = 0.0022;
 // not, and this is the number that says so.
 const float VV_ATMOS_RAIN_DENSITY = 0.004;
 const float VV_ATMOS_SNOW_DENSITY = 0.006;
+// FEATURE 12: forest haze at strength 1, per block - AtmosphereInputs.
+// ForestHazeDensity, which a check keeps equal. The colour the forest's share
+// of the air takes: shaded, so dimmer than the open sky's fog and a little
+// green, as light is under leaves.
+const float VV_ATMOS_FOREST_DENSITY = 0.0045;
+const vec3 VV_ATMOS_FOREST_SHADE = vec3(0.70, 0.78, 0.72);
 
 // How much of vanilla's own extinction the air keeps at full altitude.
 //
@@ -238,6 +245,10 @@ float vvAtmosAddedDensity(void)
     // blizzard and a downpour do not close the world down at the same rate.
     added += vv_atmosRain * VV_ATMOS_RAIN_DENSITY * vv_atmosWeather;
     added += vv_atmosSnow * VV_ATMOS_SNOW_DENSITY * vv_atmosWeather;
+
+    // FEATURE 12: the air under a canopy, held in by the crowns. Summed like
+    // every other medium, so the shared ceiling still holds.
+    added += VV_ATMOS_FOREST_DENSITY * vv_atmosForest;
 
     return min(added, VV_ATMOS_MAX_DENSITY);
 }
@@ -565,6 +576,16 @@ vec4 vvAtmosphere(vec4 rgbaPixel, float fogWeight, vec3 fogColor, vec3 cameraRel
 
     vec3 viewDir = vvAtmosViewDir(cameraRelativePos);
     vec3 inscatter = vvAtmosInscatter(fogColor, viewDir);
+
+    // FEATURE 12: the forest's share of the air is shaded air. Only that
+    // share is tinted, by its part of the optical depth, so at strength 0
+    // the share is 0 and the colour is untouched.
+    if (vv_atmosForest > 0.0)
+    {
+        float forestDepth = VV_ATMOS_FOREST_DENSITY * vv_atmosForest * distance * vvAtmosHeightFactor();
+        float allDepth = max(-log(max(1e-4, t)), 1e-4);
+        inscatter *= mix(vec3(1.0), VV_ATMOS_FOREST_SHADE, clamp(forestDepth / allDepth, 0.0, 1.0));
+    }
 
     return vec4(rgbaPixel.rgb * t + inscatter * (1.0 - t), rgbaPixel.a);
 }

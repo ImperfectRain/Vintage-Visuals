@@ -13,10 +13,9 @@ the `pbrterrainmaterial` checkpoint. The older full `pseudopbr` and
 `pseudopbrtopsoil` terrain groups remain fail-closed after the terrain
 corruption regression.
 
-The active terrain material checkpoint deliberately skips vanilla wind-mode
-vegetation. Leaves, grass, vines, fruit, crops and similar alpha-cut plant
-surfaces return the vanilla colour in this path until the dedicated foliage
-lighting model is restored safely.
+The active terrain material checkpoint never sends vanilla wind-mode vegetation
+through the opaque material. Leaves, grass, vines, fruit, crops and similar
+alpha-cut plant surfaces take the separate flora branch described below.
 
 Not yet verified in game — see [Verification](#verification) below for exactly
 what that means and what is still unconfirmed.
@@ -37,7 +36,9 @@ what that means and what is still unconfirmed.
 | `chunkopaque.fsh` samples the material atlases | staged, level 2 (compiles), modular terrain material response for non-flora terrain |
 | Cook-Torrance specular + energy conservation | restored in the modular terrain path with local GGX, Smith-Schlick and Schlick Fresnel helpers |
 | Per-layer debug views | staged: material normals, roughness/specular/metalness/height/AO/emission, texel-grid diagnostics |
-| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; wind-mode vegetation is bypassed; legacy `pseudopbrtopsoil` remains disabled |
+| `chunktopsoil.fsh` (grass, dirt tops) | staged through `pbrterrainmaterial` for non-flora fragments; legacy `pseudopbrtopsoil` remains disabled |
+| Restored on the modular path (2026-11-22) | L2 each: emission and bloom from `glowLevel` through the shared emission model; wood grain on the direct lobe; wetness, snow film and rain ripples gated on a sky-exposure varying this group owns; light through leaves, wet leaves, a leaf highlight and canopy dapple on a separate flora branch that never decodes the opaque material, with dapple also on opaque blocks and topsoil. Still legacy-only: sun shafts and pixel reflections; scene reflections are at stage one (D48) |
+| Sunlight v5 on the modular path (2026-11-23) | L2: sunflecks (now the seventh pattern, D51 sixth amendment), moonlight flecks (`pbr_moonflecks`), sun shafts into vanilla's `godrayLevel` from leaf texels lining a hole in the leaves at thin leaf-map cells (`chunkopaque` only, v7), dust motes as game particles in those shafts (`DustMoteSpawner`, `pbr_motes`). Views 64, 66, 67. Not yet seen in game; cost not measured |
 | Metalness, multi-scatter, specular occlusion, anisotropy, emission masks | done, L2 - see `docs/STATUS.md` section 4 |
 | Roughness controls reflection COARSENESS | done, L2 - it changes the size of the discrete cells. It does **not** blur: see `docs/DECISIONS.md` D11, and the rejected entries in `docs/IMPLEMENTATION_PLAN.md` |
 
@@ -178,7 +179,43 @@ The current material operation derives a tangent-frame normal from the primary
 atlas, snaps material lookups to texel centers, widens roughness for geometric
 specular antialiasing, and uses local GGX/Smith/Schlick terms for direct sun,
 block-light and ambient specular. Wetness, snow and frost are material layers,
-not extra samplers. `chunkopaque` uses vanilla's `texColor.rgb` as the base
+not extra samplers. `scene.glsl` and `pbrcore.glsl` are injected into each
+terrain program by this group, so the lighting model and scene vocabulary are
+the shared ones rather than local copies.
+
+Wind-mode vegetation branches off before the material is decoded
+(`vvTerrainFloraShade`): it keeps vanilla's lit colour, darkens it when wet and
+under a broken canopy, and adds light through the leaf, a faint front scatter
+and a cuticle highlight. Sun visibility on this path is read from the shadow map
+(`vvTerrainSunVisibility`), never from vanilla's `b`, which carries a floor and
+block light. Canopy dapple applies to opaque blocks and topsoil as well, on the
+diffuse term only. The shade it leaves is skylit (v9): cooler and moved toward
+its own luminance in proportion to the canopy term, never brighter than vanilla
+in any channel, so a fleck differs from the shade around it in hue as well as
+level. Since v10 a fleck's brightness varies, from a dim dapple to full sun at
+the heart of a wide gap and over beam groups, in three flat tones; the cut
+reads only world-anchored inputs so the spots hold still while the player
+moves; and each fleck adds a faint bloom to vanilla's glow channel in
+proportion to how far it stands out from its shade.
+
+Sun shafts come two ways (D56). Leaf texels lining a hole mark vanilla's
+god-ray channel, which draws the fine comb of rays only while the sun is on
+screen. And since v11 `vvTerrainBeamInscatter` marches the view ray through
+the air in front of each terrain fragment, adding the sunlight the air inside
+each beam scatters toward the camera, so beams show from the side at any sun
+height. A beam is the column of air above a bright fleck along the sun, read
+from the same fleck field (its beam-group noise and coarse octave, two reads per step since v12). Since v13 only air that is itself in shade under a crown carries a beam, and a crown between that air and the gap blocks it. Debug view 68. Sunflecks (D50) come through the same entry point,
+`vvTerrainCanopyResolve`: gated on the leaf map the environment tracker scans
+(`vv_canopyMap`, a uniform array) and the shadow map, lifting shade back to
+vanilla's sunlit level. The fleck pattern (D51, seventh pattern) is one continuous noise field cut at a
+threshold the crown sets: a closed crown lights 4% of the floor in small holes,
+a thin one 55% with the shade broken into islands, and the lit parts link into a
+network in between. It is streaked along the sun's azimuth as the sun drops,
+evaluated once per block texel with one hard level so it shares the game's
+pixel-art edge, plain sunlight in colour at the same luminance, restored to
+vanilla's own sunlit level including its normal shade (`vv_vanillaNormalShade`), and projected along the sun
+from one canopy plane for the whole scene (`vv_canopyPlaneY`). Sending alpha-cut plants through the opaque
+material is what gave leaf cards cavity and relief and turned them black. `chunkopaque` uses vanilla's `texColor.rgb` as the base
 colour; `chunktopsoil` currently uses the lit `outColor.rgb` at the safe anchor,
 which is acceptable as a recovery step but weaker than capturing the original
 topsoil albedo before lighting.
@@ -319,8 +356,9 @@ actually for.
 | Sky reflection | 0 – 2 | 0.35 | realism |
 | Specular antialiasing | 0 – 2 | 1.0 | correctness |
 | Detail distance | 4 – 192 | 48 | performance/quality |
-| Torch & lava highlights | 0 – 2 | 1.0 | realism |
+| Torch & lava highlights (and, up to 1, torchlight relief on terrain, D65) | 0 – 2 | 1.0 | realism |
 | Torch highlight directionality | 0 – 1 | 0.7 | taste |
+| Torch light falloff (terrain only, D70) | 0 – 1 | 0.0 | taste |
 
 **Roughness bias** is the strongest single style control, because roughness is
 what separates a look that reads as *wet* from one that reads as *dry* — and
@@ -436,6 +474,9 @@ yellow is near one material texel per screen pixel, red is undersampled.
 | 7 | reflectance at normal incidence | Grey is dielectric, coloured is metal — whether the metalness stand-in behaves |
 | 8 | roughness as shaded | Stored roughness plus bias plus specular antialiasing. Brighter than view 2 means aliasing is being suppressed there |
 | 9 | estimated block-light direction | Flat means the gradient found nothing and the light is ambient; variation across a wall means a torch is being located |
+| 73 | crevice maps (modular path, D67) | What `CreviceMaps` found at load: grey the stone shape, blue the joint network by depth, cyan the rain paths on walls. Black where the material holds no water. Any weather. Speckle here means the maps are wrong |
+| 74 | torchlight on the normals (modular path, D65, D67) | Terrain lit by block light alone, as clay through the stone shape (crevice regions) or each texel's own normal, plus the torch highlight. Relief that turns as a torch moves past is being shaded |
+| 75 | water in crevices, live (modular path, D65) | Grey the damp film, blue standing water in the joints of top faces, cyan water running down walls. Needs rain and `pbr_crevicewater` above 0 |
 
 Views 1 and 6 are the pair worth understanding: view 1 is what the atlas
 *stores*, view 6 is what the shader *derives from it* after the tangent frame is
@@ -1312,3 +1353,71 @@ The debugging path in the UI is:
 | Debug > Debug System: Materials > Forest lighting > World canopy colour | 60 | actual seasonal/lit leaf colour stored for that column |
 | Debug > Debug System: Materials > Forest lighting > Forest ambient filter | 61 | ambient attenuation/tint result |
 | Debug > Debug System: Materials > Forest lighting > Vegetation LOD | 62 | distance simplification applied to foliage lighting |
+
+## v14 forest pass (D57)
+
+Built on the existing foliage, fleck and wetness code rather than beside it.
+Every strength is 0 for vanilla; nothing here has been seen in game (L2).
+
+- **Travelling gusts** (`PseudoPBR.WindGusts`, `vv_pbrGusts`, debug view 69).
+  `vvTerrainGust`: value noise on a 16.384-block grid (tiles the 4096 wrap in 250
+  cells), carried downwind along `vv_pbrWindDir` (the game's wind direction) by 96
+  blocks per turn of the breeze clock, in two copies crossfaded so the clock's wrap
+  never shows, re-expanded before the cut. Nothing bends - vanilla's vertex sway is
+  untouched. A gust brightens bending plants toward the tip and a touch paler
+  (`vvTerrainGustSheen`, at most 14%), and adds to the fleck shimmer under a crown it
+  crosses (`vvTerrainFleckShimmerAt`), so the flecks flutter as a gust passes over.
+  None in still air. FOUNDATION ONLY: where a gust is drawn is invented.
+- **Plant base shade** (`PseudoPBR.ContactShade`, debug view 71). The lowest 0.45
+  blocks of rooted ground plants darken by up to 45% at full slider, from vanilla's
+  bend height (`windData` plus `fract(worldPos.y + playerpos.y)`; `playerpos` is
+  vanilla's own uniform). The same height fixes the tissue gradient, which read
+  `windData / 7` - 0 for every single-block plant.
+- **Backlit rim light** (rides `PseudoPBR.FoliageTranslucency`, debug view 72). The
+  texels lining a hole in a leaf texture glow when the sun is behind them, in direct
+  sun, within 24 blocks. The hole-rim read (four texture reads) is now done once per
+  fragment and shared with the shaft sources (`vvTerrainLeafRim`).
+- **Leaf translucency** gains a wide-cone diffuse share
+  (`VV_TERRAIN_TRANSMIT_DIFFUSE`, 0.2) beside its narrow lobe.
+- **Wet foliage** is the existing wet-leaf darkening and wet cuticle; unchanged.
+- **Damp and moss** (`PseudoPBR.Damp`, `vv_pbrDamp`, `vv_pbrHumidity`, debug view
+  70). Rough non-metal faces under a crown or in half-shade go darker and greener in
+  half-block patches, more on north faces and in rainy climates, never brighter.
+  DATA GAP: the game simulates no moisture or moss on ordinary blocks.
+- **Drips, pollen and fireflies** (`PseudoPBR.LeafDrips`, `Pollen`, `Fireflies`):
+  `ForestLifeSpawner`, on the dust-mote pattern. Drips from the lowest leaf of real
+  crowns while the leaves are wet and thawed; pollen downwind over Plant blocks on
+  warm dry growing-season days; fireflies as short full-glow flashes over Plant
+  blocks at dusk and on warm calm nights. DATA GAP: neither pollen nor fireflies
+  exist in the game.
+- **Falling leaves** (`PseudoPBR.FallingLeaves`, v15, D58): the fourth kind in
+  `ForestLifeSpawner`. Leaves leave the underside of real crowns, coloured by
+  `Block.GetRandomColor` at the leaf block (its own texture, with the game's
+  climate and season tint there), at a rate of season x local wind x day bias.
+  The local wind adds the gust from `GustField`, a CPU port of `vvTerrainGust`
+  whose constants and hash `tools/smoketest` reads back out of the GLSL, so a
+  flurry comes off the crowns the visible gust crosses. Evergreens shed a
+  quarter as often, smaller. Cap 160 alive. Since D60 the leaves have their real
+  shapes: `LeafRenderer` cuts single leaves from the tree's own texture
+  (`LeafSprites`), tints them with the game's colour, and draws them as tumbling
+  two-sided meshes through the game's standard shader (`LeafFlight` moves them).
+  Coloured particles are the fallback.
+  Since D61 they are batched (two draws per leaf texture, up to 400 flying),
+  storms strip green leaves in any season, landed leaves lie as litter that
+  piles per block and decays at varied rates (mean 240 s, shorter in rain and
+  on water; cap 1500, session-only, lifted again by strong gusts), and leaves
+  on water float with the game's current.
+  The season comes from `EnvironmentState.LeafFall`, continuous across the
+  handovers (D59), and leaves draw at 0.35 to 0.55.
+- **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
+  quantity of the game's `fireflyParticles` while ours are on and restores it
+  when they are off. Ours are swarms flashing together in waves, each flash a
+  glowing core in a faint halo.
+
+Cost, none measured: two noise reads for gusts per plant fragment and fleck
+evaluation; four texture reads for the rim per qualifying leaf (already paid by the
+shafts there); one leaf-map and one noise read for damp; up to 8 CPU lookups per
+particle kind every 0.2 s (36 for leaves); for textured leaves, a vertex
+rewrite of up to 400 quads and two draws per leaf texture a frame, and 40
+litter checks a frame. No sampler, pass, target or texture unit.
+

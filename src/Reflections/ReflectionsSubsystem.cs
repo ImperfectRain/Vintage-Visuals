@@ -57,14 +57,16 @@ namespace VintageVisuals.Reflections
         {
             if (_capi == null) return;
 
-            // Only pseudopbr.glsl samples the capture. While the legacy terrain
-            // gate keeps that shader out, a capture would copy the frame every
-            // frame for nothing - the most expensive setting in the mod,
-            // producing no pixel.
+            // Capture only while a terrain shader that samples it can be live:
+            // the legacy pseudopbr.glsl, or the modular path's pbrterrainreflect
+            // group. Without one, a capture copies the frame every frame for
+            // nothing - the most expensive setting in the mod, producing no
+            // pixel. pbrterrainreflect is itself gated on SceneReflections, so
+            // the two switch together.
             bool wanted = _mod.ConfigManager.Config.Reflections.SceneReflections
                        && _mod.ConfigManager.Config.PseudoPBR.Enabled
                        && _mod.ConfigManager.Config.PseudoPBR.PixelReflection > 0.001f
-                       && VintageVisuals.PseudoPBR.PseudoPbrSubsystem.TerrainShaderPatchesEnabled;
+                       && VintageVisuals.PseudoPBR.PseudoPbrSubsystem.TerrainSceneCaptureConsumerPossible;
 
             if (wanted) Start(); else Stop();
         }

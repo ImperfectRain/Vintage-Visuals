@@ -662,9 +662,189 @@
         "clientSide": true,
         "weight": 65
       },
+      "pbr_sunflecks": {
+        "ingui": "Sunflecks in canopy shade",
+        "comment": "Spots and pools of sunlight inside the shade under trees, following the real sun direction and stretching into ovals when it is low. Only where the game's own leaf blocks are overhead, never under a roof or cliff, never under heavy cloud, and never brighter than open sunlight. 0 is vanilla.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.5,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 90
+      },
+      "pbr_moonflecks": {
+        "ingui": "Moonlight flecks",
+        "comment": "A faint, cool version of the sunflecks by moonlight, through the same gaps in the leaves. Follows how bright the game says the moon is, and is always much dimmer than the sun's. 0 is none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 91
+      },
+      "pbr_gusts": {
+        "ingui": "Travelling wind gusts",
+        "comment": "Patches of stronger wind rolling downwind across grass, crops and crowns: plants brighten a little at the tips as a gust bends them, and the sunflecks under a crown flutter as it passes. Direction and speed are the game's own wind; none in still air. 0 is vanilla.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 93
+      },
+      "pbr_contactshade": {
+        "ingui": "Shade at plant bases",
+        "comment": "Darkens the foot of grass, flowers and crops where the stems crowd together, so plants sit in the ground instead of floating on it. Never brighter, in any light. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 94
+      },
+      "pbr_damp": {
+        "ingui": "Damp and moss on sheltered stone",
+        "comment": "Rough stone, wood and soil faces under a crown or in half-shade go slightly darker and greener in patches, most on north faces and in rainy climates. None on metal, under snow, or in dry climates. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 95
+      },
+      "pbr_crevicewater": {
+        "ingui": "Water in crevices",
+        "comment": "Rain follows each block's own structure, found in its texture at load: on stone and brick top faces water pools in the joints between stones as the ground gets wetter; on side faces it slides down around each stone and gathers in the gaps while rain is falling. Needs Surface materials. 0 is the even wet film from before.",
+        "default": 0.8,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 103
+      },
+      "pbr_torchfalloff": {
+        "ingui": "Torch light falloff",
+        "comment": "Makes light pool around each torch, lantern and lava instead of filling a room evenly, by steepening the game's own falloff on blocks. It only takes light away from the dim edge of a torch's reach, never adds any. Needs Surface materials. 0 is vanilla.",
+        "default": 0.0,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 104
+      },
+      "pbr_drips": {
+        "ingui": "Drips from wet leaves",
+        "comment": "Water dripping from the leaves overhead while you stand under a canopy during and after rain, as the game's own particles. Stops as the leaves dry. 0 spawns none.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 96
+      },
+      "pbr_pollen": {
+        "ingui": "Pollen in the air",
+        "comment": "A few pale specks drifting downwind over grass and flowers on warm, dry days in spring and summer. None in rain, cold, autumn, winter or at night. 0 spawns none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 97
+      },
+      "pbr_fireflies": {
+        "ingui": "Fireflies",
+        "comment": "Swarms of fireflies flashing together low over grass at dusk and on warm summer nights, most in humid places; replaces the game's own fireflies while on. None in rain, cold or winter. 0 gives the game's own fireflies back.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 98
+      },
+      "pbr_leaves": {
+        "ingui": "Falling leaves",
+        "comment": "Leaves falling from the trees around you, coloured from each tree's own leaf texture and season tint, carried along the wind. A leaf now and then on a still spring day; a flurry when a gust crosses an autumn wood. Evergreens shed a few small needles. 0 spawns none.",
+        "default": 0.6,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 102
+      },
+      "atmosphere_foresthaze": {
+        "ingui": "Forest haze",
+        "comment": "A soft, slightly darker haze in the air under a canopy, so trunks fade into depth as you look into a forest. Strongest under thick crowns in humid air; none in the open or underground. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 99
+      },
+      "atmosphere_groundmist": {
+        "ingui": "Ground mist in hollows",
+        "comment": "A shallow mist that settles into the low ground around you and over nearby water on still, humid nights and mornings and after rain, then burns off. Drawn by the game's own height fog, the same layer as Ground haze. 0 is vanilla.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 100
+      },
+      "grade_season": {
+        "ingui": "Adaptive: season",
+        "comment": "The colour of the light through the year: a touch fresher in spring, warmer in summer, softer in autumn, cooler and crisper in winter. Never recolours leaves or grass, which the game does itself. 0 is vanilla.",
+        "default": 0.7,
+        "range": {
+          "min": 0.0,
+          "max": 2.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 101
+      },
+      "pbr_motes": {
+        "ingui": "Dust motes in sun shafts",
+        "comment": "A few small specks of dust drifting in the beams of sun under a canopy, only where the game's own leaf blocks have a gap the sun shines through. None under cloud or at night. 0 spawns none.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 92
+      },
       "pbr_shafts": {
         "ingui": "Sunbeams through the canopy",
-        "comment": "Visible beams of light through gaps in foliage. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings and follows the real position of the sun. 0 is vanilla.",
+        "comment": "Visible beams of light from gaps in the canopy, strongest looking toward the sun and in humid air after rain, at dawn and dusk, and in fog. Feeds the game's own god-ray pass rather than drawing anything, so it needs god-rays switched on in the game's graphics settings. 0 is vanilla.",
         "default": 0.45,
         "range": {
           "min": 0.0,
@@ -724,13 +904,13 @@
       },
       "pbr_debugview": {
         "ingui": "Debug: show one layer",
-        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 and 52 are the pixel reflection: 32 reflection direction, 33 the material texel grid with derivative anti-aliasing and unresolved grey, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness, 52 material texels per screen pixel (green resolvable, yellow near one, red undersampled). 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture. 43 is the capture coordinate (red U, green V) - the view that exposes a wrong camera reprojection. 44 flora class by colour, 45 tissue thinness and height up the plant, 46 which plants take canopy dapple 47 optical role: which surfaces can receive canopy-filtered sunlight, which is NOT the same as 46. 48-50 are the reflection march itself, and are only meaningful once 39 shows green somewhere: 48 why each ray ended (green hit, yellow found the surface and rejected it as too thick, red never crossed anything, orange the far end was unusable, dark red the origin projected off frame, magenta the ray points behind the camera, blue no capture), 49 whether the stride survived the step budget (red means the ray was walked coarser than VV_SSR_STRIDE asks), 50 how far behind the surface the refined crossing landed against the tolerance that judges it, 51 whether that decision is being made on geometry or on rounding - red means the local captured-depth quantum is coarser than the half-block hit tolerance, green measures the crossing residual in local depth quanta, blue means rejected as too thick, black means no crossing was available to measure. 59-62 are the forest lighting model: 59 world canopy density, 60 world canopy colour, 61 forest ambient filter, 62 vegetation LOD.",
+        "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 and 52 are the pixel reflection: 32 reflection direction, 33 the material texel grid with derivative anti-aliasing and unresolved grey, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness, 52 material texels per screen pixel (green resolvable, yellow near one, red undersampled). 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture. 43 is the capture coordinate (red U, green V) - the view that exposes a wrong camera reprojection. 44 flora class by colour, 45 tissue thinness and height up the plant, 46 which plants take canopy dapple 47 optical role: which surfaces can receive canopy-filtered sunlight, which is NOT the same as 46. 48-50 are the reflection march itself, and are only meaningful once 39 shows green somewhere: 48 why each ray ended (green hit, yellow found the surface and rejected it as too thick, red never crossed anything, orange the far end was unusable, dark red the origin projected off frame, magenta the ray points behind the camera, blue no capture), 49 whether the stride survived the step budget (red means the ray was walked coarser than VV_SSR_STRIDE asks), 50 how far behind the surface the refined crossing landed against the tolerance that judges it, 51 whether that decision is being made on geometry or on rounding - red means the local captured-depth quantum is coarser than the half-block hit tolerance, green measures the crossing residual in local depth quanta, blue means rejected as too thick, black means no crossing was available to measure. 59-62 are the forest lighting model: 59 world canopy density, 60 world canopy colour, 61 forest ambient filter, 62 vegetation LOD. 63 is the modular terrain shading path: green full material, orange missing the second atlas, blue plant tissue on the foliage path. 64-72 are the modular canopy and forest views (sunflecks, leaf map, shaft sources, fleck light, beams, gusts, damp and moss, plant base shade, backlit rim). 73 the crevice maps: grey the stone shape, blue the joint network, cyan the rain paths on walls, black where the material holds no water. 74 torchlight on the normals: terrain lit by block light alone as untextured clay through the stone shape (or each texel's own normal where there are no crevice maps), with the torch highlight on top. 75 water in crevices, live: grey the damp film, blue standing water on top faces, cyan water running down walls. The Studio lists only what the active terrain path draws.",
         "default": 0.0,
         "clientSide": true,
         "weight": 60,
         "range": {
           "min": 0.0,
-          "max": 62.0,
+          "max": 75.0,
           "step": 1.0
         }
       },

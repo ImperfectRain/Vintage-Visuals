@@ -97,7 +97,7 @@ namespace VintageVisuals.Atmosphere
             AtmosphereConfig config = mod.ConfigManager == null ? null : mod.ConfigManager.Config.Atmosphere;
             if (config == null || !config.Enabled) return;
 
-            if (config.WantsShader || config.HeightHaze > 0f) return;
+            if (config.WantsShader || config.HeightHaze > 0f || config.GroundMist > 0f) return;
 
             mod.Capi.Logger.Warning(
                 "[VintageVisuals] atmosphere: enabled, and every one of its effects is at zero - " +
@@ -128,7 +128,14 @@ namespace VintageVisuals.Atmosphere
                 AtmosphereConfig config = _mod.ConfigManager.Config.Atmosphere;
                 EnvironmentTracker tracker = _mod.Environment;
 
-                float wanted = config.Enabled ? config.HeightHaze : 0f;
+                float haze = config.Enabled ? config.HeightHaze : 0f;
+                float mist = config.Enabled ? config.GroundMist : 0f;
+                float wanted = Math.Max(haze, mist);
+                long now = _mod.Capi.ElapsedMilliseconds;
+                if (tracker != null && mist > 0f) tracker.Ground.Request(now);
+                // Forest haze is drawn in the shader, from the canopy cover
+                // the tracker measures only while somebody asks for the map.
+                if (tracker != null && config.Enabled && config.ForestHaze > 0f) tracker.Canopy.Request(now);
 
                 // Stated every frame even when zero. The arbiter has to know
                 // the claim went to nothing, or an atmosphere that was switched
@@ -138,7 +145,7 @@ namespace VintageVisuals.Atmosphere
 
                 if (wanted <= 0f)
                 {
-                    _ambient.SetHeightHaze(0f, 0f);
+                    _ambient.SetHeightHaze(0f, 0f, 0f, 0f);
                     return;
                 }
 
@@ -151,7 +158,16 @@ namespace VintageVisuals.Atmosphere
 
                 float seaLevel = _mod.Capi.World == null ? 0f : _mod.Capi.World.SeaLevel;
 
-                _ambient.SetHeightHaze(wanted * granted * pressure, seaLevel);
+                // v14: the mist's floor is the low ground around the player,
+                // never below the sea, and sea level until the first scan.
+                float mistPressure = tracker == null
+                    ? 0f
+                    : SceneArbiter.MistPressure(tracker.Current, tracker.Ground.WaterShare);
+                float floor = tracker != null && tracker.Ground.Valid
+                    ? Math.Max(tracker.Ground.FloorY, seaLevel - 1f)
+                    : seaLevel;
+                _ambient.SetHeightHaze(haze * granted * pressure, seaLevel,
+                                       mist * granted * mistPressure, floor + AmbientBridge.MistDepth);
             }
             catch (Exception e)
             {

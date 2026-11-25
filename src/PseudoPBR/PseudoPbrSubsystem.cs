@@ -5,6 +5,7 @@ using System.IO;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
+using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
 using VintageVisuals.Common.Scene;
 
@@ -35,6 +36,13 @@ namespace VintageVisuals.PseudoPBR
         public const string TerrainBaseGroupName = "pbrterrainbase";
 
         public const string TerrainMaterialGroupName = "pbrterrainmaterial";
+
+        /// <summary>
+        /// The scene-capture bridge on the modular terrain path. Its own group
+        /// because it owns a sampler (unit 13); it asserts the material group's
+        /// tokens, so it cannot apply where the material path did not.
+        /// </summary>
+        public const string TerrainReflectGroupName = "pbrterrainreflect";
 
         /// <summary>
         /// Grass and soil tops are drawn by their own program, so they get their
@@ -70,6 +78,25 @@ namespace VintageVisuals.PseudoPBR
         /// pseudopbr/topsoil branches.
         /// </summary>
         public const bool TerrainMaterialPrimaryPatchEnabled = true;
+
+        /// <summary>
+        /// Stage one of the reflection restoration: the capture sampler and its
+        /// bridge debug views (41, 42) on the modular path, and the per-draw
+        /// bind of the capture texture only. Applied only while the player has
+        /// Reflections.SceneReflections on, which defaults to off. The world
+        /// volume and canopy textures stay unbound.
+        /// </summary>
+        public const bool TerrainReflectPatchEnabled = true;
+
+        /// <summary>Whether any terrain shader that samples the scene capture can be live.</summary>
+        public static bool TerrainSceneCaptureConsumerPossible
+        {
+            get
+            {
+                return TerrainShaderPatchesEnabled ||
+                       (TerrainMaterialPrimaryPatchEnabled && TerrainReflectPatchEnabled);
+            }
+        }
 
         /// <summary>Where the cache and preview images live, under VintagestoryData.</summary>
         public const string DataDirectory = "VintageVisuals";
@@ -119,6 +146,36 @@ namespace VintageVisuals.PseudoPBR
             // time keeps renderer lifetime tied to subsystem lifetime, which is
             // the only pairing Dispose() can honour.
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Opaque, "vintagevisuals-pbr");
+
+            _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
+            mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
+            _leafRenderer = new LeafRenderer(mod.Capi, LeafWind);
+            mod.Capi.Event.RegisterRenderer(_leafRenderer, EnumRenderStage.Opaque, "vintagevisuals-leaves");
+            _forestLife = new ForestLifeSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR,
+                                                _leafRenderer);
+            mod.Capi.Event.RegisterRenderer(_forestLife, EnumRenderStage.Before, "vintagevisuals-forestlife");
+        }
+
+        private DustMoteSpawner _motes;
+        private ForestLifeSpawner _forestLife;
+        private LeafRenderer _leafRenderer;
+
+        /// <summary>The game's wind, as the textured leaves need it, from the one tracker.</summary>
+        private LeafRenderer.WindSample LeafWind()
+        {
+            var sample = new LeafRenderer.WindSample { DirX = 1f };
+            var tracker = _mod?.Environment;
+            if (tracker == null) return sample;
+            var world = tracker.Current;
+            Vec2f dir = world.WindDirection ?? new Vec2f(1f, 0f);
+            float len = (float)Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
+            sample.DirX = len > 1e-3f ? dir.X / len : 1f;
+            sample.DirZ = len > 1e-3f ? dir.Y / len : 0f;
+            sample.Speed = GameMath.Clamp(world.WindSpeed, 0f, 1f);
+            sample.Gusts = GameMath.Clamp(_mod?.ConfigManager?.Config?.PseudoPBR?.WindGusts ?? 0f, 0f, 1f);
+            sample.Breeze = tracker.BreezeClock;
+            sample.Rain = GameMath.Clamp(world.Rain, 0f, 1f);
+            return sample;
         }
 
         public void Apply()
@@ -196,9 +253,12 @@ namespace VintageVisuals.PseudoPBR
         /// a strength slider is a statement about what the player wants rather
         /// than about the world.
         /// </summary>
+        private static float Clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
+
         private SceneInputs ReadScene()
         {
             if (_mod.Environment == null) return SceneInputs.None;
+            if (_binder != null) _binder.Canopy = _mod.Environment.Canopy;
 
             EnvironmentState world = _mod.Environment.Current;
             SceneIntent intent = _mod.Environment.Intent;
@@ -212,7 +272,9 @@ namespace VintageVisuals.PseudoPBR
                                        intent[IntentChannel.ArtificialLight],
                                        intent[IntentChannel.Restraint],
                                        intent[IntentChannel.Readability],
-                                       world.Autumn, world.Winter, 0f, 0f);
+                                       world.Autumn, world.Winter, 0f, 0f,
+                                       Clamp01(world.CloudCover), Clamp01(world.WindSpeed), Clamp01(world.MoonLight),
+                                       world.WindDirection, Clamp01(world.Humidity));
             }
 
             return new SceneInputs(
@@ -244,7 +306,13 @@ namespace VintageVisuals.PseudoPBR
                 // A dry cold snap in winter should not frost the world over -
                 // vanilla's frostAlpha covers that case, and it covers it per
                 // block, knowing which of them can frost at all.
-                world.Snow * weather.SnowDusting);
+                world.Snow * weather.SnowDusting,
+                Clamp01(world.CloudCover),
+                Clamp01(world.WindSpeed),
+                Clamp01(world.MoonLight),
+                world.WindDirection,
+                Clamp01(world.Humidity),
+                Clamp01(world.Rain));
         }
 
         private void WriteReportOnce(PseudoPbrConfig config)
@@ -587,6 +655,21 @@ namespace VintageVisuals.PseudoPBR
             if (_mod != null && _mod.Capi != null && _binder != null)
             {
                 _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Opaque);
+            }
+            if (_mod != null && _mod.Capi != null && _motes != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_motes, EnumRenderStage.Before);
+            }
+            if (_mod != null && _mod.Capi != null && _forestLife != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_forestLife, EnumRenderStage.Before);
+                _forestLife.Dispose();
+            }
+            if (_mod != null && _mod.Capi != null && _leafRenderer != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_leafRenderer, EnumRenderStage.Opaque);
+                _leafRenderer.Dispose();
+                _leafRenderer = null;
             }
 
             if (_bindInterceptor != null)

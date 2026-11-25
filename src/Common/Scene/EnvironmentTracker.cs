@@ -105,6 +105,9 @@ namespace VintageVisuals.Common.Scene
         private float _proximity;
         private float _autumn;
         private float _winter;
+        private float _spring;
+        private float _summer;
+        private float _leafFall;
         private readonly Vec3f _camera = new Vec3f();
 
         private bool _reportedFirstSample;
@@ -205,6 +208,32 @@ namespace VintageVisuals.Common.Scene
             Demand = new SceneDemand(rainFog, cloudShadow, overcast, Demand.HeightHaze);
         }
 
+        /// <summary>
+        /// The game's own cloud tiles, averaged over the window around the
+        /// player, as Weather read them.
+        ///
+        /// Ambient.BlendedCloudDensity read 0 through a whole storm in 1.22
+        /// (in-game audit, 2026-11-23: "cloud cover 0, precipitation 1"),
+        /// while the tile window read 0.74 to 1. Every overcast term in the
+        /// mod - flecks, canopy shade, shafts, the grade, VisualBudget's cloud
+        /// claims - was therefore running as if the sky were clear. The tiles
+        /// are derived from what the game's cloud renderer draws, the second
+        /// rung of the ladder, so the larger of the two wins while the tile
+        /// reading is fresh.
+        /// </summary>
+        public void ReportCloudField(float meanCover, long nowMs)
+        {
+            _tileCover = GameMath.Clamp(meanCover, 0f, 1f);
+            _tileCoverAtMs = nowMs;
+        }
+
+        /// <summary>A tile reading older than this is no longer the sky overhead.</summary>
+        private const long TileCoverFreshMs = 10000;
+
+        private float _tileCover;
+        private long _tileCoverAtMs = long.MinValue / 2;
+        private bool _reportedCoverSource;
+
         /// <summary>What Atmosphere wants, before arbitration. See <see cref="DemandFromWeather"/>.</summary>
         public void DemandFromAtmosphere(float heightHaze)
         {
@@ -222,6 +251,21 @@ namespace VintageVisuals.Common.Scene
         /// of one allowance rather than a free hand each.
         /// </summary>
         public SceneGrants Grants { get; private set; } = SceneGrants.Full;
+
+        /// <summary>
+        /// Where the leaves are around the player. Scanned here, on the tick,
+        /// only while a consumer has asked for it in the last two seconds -
+        /// see <see cref="CanopyMap.Request"/>. World geometry, not a config
+        /// value, so it belongs with the rest of what the game says.
+        /// </summary>
+        public CanopyMap Canopy { get; } = new CanopyMap();
+
+        /// <summary>
+        /// v14. Where the low ground and the water are around the player, for
+        /// the ground mist. Scanned on the tick only while asked for, like
+        /// <see cref="Canopy"/>.
+        /// </summary>
+        public GroundMap Ground { get; } = new GroundMap();
 
         /// <summary>The claim record behind Grants, for the log and for reports.</summary>
         public VisualBudget Budget { get; private set; }
@@ -279,6 +323,8 @@ namespace VintageVisuals.Common.Scene
 
             SampleObserver();
             SampleSky();
+            SampleCanopy(deltaSeconds);
+            SampleGround();
 
             _rippleClock = (_rippleClock + deltaSeconds / RippleSeconds) % 1.0;
             RippleClock = (float)_rippleClock;
@@ -436,6 +482,23 @@ namespace VintageVisuals.Common.Scene
         }
 
         /// <summary>
+        /// v15. The leaves' fall at a point in the year, continuous across every
+        /// handover: late summer 0 to 0.25, autumn 0.25 to 1, winter 1 to 0,
+        /// spring 0. See <see cref="EnvironmentState.LeafFall"/>. Pure.
+        /// </summary>
+        public static float LeafFallAt(EnumSeason season, float within)
+        {
+            float w = GameMath.Clamp(within, 0f, 1f);
+            switch (season)
+            {
+                case EnumSeason.Summer: return 0.25f * w * w;
+                case EnumSeason.Fall: return 0.25f + 0.75f * w;
+                case EnumSeason.Winter: return 1f - w;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>
         /// How far into autumn and winter the world is, from the game's answer.
         ///
         /// GetSeason is per-position and hemisphere-aware, so it is asked at the
@@ -472,6 +535,9 @@ namespace VintageVisuals.Common.Scene
 
                 _autumn = season == EnumSeason.Fall ? depth : 0f;
                 _winter = season == EnumSeason.Winter ? depth : 0f;
+                _spring = season == EnumSeason.Spring ? depth : 0f;
+                _summer = season == EnumSeason.Summer ? depth : 0f;
+                _leafFall = LeafFallAt(season, within);
 
                 // The one assumption here that cannot be checked without the
                 // game running: that the season the calendar names and the
@@ -515,7 +581,23 @@ namespace VintageVisuals.Common.Scene
 
                 if (_capi.Ambient != null)
                 {
-                    _cloudCover = GameMath.Clamp(_capi.Ambient.BlendedCloudDensity * CloudCoverGain, 0f, 1f);
+                    float ambient = GameMath.Clamp(_capi.Ambient.BlendedCloudDensity * CloudCoverGain, 0f, 1f);
+                    // Ambient.BlendedCloudDensity reads 0 through a storm, so
+                    // falling precipitation stands in: rain does not fall from
+                    // a clear sky. The cloud-tile mean is NOT used - it read
+                    // 0.745 under a storm and 0.745 under a sunny cirrocumulus
+                    // sky in game (2026-11-23), so it cannot tell them apart
+                    // (D53 amendment). It is kept as a logged diagnostic.
+                    _cloudCover = Math.Max(ambient, GameMath.Clamp(_precipitation, 0f, 1f));
+
+                    bool fresh = _capi.ElapsedMilliseconds - _tileCoverAtMs < TileCoverFreshMs;
+                    if (fresh && !_reportedCoverSource && Math.Abs(_tileCover - _cloudCover) > 0.3f)
+                    {
+                        _reportedCoverSource = true;
+                        _logger.Notification("[VintageVisuals] environment: cloud cover " + _cloudCover.ToString("0.##") +
+                            " (ambient " + ambient.ToString("0.##") + ", precipitation " + _precipitation.ToString("0.##") +
+                            "); the cloud tiles read " + _tileCover.ToString("0.##") + " and are not used for cover.");
+                    }
                 }
             }
             catch (Exception)
@@ -540,7 +622,7 @@ namespace VintageVisuals.Common.Scene
                 _precipitation, _rain.Current, _snow.Current, _wetness.Current,
                 _temperature, _humidity,
                 _skyExposure, _depth, _underwater,
-                _camera, _proximity, _autumn, _winter);
+                _camera, _proximity, _autumn, _winter, _spring, _summer, _leafFall);
         }
 
         /// <summary>
@@ -565,6 +647,55 @@ namespace VintageVisuals.Common.Scene
             catch (Exception)
             {
                 // Held at the last reading, as everywhere else here.
+            }
+        }
+
+        /// <summary>
+        /// v14. Blocks around the camera the forest haze's canopy cover is
+        /// measured over, and how fast the reading follows the player.
+        /// </summary>
+        public const int CanopyCoverRadius = 10;
+        public const float CanopyCoverSeconds = 3f;
+        private float _canopyCover;
+
+        /// <summary>Eases a canopy-cover reading toward its target, frame-rate independently. Pure.</summary>
+        public static float EaseCanopyCover(float current, float target, float deltaSeconds)
+        {
+            float k = 1f - (float)Math.Exp(-Math.Max(0f, deltaSeconds) / CanopyCoverSeconds);
+            return current + (GameMath.Clamp(target, 0f, 1f) - current) * k;
+        }
+
+        private void SampleGround()
+        {
+            try
+            {
+                if (!Ground.Wanted(_capi.ElapsedMilliseconds)) return;
+                Ground.Scan(_capi, _capi.World?.Player?.Entity?.Pos);
+            }
+            catch (Exception)
+            {
+                // Held at the last scan; the mist keeps its last floor.
+            }
+        }
+
+        private void SampleCanopy(float deltaSeconds)
+        {
+            try
+            {
+                if (!Canopy.Wanted(_capi.ElapsedMilliseconds))
+                {
+                    _canopyCover = EaseCanopyCover(_canopyCover, 0f, deltaSeconds);
+                    return;
+                }
+                EntityPos player = _capi.World?.Player?.Entity?.Pos;
+                Canopy.Scan(_capi, player);
+                float target = player == null ? 0f : Canopy.CoverAround(player.X, player.Y, player.Z, CanopyCoverRadius);
+                _canopyCover = EaseCanopyCover(_canopyCover, target, deltaSeconds);
+            }
+            catch (Exception)
+            {
+                // Held at the last scan; the shader reads a stale map rather
+                // than none, and a density of 0 is the harmless value anyway.
             }
         }
 
@@ -665,7 +796,8 @@ namespace VintageVisuals.Common.Scene
                     ambientColor: ambientColor == null ? new Vec3f(1f, 1f, 1f) : ambientColor,
                     heightAboveSeaLevel: height,
                     viewDistance: viewDistance,
-                    skyExposure: _skyExposure);
+                    skyExposure: _skyExposure,
+                    canopyCover: _canopyCover);
             }
             catch (Exception)
             {

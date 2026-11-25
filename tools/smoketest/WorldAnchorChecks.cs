@@ -37,6 +37,7 @@ namespace VintageVisuals.SmokeTest
         {
             CheckCameraIsPerFrame(repo, check);
             CheckCloudCornerIsPerFrame(repo, check);
+            CheckCloudFieldContrast(repo, check);
         }
 
         /// <summary>
@@ -76,12 +77,81 @@ namespace VintageVisuals.SmokeTest
             check("the light-level lookup stays out of the per-frame path",
                 !body.Contains("SampleObserver()") && observerBody.Contains("GetLightLevel"),
                 "SampleObserver does a chunk query and belongs on the tick");
+
+            // Ambient.BlendedCloudDensity read 0 through a whole storm in game
+            // (2026-11-23), so flecks drew under it. Falling rain stands in.
+            // The cloud-tile mean must not: it read the same under a storm
+            // and under a sunny broken sky, and hid every fleck at noon.
+            check("cloud cover counts falling rain and not the cloud-tile mean",
+                source.Contains("_cloudCover = Math.Max(ambient, GameMath.Clamp(_precipitation, 0f, 1f));") &&
+                !source.Contains("Math.Max(ambient, _tileCover)"),
+                "a dead ambient figure reads a storm as clear; the tile mean reads a sunny noon as overcast");
+
+            // Dust motes are lit only inside a beam: spawned only where the
+            // leaf map says a real gap sends sun, only under a clear sky, and
+            // capped so they stay a hint of dust. No world query of their own.
+            string motes = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/DustMoteSpawner.cs"));
+            check("dust motes spawn only in real sun shafts, under a clear sky, capped and off at zero",
+                motes.Contains("if (!InShaft(map, x, y, z, sun)) continue;") &&
+                motes.Contains("world.CloudCover > CloudLimit") &&
+                motes.Contains("if (strength < 0.001f) return;") &&
+                motes.Contains("_alive < cap") &&
+                motes.Contains("return gapDensity <= 2 && around >= 2;") &&
+                !motes.Contains("BlockAccessor") && !motes.Contains("WeatherSystem"),
+                "a mote outside a beam is snow, and a spawner that asks the world is a second tracker");
+            // INTERACTION: motes thicken where beams do. The spawner mirrors
+            // the shader's humid-air term; both are evaluated, the shader's
+            // from the shipped GLSL, and must agree.
+            try
+            {
+                string terrain = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+                string shaft = GlslEval.StripComments(GlslEval.FunctionBody(terrain, "float vvTerrainShaftLevel(") ?? "");
+                string lowExpr = GlslEval.Rhs(GlslEval.Statement(shaft, "float lowSun"));
+                string humidExpr = GlslEval.Rhs(GlslEval.Statement(shaft, "float humid"));
+                bool ok = motes.Contains("BeamHumidity(world.Wetness, sun.Y)");
+                string detail = "";
+                foreach (double wet in new[] { 0.0, 0.5, 1.0 })
+                foreach (double y in new[] { 0.1, 0.3, 0.45, 0.8 })
+                {
+                    var syms = GlslEval.Syms("l", GlslEval.Vec(0, y, 0), "vv_sceneWetness", wet, "fog", 0.0);
+                    syms["lowSun"] = new GlslEval.Val(GlslEval.Scalar(lowExpr, syms));
+                    double gpu = GlslEval.Scalar(humidExpr, syms);
+                    double cpu = VintageVisuals.PseudoPBR.DustMoteSpawner.BeamHumidity((float)wet, (float)y);
+                    if (Math.Abs(gpu - cpu) > 1e-4) { ok = false; detail += $" wet={wet} y={y}: shader {gpu:0.000}, motes {cpu:0.000}"; }
+                }
+                check("I-motes thicken with the beams: the spawner's humid air agrees with the shaft shader", ok, detail);
+            }
+            catch (Exception ex) { check("I-motes humid air is readable", false, ex.Message); }
         }
 
         /// <summary>
         /// The cloud window's corner must update on every Update, not only on
         /// the frames that re-read the tiles.
         /// </summary>
+        /// <summary>
+        /// A uniform cloud field casts no shadow; a broken one keeps its
+        /// clouds. Seen in game 2026-11-23: a sunny cirrocumulus noon read
+        /// every tile at 0.86 and the world sat in cloud shadow.
+        /// </summary>
+        private static void CheckCloudFieldContrast(string repo, Action<string, bool, string> check)
+        {
+            float[] uniform = new float[64];
+            for (int i = 0; i < uniform.Length; i++) uniform[i] = 0.86f;
+            VintageVisuals.Weather.CloudTileReader.ApplyFieldContrast(uniform);
+            float uniformMax = 0f;
+            foreach (float v in uniform) uniformMax = Math.Max(uniformMax, v);
+
+            float[] broken = new float[64];
+            for (int i = 0; i < broken.Length; i++) broken[i] = i % 2 == 0 ? 0.86f : 0f;
+            VintageVisuals.Weather.CloudTileReader.ApplyFieldContrast(broken);
+
+            string source = File.ReadAllText(Path.Combine(repo, "src/Weather/CloudTileReader.cs"));
+            check("a uniform cloud field casts no cloud shadow and a broken one keeps its clouds",
+                uniformMax < 1e-6f && Math.Abs(broken[0] - 0.86f) < 1e-4f && broken[1] == 0f &&
+                source.Contains("if (!clear) ApplyFieldContrast(_target);"),
+                "uniform " + uniformMax + ", broken cloud " + broken[0] + " gap " + broken[1]);
+        }
+
         private static void CheckCloudCornerIsPerFrame(string repo, Action<string, bool, string> check)
         {
             string source = File.ReadAllText(Path.Combine(repo, "src/Weather/CloudTileReader.cs"));

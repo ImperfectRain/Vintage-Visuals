@@ -2038,3 +2038,1111 @@ its reason stand). Weather and atmosphere rows are not traced to their shaders,
 only gated on their parents. (The scene capture
 running unsampled was fixed afterwards; see the audit follow-up above.)
 
+
+
+## D48. Reflections come back in stages, starting with the bridge
+
+The legacy reflection stack was never seen working: debug view 41, the proof
+that the captured frame reaching terrain contains the world, was still open
+when the terrain gate closed in August, and the probable cause of that
+corruption was auxiliary samplers rebound per draw without restoring the
+active texture unit.
+
+So the modular path restores it in stages, each its own patch group with its
+own switch. **Stage one** (`pbrterrainreflect`) is only the bridge: the capture
+sampler on unit 13, declared directly above `main` (below every vanilla
+sampler), its uniforms, and debug views 41 and 42. The capture is rebound per
+terrain draw inside the same active-texture save/restore the material pages
+use, and only into a program that declares it. The world volume and canopy
+textures stay unbound. The group asserts the material group's debug entry
+point and is declared in `ShaderPatchGroups.Requires`, so it fails closed
+without the material path, and `tools/verifypatches` checks that it does.
+
+The texture slot report read from a 1.22.7 client before this landed showed
+vanilla terrain on units 0..6, the material atlases on 15 and 14, and no
+shared unit. **Stage two** - the march and the material response - waits until
+view 41 has been seen to show the world.
+
+Supersedes nothing; extends D13 (reflection through the existing BRDF), which
+still describes how stage two must consume the hit.
+
+## D49. Plant lighting on the modular path reads the shadow map, not `b`
+
+The first foliage pass (f72bc9d) took sun visibility from vanilla's
+`getBrightnessFromShadowMap()` result `b`, rescaled as
+`1 - (1 - b) / shadowIntensity`. That rescale assumed a fully shadowed `b` of
+`1 - shadowIntensity`. The real function subtracts `shadowIntensity * 0.5`, and
+then adds `blockBrightness`, so a leaf in full shade read as half lit and a
+torch under a tree read as sunlight. The smoke check passed because its fixture
+used the same wrong assumption about where the floor sits.
+
+`vvTerrainSunVisibility` is now the legacy patch's geometric visibility: the
+same 3x3 comparison taps vanilla takes, cascade-weighted, without
+`shadowIntensity` and without block light, and 1 with shadows off. Transmission,
+front scatter, the cuticle highlight and the canopy gate all read it. It costs
+up to 18 more shadow taps per flora fragment; dapple on opaque terrain takes them
+only after its cheap early-outs (slider, receiver, distance, sun presence). Not
+measured.
+
+Canopy dapple comes across in the same pass with the legacy constants. Its one
+deliberate change is on plants: the legacy branch tinted the shade by the leaf's
+own pigment, and this one uses the same green tint as the ground, so one
+function applies the canopy everywhere.
+
+Supersedes the sun-visibility choice in the f72bc9d foliage commit; extends D7
+(dapple reads vanilla's shadow map).
+
+## D50. Sunflecks inside a solid crown: a real gate, an invented pattern
+
+**Problem.** Seen in game on 2026-11-23: the dapple mask (view 15) was almost
+entirely white on a forest floor that was plainly in tree shade. D7 measures
+canopy from gaps in vanilla's shadow map, and under a solid crown at the
+player's shadow resolution there are none: one flat shadow, nothing to count.
+The player asked for broken, sunfleck-filled shade like the reference photos.
+
+**Chosen.** Two halves, deliberately unequal in authority.
+
+- **The gate is game data.** `CanopyMap` (in `EnvironmentTracker`) reads the
+  world's leaf blocks in a 32 x 32 grid of 2x2 cells around the player and
+  uploads density and lowest-leaf height as a 128-vec4 uniform array: no
+  sampler, so vanilla's texture units cannot move. A fragment is canopy-shaded
+  only if the shadow map says the sun is blocked AND the sun ray from it passes
+  through leaves on that map. A wall, roof or cliff shadow has no leaves on its
+  ray and gets nothing.
+- **The pattern is invented.** DATA GAP: the game does not resolve gaps inside
+  a crown, so fleck positions are a stable hash on the canopy plane. They are
+  projected along the real sun direction (slide as the sun moves, stretch by
+  1/sin(elevation)), sized by canopy height, and sway with the wind clock.
+
+A fleck only restores the shadow vanilla applied (`vvTerrainSunRelight`),
+exactly to vanilla's sunlit level and never past it, so it cannot reach bloom
+or hide anything. The dapple's shade now also accepts leaf-map evidence
+(`VV_TERRAIN_LEAF_SHADE` 0.7) so a solid crown deepens and greens like broken
+shade does.
+
+**Rejected.** Re-reading vanilla's shadow map at a finer radius (the gaps are
+not in it); a canopy sampler (two world-render losses from samplers in
+`chunkopaque`, see CLAUDE.md); reviving the deleted procedural field of D7 with
+its old `vv_sunExposure` gate, which measured ~1 under every crown.
+
+**Cost.** CPU: about 50 block reads per column, 128 columns per 0.1 s tick,
+only while Sun dapple or Sunflecks is above zero. GPU: up to ten uniform-array
+reads and nine hashes per shaded receiver fragment within 48 blocks. Not
+measured.
+
+**Limits.** Daytime only; moonlight flecks wait on checking how the game's
+night shadows behave. The map covers 64 x 64 blocks around the player and
+refreshes in about a second, so a tree felled in view keeps its flecks briefly.
+
+Partly supersedes D7: D7's count stays the gate for broken shade; this adds the
+leaf map for solid shade and a pattern D7 had removed, with the gate it lacked.
+
+## D51. Sunfleck shapes: leaf-bitten gaps, stepped at the block texel
+
+**Problem.** Seen in game on 2026-11-23, after D50 shipped: the player called
+the flecks a good foundation, but too mathematically soft and regular for the
+look they want, and some were cut by long straight edges. The reference photos
+show irregular, broken patches of varied size, not a field of ovals.
+
+**Chosen.**
+
+- **Shape.** A gap is one to three overlapping lobes of varied size, and a
+  small gap is dimmer, as a pinhole smaller than the sun's disc is. Two
+  pointed leaf lenses per cell bite into the gaps, which turns ovals into the
+  concave, broken shapes of light through a crown. A coarse value noise
+  (8.192-block cells) bunches gaps where a crown is thin. Gaps and leaves sway
+  on different wind phases.
+- **Edge.** Evaluated once per block texel (1/16 block) along the receiving
+  face and posterised to four levels, so a fleck has the stepped edge of the
+  game's own textures rather than a smooth gradient nothing else in the world
+  has. Plant cards snap on all three axes, block faces only along the face,
+  because snapping across a face that lies on a texel boundary speckles it.
+- **Projection.** From ONE canopy plane for the scene, `vv_canopyPlaneY` (the
+  mean lowest leaf on the map + 1.5, eased over about two seconds), not from
+  each cell's own lowest leaf.
+
+**The straight cuts had three causes**, each now an interaction check with a
+mutation: a lobe stretched by a low sun reached past the 3x3 cells searched
+(the reach is now bounded against `VV_TERRAIN_FLECK_MIN_STRETCH`); the
+per-cell projection height shifted the pattern at every 2-block cell edge; and
+the leaf map itself stopped on 2-block lines, at its cells and at the
+30-block edge of the march. The map is now blended across its four nearest
+cells, eased out between 20 and 28 blocks, and flecks finish fading by 26.
+The scan reads both diagonal columns of each cell, because one column missed
+crowns that left that corner open and each miss was a square hole.
+
+**Rejected.** Smoother and larger ovals (tried offline first: still read as a
+regular field); inverting to "light wherever no leaf covers" (needs about four
+leaves per cell for realistic cover, and loses the gap-size control); a
+per-cell plane height (the cuts).
+
+**Cost.** CPU: the scan reads twice the blocks D50 did (two columns per cell).
+GPU: per shaded receiver within 26 blocks, 18 leaf tests and up to 27 lobe tests
+over nine cells, plus four leaf-map reads per march step. Not measured.
+
+**Limits.** The pattern is still invented (DATA GAP, as D50). One plane for the
+scene means a forest of very mixed heights projects some flecks from the wrong
+height; that shows as a pattern that slides slightly more or less with the sun
+than it should, not as cuts. Moving between forests eases the plane, so flecks
+drift for a couple of seconds.
+
+Amends D50's pattern and its cost; D50's gate is unchanged.
+
+**Amendment, same day (third pattern).** The second pattern was seen in game
+and read as stains: too sparse, small and dim, a flat tan, random confetti on a
+flat shade. Lobes alone cannot make pools, because the 3x3 search bounds a gap
+to about half a block. So a third layer, POOLS: two octaves of value noise on
+the fleck grid (2.048 and 1.024 blocks, both tiling the wrap), thresholded at a
+level the coarse thin-crown noise lowers, so light runs together into patches a
+few blocks wide under a thin crown and the leaves cut it up. The same noise
+drives gap count and size, and a smooth WASH (`VV_TERRAIN_FLECK_WASH`, not
+stepped, since contour bands would show) lifts thin-crown shade so the shade
+varies. `VV_TERRAIN_FLECK_GAIN` 1.6 lets the default slider reach a full gap.
+Lit patches go through `vvTerrainSunlitTint`: 1.2x saturation and a warm shift
+at the same luminance, checked as an interaction, so the sunlit cap holds.
+Cost: eight more hashes per shaded receiver. Not measured.
+
+**Second amendment, same day (fourth pattern, with an audit).** The third
+pattern was seen in game: the scale and warmth were right, but the pools read
+as soft decals, some were rings, the tint was more vivid than open sun beside
+it, there were no small specks, nothing tied the pools to the crown, and from
+a flying camera at midday almost nothing showed.
+
+- Pools take a hard one-texel edge (`step`, not a 0.06-wide ramp that
+  posterised into a soft gradient), two brightness levels, and a third, finer
+  octave for a lumpy outline. Leaf cuts are smaller (0.14 to 0.28 cell) so they
+  cut edges rather than punching rings.
+- The leaf profile is no longer clamped at its tips. Clamped, it had zero width
+  past them and its soft edge drew a faint line along each leaf's axis to the
+  edge of the search, through every pool (now an interaction check).
+- `VV_TERRAIN_FLECK_SATURATION` is 1: warmth only, same luminance.
+- Plants take the sun on either face with a falloff to about half edge-on.
+- "Thin crown" is mostly game data now: 0.45 from fewer leaf blocks on the
+  leaf map along the sun ray, 0.5 from vanilla's shadow already broken here
+  (the D7 ring count, measured once per fragment and shared with the shade),
+  0.35 from noise. A constant scatter of small faint gaps runs under all of it.
+- The fleck distance is horizontal (the leaf map's measure, ending at 26), plus
+  a straight-line limit of 40 that finishes before the resolve's 44-block exit.
+- The leaf map searches 20 blocks either side of each column's rain-map height
+  instead of a window around the player's Y, which missed the whole canopy
+  from above. Where the rain map reads 0 it falls back to the old window. Up
+  as well as down, in case a leaf lets rain through.
+- Audit: canopy shade now fades with overcast as the flecks do. It is a shadow
+  of the direct sun; without this an overcast forest took the weather's
+  darkening and a full canopy shade on top of it, the stacking VisualBudget
+  exists to prevent. The shade stays out of the budget itself: it is local and
+  bounded by its cap, like a shadow, not a scene-wide wash.
+
+Cost: about 70 hashes, up to 40 uniform-array reads and the 12 shadow taps the
+shade already paid, per shadowed receiver within 26 blocks horizontally; the
+scan reads up to 80 blocks per cell. Not measured.
+
+**Third amendment, 2026-11-23 (in-game audit).** The fourth pattern was played
+in the player's world at noon and with a low sun.
+
+- Under a low sun the flecks came out as squares and stripes. The leaf map was
+  read with a hard per-cell height test, and the march returned at the first
+  cell with any leaves, so each 2-block cell switched on or off as a block. The
+  read is now continuous: smoothstepped bilinear weights, a soft crown height
+  band, a soft "above the floor" test, the strongest density along the whole
+  march rather than the first, and a fade before the march's reach. Smoke
+  checked for continuity, with mutations for both causes.
+- Pools crowded the rim of vanilla's own shadow, because broken shade from the
+  shadow map carried most of the placement. Thin crown from the leaf map now
+  leads it.
+- Debug view 64 drew flecks on the leaves themselves. It now shows only
+  surfaces that can receive canopy light.
+
+Seen in game before the fix, and again after it with a low sun: irregular pools with texel edges, no squares.
+
+**Fourth amendment, 2026-11-23 (fifth pattern, after an art-director audit).**
+The audit of the fourth pattern's screenshots asked for eighteen changes; all
+are in this pattern. Pools are now metaball kernels (`max(0, 1 - x^2)^2` summed
+over a 5x5 cell search, thresholded at 0.5) rather than a noise outline, because
+a kernel centred on a cell can be stretched along the sun azimuth where a noise
+domain anchored to the world would slide as the sun moves. Gap sizes are cubed
+uniform draws, so there are many small pools and a few large ones; the nearer
+3x3 cells add leaf cuts and faint specks. A half-bright rim
+(`soft = rise * 0.012`, clamped 0.04..0.3) stands in for the penumbra a higher
+crown throws. Flutter scales with `vv_sceneWind`, so calm air holds still. The
+wash is gone: lit patches take a hue (warm by day, golden near the horizon,
+cool by moonlight) at preserved luminance, and the relight cap still bounds
+them at vanilla's sunlit level. A faint warm bounce (at most 0.07) lifts the
+ground round a pool. Plants take double gain. Canopy shade is graded by crown
+thickness (0.6 under a thin crown). A clear-sky gate closes flecks between 45%
+and 65% cover, read from the fused cover of D53. Moonlight flecks reuse the
+same field at most 0.45 of a sunfleck, behind their own slider. All of it is
+invented pattern on real placement (DATA GAP, as D50), checked by evaluating the
+shipped GLSL, and not yet seen in game. Rejected: a second leaf-map read per
+kernel (the 5x5 loop already costs 25 hashes per fragment, not measured).
+
+**Fifth amendment, same day (sixth pattern).** The player's v5 screenshot read
+as evenly spread coins of one size, with notches, soft edges and flat shade.
+Gaps now open only where a cluster mask (the existing 8.192-block noise) is
+high, so pools gather in groups with plain shade between them, and grow up to
+1.4x inside a group until they merge. The threshold wanders with a 0.512-block
+lobe noise and a per-texel jitter (`VV_TERRAIN_FLECK_RAGGED` 0.36), so the
+outline is ragged and stepped rather than a circle. The half-lit rim and the
+leaf bites are removed: on the ground they read as blur and as notches. Canopy
+shade now grades from 0.3 under a thin crown to 1 under a closed one. Radii
+were reduced so the merged reach (0.546 cell / min stretch) still fits the 5x5
+search. Seen in game 2026-11-23: ragged, texel-stepped pools, but still
+spread fairly evenly.
+
+**Sixth amendment, same day (seventh pattern, v7).** The player's reference
+photographs (two tree-lined roads, an autumn road, three backlit forests)
+were compared with the v5 and v6 screenshots. Under a real crown light and
+shade weave into ONE pattern whose lit share follows the crown: about half
+under a thin crown with the shade broken into islands, shade with small holes
+under a closed one, a linked network between, streaked along a low sun. v6
+lit 3-5% of the floor everywhere as separate pools on solid shade, and its
+tint read as yellow discs. Every pattern so far placed positive features and
+tuned their number; none could produce a network, because a network is what a
+threshold on a continuous field does at half coverage.
+
+Decision: the pattern is one continuous field (three octaves of value noise,
+1 / 0.5 / 0.25 block, under a 0.4-block warp that hides the lattice's axes),
+cut at `1 - coverage`, where coverage runs 0.04..0.55 with how thin the crown
+is (leaf map along the sun ray, vanilla's broken shadow, a regional noise).
+The summed noise is expanded (`VV_TERRAIN_FLECK_CONTRAST`) so the lit share
+equals the coverage asked for; a smoke check evaluates the shipped cut over a
+stand-in of the sum and fails if they part by more than 0.07. The coarse
+octaves are averaged along the sun azimuth over a reach that grows as the sun
+drops, which streaks the field without breaking the 4096-block tiling a
+rotated lattice would. One hard level; colour is plain sunlight. The cell
+search, kernels, cluster mask, specks and leaf bites are removed. Still an
+invented pattern on real placement (DATA GAP, as D50). Rejected: rotating the
+noise lattice to the sun (does not tile the world wrap); a stretched
+coordinate anchored near the player (the pattern jumps when the anchor moves).
+Seen in game the same day: linked shapes at noon, streaks toward a low sun.
+
+## D55. Shaft sources line the holes in the leaves
+
+**Context.** Vanilla's terrain writes zero to the god-ray channel; its beams
+come from the sky seen through the holes cut in leaf textures, which is why
+real shafts read as a comb of thin rays. v5 and v6 marked whole leaf faces at
+thin leaf-map cells. Broad bright patches in that channel fill the dark gaps
+between rays, and in game at 16:30 the result was one soft wedge.
+
+**Decision.** A leaf stays at zero in the channel except on texels that line a
+hole: `vvTerrainLeafHoleRim` reads the four neighbouring texels of vanilla's
+own `terrainTex` at vanilla's `uv` (base level) and counts the cut-away ones.
+The other gates stay (thin leaf-map cell, facing the sun, humid air, clear
+sky, cap 0.35) and the test fades out by 32 blocks, where a texel is under a
+pixel. It uses no sampler of ours, so no texture unit moves. It depends on the
+game's see-through leaves; with opaque leaves there are no holes and no
+sources, as in vanilla. Rejected: patching the sky shader to brighten the
+gaps (the sky is not patched, see the Weather README); darkening leaves below
+zero (the channel is already zero there). Seen in game: sources sit on hole edges and the soft wedge is gone; no distinct beams yet.
+
+**Amendment (v8).** Sources everywhere along a thin crown blurred into a haze.
+A beam is the air between a gap and the fleck it lands on, so a leaf now marks
+the channel only where the sunfleck field is open at the canopy-plane point
+its sun ray crosses - the same `src` the flecks below are projected from. Each
+beam lands on a lit patch, and beams come in the flecks' groups. Placement
+reads the leaf map's cell density (vanilla's broken shadow is unknown at a
+leaf), so beams are a subset of patches. Dust motes thicken with the same
+humid-air term the beams use. Not yet seen in game.
+
+**Amendment (v8): the relight includes vanilla's normal shade.** Vanilla lights
+a fragment at min(shadow, nb), so a sunlit plant sits at its per-vertex nb.
+The relight divided by the shadow alone and lifted plants with low nb past
+their sunlit level (v7 screenshots: flecks brighter than open grass, read as
+yellow). The call sites now pass nb in `vv_vanillaNormalShade` and the relight
+restores exactly nb. Canopy shade also deepens toward a low sun
+(`VV_TERRAIN_DAPPLE_LOW_SUN` 1.6, under the existing caps), so a golden-hour
+floor is dark enough for flecks and beams to read.
+
+**Amendment (v9): canopy shade is skylit, not green.** (Belongs to D51's
+pattern; recorded here beside the v8 relight it completes.) The v8 screenshot
+at 13:00 showed a linked, organic fleck field whose lit patches still read
+olive-yellow over murky green shade, while the session log showed a near
+neutral grade. Vanilla's shadow halves the sunlit colour without changing its
+hue, and `vvTerrainApplyCanopy` pushed that green (`VV_TERRAIN_DAPPLE_GREEN`
+0.055). A fleck was then the shade's own hue made brighter, which reads as
+paint, and on a yellow autumn albedo as yellow paint. Shade under a canopy is
+lit by the sky: cooler and less saturated than the sunlit floor, which is what
+lets a fleck read as light. The shaded fraction now moves toward its own
+luminance by `canopy * VV_TERRAIN_DAPPLE_MUTE` (0.8, at most 0.5) and is cooled
+by `canopy * VV_TERRAIN_DAPPLE_SKY` (0.10), then clamped to vanilla's colour so
+no channel is brightened. Both vanish with the canopy term, so the open floor,
+an overcast forest and a zero slider are unchanged. The legacy `pseudopbr`
+path keeps its green; it is disabled. Interaction-checked on an autumn-olive
+colour and a blue-free yellow, four mutations. Seen in game: the shade reads
+right.
+
+**Amendment (v10): brightness variance, world-anchored cut, beams and bloom.**
+(D51 eighth amendment, recorded here with the v8/v9 notes.) The v9 test found
+three faults. Every spot was one flat brightness, so the field read as
+camouflage blotches rather than dappled light. The spots jittered while
+flying. No rays were visible.
+
+*Brightness.* A gap's image is as bright as the gap is wide, so a patch that
+only just clears the cut is a dim dapple (`VV_TERRAIN_FLECK_DIM` 0.3) and full
+sun is reached `CORE` above the cut: 0.4 normally, 0.1 inside beam groups (a
+4.096-block noise, 1000 cells per world wrap). The ramp is stepped into
+`LEVELS` 3 flat tones, keeping the hard pixel-art edge; a soft edge is the v5
+blur defect. Shafts land only over the bright patches.
+
+*Jitter.* A hard cut turns any change in its inputs into popping edges. Three
+inputs moved with the camera: vanilla's broken-shadow evidence (the shadow
+map is fitted around the camera), the leaf-map density's edge fade (measured
+from the camera), and the canopy plane, which eased toward every new mean as
+cells entered the map. The cut now reads the density before the fade
+(`vvTerrainCanopyOverhead` z); the fade stays on the gate, where it is a
+smooth multiplier. The evidence no longer enters the field. The plane holds
+until the mean moves `CanopyMap.PlaneHold` (3 blocks), then follows the
+rounded mean. Accepted cost: the crown's thinness now comes from the leaf map
+alone, which resolves 2-block cells, not individual leaf gaps.
+
+*Beams.* Sources are the texels lining leaf holes, a sparse lace the god-ray
+pass averages with dark leaf around it, so the v8 level never survived the
+blur. A gain of 2.5 under a cap of 0.8 (`VV_TERRAIN_SHAFT_GAIN`,
+`VV_TERRAIN_SHAFT_MAX`); a whole-face source would wash the forest out at
+that level, a rim texel cannot. A dry noon keeps 0.6 of the humid strength.
+
+*Bloom.* The player asked for a very subtle glow that scales with the shading.
+`vvTerrainCanopyResolve` sets `vv_fleckGlow` = fleck x local x contrast x
+`VV_TERRAIN_FLECK_GLOW` (0.08), contrast being how much darker the shade is
+than the lit colour; both call sites add it to vanilla's glow channel through
+`1 - fogAmount`. It rides the sunflecks slider rather than a new one, so zero
+flecks means zero glow. No pass, no target, no sampler.
+
+Interaction-checked (brightness distribution over the stand-in field, the
+bloom's scaling, the beam landing, the plane hold), nine mutations. Not yet
+seen in game.
+
+## D53. Cloud cover: the cloud tiles outrank Ambient.BlendedCloudDensity
+
+**Context.** In the 2026-11-23 in-game audit, a storm with every cloud tile
+covered reported `Ambient.BlendedCloudDensity` as 0 throughout. Every consumer of
+`EnvironmentState.CloudCover` therefore saw clear sky: sunflecks drew under the
+storm and the overcast terms never engaged.
+
+**Decision.** `CloudTileReader` already reads the array the clouds are drawn
+from. It now computes the window's mean cover, and `WeatherSubsystem` reports it
+to `EnvironmentTracker.ReportCloudField` after each read. The tracker takes
+`max(ambient, tiles)` while the tile reading is under ten seconds old, and the
+ambient figure alone otherwise, so a Weather subsystem switched off falls back
+to the game's own figure rather than to a stale one. It logs once when the
+tiles disagree with the ambient figure by more than 0.3.
+
+**Consequences.** Weather writes a fact into the tracker, so data now flows
+Weather -> tracker -> every subsystem. The tracker is still the one place the
+mod asks the game: the tile array is game data the Weather subsystem already
+holds, not a second query. The mean is over the reader's window around the
+player, not the sky overhead. Not yet seen in game; cost is one pass over an
+array already read.
+
+**Amendment, same day (seen in game, superseded in part).** The tile mean
+cannot tell weathers apart: it read 0.745 under the earlier storm and 0.745
+again at noon under a 70% cirrocumulus sky with the sun casting shadows, where
+it hid every sunfleck behind the clear-sky gate. The tiles say where cloud is,
+not how much sun gets through. Cover is now `max(ambient, precipitation)`:
+falling rain does not come from a clear sky, and a dry overcast without rain is
+an accepted DATA GAP (flecks may draw under a dry grey sky). `ReportCloudField`
+stays, and the tracker logs once when the tiles disagree with the cover by more
+than 0.3, so a future reader can see the two numbers side by side.
+
+## D54. Cloud shadows from tile contrast, not tile value
+
+**Context.** `CloudTileReader` normalises tile thickness and opaqueness against
+the thickest tile recently seen, because their absolute units are unknown. A
+sky whose tiles are all alike therefore reads as solid cloud. In game on
+2026-11-23, a clear noon with sun shadows read every tile near 0.86 and the
+cloud shadows (the player's strength 1) put the whole world in shade; turning
+Weather response off brought the sun back.
+
+**Decision.** After the Beer-Lambert step, each tile keeps only the part that
+stands out from the window's mean: `t * clamp((t - mean) / max(peak - mean,
+0.3), 0, 1)`. A uniform field - clear, hazy or a solid storm deck - casts no
+cloud shadow; a broken sky keeps its clouds at full value. A shadow is an
+edge, and a relative measure can only say where the edges are.
+
+**Consequences.** Thin cloud that evenly dims the sun casts no mod shadow; that
+is left to vanilla's lighting (DATA GAP). A sky mostly covered with a few
+thicker tiles casts shadow only under those tiles. Checked by calling
+`ApplyFieldContrast` from the smoke suite, with two mutations. Not yet seen in
+game.
+
+## D52. A cloud shadow is a sun shadow: floored at vanilla's, never multiplied
+
+**Context.** `getBrightnessFromShadowMap` returned vanilla's brightness times
+`1 - coverage * strength`. Nothing bounded the product. In the 2026-11-23 audit,
+with the player's cloud shadow slider at 1 and a storm reporting 87% of tiles
+covered, a forest at noon kept about 13% of its light and was black. Switching
+Weather response off restored it, and switching Surface materials off did not.
+The multiply also dimmed block light, which vanilla adds back after its sun
+shadow and which no cloud can reach.
+
+**Decision.** A cloud occludes the sun as a tree does, so it is built the way
+vanilla builds its own shadowed brightness. That is
+`1 - occlusion * shadowIntensity * depth + blockBrightness`, where depth is 1
+with both shadow maps and 0.5 with one. It is then taken as a `min` with
+vanilla's value, never multiplied. A full cloud is exactly as dark as full sun
+shade, shade already present loses nothing more, and torchlight is untouched.
+`shadowIntensity` is vanilla's own, so the shadow weakens wherever the game
+weakens its sun shadows.
+
+**Consequences.** Cloud shadows are shallower than before at high strength, and
+cannot exceed what a tree's shade looks like. Under heavy overcast the whole
+world can sit at full-shade level; that is vanilla's shade, not darker. The
+invariant I20 and three mutations pin the floor, the min and the block light.
+Seen in game after the fix: the same storm at noon with every tile covered
+leaves the forest dim but readable. Torchlight under cloud was not checked in
+game.
+
+## D56. Sun shafts are light in the air, marched in the terrain shader
+
+**Context.** Every shaft version so far fed vanilla's god-ray channel. That
+pass blurs the channel radially toward the sun's position ON SCREEN, so it
+can only draw rays while the sun is on or near the screen. In game at v10 the
+rays showed only at extreme sun angles - a low sun straight ahead - and not at
+all at midday, when the sun is overhead and out of view. The player's
+reference photographs show the opposite: slanted beams seen from the side,
+across a forest, at any sun height. Those are light scattered toward the eye
+by the air inside each beam. No amount of tuning the god-ray source makes a
+screen-space radial blur draw a beam whose source is off screen.
+
+**Decision.** `vvTerrainBeamInscatter` integrates the scattered light along
+the view ray between the camera and each terrain fragment, in the terrain
+shader itself (twelve samples over at most 26 blocks, offset per pixel by
+interleaved gradient noise). A point in the air is in a beam exactly when the
+sun ray through it meets the canopy plane where the fleck field is BRIGHT -
+the same field, projection and bright-patch test as the flecks (v10) and the
+leaf-rim sources (D55), so every beam starts at a gap in the crown and ends on
+a bright fleck, and there is no second pattern to drift out of step. Air above
+the canopy plane, outside the leaf map's reach or under no leaves takes none.
+Forward scattering: 0.45 of the full strength seen from the side, 1 looking
+into the sun. Scaled by sun presence, the clear-sky gate, humid air (0.6 dry
+to 1 wet, at a low sun or in fog) and the visibility dampen, and by the
+existing sun shafts slider (the default 0.45 gives the stated strength); zero
+means vanilla. Capped at 0.3 of the sun's colour, which warms toward golden
+hour. Added to the colour at both terrain call sites through `1 - fogAmount`.
+Debug view 68 shows it.
+
+The god-ray route is kept: looking toward the sun it still draws the comb of
+fine rays through the leaf holes, which a twelve-sample march cannot resolve.
+
+**Consequences.** Beams in front of open sky are not drawn, because the sky is
+not a terrain fragment (DATA GAP). Under a moving camera the per-pixel sample
+offset can show as fine grain inside a beam. Cost: up to twelve fleck-field
+evaluations per terrain fragment where leaves are overhead, none elsewhere;
+not measured. No pass, no render target, no sampler, no uniform.
+Interaction-checked (shared projection and bright-patch test, side and
+toward-sun strength, the cap, slider zero, both call sites), six mutations.
+Not yet seen in game.
+
+**Amendment (v12): cost and default strength.** In game at v11 the beams
+looked right at the slider's maximum and were hard to see at the default, and
+looking at them took the game from 60 to about 20 fps. The march evaluated
+the whole fleck field at each of twelve steps - about eleven noise reads,
+some 500 hashes, per terrain fragment - and leaves, alpha-tested and layered,
+run the fragment shader once per surviving layer. Now eight steps over 20
+blocks, each one leaf-map read and at most two noise reads through
+`vvTerrainBeamDensity`: the field's beam-group noise and its coarse octave,
+same grids and keys, cut high, so a beam still stands on the heart of a
+bright fleck while the field's warp, streak taps and fine octave (fractions
+of a block on the outline) are left out. Outside beam groups a step costs one
+read. About an eighth of v11's work per fragment; not measured. Scatter
+raised from 0.06 to 0.2 per block of full beam, cap 0.32, so the default
+reads without maxing the slider. Three more mutations.
+
+**Amendment (v13): beams only in shaded air.** Ten v12 screenshots at many
+angles and times: under a maple at midday the floor and the beams read well,
+but elsewhere the beams were inconsistent. They stood over open scrub in full
+sun. At a low sun they ran through whole crowns as near-horizontal slabs, and
+a fine radial hatching covered the view near the sun. Cost was about 15 fps
+while looking at beams. Causes: the march asked only whether the canopy plane
+above a point had a gap, never whether the point itself was in shade or
+whether another crown stood between it and the gap; and the leaf-rim god-ray
+sources, raised to gain 2.5 under a 0.8 cap in v10, were blurred into
+hatching. A point now carries a beam only when its own column has a crown
+(`VV_TERRAIN_BEAM_CROWN` 0.3) and it sits below that crown's lowest leaf,
+and when the sun ray halfway up to the canopy plane does not pass through
+another crown (`VV_TERRAIN_BEAM_BLOCK` 0.45, over the crown's lowest leaf to
+its estimated top). The march returns before any sample when no crown stands
+at the camera, the middle or the end of the marched span, which also makes
+open country free. The rim sources are back to gain 1 under a cap of 0.4.
+Accepted limits: the leaf map resolves 2-block cells, so shade and blocking
+are cell-coarse; the halfway test is one read and can miss a thin crown
+elsewhere on the ray. Three mutations. Not yet seen in game; cost not
+measured.
+
+The overall yellow cast in the same screenshots is not the colour grade: the
+session log shows it neutral (temperature 0.01, tint 1/1/1). Not chased here.
+
+## D57. The v14 forest pass builds on what exists, and says what is invented
+
+**Context.** The player asked for eleven forest and weather effects in one
+pass: leaf translucency, backlit rim light, wet foliage with drips, forest
+haze, ground mist, pollen and fireflies, travelling gusts, flutter linked to
+the flecks, plant base shade, damp and moss, and a seasonal light tint - on
+top of the existing foliage lighting and the work-in-progress atmosphere, and
+without overlapping either. The audit found four of them already partly built:
+leaf translucency (`vvTerrainFoliageTransmission`), wet foliage (wet-leaf
+darkening and the wet cuticle), ground haze (`AmbientBridge`'s height fog)
+and the fleck shimmer (`vvTerrainFleckShimmer`).
+
+**Decision.** Extend those four rather than add a second copy, and give each
+new effect its own slider and zero-means-vanilla uniform:
+
+- Translucency keeps its lobe and gains a wide-cone diffuse share; the
+  validation also found the root-to-tip gradient was dead for every
+  single-block plant (`windData / 7` is 0) and fixed it from vanilla's own bend
+  height.
+- Rim light and the shaft sources read the hole rim once (`vvTerrainLeafRim`).
+- Wet foliage is unchanged; drips are new particles.
+- Ground mist rides the ground haze's one vanilla plane (`AmbientBridge.Combine`)
+  instead of a shader fog, because vanilla's height fog already reaches every
+  program including the sky and water, and a second plane does not exist.
+- Gusts feed the existing fleck shimmer rather than a second flutter.
+- Forest haze is atmosphere feature 12, a medium summed into the existing
+  extinction under the shared ceiling, with only its own share tinted.
+- Seasonal light is one more GradeStack influence; autumn deliberately does
+  not warm, because the game's colormaps already paint it.
+- Plant base shade and damp are new multipliers that can only darken.
+
+Each new value that the game does not supply is labelled where it is made:
+gust placement is invented (FOUNDATION ONLY), damp and moss placement is
+inferred from shelter and rainfall (DATA GAP), hollows are the terrain read
+near the player (DATA GAP), and pollen and fireflies do not exist in the
+game (DATA GAP). Whether there is wind, which way, how wet, how warm, which
+season and where the leaves and plants are, are all the game's.
+
+**Consequences.** Nine new sliders (gusts, plant base shade, damp, drips,
+pollen, fireflies, forest haze, ground mist, season) and four debug views
+(69 gusts, 70 damp, 71 plant base, 72 rim). New per-fragment cost is small
+and gated: two noise reads for gusts on plants and in the flecks, four
+texture reads for the rim on backlit leaves within 24 blocks (already paid
+by the shafts there), one leaf-map and one noise read for damp, a few
+multiplies for forest haze; none of it measured. No new sampler, pass,
+target or texture unit. The leaf map now also scans while forest haze, damp
+or drips are on. Gusts do not bend anything: vanilla's vertex sway is left
+alone, which keeps the vertex shader unpatched. One mist plane means the
+mist lies in one hollow, the player's. Nothing here has been seen in game.
+
+## D58. Falling leaves are the game's particles, coloured by the tree, gusted by the shader's field
+
+**Context.** v15 asked for leaves falling from trees, using the source tree's
+leaf texture, scaling with wind, time of day and season, from a leaf now and
+then on a still spring day to a flurry in an autumn gust. Vanilla's forest
+trees drop nothing: `BlockLeaves` carries only the `RainDrip` behaviour, and
+the one leaf shedding in the game is the fruit trees' own block entity.
+
+**Decision.** A fourth kind in `ForestLifeSpawner`, not a new system. Where:
+the leaf map's crown underside, the same source the drips use. Colour:
+`Block.GetRandomColor(capi, pos, UP)`, which is what vanilla's breaking
+particles call - a texel of the block's own texture with the block's climate
+and season colour maps applied at that position - so a maple's leaves fall in
+the maple's colour for that place and week. Motion: the game's particle wind
+(`WindAffected`) plus a downwind push, with vanilla's random velocity change for
+flutter. Amount: season shed x local wind x a day bias, per try, under a cap.
+
+The local wind is the game's plus the gust at that spot, from `GustField`: a
+CPU port of the shader's `vvTerrainGust`, not a second field. A smoke check
+reads its constants and integer hash back out of the shipped GLSL, so the
+flurry stays under the gust the player sees in the grass.
+
+**Rejected.** A textured leaf (its outline, not just a colour): the game's
+particle API draws solid quads and cubes only, and a textured particle needs
+its own renderer, mesh and shader - a new GL path for a few hundred quads.
+Recorded as possible later work, not done. A shed driven by a vanilla
+leaf-fall field: there is none.
+
+**Consequences.** One slider (`pbr_leaves`), one new pure file
+(`GustField.cs`), three checks and nine mutations. Up to 60 leaf-map lookups
+a second and 160 particles alive at full slider in a gale; not measured.
+DATA GAP: the shape of the shedding year (floor 0.1, autumn 1.0, winter 0.4)
+is this mod's choice; the season, wind, daylight, crowns and colours are the
+game's. Not seen in game.
+
+## D59. Leaf fall follows the date, not the season depth; our fireflies replace the game's
+
+**Context.** First in-game test of D58 on 2 September with wind: no leaves
+seen, only a few coloured specks. Two causes. The shed was built on the
+season depths, which are all 0 at a handover - exactly when the crowns have
+just turned yellow - so it ran at its spring trickle. And 0.14 to 0.24 quads
+draw as a few pixels: the game's quad sizes are not blocks. The same test
+noted that the game already has fireflies, which D57 had recorded as absent.
+
+**Decision.** `EnvironmentState.LeafFall`, from the same calendar reading as
+the depths but continuous across every handover (late summer 0 to 0.25,
+autumn 0.25 to 1, winter 1 to 0, spring 0), drives the shed; leaves draw at
+0.35 to 0.55. Vanilla's fireflies are one `SimpleParticleProperties`
+(`ModSystemAmbientParticles.fireflyParticles`) whose quantity is set once at
+start; `VanillaFireflies` zeroes it while ours are on and puts it back when
+they are off, so the two never draw together and our slider at 0 is vanilla.
+Ours become swarms that flash together in waves, each flash a core in a halo,
+in place of single specks - a different look, not a second copy.
+
+**Rejected.** A Harmony patch on the ambient spawn tick: two float writes on a
+field the game never rewrites do the same with nothing to unpatch.
+
+**Consequences.** Reflection on a VSEssentials internal: a smoke check reads
+the game's own DLL for the type and field, and a failure at runtime is logged
+once and leaves vanilla's fireflies on. Not seen in game.
+
+## D60. Falling leaves get their real shapes, drawn through the game's standard shader
+
+Supersedes the "Rejected: a textured leaf" paragraph of D58.
+
+**Context.** Asked for leaves with the tree's actual leaf shapes, tinted with
+its seasonal colour, rather than coloured squares. The game's particles
+cannot carry a texture. Its leaf textures are greyscale clusters of
+overlapping leaves (64x64 for broadleaves), tinted at draw time by the
+block's climate and season colour maps.
+
+**Decision.**
+- *Shapes:* `LeafSprites` cuts single leaves out of the PNG: a flood fill from
+  a seed texel through opaque texels within 40 grey of the seed, inside a
+  circle of half a cell (12 px on a 64 px texture), wrapping as the texture
+  tiles. The art shades each leaf as one tone against its neighbours, so the
+  fill stops at the leaf's own edge. Best of 60 seeds per sprite: fill near
+  40%, stopped by its own edge rather than the circle, from a light (front,
+  whole) leaf. 16 per texture, one 4x4 sheet, uploaded once.
+- *Colour:* the game's own tinted samples (`Block.GetRandomColor` at the
+  leaf block) over the texture's mean grey, as a per-channel multiplier.
+- *Drawing:* flat two-sided quads through `PreparedStandardShader`, the
+  program block entities use, so the game's lighting, fog, alpha test and
+  render-target outputs apply and the mod ships no GLSL for it.
+- *Motion:* `LeafFlight` on the CPU. The leaf falls at about 0.7 blocks a
+  second, swinging across the wind, and takes up the wind's speed downwind:
+  0.3 b/s in still air, 5 at a gale, by the square of the local wind,
+  including the gust. It tumbles faster when blown. It lands flat on the first
+  non-leaf collision box or floats on liquid, lies 8 s, then shrinks.
+
+**Rejected.**
+- An instanced draw with a custom shader. It is cheaper per leaf, but needs
+  mod GLSL for lighting, fog and every render target. At 160 leaves, 160
+  draws through the game's own program are the safer cost.
+- Windows of the texture without a flood fill. They come out as square
+  fragments of a cluster, not leaves.
+
+**Consequences.**
+- *Cost:* up to 160 `RenderMesh` calls per frame and one light lookup per leaf
+  ten times a second. One small texture per leaf texture seen. Not measured.
+- *Fallback:* a texture that yields no leaf, or any render failure, falls back
+  to coloured particles, and the log says so once.
+- *Unknown:* that the standard shader accepts the xyz/uv/rgba/flags layout used
+  here, and the channel order of the tint. A wrong order would show as blue or
+  purple autumn leaves.
+- *Status:* seen working in game (2026-11-24, "leaves work and look good"),
+  which settles both unknowns above. Its one-draw-per-leaf drawing is
+  superseded by D61.
+
+## D61. Leaves are batched, lie on the ground as litter, and ride water currents
+
+Supersedes the *Drawing* point and the cost of D60.
+
+**Context.** D60's leaves were seen working, but only as an occasional tumble,
+and the ask was dozens on screen in heavy weather, litter that piles up and
+decays at varied rates (only if it does not chug the game), and leaves that
+float and move with the current.
+
+**Decision.**
+- *Batching:* each leaf texture's sheet owns two preallocated meshes, one for
+  flying leaves (400 quads) and one for litter (1500), uploaded once. Flying
+  leaves are rewritten on the CPU every frame (four corners from
+  `LeafFlight.Corners`, light and tint in the vertex colour, divided by
+  `LeafRenderer.TintScale` and restored by the shader's `RgbaTint`) and sent
+  with one `UpdateMesh`; unused quads are zeroed. So the draw count is two per
+  leaf texture seen, however many leaves there are.
+- *More leaves:* 36 leaf-map tries a tick (was 12), cap 400 textured
+  (`LeafRenderer.MaxFlying`; the coloured fallback keeps its 160), and a storm
+  term: from a 0.45 to a 0.9 local wind the shed rises to at least 0.4 of the
+  autumn peak in any season, because storms tear green leaves.
+- *Litter:* a landed leaf stays as a quad in the litter mesh, which is relative
+  to a held origin and rebuilt at most twice a second, only when it changed.
+  Each lies for an exponential draw (mean 240 s on ground, 90 s on water,
+  divided by 1 + 2 x rain; clamped 20 to 900 s), so most go within minutes and
+  a few stay long. Leaves on the same block stack by 0.004 each, up to 24, so a
+  pile builds without z-fighting. Forty litter leaves a frame are checked in
+  turn: decayed ones shrink away, unsupported ones fall again, a strong gust
+  (local wind over 0.7) lifts one now and then, and any beyond 64 blocks is
+  dropped. Cap 1500; when it is full a landing leaf fades instead.
+- *Water:* a leaf that meets liquid floats at its surface and is carried by the
+  game's own current there (`IBlockFlowing.GetPushVector`, else the block's
+  `PushVector`), at 0.9 b/s along it; on still water the wind nudges it. It
+  strands at the bank and becomes litter there.
+
+**Rejected.**
+- Litter as blocks or block decals. Writing to chunks is server state and
+  rebuilds chunk meshes; a client-side mesh costs neither.
+- Persisting litter across sessions. Session-only keeps it free of save data
+  and of a stale pile at a place the player has not seen for days.
+- Instancing with mod GLSL: still not needed at these counts.
+
+**Consequences.**
+- *Cost:* per frame, up to 400 x 4 vertices written and uploaded per active
+  sheet, two draws per sheet, and 40 litter checks (a block read each). Litter
+  re-upload at most 2/s. Not measured.
+- *Limits:* litter is session-only and does not survive a world reload; it does
+  not follow a block broken under it until its turn in the round robin.
+- *Status:* L2, not seen in game.
+
+## D62. Reflections stage two: the pixel reflection and the march on the modular path
+
+Extends D48 (stage one, the bridge) and D13 (reflection through the existing
+BRDF). Supersedes the "views 41 and 42 only" scope of `pbrterrainreflect`.
+
+**Context.** View 41 was seen in game on 2026-11-22: beneath the legacy blue
+depth tint, the capture reaching terrain was the world, so the bridge holds.
+The modular path's ambient highlight was still the flat fog colour split into
+an upper and lower half, so no surface reflected anything, and the Studio
+marked both reflection controls "not in this build".
+
+**Decision.**
+- *Pixel reflection in the material path, no sampler.* `vvTerrainPixelReflection`
+  ports the legacy method: the ray leaves the texel centre (one colour per
+  texel by construction), the direction is quantised into cells (16 smooth,
+  3 rough), the analytic image is sky / lifted horizon / dim ground with the
+  sun's half of the sky brighter, and the result is the IMAGE handed to the
+  ambient specular, whose Fresnel, roughness fade, specular occlusion and
+  slider still decide how much shows. At `pbr_pixelreflect` 0 it returns the
+  exact flat environment the path drew before.
+- *The march stays in `pbrterrainreflect`,* which owns the sampler, declared
+  directly above `main` as stage one requires. The material path, which comes
+  first in the file, reaches it through a prototype guarded by
+  `VV_TERRAIN_SCENE_CAPTURE`, and only that group inserts the define (on the
+  line after the material snippet's `vintagevisuals-hook` marker). A rollback of
+  the capture group therefore removes the define, the march and the sampler
+  together, and the material path compiles with no reference to the capture.
+- *A budget, which legacy never had.* The march runs only where the reflection's
+  own weight (strength x Fresnel x roughness fade x specular occlusion x the
+  ambient slider, as luminance) is at least 0.025 and the texel is within 48
+  blocks, fading from 32. That keeps it off grass, soil, leaves and dry rough
+  stone, which are most of the screen; wet stone, metal and polished blocks
+  take it. At most 40 steps (legacy 96) plus 5 bisection passes; a long grazing
+  ray walks coarser than the 2-texel stride instead of paying for every texel.
+  All capture reads in the loop are `textureLod`.
+- *Kept from legacy, each a finding from the game:* screen-uniform stepping,
+  axial depth from the projection's w, 1/w interpolation, bisection before the
+  thickness test (0.5 blocks), edge / thickness / camera-facing fades, the
+  luminance ceiling on the captured colour (2x the environment, hue kept) and
+  the feedback guard against a floor reflecting its own brightened copy.
+- *Debug views* 32, 34, 35, 36, 37, 39 and 48 return on the modular path; 39
+  and 48 add a dark blue for "skipped, not worth a march".
+
+**Rejected.**
+- Declaring the capture sampler at the material snippet to avoid the
+  prototype. Stage one's invariant is that the sampler sits below every vanilla
+  sampler and in its own group; the prototype costs nothing and keeps it.
+- Porting the world-volume fallback now. It needs a second auxiliary sampler,
+  is unprofiled, and was never seen working; the analytic sky is the honest
+  fallback until the scene reflection has been seen.
+
+**Not measured.** Cost in game. Expected: the analytic part is a few ALU per
+opaque fragment; the march is bounded by the gate. With Scene reflections on,
+the capture still copies one frame per frame.
+
+## D63. Terrain metals keep a body colour; walls take less canopy shade
+
+**Context.** First in-game look at the D62 build (2026-11-24): a placed gold
+metal block rendered with a near-black top and blotchy gold/black sides, and
+the face of a trunk under its own crown rendered near black. Neither came from
+the reflection itself. The modular path zeroed a metal's diffuse, leaving its
+whole body to the ambient highlight, which the roughness fade (about 0.28 at
+the player's roughness) and the ambient slider (0.3) cut to a few percent. And
+the canopy shade darkened every receiver up to its 0.85 cap, so a trunk, which
+always stands under the densest part of its own crown, lost 85% of a colour
+vanilla had already darkened for facing away from the sun.
+
+**Decision.**
+- A metal keeps `mix(0.55, 0.85, roughness)` of vanilla's lit colour as its
+  body: the lit colour is the texture's albedo under the scene's light, and a
+  metal's albedo is its reflectance. A polished metal keeps less because its
+  reflection carries more. Dielectrics are unchanged.
+- A block's vertical faces take at most 0.45 of the canopy cap, rising to the
+  full cap on a face pointing up. Plants keep their own cap.
+
+**Not measured, not seen.** Both are L2 until the same blocks are looked at
+again.
+
+## D64. Torch light drives terrain PBR; rain follows each texture's relief
+
+**Context.** Asked for (2026-11-24): block light from torches and the like
+should drive the PBR realistically, and rain should pool in the divots of top
+faces and stream down the channels of side faces.
+
+**Decision - block light.**
+- Terrain's block-light highlight now takes its direction from the shared
+  core's `vvBlockLightDirection` (the surface gradient of vanilla's own block
+  light across the face), as creatures and particles already did. It was a
+  fixed nudge of the light colour upward, so every glint sat in the same place.
+  The `Block light` and `Block light direction` sliders now reach terrain. The
+  direction is taken before any early return because it uses derivatives.
+- The pixel reflection's luminance ceiling follows the brighter of the sky
+  colour and the local block light. Against the sky alone, a torch reflected in
+  a wet cave floor was capped to near black.
+
+**Decision - water in crevices** (`PseudoPBR.CreviceWater`, `pbr_crevicewater`,
+`vv_pbrCreviceWater`, default 0.8; plus `vv_weatherRain`, the falling rain as a
+fact).
+- Reads the second atlas's height channel, which had no consumer.
+- Top faces (normal y > 0.7): water fills texels below a level of 0.46 x the
+  wetness, so joints and pits fill first and a soaked surface floods; pooled
+  texels are fully wet, flattened to the face normal, and are the only place
+  ripples land. Texels above the level keep 0.55 of the film at full slider.
+- Side faces (|normal y| < 0.3), only while rain falls: a texel lower than its
+  left and right neighbours and not lower than the ones above and below it is
+  a channel; drops step down it a whole texel at a time, each column on its
+  own offset and the block's seed. The down direction in texture space comes
+  from screen derivatives, so it holds however the texture is rotated.
+- Not on plants, beyond the detail distance, without the second atlas, or
+  when dry. 0 is the even film from before. DATA GAP: the game has no water on
+  block faces; where the low texels are is the texture's, the rest is ours.
+
+**Cost, not measured.** Block light: a few ALU and derivatives per opaque
+fragment. Crevices: none on a dry world; on a wet top face no extra read; on a
+wall in rain four reads of the second atlas.
+
+## D65. Crevice water must read as water; torchlight shades the relief
+
+**Context.** In game after D64 (2026-11-24, rain, sliders at maximum): "not
+seeing much of a pronounced effect", and no way to tell whether torch light
+was shading the per-pixel normals. The player's Wetness view showed top faces
+almost uniformly white with grey specks, walls near black, and the crevice
+occlusion view nearly flat. Three causes, each from D64's own numbers:
+- The pool level was ABSOLUTE (0.46 x wetness) on a height that the atlas
+  normalises to each texture's own range, so on most textures it flooded close
+  to half the face, and the 0.55 film left on the rest gave pools nothing to
+  stand against.
+- Pooled texels kept their crevice's baked occlusion, and specular occlusion
+  then took the reflection away from exactly the texels holding water.
+- Walls streamed only in strict grooves, scaled by the wall's own wetness
+  (a quarter of a top face's), so streams were rare and faint.
+- Vanilla lights a face with one block-light value per vertex, and D64 shaded
+  the per-pixel normal only in the torch HIGHLIGHT, a narrow lobe that rough
+  stone barely shows. The diffuse relief came from the sun term alone, which is
+  absent at night and underground.
+
+**Decision - pools.** Water collects where the texture is LOCALLY low: a texel
+below the mean of both neighbours on either axis by 0.03 starts to hold water
+and is full at 0.10, once the ground is a little wet (so a mortar joint, low
+across and level along, fills as well as a pit); plus the texture's lowest
+band, up to 0.24 x wetness. The rest of the face keeps 0.30 of the film. A
+pooled texel's occlusion is lifted (the water surface sits above the crevice),
+its roughness goes to the minimum and its specular to at least 0.8, and its
+diffuse darkens a further 0.62 with a slight cool lean. Four second-atlas reads
+on a wet top face (none before).
+
+**Decision - streams.** Channels are judged more loosely (open along the fall
+line up to 0.04-0.12 of a rise); the texture's lowest texels on a wall are
+seams that stay wet while it rains; and about 30% of the columns of an open
+face carry a rivulet of drops with no groove to follow. Gated on the sky
+exposure and the falling rain rather than the wall's own wetness. Running
+water gets the same mirror treatment as a pool.
+
+**Decision - torchlight relief.** `vvTerrainBlockRelief` adds, in the torch's
+own light on the texture's colour, the change in N.L between the texel's own
+normal and the flat face toward the recovered block-light direction. Texels
+tilted toward the torch brighten, texels tilted away darken, a flat texel is
+untouched, and the result is bounded to 0.6 of vanilla's lit colour. It rides
+`vv_pbrBlockLight` (clamped to 1 for this term), so 0 is still no block-light
+response at all; no new slider.
+
+**Debug views.** 73 Water in crevices (grey film, blue pools, cyan streams).
+74 Torchlight on the normals (terrain lit by block light alone, as clay
+through each texel's normal, with the torch highlight on top). The debug view
+maximum is 74.
+
+**Cost, not measured.** Pools: four texture reads on a wet top face within the
+detail distance. Relief: one derivative-based direction per opaque fragment.
+
+## D66. Crevice water asks the game which materials hold water; torch relief is smoothed
+
+**Context.** In game with D65 (2026-11-25, rain, debug views 73 and 74):
+pools lit up as speckle across a whole meadow and across speckled stone, not
+along mortar joints; streams speckled walls and tree trunks; view 74 showed a
+cobble wall beside a torch as black-and-white per-texel noise, and in normal
+rendering the torch made little visible difference.
+
+**Cause.** The second atlas's height is the texture's normalised luminance.
+On grass, soil, sand, wood and speckled stone that field is colour noise, so
+"darker than its neighbours" is true of every speck. D65's absolute low band
+made it worse. For the torch, the direction recovered from a torch mounted on
+the wall tilts up to about 70 degrees off the face, and against a grain-level
+normal N.L swung from 0 to 1 between neighbouring texels.
+
+**Decision - materials.** Ask the game first (the information ladder). The
+second atlas's red byte now carries metalness in its top seven bits and a
+hold-water flag in the lowest (`MaterialAtlas2Builder.PackMetalWater`,
+format version 2, the flag hashed into the cache fingerprint). The flag comes
+from the texture's resolved `EnumBlockMaterial` through
+`MaterialProfiles.HoldsWater`: Stone, Mantle, Ceramic, Brick, Metal, Ore.
+Everything else keeps D64's even wet film. A neutral texel (red 0) is neither
+metal nor water-holding. Metalness loses one bit of precision (127 levels),
+which nothing can see: it is per-region and takes three values in practice.
+
+**Decision - structure.** On a top face, a joint is low against both
+neighbours across it (by 0.06, full at 0.16) and runs on along it (its
+along-neighbours no more than 0.05-0.125 higher); a pit is below all four.
+No absolute height band. On a wall, a channel must be lower than BOTH side
+neighbours (0.03-0.09); the low-seam term is gone; rivulets stay.
+
+**Decision - torch relief.** `vvTerrainTorchShade` lights a softened normal
+(0.6 of the way from flat to the texel's) from a bounded direction (0.6 of
+the way from the face normal to the recovered one), and adds a coherent term
+from the baked occlusion: a texel below its two-texel neighbourhood takes
+0.8 of what it lacks less torchlight, which is what puts joints in shadow and
+stone faces in light. Strength 1.2, still bounded to 0.6 of vanilla's lit
+colour and 0 at `vv_pbrBlockLight` 0. View 74 now shows exactly this term.
+
+**Cost, not measured.** Unchanged from D65: four reads on a wet top face of a
+water-holding block, none on any other material.
+
+## D67 - Crevice structure is measured on the CPU at load, not guessed per texel in the shader
+
+**Context.** D64 to D66 (v17 to v19) each found "crevices" in the fragment
+shader by comparing a texel's height with its four neighbours. In game
+(2026-11-25, seven screenshots of v19) pools and streams were still speckle
+and wall streams were straight vertical lines on random columns. An offline
+audit against the game's own stone textures (`/mnt/project-files/audit/`)
+found the root cause: the only height the mod has is the texture's
+luminance, and on Vintage Story stone that is mostly painted speckle, while a
+real joint is a long connected dark run about two texels wide. No per-texel
+neighbour test can tell the two apart; it takes a view several texels wide.
+
+**Decision.** `src/PseudoPBR/CreviceMaps.cs` computes three maps per
+water-holding texture when the second atlas is built, a port of
+`tools/pbrgen/crevice.py` (where the method was previewed on twelve real
+textures and approved by the player before any of it was built):
+
+- *joints*: black top-hat of the lightly smoothed height (closing radius 2),
+  hysteresis from strong seeds (82nd percentile, at least 0.05) into weak
+  neighbours (0.75 of that), keeping only 4-connected components of at least
+  10 texels that span at least 0.3 of the texture. A speck or a chisel mark
+  is short; a joint runs.
+- *stone shape*: a pillow, rounded within three texels of a joint and flat on
+  top, with 0.15 of the painted shading kept.
+- *flow*: for a wall, water takes the lowest of the three texels below it on
+  the shape (joints 0.25 lower: channels), so it slides off a bump's shoulder;
+  under a ledge it runs sideways along the joint. Rain lands on every texel
+  and the gathered amount, log-scaled, marks the streams. Each texel also gets
+  a phase (its step along the longest path through it, over 9, plus that
+  path's own hash) so drops slide along a path, bends included.
+
+Packing (`MaterialAtlas2Builder`, format version 3): a region carries this
+layout when its material holds water, the game says it does not glow and it
+is at most 128 px; the lowest red bit now means exactly that. Green is the
+shape, blue the joint depth (high nibble) and flow (low nibble), alpha the
+phase. The shader derives AO from the shape (0.55 on a joint floor, 1 from
+shape 0.6), pools top faces straight from the joint map, streams walls along
+the paths with `fract(phase - sceneClock * 2 + blockSeed)` (an integer speed
+so the 1.5 s wrap is seamless) and only where the texture is upright on the
+face, and lights torch relief from the shape's gradient (four second-atlas
+reads, only for torch-lit water-holding texels).
+
+**Supersedes** D66's structure tests and D64's wall grooves and rivulets.
+D66's material gate stands. Debug view 73 now shows the baked maps; the old
+live-water view moved to 75.
+
+**Evidence.** The C# port matches the reference texel for texel on a
+formula fixture (`crevice_fixture.json`, smoketest) and, out of tree, on all
+twelve audited textures (largest difference 0). A smoketest fails if a speck
+pools or a kept joint is small. Not seen in game. Cost: about 7 ms per
+texture at load including JIT, measured on twelve textures out of game;
+runtime cost not measured.
+
+**Limits.** Basalt brick vertical joints and a few short dry-stone joints are
+missed. Paths are traced for an upright texture; a texture turned on its face
+gets wet joints and no streams. Pools stop at the block edge.
+
+## D68 - Torch terms read the block light alone; a stream is where paths merge
+
+**Context.** D67 in game (2026-11-25, four screenshots). On ashlar (the
+game's `stonebricks`, textures `block/stone/brick/*`) debug view 73 showed
+every flat stone face flooded with stream, hatched diagonally; view 75 showed
+chalk ashlar walls as cyan speckle. In a coral cobblestone room a wall torch
+changed nothing near it, and view 74 lit daylit walls bright and flat.
+
+**Cause - streams.** D67 scaled the raw count of rain through each texel. On
+a flat face every column carries the rain of every texel above it, so each
+column of a flat stone was as "full" as a real channel, and each column had
+its own path hash, so the drops on neighbouring columns were out of step:
+speckle. The diagonal hatching was the side preference letting paths wander
+on a flat face.
+
+**Cause - torch.** Every terrain torch term (relief, highlight, the reflected
+torch ceiling, views 9 and 74) read vanilla's `blockLight` varying. In
+`chunkopaque.vsh` that is written only when dynamic lights are on, and then
+holds `(2*bSun*sun + bBlock*block + ...) / (...)`: the sun and block light
+COLOURS mixed by brightness, about as bright in daylight as beside a torch.
+With dynamic lights off it is never written. Neither is the torch.
+
+**Decision.** `pbrterrainmaterial` carries its own varying, `vv_blockLight =
+rgbaLightIn.rgb` (the block light alone, with vanilla's falloff), in both
+terrain programs and in the same group as its fragment half; the terrain
+material path reads it through `vvTerrainTorchLight()`. Water-holding stone
+is shaded by its baked shape at full strength (the D66 softening was for the
+grainy luminance normal), `VV_TERRAIN_TORCH_SHAPE` 2.5, relief 1.6, cap 0.75.
+
+The flow amount is now convergence: rain through a texel over the length of
+the longest path reaching it plus one, which is exactly 1 on a column nothing
+joins. Streams start at 1.25 and are full at 3.25. Flat faces stay a film;
+water gathers along the joints and drips from their ends and from under
+stones. Ported to C# with the fixture regenerated; a check builds a flat
+striped face and fails if it carries any stream.
+
+**Evidence.** Previews of the reference on chalk, basalt and granite ashlar,
+coral, granite and chalk cobblestone and two dry stones
+(`/mnt/project-files/audit/crevice-v2-*`). Not seen in game.
+
+**Limits.** Coral cobblestone's joints are mostly missed: its pores are
+deeper in the top-hat than the gaps between its stones. The legacy pseudopbr
+path still reads vanilla's `blockLight`; it is not the active terrain path.
+
+## D69 - Torch relief darkens less than it brightens, and its joint shading fades with distance
+
+**Context.** D68 in game (2026-11-25, five screenshots): with the torch read
+correctly the relief finally showed, but a single wall torch turned every
+joint in a small coral room near-black, the ceiling included, and a smooth
+ashlar block set in the wall got thick black bars across its joints.
+
+**Cause.** The joint term (shape occlusion, 0.8 of what a joint lacks) applied
+wherever block light reached, and in a small room a torch reaches every wall,
+so it darkened mortar everywhere by up to the 0.75 cap of vanilla's lit
+colour. Near the flame that reads as relief; across the room the light has
+no clear direction and the same darkening reads as black paint. On ashlar the
+shape normal at full strength turned the three-texel rounded band either side
+of each joint fully away from the light.
+
+**Decision.** Darkening is capped at 0.35 of vanilla's lit colour and
+brightening at 0.6; the joint term is 0.4 of what the joint lacks and fades to
+0.3 of that where the recovered light direction is close to the face normal
+(directness `(1 - dot(toTorch, n)) * 3`); the shape normal is 0.8 of the way
+from flat at 1.6 per unit of slope; relief 1.5. Previewed near a torch and six
+blocks away on coral, chalk and granite ashlar and granite cobblestone
+(`/mnt/project-files/audit/torch-v3.png`), with D68 and vanilla beside it.
+
+**Evidence.** A check fails if the dark cap exceeds 0.4 or reaches the light
+cap, or if the joint term stops fading; two mutations prove it. Not seen in
+game.
+
+## D70 - An optional slider steepens the game's own torch falloff on blocks
+
+**Context.** D69 in game (2026-11-25): more natural, but a room lit by a few
+torches reads evenly bright, with no pooling of light by each flame. Vanilla
+spreads block light in near-linear steps of one level per block, so the walls
+between two torches are almost as bright as the walls beside one.
+
+**Decision.** Elijah chose a slider over a fixed change: `PseudoPBR.TorchFalloff`
+(0..1, default 0, Materials > Light response, "Torch light falloff"). The
+terrain shader reads the game's own block light (`vv_blockLight`, D68), takes
+its mean as a level `b`, and above zero rescales vanilla's lit colour by
+`(steep + 0.08) / (b + 0.08)` with `steep = 0.85 * (b / 0.85)^(1 + 2 * amount)`.
+Light at or above 0.85 (beside the flame) is untouched, so the slider only
+darkens the dim edge of a torch's reach and never adds light; the factor is
+floored at 0.4 so a far wall is never black, and it fades out with
+`vv_sunExposure * vvTerrainSunPresence()` so daylit blocks keep vanilla light.
+It is a reshaping of the game's value, not a new light: the light still comes
+only from where the game says it does. Blocks only; creatures, items and
+particles keep vanilla light, which can make a mob look brighter than the wall
+behind it at full slider.
+
+**Evidence.** I21 walks the shipped function statement by statement and fails
+if the slider at 0 changes anything, if it ever brightens, if it drops below
+its floor, if a brighter vanilla light can come out darker, or if it acts in
+full daylight; two mutations prove the floor and the daylight fade. L2, not seen
+in game; performance not measured (one pow per fragment).

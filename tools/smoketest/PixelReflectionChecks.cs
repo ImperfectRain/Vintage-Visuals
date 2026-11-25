@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
 using VintageVisuals.Reflections;
 
@@ -53,6 +54,194 @@ namespace VintageVisuals.SmokeTest
             CheckIntegrationPoint(check);
             CheckHonestLabelling(repo, check);
             CheckSceneBridge(repo, check);
+            CheckModularReflection(repo, check);
+        }
+
+        /// <summary>
+        /// Reflections stage two on the modular terrain path (D62).
+        ///
+        /// Four properties, each one a way this has gone wrong before or would
+        /// cost the player frames without showing:
+        /// - the strength slider at 0 gives exactly the flat environment the
+        ///   path drew before, so an install that never touches it is unchanged;
+        /// - the march runs only where the reflection's own weight can show,
+        ///   which is what keeps it off grass, soil and dry rough stone;
+        /// - the march reads the capture with textureLod only, because a loop
+        ///   with a data-dependent exit has no defined implicit derivatives;
+        /// - only pbrterrainreflect defines VV_TERRAIN_SCENE_CAPTURE, so the
+        ///   material path can never call a march whose group rolled back.
+        /// </summary>
+        private static void CheckModularReflection(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string reflect = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainreflect.glsl"));
+            string reflectYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainreflect.yaml"));
+            string materialCode = GlslEval.StripComments(material);
+
+            string pixel = GlslEval.FunctionBody(materialCode, "VvTerrainReflection vvTerrainPixelReflection(") ?? "";
+            int flat = pixel.IndexOf("o.image = mix(environment * 0.48, environment, clamp(rFlat.y * 0.5 + 0.5, 0.0, 1.0));", StringComparison.Ordinal);
+            int early = pixel.IndexOf("if (strength < 0.001) return o;", StringComparison.Ordinal);
+            check("modular pixel reflection at strength 0 is the previous flat environment",
+                flat >= 0 && early > flat &&
+                Regex.IsMatch(pixel, @"o\.image = mix\(o\.image, [^;]*, strength\);"),
+                "the slider at 0 must leave the ambient highlight exactly as before D62");
+
+            check("the modular march runs only where the reflection can show",
+                Regex.IsMatch(pixel, @"bool worthIt = reach > 0\.0 && weight >= VV_TREFLECT_MARCH_WEIGHT;") &&
+                pixel.Contains("vvTerrainSceneLookup(origin, sceneR, v, worthIt)") &&
+                Regex.IsMatch(materialCode, @"if \(!worthIt\) \{ miss\.reason = VV_TSSR_SKIPPED; return miss; \}"),
+                "an ungated march costs every opaque fragment up to 40 capture reads for nothing");
+
+            string march = GlslEval.FunctionBody(GlslEval.StripComments(reflect), "VvTerrainSceneHit vvTerrainSceneMarch(") ?? "";
+            check("the modular march reads the capture with textureLod only",
+                march.Length > 0 && march.Contains("textureLod(vv_reflectScene") &&
+                !Regex.IsMatch(march, @"(?<![A-Za-z_])texture\(vv_reflectScene"),
+                "implicit derivatives are undefined inside the march's divergent loop");
+
+            // D64: a reflected torch must not be capped against a black night sky.
+            check("the reflection's brightness ceiling follows the local block light",
+                pixel.Contains("float ceiling = max(envLuma, vvTerrainLuma(blockLight)) * VV_TREFLECT_MAX;"),
+                "capping against the sky colour alone erases every torch reflection at night and underground");
+
+            // D64: block-light highlights on terrain come from the recovered
+            // direction, computed before any branch (it uses derivatives).
+            string block = GlslEval.FunctionBody(materialCode, "vec3 vvTerrainBlockSpecular(") ?? "";
+            int dirAt = block.IndexOf("vec3 l = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);", StringComparison.Ordinal);
+            int gateAt = block.IndexOf("if (vv_pbrBlockLight < 0.001 || intensity < 0.004) return vec3(0.0);", StringComparison.Ordinal);
+            check("terrain torch highlights use the recovered light direction, taken before any branch",
+                dirAt >= 0 && gateAt > dirAt && block.Contains("max(0.0, vv_pbrBlockLight)"),
+                "a fixed direction puts every torch glint in the same place; derivatives after a branch are undefined");
+
+            // D64: water in crevices. Pools only on top faces, streams only on
+            // walls and only while rain is falling, and 0 changes nothing.
+            string crevice = GlslEval.FunctionBody(materialCode, "vec2 vvTerrainCreviceWater(") ?? "";
+            check("crevice water pools only on top faces and streams only on walls in falling rain",
+                crevice.Contains("if (amount < 0.001 || m.wetness < 0.001 || vv_material2Valid < 0.5 || m.detailFade <= 0.0)") &&
+                Regex.IsMatch(crevice, @"if \(up > 0\.7\)\s*\{[^}]*return vec2\(pool \* amount \* m\.detailFade, 0\.0\);") &&
+                crevice.Contains("if (abs(up) > 0.3 || rain < 0.001) return vec2(0.0);") &&
+                Regex.IsMatch(crevice, @"return vec2\(0\.0, stream \* rain \*"),
+                "pools on a wall or streams on a floor are not where water goes");
+
+            // D65: a pool has to stand out against the face around it. v17
+            // flooded every texel below an absolute 0.46 of a per-texture
+            // normalised height and left 0.55 of the wetness on the rest, so
+            // the Wetness view read white with grey specks and nothing looked
+            // like a pool. Evaluated from the shipped mix, at soaked ground.
+            string weather = GlslEval.FunctionBody(materialCode, "VvTerrainMaterial vvTerrainApplyWeather(") ?? "";
+            string poolMix = null;
+            try { poolMix = GlslEval.Statement(weather, "m.wetness = mix(m.wetness * mix(1.0, VV_TERRAIN_POOL_FILM, amount)"); }
+            catch (ArgumentException) { }
+            bool contrastOk = false;
+            string contrastWhy = "the pool/film mix was not found";
+            if (poolMix != null)
+            {
+                string expr = GlslEval.Rhs(poolMix).Replace("m.wetness", "w").Replace("crevice.x", "p");
+                double film = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_FILM");
+                double Wet(double pool) => GlslEval.Scalar(expr, GlslEval.Syms(
+                    "w", 1.0, "p", pool, "amount", 1.0, "VV_TERRAIN_POOL_FILM", film));
+                double contrast = Wet(1.0) - Wet(0.0);
+                // D67: pools come from the baked joint network alone. No
+                // threshold on the height and no neighbour reads: v17 to v19
+                // each found "crevices" per texel in the shader and each
+                // filled the painted speckle.
+                bool structural = crevice.Contains("float pool = m.jointPool * smoothstep(") &&
+                                  !crevice.Contains("vvTerrainHeightAt(") &&
+                                  !Regex.IsMatch(crevice, @"smoothstep\([^;]*,\s*(m\.height|h)\s*\)");
+                contrastOk = contrast >= 0.6 && structural;
+                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6); pools from the baked joint map only, no per-texel guessing: {structural}";
+            }
+            check("a crevice pool stands out against the film around it", contrastOk, contrastWhy);
+
+            // D66: only materials the game says can hold water pool or stream.
+            // On grass, soil and speckled stone the height is colour noise,
+            // and every dark speck became a pool (seen in game, 2026-11-25).
+            check("crevice water only forms on materials that hold water",
+                crevice.Contains("if (m.holdsWater < 0.5) return vec2(0.0);") &&
+                materialCode.Contains("m.holdsWater = redByte - metalLevel * 2.0;"),
+                "without the game's material gate, a meadow's dark texels read as puddles");
+
+            // D67: the layout the builder packs is the layout the shader reads
+            // (SecondAtlasChecks packs it), and walls stream along the baked
+            // paths with drops sliding along each path's own phase.
+            string decode = GlslEval.FunctionBody(materialCode, "VvTerrainMaterial vvDecodeTerrainMaterial(") ?? "";
+            check("the shader reads the crevice layout exactly as the atlas packs it",
+                decode.Contains("float blueByte = floor(secondary.b * 255.0 + 0.5);") &&
+                decode.Contains("float poolLevel = floor(blueByte / 16.0);") &&
+                decode.Contains("m.jointPool = poolLevel / 15.0;") &&
+                decode.Contains("m.flowAmount = (blueByte - poolLevel * 16.0) / 15.0;") &&
+                decode.Contains("m.flowPhase = secondary.a;") &&
+                decode.Contains("m.ao = vvTerrainShapeOcclusion(m.height);") &&
+                decode.IndexOf("m.holdsWater = vv_material2Valid < 0.5 ? 0.0 : m.holdsWater;", StringComparison.Ordinal) <
+                decode.IndexOf("if (m.holdsWater > 0.5)", StringComparison.Ordinal),
+                "a nibble read in the wrong order turns joints into flow and flow into joints");
+
+            string dropFn = GlslEval.FunctionBody(materialCode, "float vvTerrainStreamDrop(") ?? "";
+            double speed = GlslEval.Const(materialCode, "VV_TERRAIN_STREAM_SPEED");
+            check("rain runs down a wall along its traced paths, drops sliding along each path",
+                crevice.Contains("float path = m.flowAmount * upright;") &&
+                crevice.Contains("float drop = vvTerrainStreamDrop(m.flowPhase, blockSeed);") &&
+                dropFn.Contains("fract(flowPhase - vv_sceneClock * VV_TERRAIN_STREAM_SPEED + blockSeed)") &&
+                speed >= 1.0 && Math.Abs(speed - Math.Round(speed)) < 1e-9 &&
+                !crevice.Contains("column"),
+                "streams on random columns are the straight vertical lines v19 drew; a non-integer speed jumps every 1.5 s when the scene clock wraps");
+
+            check("water in a crevice is a mirror its own crevice cannot occlude",
+                weather.Contains("m.ao = mix(m.ao, 1.0, max(m.pool, m.stream * 0.6));") &&
+                weather.Contains("m.perceptualRoughness = mix(m.perceptualRoughness, VV_TERRAIN_MIN_ROUGHNESS, water);"),
+                "keeping the joint's baked occlusion lets specular occlusion remove the reflection from exactly the texels holding water");
+
+            // D65: block light shades the per-pixel normal in the diffuse, by
+            // the change in N.L against the flat face (0 on a flat texel), with
+            // the direction taken before the gate (derivatives).
+            string relief = GlslEval.FunctionBody(materialCode, "vec3 vvTerrainBlockRelief(") ?? "";
+            string primary = GlslEval.FunctionBody(materialCode, "vec4 vvTerrainMaterialPrimary(") ?? "";
+            int rDir = relief.IndexOf("vec3 toTorch = vvBlockLightDirection(m.faceNormal, cameraRelativePos, intensity);", StringComparison.Ordinal);
+            int rGate = relief.IndexOf("if (strength < 0.001 || intensity < 0.004) return vec3(0.0);", StringComparison.Ordinal);
+            string shadeFn = GlslEval.FunctionBody(materialCode, "float vvTerrainTorchShade(") ?? "";
+            check("torchlight shades each texel's normal in the diffuse and leaves a flat texel alone",
+                rDir >= 0 && rGate > rDir &&
+                relief.Contains("float shade = vvTerrainTorchShade(m, toTorch, vvTerrainTorchNormal(m, materialUv));") &&
+                shadeFn.Contains("vec3 n = vvTerrainSafeNormalize(mix(m.faceNormal, reliefNormal, soften), m.faceNormal);") &&
+                (GlslEval.FunctionBody(materialCode, "vec3 vvTerrainTorchNormal(") ?? "").Contains("if (m.holdsWater < 0.5) return m.normal;") &&
+                shadeFn.Contains("float delta = max(dot(n, l), 0.0) - max(dot(m.faceNormal, l), 0.0);") &&
+                shadeFn.Contains("float hollow = mix(1.0, m.ao, VV_TERRAIN_TORCH_HOLLOW) - 1.0;") &&
+                relief.Contains("clamp(vv_pbrBlockLight, 0.0, 1.0)") &&
+                primary.Contains("diffuse = max(diffuse + vvTerrainBlockRelief(m, litColor.rgb, blockLight, cameraRelativePos, materialUv), vec3(0.0));"),
+                "without it a torch lights a cobble face evenly and its relief is shaded only by the sun, which is absent at night and underground");
+
+            // D67b: vanilla's `blockLight` varying is the sun and block light
+            // colours mixed by brightness (and unwritten with dynamic lights
+            // off), so a torch term reading it shades a daylit wall as hard as
+            // one beside the flame. The torch is rgbaLightIn.rgb, carried by
+            // this group's own varying in both programs.
+            string materialYaml = File.ReadAllText(Path.Combine(repo, "assets", "vintagevisuals", "shaderpatches", "pbrterrainmaterial.yaml"));
+            string debugFn = GlslEval.FunctionBody(materialCode, "vec4 vvTerrainMaterialPrimaryDebug(") ?? "";
+            check("terrain torch effects read the block light alone, not vanilla's sun-mixed colour",
+                primary.Contains("blockLight = vvTerrainTorchLight();") &&
+                debugFn.Contains("blockLight = vvTerrainTorchLight();") &&
+                materialCode.Contains("in vec3 vv_blockLight;") &&
+                materialYaml.Contains("vv_blockLight = rgbaLightIn.rgb; // chunkopaque") &&
+                materialYaml.Contains("vv_blockLight = rgbaLightIn.rgb; // chunktopsoil") &&
+                Regex.Matches(materialYaml, @"out vec3 vv_blockLight;").Count == 2,
+                "vanilla's blockLight is about as bright in daylight as beside a torch, so the relief lit whole rooms evenly");
+
+            // D69: torch relief may darken far less than it brightens, and the
+            // joint term fades where the light has no direction. D68 let it
+            // take 0.75 of vanilla's light from every joint in a torch-lit
+            // room, which read as black mortar on every wall.
+            double capDark = GlslEval.Const(materialCode, "VV_TERRAIN_TORCH_RELIEF_CAP_DARK");
+            double capLight = GlslEval.Const(materialCode, "VV_TERRAIN_TORCH_RELIEF_CAP");
+            check("torch relief darkens joints only modestly, and less away from the flame",
+                capDark <= 0.4 && capDark < capLight &&
+                relief.Contains("return clamp(relief, -litColor * VV_TERRAIN_TORCH_RELIEF_CAP_DARK, litColor * VV_TERRAIN_TORCH_RELIEF_CAP);") &&
+                shadeFn.Contains("hollow *= mix(VV_TERRAIN_TORCH_HOLLOW_FAR, 1.0, direct);"),
+                $"dark cap {capDark} (at most 0.4 and below the light cap {capLight})");
+
+            check("only the capture group defines the scene-capture switch",
+                !Regex.IsMatch(materialCode, @"#define\s+VV_TERRAIN_SCENE_CAPTURE") &&
+                reflectYaml.Contains("#define VV_TERRAIN_SCENE_CAPTURE 1") &&
+                materialCode.Contains("#ifdef VV_TERRAIN_SCENE_CAPTURE"),
+                "a material path that defines it itself calls a march that may not exist");
         }
 
         /// <summary>
@@ -366,6 +555,42 @@ namespace VintageVisuals.SmokeTest
                 interceptor.Contains("PerDrawAuxiliaryBindingEnabled = false") &&
                 Regex.IsMatch(interceptor, @"if \(PerDrawAuxiliaryBindingEnabled\)"),
                 "scene/world/canopy resources are not part of the base material PBR checkpoint");
+
+            // Stage one of the reflection restoration: the capture alone is
+            // rebound per terrain draw, inside the same active-texture
+            // save/restore as the material pages, and only into a program
+            // that declares it. The world volume stays fenced off.
+            int reentrantAt = interceptor.IndexOf("_reentrant = true;", StringComparison.Ordinal);
+            int finallyAt = reentrantAt < 0 ? -1 : interceptor.IndexOf("finally", reentrantAt, StringComparison.Ordinal);
+            int sceneBindAt = interceptor.IndexOf("BindTexture2D(PbrShaderBinder.ReflectSceneUniform", StringComparison.Ordinal);
+            check("the capture is rebound per terrain draw inside the active-texture restore",
+                interceptor.Contains("PerDrawSceneCaptureBindingEnabled = true") &&
+                interceptor.Contains("if (PerDrawSceneCaptureBindingEnabled || PerDrawAuxiliaryBindingEnabled)") &&
+                interceptor.Contains("program.HasUniform(PbrShaderBinder.ReflectSceneUniform)") &&
+                reentrantAt >= 0 && sceneBindAt > reentrantAt && finallyAt > sceneBindAt,
+                "a per-frame bind does not survive to the terrain draw; one outside the restore leaves the wrong active unit");
+
+            string reflectYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainreflect.yaml"));
+            string reflectGlsl = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrterrainreflect.glsl"));
+            var reflectPatches = ShaderPatchLoader.ParsePatchFile(reflectYaml, "pbrterrainreflect", "pbrterrainreflect.yaml",
+                n => File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets", n))).ToList();
+            var samplerPatch = reflectPatches.FirstOrDefault(p => p.Content.Contains("uniform sampler2D vv_reflectScene;"));
+            check("the modular capture sampler is declared directly above main, below every vanilla sampler",
+                samplerPatch != null && samplerPatch.Kind == ShaderPatchKind.InsertBefore &&
+                samplerPatch.Filename == "chunkopaque.fsh" &&
+                samplerPatch.AnchorDescription.Contains("void main()"),
+                "a sampler above vanilla's shifts every unit below it at link time");
+            check("the modular capture group cannot apply without the material path",
+                reflectPatches.Any(p => p.Kind == ShaderPatchKind.Assert && p.AnchorDescription.Contains("vvTerrainMaterialPrimaryDebug(")) &&
+                ShaderPatchGroups.RequiredBy("pbrterrainreflect").Contains("pbrterrainmaterial"),
+                "");
+            string bridgeBody = GlslEval.FunctionBody(reflectGlsl, "vec4 vvTerrainReflectDebug(") ?? "";
+            check("the capture bridge changes no pixel outside its debug views",
+                bridgeBody.Contains("if (mode == 0) return color;") &&
+                bridgeBody.TrimEnd().EndsWith("return color;", StringComparison.Ordinal) &&
+                Regex.Matches(GlslEval.StripComments(bridgeBody), @"texture\(").Count == 1 &&
+                Regex.IsMatch(GlslEval.StripComments(bridgeBody), @"if \(mode == 41\)\s*\{\s*if \(vv_reflectValid < 0\.5\) return"),
+                "the bridge samples the capture only inside view 41, and only once the capture is valid");
 
             check("canopy context sampler is compiled out during recovery",
                 !_pbr.Contains("uniform sampler2D vv_canopyContext") &&

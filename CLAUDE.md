@@ -155,6 +155,11 @@ hierarchy, the budgets, and what this project deliberately does not build.
   passing validator proves nothing here. `ShaderPatchLoader` now refuses
   non-ASCII patch content at load time, and `tools/smoketest` scans the shipped
   assets.
+- **Never name anything with a GLSL reserved word.** A local called `packed`
+  compiled cleanly in `glslangValidator` in all 48 combinations and NVIDIA
+  refused the shader, so `chunkopaque.fsh` failed and the world disappeared
+  into fog (2026-11-23). `tools/smoketest` scans the shipped GLSL for the 3.30
+  reserved list (`packed`, `input`, `output`, `filter`, `common`, `half`, ...).
 - **Never declare a sampler above vanilla's.** Sampler texture units are
   assigned at LINK time from the program's active sampler list, so inserting one
   above vanilla's shifts every sampler below it. In `chunkopaque.fsh` that
@@ -341,7 +346,7 @@ interpretation.
 4. **Atmosphere never owns weather.** It reads it. `AtmosphereState` carrying the
    same rain figure as `EnvironmentState` is one snapshot travelling together,
    not a second opinion - read on the same tick from the same source.
-5. **Never couple two feature toggles.** Eleven strengths, eleven independent
+5. **Never couple two feature toggles.** Twelve strengths, twelve independent
    effects. A check drives the real derivation with everything on, zeroes each in
    turn, and fails if a feature leaks when off, does nothing when on, or moves
    another. `CloudAtmosphere` damping the directional terms is the one documented

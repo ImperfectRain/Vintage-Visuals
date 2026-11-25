@@ -157,22 +157,69 @@ namespace VintageVisuals.VerifyPatches
 
                 if (hitting.Length < 2) continue;
 
-                // A combination the game cannot produce is not a failure.
-                //
-                // This pass applies every group it finds on disk, which is right
-                // for the ones that genuinely stack and wrong for the ones the
-                // runtime gating keeps apart. Reporting a compile error for a
-                // state that cannot occur is how a real failure gets ignored, so
-                // the exclusion is read from the same declaration the gating
-                // uses rather than guessed at here.
-                string[] exclusive = ShaderPatchGroups.FirstExclusivePair(hitting);
-                if (exclusive != null)
+                // A combination the game cannot produce is not a failure, but
+                // SKIPPING the file is: it used to skip chunkopaque outright
+                // because the legacy and modular terrain groups exclude each
+                // other, so the combination the game actually runs (modular +
+                // base + weather + atmosphere) was never patched together here,
+                // and an anchor collision between them shipped. Instead, split
+                // on every exclusive pair and verify each set the game CAN apply.
+                // The exclusion is read from the declaration the gating uses.
+                var sets = new List<string[]> { hitting };
+                for (bool split = true; split; )
                 {
-                    Console.WriteLine("  skip  " + filename + ": '" + exclusive[0] + "' and '" +
-                                      exclusive[1] + "' are mutually exclusive, so the game never " +
-                                      "applies both. Verified separately above.");
-                    continue;
+                    split = false;
+                    var next = new List<string[]>();
+                    foreach (string[] set in sets)
+                    {
+                        string[] pair = ShaderPatchGroups.FirstExclusivePair(set);
+                        if (pair == null) { next.Add(set); continue; }
+                        split = true;
+                        next.Add(set.Where(g => g != pair[0]).ToArray());
+                        next.Add(set.Where(g => g != pair[1]).ToArray());
+                    }
+                    sets = next.GroupBy(x => string.Join("+", x)).Select(g => g.First()).ToList();
                 }
+
+                foreach (string[] set in sets.Where(x => x.Length >= 2))
+                {
+                    string orphan = set.FirstOrDefault(g => ShaderPatchGroups.RequiredBy(g).Any(r => !set.Contains(r)));
+                    if (orphan != null)
+                        VerifyFailsClosed(filename, vanilla, set, orphan, all);
+                    else
+                        VerifyCombination(filename, vanilla, set, all, haveGlslang);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A group whose base group is absent (rolled back, or excluded) must
+        /// fail its own assert and take nothing else with it.
+        /// </summary>
+        static void VerifyFailsClosed(string filename, string vanilla, string[] set, string orphan,
+                                      List<ShaderPatch> allPatches)
+        {
+            var patcher = new ShaderPatcher(new CollectingLogger());
+            patcher.SetPatches(allPatches.Where(p => set.Contains(p.Group)));
+            patcher.Patch(filename, vanilla);
+
+            string[] collateral = set.Where(g => g != orphan && !patcher.IsGroupHealthy(g)).ToArray();
+            if (patcher.IsGroupHealthy(orphan))
+                Fail(filename + ": '" + orphan + "' applied without " +
+                     string.Join(", ", ShaderPatchGroups.RequiredBy(orphan)) + " instead of failing closed");
+            else if (collateral.Length > 0)
+                Fail(filename + ": '" + orphan + "' failing closed also broke " + string.Join(", ", collateral));
+            else
+                Pass(filename + ": '" + orphan + "' fails closed without " +
+                     string.Join(", ", ShaderPatchGroups.RequiredBy(orphan)) + ", and " +
+                     string.Join(" + ", set.Where(g => g != orphan)) + " still apply");
+        }
+
+        static void VerifyCombination(string filename, string vanilla, string[] hitting,
+                                      List<ShaderPatch> allPatches, bool haveGlslang)
+        {
+            {
+                var all = allPatches.Where(p => hitting.Contains(p.Group)).ToList();
 
                 var logger = new CollectingLogger();
                 var patcher = new ShaderPatcher(logger);
@@ -188,7 +235,7 @@ namespace VintageVisuals.VerifyPatches
                                     ?? "(no reason logged)";
                     Fail(filename + " with " + string.Join(" + ", hitting) + ": group '" + unhealthy +
                          "' broke when combined - " + reason.Trim());
-                    continue;
+                    return;
                 }
 
                 // A uniform declared twice in one translation unit does not
@@ -199,7 +246,7 @@ namespace VintageVisuals.VerifyPatches
                 {
                     Fail(filename + " with " + string.Join(" + ", hitting) +
                          ": uniform '" + duplicate + "' is declared more than once");
-                    continue;
+                    return;
                 }
 
                 string dumpDir = Environment.GetEnvironmentVariable("VINTAGE_VISUALS_DUMP");
@@ -248,6 +295,19 @@ namespace VintageVisuals.VerifyPatches
             {
                 Fail(group + " did not parse: " + ex.Message);
                 return;
+            }
+
+            // A group that patches on top of another applies with it, never on
+            // vanilla alone; alone it must fail closed, which the combined pass
+            // checks. Only the files this group targets are taken from the base.
+            var ownFiles = new HashSet<string>(patches.Select(p => p.Filename));
+            foreach (string required in ShaderPatchGroups.RequiredBy(group))
+            {
+                string requiredPath = Path.Combine(Path.GetDirectoryName(yamlPath), required + ".yaml");
+                patches.AddRange(ShaderPatchLoader.ParsePatchFile(
+                    File.ReadAllText(requiredPath), required, requiredPath,
+                    n => File.ReadAllText(Path.Combine(Repo, "assets/vintagevisuals/shadersnippets", n)))
+                    .Where(p => ownFiles.Contains(p.Filename)));
             }
 
             foreach (string filename in patches.Select(p => p.Filename).Distinct().OrderBy(f => f))

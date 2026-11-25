@@ -22,7 +22,8 @@ See DECISIONS D23.
 | Overcast light response | runtime evidence, not visually closed |
 | Sky-exposure varying | done, verified against the real `.vsh` files |
 | Fog and tint by weather state | **moved to `src/Atmosphere/`** - decided here, rendered there |
-| Cloud shadows | runtime evidence, not visually closed; sub-tile drift still open |
+| Cloud shadows | runtime evidence, not visually closed; sub-tile drift still open. Fades out between 55% and 85% cover (a solid sky has no edge to draw, and vanilla already dims it), and only tiles that stand out from the window's mean cast a shadow, so an evenly thin sky casts none (D54), L2 |
+| Cloud cover reported to the tracker | `ReportCloudField` with the tile window's mean after each read, logged as a diagnostic only: it read 0.745 under both a storm and a sunny broken sky (D53 amendment). Cover is ambient or falling rain, L3 |
 | Cloud shaping | **removed** - not possible from a cloud shader, see below |
 
 ## Wet surfaces
@@ -463,6 +464,10 @@ working, which is how three rounds were lost.
   to one side. Vanilla's clouds are far higher; using their real altitude moves
   the shadow the better part of a kilometre at a low sun, which reads as a bug
   rather than as evening.
+- **A cloud shadow is never deeper than vanilla's own sun shadow** (D52). It is
+  built like vanilla's shadowed brightness and taken as a `min` with it, so
+  shade already present loses nothing more and block light is kept. It used to
+  multiply, and a storm at strength 1 turned a forest black at noon.
 - **Strength is scaled by daylight on the CPU.** A cloud shadow is the sun being
   blocked; at night there is nothing to block. Folding it into the strength
   keeps that as one uniform whose zero already means vanilla, rather than a

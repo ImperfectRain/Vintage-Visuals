@@ -203,6 +203,12 @@ namespace VintageVisuals.Weather
                 if (readTiles) _sinceCloudRead = 0f;
 
                 _clouds.Update(deltaTime, readTiles);
+
+                // The tiles are what the sky is actually drawing, so they are
+                // the cloud cover whenever they can be read. Reported, not
+                // stored here: the tracker is the one place cover lives.
+                if (readTiles && _clouds.Available && _mod.Environment != null)
+                    _mod.Environment.ReportCloudField(_clouds.MeanCover, _mod.Capi.ElapsedMilliseconds);
             }
 
             Vec2f wind = World.WindDirection;

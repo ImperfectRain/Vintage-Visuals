@@ -164,11 +164,17 @@ namespace VintageVisuals.ColorGrade
             // Both gated on sky exposure: rain does not change the colour of a
             // room with no windows.
 
+            // Rain is COOL and soft, not dark. An overcast noon is a big dim
+            // light source the size of the sky: low contrast, a little blue,
+            // and not much darker than vanilla already draws it. The exposure
+            // cut used to be 7% for rain and 3% more for cloud, on top of
+            // vanilla's own dimming, and with the cloud shadows it made a
+            // rainy noon read as dusk (in-game audit, 2026-11-23).
             stack.Add(Clamp01(world.Rain) * weights.WeatherStrength * sky,
-                      0.93f, -0.14f, -0.28f, -0.16f, 0.98f, 1.00f, 1.03f);
+                      0.98f, -0.14f, -0.26f, -0.26f, 0.97f, 1.00f, 1.05f);
 
             stack.Add(Clamp01(world.CloudCover) * weights.WeatherStrength * sky,
-                      0.97f, -0.10f, -0.12f, -0.08f, 1.00f, 1.00f, 1.00f);
+                      1.00f, -0.10f, -0.12f, -0.10f, 0.99f, 1.00f, 1.01f);
 
             // --- Where the player is ----------------------------------------
 
@@ -215,6 +221,27 @@ namespace VintageVisuals.ColorGrade
 
             stack.Add(Math.Max(-humidity, 0f) * biome,
                       1.00f, 0.00f, -0.10f, +0.06f, 1.02f, 1.00f, 0.97f);
+
+            // --- Season (v14) ----------------------------------------------
+            //
+            // The colour of the LIGHT through the year, never of the plants:
+            // vanilla's colormaps already turn the leaves and grass, per block
+            // and per climate, and a grade that pushed autumn oranges would
+            // double what the game paints. So autumn is the one season that
+            // does NOT warm - its palette is warm enough - it only softens.
+            // Winter's low sun and clean air read cooler and crisper; summer's
+            // high sun a touch warm and bright; spring a touch fresh. Each
+            // rises to midseason and hands over through neutral (the tracker's
+            // depth). Outdoors and by day only: night has its own look.
+            float season = weights.SeasonStrength * sky * SmoothStep(0.15f, 0.5f, dayLight);
+            stack.Add(Clamp01(world.Spring) * season,
+                      1.00f, +0.01f, +0.05f, -0.03f, 0.99f, 1.01f, 0.99f);
+            stack.Add(Clamp01(world.Summer) * season,
+                      1.01f, +0.03f, +0.02f, +0.06f, 1.01f, 1.00f, 0.98f);
+            stack.Add(Clamp01(world.Autumn) * season,
+                      1.00f, +0.02f, -0.05f, 0.00f, 1.00f, 1.00f, 1.00f);
+            stack.Add(Clamp01(world.Winter) * season,
+                      1.00f, +0.05f, -0.10f, -0.18f, 0.98f, 0.99f, 1.03f);
 
             GradeSample result = stack.Resolve(basis, grants);
 

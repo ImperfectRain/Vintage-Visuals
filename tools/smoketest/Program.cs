@@ -347,6 +347,7 @@ void main(void) {
 
         Console.WriteLine("PBR port agrees with the validated Python prototype");
         PbrParityChecks.Run(Repo, Check);
+        CreviceParityChecks.Run(Repo, Check);
 
         Console.WriteLine("PseudoPBR shader patch applies and rolls back cleanly");
         PseudoPbrPatchChecks.Run(Repo, Check);
@@ -393,10 +394,12 @@ void main(void) {
         Console.WriteLine();
         Console.WriteLine("Documentation still describes the code");
         ShaderBindingChecks.Run(Repo, Check);
+        TextureSlotReportChecks.Run(Repo, Check);
 
         FloraTaxonomyChecks.Run(Repo, Check);
 
         AtmosphereChecks.Run(Repo, Check);
+        ForestPassChecks.Run(Repo, Check);
 
         SceneInvariantChecks.Run(Repo, Check);
 

@@ -95,6 +95,8 @@ namespace VintageVisuals.SmokeTest
             Guarded("I11", () => I11_ADiagnosticKeepsItsStatesApart(check));
             Guarded("I12", () => I12_ARateConstantIsTheRateUsed(check));
             Guarded("I13", () => I13_AToleranceIsNotFinerThanItsData(repo, check));
+            Guarded("I20", () => I20_ACloudIsNoDarkerThanATree(check));
+            Guarded("I21", () => I21_TorchFalloffOnlyDarkensTheEdge(repo, check));
             I14_EnabledMustNotMeanInert(check);
             I15_WorldDdaReportsGeometryRatherThanBias(check);
             I16_WorldVolumeClassesSurviveGpuEncoding(repo, check);
@@ -1045,6 +1047,84 @@ namespace VintageVisuals.SmokeTest
         // geometry. This invariant pins the new representation and the
         // diagnostic that reports the local quantum against VV_SSR_THICKNESS.
         // -------------------------------------------------------------------
+        /// <summary>
+        /// I20: a cloud shadow is a sun shadow, so it is never darker than the
+        /// one vanilla already draws, never stacks on top of it, and never
+        /// touches block light.
+        ///
+        /// It used to multiply vanilla's brightness by (1 - cover * strength).
+        /// At strength 1 under a storm with 87% of tiles covered, a forest at
+        /// noon kept 13% of its light and was black (seen in game, 2026-11-23).
+        /// Each line was defensible alone: the cover was the game's, the
+        /// strength was the player's, the multiply looked like any other shade.
+        /// </summary>
+        static void I20_ACloudIsNoDarkerThanATree(Action<string, bool, string> check)
+        {
+            string lit, wrapper;
+            try
+            {
+                lit = Rhs(Statement(FunctionBody(_weather, "float vvCloudShadowLit("), "return"));
+                wrapper = Rhs(Statement(FunctionBody(_weather, "float getBrightnessFromShadowMap("),
+                                        "vvVanillaShadowMap"));
+            }
+            catch (Exception ex) { check("I20 the cloud shadow composition is readable", false, ex.Message); return; }
+
+            foreach (double depth in new[] { 0.5, 1.0 })
+            {
+                double Lit(double occlusion, double sunShare, double block)
+                    => Scalar(lit, Syms("occlusion", occlusion, "sunShare", sunShare,
+                                        "blockLight", block, "VV_CLOUD_SHADOW_DEPTH", depth));
+
+                // vanilla's own fully shadowed brightness at this shadow quality
+                double Vanilla(double sunShare, double block)
+                    => Math.Max(0.0, Math.Min(1.0, 1.0 - sunShare * depth + block));
+
+                double Final(double vanilla, double cloud)
+                {
+                    string expr = wrapper.Replace("vvVanillaShadowMap()", "vanillaB")
+                                         .Replace("vvCloudShadow(worldPos.xyz)", "cloudB");
+                    return Scalar(expr, Syms("vanillaB", vanilla, "cloudB", cloud));
+                }
+
+                string tag = " (depth " + depth + ")";
+
+                bool floorHeld = true;
+                foreach (double si in new[] { 0.3, 0.6, 1.0 })
+                    floorHeld &= Lit(1.0, si, 0.0) >= Vanilla(si, 0.0) - 1e-9;
+                check("I20 a full cloud is no darker than vanilla's own shadow" + tag, floorHeld,
+                      "storm at strength 1 gives " + Lit(1.0, 0.6, 0.0) + " against vanilla shade " + Vanilla(0.6, 0.0));
+
+                double shaded = Vanilla(0.6, 0.0);
+                check("I20 shade under a cloud loses nothing more" + tag,
+                      Math.Abs(Final(shaded, Lit(1.0, 0.6, 0.0)) - shaded) < 1e-9,
+                      Final(shaded, Lit(1.0, 0.6, 0.0)).ToString());
+
+                check("I20 a torch-lit wall keeps its light under a cloud" + tag,
+                      Math.Abs(Lit(1.0, 0.6, 1.0) - 1.0) < 1e-9, Lit(1.0, 0.6, 1.0).ToString());
+
+                check("I20 no cloud means vanilla" + tag,
+                      Math.Abs(Final(0.8, Lit(0.0, 0.6, 0.0)) - 0.8) < 1e-9, Final(0.8, Lit(0.0, 0.6, 0.0)).ToString());
+
+                check("I20 a cloud over open sun does darken" + tag,
+                      Final(1.0, Lit(0.7, 0.6, 0.0)) < 0.9, Final(1.0, Lit(0.7, 0.6, 0.0)).ToString());
+            }
+
+            // A solid sky has no cloud edge left to draw and vanilla's overcast
+            // dimming already took the sun: the shadow must be gone at full
+            // cover, whole at a broken one, and whole at cover 0 (unset).
+            try
+            {
+                string shadowBody = StripComments(FunctionBody(_weather, "float vvCloudShadow(vec3") ?? "");
+                string brokenExpr = Rhs(Statement(FunctionBody(_weather, "float vvCloudShadowBrokenSky("), "return"));
+                double Broken(double cover) => Scalar(brokenExpr, Syms("cover", cover));
+                bool applied = shadowBody.Contains("* vvCloudShadowBrokenSky(vv_cloudCover)");
+                check("I20 a solid storm sky casts no cloud shadow on top of vanilla's overcast",
+                      applied && Broken(1.0) < 1e-9 && Math.Abs(Broken(0.0) - 1.0) < 1e-9 && Math.Abs(Broken(0.4) - 1.0) < 1e-9,
+                      $"applied {applied}, cover 1 keeps {Broken(1.0):0.00}, cover 0 keeps {Broken(0.0):0.00}");
+            }
+            catch (Exception ex) { check("I20 the broken-sky fade is readable", false, ex.Message); }
+        }
+
         static void I13_AToleranceIsNotFinerThanItsData(string repo, Action<string, bool, string> check)
         {
             double tolerance;
@@ -1479,6 +1559,80 @@ namespace VintageVisuals.SmokeTest
                   pbrCode.Contains("source = mix(source, vec3(1.0), scene58Confidence)") &&
                   File.ReadAllText(Path.Combine(repo, "src/Ui/DebugViewRegistry.cs")).Contains("Hybrid reflection source"),
                   "Debug > Debug System: Materials > World reflection proof > Hybrid reflection source (58) must explain the resolver");
+        }
+
+        // -------------------------------------------------------------------
+        // I21: the torch falloff slider (D70) reshapes the game's own light,
+        // it never adds light, never inverts it, and is the identity at zero
+        // and in daylight.
+        //
+        // The function is a few guards and a chain of locals, so it is walked
+        // statement by statement from the shipped body: the guards' conditions
+        // and every right-hand side are the shipped text, not a copy.
+        // -------------------------------------------------------------------
+        static void I21_TorchFalloffOnlyDarkensTheEdge(string repo, Action<string, bool, string> check)
+        {
+            string material = File.ReadAllText(Path.Combine(repo,
+                "assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl"));
+            string body = FunctionBody(material, "float vvTerrainTorchFalloff(vec3 torch)");
+            var stmts = Statements(body);
+            string[] consts = { "VV_TERRAIN_FALLOFF_FULL", "VV_TERRAIN_FALLOFF_POWER",
+                                "VV_TERRAIN_FALLOFF_FLOOR", "VV_TERRAIN_FALLOFF_MIN" };
+
+            double F(double slider, double b, double sunExposure, double sunPresence)
+            {
+                var syms = Syms("vv_pbrTorchFalloff", slider, "vv_sunExposure", sunExposure,
+                                "sunPresenceStub", sunPresence);
+                syms["torch"] = Vec(b, b, b);
+                foreach (string c in consts) syms[c] = new Val(Const(material, c));
+                for (int i = 0; i < stmts.Count; i++)
+                {
+                    string st = StubCall(stmts[i], "vvTerrainSunPresence", "sunPresenceStub");
+                    var guard = Regex.Match(st, @"^if\s*\((.*)\)\s*return\s+(.+)$");
+                    if (guard.Success)
+                    {
+                        if (Scalar(guard.Groups[1].Value, syms) != 0.0) return Scalar(guard.Groups[2].Value, syms);
+                        continue;
+                    }
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Scalar(Rhs(st), syms);
+                    var decl = Regex.Match(st, @"^float\s+([A-Za-z_][A-Za-z_0-9]*)\s*=");
+                    if (!decl.Success) throw new ArgumentException("unexpected statement in the falloff: " + st);
+                    syms[decl.Groups[1].Value] = new Val(Scalar(Rhs(st), syms));
+                }
+                throw new ArgumentException("the falloff never returned");
+            }
+
+            double worstOff = 0, worstOver = 0, worstDay = 0, minFactor = 1;
+            bool inverts = false;
+            for (int si = 0; si <= 10; si++)
+            {
+                double slider = si / 10.0;
+                double prevOut = -1;
+                for (int bi = 0; bi <= 120; bi++)
+                {
+                    double b = bi / 100.0;
+                    double night = F(slider, b, 0.0, 0.0);
+                    if (si == 0) worstOff = Math.Max(worstOff, Math.Abs(night - 1.0));
+                    worstOver = Math.Max(worstOver, night - 1.0);
+                    minFactor = Math.Min(minFactor, night);
+                    worstDay = Math.Max(worstDay, Math.Abs(F(slider, b, 1.0, 1.0) - 1.0));
+                    double outp = b * night;
+                    if (outp < prevOut - 1e-9) inverts = true;
+                    prevOut = outp;
+                }
+            }
+            check("I21 torch falloff at 0 is exactly vanilla", worstOff < 1e-9, "worst " + worstOff);
+            check("I21 torch falloff never adds light", worstOver < 1e-9, "worst gain " + worstOver);
+            check("I21 torch falloff keeps a floor", minFactor >= Const(material, "VV_TERRAIN_FALLOFF_MIN") - 1e-9,
+                  "min factor " + minFactor);
+            check("I21 a brighter torch never ends up darker", !inverts, "light output inverts along the falloff");
+            check("I21 torch falloff is off in full daylight", worstDay < 1e-9, "worst " + worstDay);
+            double dim = F(1.0, 0.2, 0.0, 0.0), half = F(0.5, 0.2, 0.0, 0.0);
+            check("I21 the slider steepens a dim wall, more at 1 than at 0.5",
+                  dim < half && half < 0.999, $"factor at b 0.2: slider 1 {dim:F3}, slider 0.5 {half:F3}");
+            check("I21 the falloff is applied to the terrain's lit colour",
+                  material.Contains("litColor.rgb *= vvTerrainTorchFalloff(blockLight);"),
+                  "vvTerrainMaterialPrimary no longer applies it");
         }
     }
 }

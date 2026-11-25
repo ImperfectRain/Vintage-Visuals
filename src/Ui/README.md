@@ -73,6 +73,13 @@ What does change is that nobody has to know the number. "Debug View 13" is not a
 user interface — it is a number to look up in a JSON comment, usable only by
 someone who already knows the answer.
 
+The two terrain shaders share one number space but not one set of views. Each
+terrain entry says which path draws it (`TerrainPaths`: legacy patch, modular
+material path, or both), and the Studio offers only the set the active path
+implements. `tools/smoketest` compares each set to its own shader's `mode == N`
+arms, so the list in the dropdown is read from the registry rather than from a
+second hand-kept list in the dialog.
+
 ## The duplication with ConfigLib, declared
 
 `assets/vintagevisuals/config/configlib-patches.json` already carries labels,
@@ -122,6 +129,9 @@ Rows report one of four availability states (`SettingAvailability.cs`): active;
 active only in some scenes (a working control with a note on where to look);
 parent off (no control, "Turn on X"); and unavailable in this build (hidden; shown
 disabled with the reason when **Show advanced and unavailable settings** is on).
+A tab whose rows are all hidden says so in two lines instead of showing an empty
+panel: the Reflections tab looked broken in the 2026-11-23 audit because stage one
+is debug views only.
 
 Short descriptions are visible on each row because hover-only help is still too
 easy to miss and too hard to validate from screenshots. The setting name and
@@ -165,8 +175,16 @@ content offset, while attaching the local scroll child directly to the root lets
 rows escape the inset.
 The sidebar uses a full-width button stack instead of native `AddVerticalTabs`
 because the native element sizes its rendered tabs from text width. It has not
-been re-opened in a running game from this environment, so presets,
-import/export and persistence remain blocked.
+been re-opened in a running game from this environment, so import/export and
+persistence remain blocked.
+
+The Materials tab carries two sunlight presets, Subtle and Cinematic
+(`VisualTuningStudioController.SunlightPresets`). Each sets only the five
+sunlight sliders (sunflecks, dapple, shafts, motes, moon flecks); neither
+switches a feature on. A tab whose rows do nothing in this build shows a plain
+note in white small text rather than an orange heading; the Reflections tab's
+note points at debug views 41 and 42 and the Show advanced toggle. Not yet seen
+in game.
 
 ## In-game acceptance tests
 

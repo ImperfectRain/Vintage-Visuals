@@ -1,46 +1,78 @@
 using System;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 
 namespace VintageVisuals.Common.Patching
 {
+    /// <summary>
+    /// The texture slot report: which texture unit every sampler of the terrain
+    /// programs is actually pointed at, read back from the driver.
+    ///
+    /// Two of this mod's worst failures were sampler-unit faults that compiled
+    /// cleanly: a sampler declared above vanilla's shifted every unit below it,
+    /// and a mod texture bound over a vanilla unit took the frame. Neither is
+    /// visible from C# or from glslang. This reads the linked program's active
+    /// sampler list and each sampler's current unit, and WARNS when two
+    /// samplers of different texture types share a unit - the one state the
+    /// driver will silently render wrong.
+    ///
+    /// It runs twice per shader reload: once right after link, and once a few
+    /// seconds later, after the binders have uploaded their units. A mod sampler
+    /// the binder has not set yet reads unit 0 in the first report; that is the
+    /// unset default, not a collision, and the second report is the one to read.
+    ///
+    /// Everything here is reflection over OpenTK, which is not a stable API. A
+    /// missing overload is logged loudly by name rather than skipped silently,
+    /// because a report that quietly prints nothing reads as "no samplers".
+    /// </summary>
     public static class RuntimeShaderIntrospector
     {
-        private static bool _reported;
+        public const int SettledReportDelayMs = 8000;
 
         public static void LogTerrainPrograms(ICoreClientAPI capi, ILogger logger)
         {
-            if (_reported || capi == null || logger == null) return;
-            _reported = true;
+            if (capi == null || logger == null) return;
 
+            Report(capi, logger, "after link");
             try
             {
-                LogProgram(capi, logger, EnumShaderProgram.Chunkopaque, "chunkopaque");
-                LogProgram(capi, logger, EnumShaderProgram.Chunktopsoil, "chunktopsoil");
+                capi.Event.RegisterCallback(_ => Report(capi, logger, "settled"), SettledReportDelayMs);
             }
             catch (Exception ex)
             {
-                logger.Warning("[VintageVisuals] shader introspection disabled after an unexpected diagnostics error: " +
+                logger.Warning("[VintageVisuals] texture slot report: could not schedule the settled report: " + ex.Message);
+            }
+        }
+
+        private static void Report(ICoreClientAPI capi, ILogger logger, string when)
+        {
+            try
+            {
+                LogProgram(capi, logger, EnumShaderProgram.Chunkopaque, "chunkopaque", when);
+                LogProgram(capi, logger, EnumShaderProgram.Chunktopsoil, "chunktopsoil", when);
+            }
+            catch (Exception ex)
+            {
+                logger.Warning("[VintageVisuals] texture slot report disabled after an unexpected diagnostics error: " +
                     ex.GetType().Name + ": " + ex.Message);
             }
         }
 
-        private static void LogProgram(ICoreClientAPI capi, ILogger logger, EnumShaderProgram id, string name)
+        private static void LogProgram(ICoreClientAPI capi, ILogger logger, EnumShaderProgram id, string name, string when)
         {
             IShaderProgram program = capi.Shader.GetProgram((int)id);
             if (program == null)
             {
-                logger.Warning("[VintageVisuals] shader introspection: " + name + " program is not loaded.");
+                logger.Warning("[VintageVisuals] texture slot report: " + name + " program is not loaded.");
                 return;
             }
 
             int handle;
             if (!TryGetProgramHandle(program, out handle))
             {
-                logger.Warning("[VintageVisuals] shader introspection: " + name +
+                logger.Warning("[VintageVisuals] texture slot report: " + name +
                     " exists but its OpenGL program handle is not exposed by the current Vintage Story API shape.");
                 return;
             }
@@ -48,34 +80,76 @@ namespace VintageVisuals.Common.Patching
             var gl = ReflectionGlApi.TryCreate();
             if (gl == null)
             {
-                logger.Warning("[VintageVisuals] shader introspection: OpenTK GL reflection API was not found; " +
+                logger.Warning("[VintageVisuals] texture slot report: OpenTK GL type was not found; " +
                     name + " sampler map cannot be read at runtime.");
                 return;
             }
 
-            logger.Notification("[VintageVisuals] shader introspection: " + name +
+            int maxUnits = gl.GetInteger("MaxTextureImageUnits");
+            int activeUniforms = gl.GetProgramInt(handle, "ActiveUniforms");
+            logger.Notification("[VintageVisuals] texture slot report (" + when + "): " + name +
                 " program=" + handle +
                 " linkStatus=" + gl.GetProgramInt(handle, "LinkStatus") +
-                " validateStatus=" + gl.GetProgramInt(handle, "ValidateStatus") +
-                " activeUniforms=" + gl.GetProgramInt(handle, "ActiveUniforms") +
-                " GL_MAX_TEXTURE_IMAGE_UNITS=" + gl.GetInteger("MaxTextureImageUnits") +
+                " activeUniforms=" + activeUniforms +
+                " GL_MAX_TEXTURE_IMAGE_UNITS=" + maxUnits +
                 " GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS=" + gl.GetInteger("MaxCombinedTextureImageUnits"));
 
-            int activeUniforms = Math.Max(0, gl.GetProgramInt(handle, "ActiveUniforms"));
-            for (int i = 0; i < activeUniforms; i++)
+            if (!gl.HasActiveUniformQuery)
+            {
+                logger.Warning("[VintageVisuals] texture slot report: no usable GL.GetActiveUniform overload on " +
+                    gl.TypeName + "; expected String GetActiveUniform(Int32, Int32, out Int32, out ActiveUniformType). " +
+                    "The " + name + " sampler map is NOT being read, which is not the same as having no samplers.");
+                return;
+            }
+
+            var samplers = new System.Collections.Generic.List<ActiveUniformInfo>();
+            for (int i = 0; i < Math.Max(0, activeUniforms); i++)
             {
                 ActiveUniformInfo uniform;
                 if (!gl.TryGetActiveUniform(handle, i, out uniform)) continue;
                 if (uniform.Type.IndexOf("Sampler", StringComparison.OrdinalIgnoreCase) < 0) continue;
 
                 int location = gl.GetUniformLocation(handle, uniform.Name);
-                int unit = location >= 0 ? gl.GetUniformInt(handle, location) : -1;
-                logger.Notification("[VintageVisuals] shader introspection: " + name +
-                    " sampler " + uniform.Name +
-                    " type=" + uniform.Type +
-                    " location=" + location +
-                    " unit=" + unit);
+                uniform.Unit = location >= 0 ? gl.GetUniformInt(handle, location) : -1;
+                samplers.Add(uniform);
             }
+
+            logger.Notification("[VintageVisuals] texture slot report (" + when + "): " + name + " " + samplers.Count +
+                " samplers: " + string.Join(", ", samplers.Select(u => u.Name + "=" + u.Unit + " (" + u.Type + ")")));
+
+            if (samplers.Count == 0)
+            {
+                logger.Warning("[VintageVisuals] texture slot report: " + name +
+                    " reported no active samplers. Every terrain program samples at least the block atlas, so the query failed.");
+                return;
+            }
+
+            foreach (var group in samplers.Where(u => u.Unit >= 0).GroupBy(u => u.Unit))
+            {
+                if (group.Select(u => u.Type).Distinct().Count() > 1)
+                {
+                    logger.Warning("[VintageVisuals] texture slot report (" + when + "): " + name + " unit " + group.Key +
+                        " is shared by samplers of different types: " + string.Join(", ", group.Select(u => u.Name + " (" + u.Type + ")")) +
+                        ". The driver renders this wrong without an error." +
+                        (when == "after link" ? " A mod sampler not yet uploaded reads 0 here; check the settled report." : ""));
+                }
+            }
+
+            foreach (var u in samplers.Where(u => maxUnits > 0 && u.Unit >= maxUnits))
+            {
+                logger.Warning("[VintageVisuals] texture slot report: " + name + " sampler " + u.Name +
+                    " is on unit " + u.Unit + ", beyond GL_MAX_TEXTURE_IMAGE_UNITS=" + maxUnits + ".");
+            }
+        }
+
+        /// <summary>
+        /// For tools/smoketest: which of the queries this report depends on the
+        /// given OpenTK GL binding type does not provide. Empty means the report
+        /// can read the sampler map on that binding.
+        /// </summary>
+        public static System.Collections.Generic.List<string> MissingGlQueries(Type glType)
+        {
+            return new ReflectionGlApi(glType).Missing();
         }
 
         private static bool TryGetProgramHandle(IShaderProgram program, out int handle)
@@ -113,24 +187,69 @@ namespace VintageVisuals.Common.Patching
         {
             public string Name;
             public string Type;
+            public int Unit;
         }
 
         private sealed class ReflectionGlApi
         {
             private readonly Type _glType;
 
-            private ReflectionGlApi(Type glType)
+            internal ReflectionGlApi(Type glType)
             {
                 _glType = glType;
             }
 
+            /// <summary>Names of the GL queries this report needs that the given binding lacks.</summary>
+            internal System.Collections.Generic.List<string> Missing()
+            {
+                var missing = new System.Collections.Generic.List<string>();
+                var methods = _glType.GetMethods(BindingFlags.Public | BindingFlags.Static);
+                if (!methods.Any(IsActiveUniformMethod)) missing.Add("GetActiveUniform");
+                if (!methods.Any(m => m.Name == "GetUniform" && m.GetParameters().Length == 3 &&
+                                      m.GetParameters()[0].ParameterType == typeof(int) &&
+                                      m.GetParameters()[1].ParameterType == typeof(int) &&
+                                      m.GetParameters()[2].ParameterType == typeof(int).MakeByRefType()))
+                    missing.Add("GetUniform(int, int, out int)");
+                if (!methods.Any(m => m.Name == "GetUniformLocation" && m.GetParameters().Length == 2 &&
+                                      m.GetParameters()[0].ParameterType == typeof(int) &&
+                                      m.GetParameters()[1].ParameterType == typeof(string)))
+                    missing.Add("GetUniformLocation(int, string)");
+                foreach (string pname in new[] { "LinkStatus", "ActiveUniforms" })
+                {
+                    if (!methods.Any(m => m.Name == "GetProgram" && m.GetParameters().Length == 3 &&
+                                          m.GetParameters()[0].ParameterType == typeof(int) &&
+                                          m.GetParameters()[2].ParameterType == typeof(int).MakeByRefType() &&
+                                          m.GetParameters()[1].ParameterType.IsEnum &&
+                                          Enum.IsDefined(m.GetParameters()[1].ParameterType, pname)))
+                        missing.Add("GetProgram(" + pname + ")");
+                }
+                foreach (string pname in new[] { "MaxTextureImageUnits", "MaxCombinedTextureImageUnits" })
+                {
+                    if (!methods.Any(m => m.Name == "GetInteger" && m.GetParameters().Length == 2 &&
+                                          m.GetParameters()[1].ParameterType == typeof(int).MakeByRefType() &&
+                                          m.GetParameters()[0].ParameterType.IsEnum &&
+                                          Enum.IsDefined(m.GetParameters()[0].ParameterType, pname)))
+                        missing.Add("GetInteger(" + pname + ")");
+                }
+                return missing;
+            }
+
             public static ReflectionGlApi TryCreate()
             {
-                Type glType = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(SafeTypes)
-                    .FirstOrDefault(t => t.FullName == "OpenTK.Graphics.OpenGL.GL" ||
-                                         t.FullName == "OpenTK.Graphics.OpenGL4.GL");
+                // OpenTK.Graphics.OpenGL is the binding Vintage Story itself
+                // calls; OpenGL4 is a separate class whose entry points may not
+                // have been loaded, so it is only a fallback.
+                Type[] types = AppDomain.CurrentDomain.GetAssemblies().SelectMany(SafeTypes).ToArray();
+                Type glType = types.FirstOrDefault(t => t.FullName == "OpenTK.Graphics.OpenGL.GL")
+                           ?? types.FirstOrDefault(t => t.FullName == "OpenTK.Graphics.OpenGL4.GL");
                 return glType == null ? null : new ReflectionGlApi(glType);
+            }
+
+            public string TypeName { get { return _glType.FullName; } }
+
+            public bool HasActiveUniformQuery
+            {
+                get { return _glType.GetMethods(BindingFlags.Public | BindingFlags.Static).Any(IsActiveUniformMethod); }
             }
 
             public int GetInteger(string enumName)
@@ -138,10 +257,13 @@ namespace VintageVisuals.Common.Patching
                 MethodInfo method = _glType.GetMethods(BindingFlags.Public | BindingFlags.Static)
                     .FirstOrDefault(m => m.Name == "GetInteger" &&
                                          m.GetParameters().Length == 2 &&
-                                         m.GetParameters()[1].ParameterType == typeof(int).MakeByRefType());
+                                         m.GetParameters()[1].ParameterType == typeof(int).MakeByRefType() &&
+                                         m.GetParameters()[0].ParameterType.IsEnum &&
+                                         Enum.IsDefined(m.GetParameters()[0].ParameterType, enumName));
                 if (method == null) return -1;
 
                 Type enumType = method.GetParameters()[0].ParameterType;
+                if (!enumType.IsEnum || !Enum.IsDefined(enumType, enumName)) return -1;
                 object enumValue = Enum.Parse(enumType, enumName);
                 object[] args = { enumValue, 0 };
                 method.Invoke(null, args);
@@ -150,11 +272,15 @@ namespace VintageVisuals.Common.Patching
 
             public int GetProgramInt(int program, string enumName)
             {
+                // OpenTK.Graphics.OpenGL has two such overloads, one per enum
+                // type; take the one whose enum actually has this name.
                 MethodInfo method = _glType.GetMethods(BindingFlags.Public | BindingFlags.Static)
                     .FirstOrDefault(m => m.Name == "GetProgram" &&
                                          m.GetParameters().Length == 3 &&
                                          m.GetParameters()[0].ParameterType == typeof(int) &&
-                                         m.GetParameters()[2].ParameterType == typeof(int).MakeByRefType());
+                                         m.GetParameters()[2].ParameterType == typeof(int).MakeByRefType() &&
+                                         m.GetParameters()[1].ParameterType.IsEnum &&
+                                         Enum.IsDefined(m.GetParameters()[1].ParameterType, enumName));
                 if (method == null) return -1;
 
                 Type enumType = method.GetParameters()[1].ParameterType;
@@ -198,32 +324,12 @@ namespace VintageVisuals.Common.Patching
 
                 try
                 {
-                    ParameterInfo[] p = method.GetParameters();
-                    int typeIndex = FindEnumParameter(p);
-                    int nameIndex = FindStringBuilderParameter(p);
-                    if (typeIndex < 0 || nameIndex < 0) return false;
-
-                    Type uniformType = ByRefElement(p[typeIndex].ParameterType);
-                    if (uniformType == null || !uniformType.IsEnum) return false;
-
-                    object[] args = new object[p.Length];
-                    args[0] = program;
-                    args[1] = index;
-                    args[2] = 256;
-
-                    for (int i = 3; i < args.Length; i++)
-                    {
-                        Type parameterType = ByRefElement(p[i].ParameterType);
-                        if (i == typeIndex) args[i] = Enum.ToObject(uniformType, 0);
-                        else if (i == nameIndex) args[i] = new StringBuilder(256);
-                        else if (parameterType == typeof(int)) args[i] = 0;
-                        else return false;
-                    }
-
-                    method.Invoke(null, args);
-                    uniform.Name = args[nameIndex].ToString();
-                    uniform.Type = args[typeIndex].ToString();
-                    return !string.IsNullOrEmpty(uniform.Name);
+                    Type uniformType = method.GetParameters()[3].ParameterType.GetElementType();
+                    object[] args = { program, index, 0, Enum.ToObject(uniformType, 0) };
+                    string name = method.Invoke(null, args) as string;
+                    uniform.Name = name;
+                    uniform.Type = args[3].ToString();
+                    return !string.IsNullOrEmpty(name);
                 }
                 catch
                 {
@@ -231,43 +337,24 @@ namespace VintageVisuals.Common.Patching
                 }
             }
 
+            /// <summary>
+            /// OpenTK 4's managed convenience overload: String GetActiveUniform(
+            /// int program, int index, out int size, out ActiveUniformType type).
+            /// The StringBuilder overload this used to look for does not exist
+            /// in the OpenTK the game ships, so the old report never printed a
+            /// single sampler.
+            /// </summary>
             private static bool IsActiveUniformMethod(MethodInfo method)
             {
-                if (method.Name != "GetActiveUniform") return false;
+                if (method.Name != "GetActiveUniform" || method.ReturnType != typeof(string)) return false;
 
                 ParameterInfo[] p = method.GetParameters();
-                return p.Length >= 7 &&
+                return p.Length == 4 &&
                        p[0].ParameterType == typeof(int) &&
                        p[1].ParameterType == typeof(int) &&
-                       p[2].ParameterType == typeof(int) &&
-                       FindEnumParameter(p) >= 0 &&
-                       FindStringBuilderParameter(p) >= 0;
-            }
-
-            private static int FindEnumParameter(ParameterInfo[] parameters)
-            {
-                for (int i = 3; i < parameters.Length; i++)
-                {
-                    Type type = ByRefElement(parameters[i].ParameterType);
-                    if (type != null && type.IsEnum) return i;
-                }
-
-                return -1;
-            }
-
-            private static int FindStringBuilderParameter(ParameterInfo[] parameters)
-            {
-                for (int i = 3; i < parameters.Length; i++)
-                {
-                    if (ByRefElement(parameters[i].ParameterType) == typeof(StringBuilder)) return i;
-                }
-
-                return -1;
-            }
-
-            private static Type ByRefElement(Type type)
-            {
-                return type != null && type.IsByRef ? type.GetElementType() : type;
+                       p[2].ParameterType == typeof(int).MakeByRefType() &&
+                       p[3].ParameterType.IsByRef &&
+                       p[3].ParameterType.GetElementType().IsEnum;
             }
 
             private static Type[] SafeTypes(Assembly assembly)

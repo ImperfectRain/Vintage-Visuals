@@ -89,19 +89,8 @@ namespace VintageVisuals.Ui
         /// <summary>Read only by pseudopbr.glsl, which is gated off with the legacy terrain path.</summary>
         public static readonly HashSet<string> LegacyTerrainOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "pbr_grain",
-            "pbr_foliage",
-            "pbr_dapple",
-            "pbr_shafts",
-            "pbr_canopyradius",
-            "pbr_emissivebloom",
-            "reflections_scene",
-            "pbr_pixelreflect",
-
-            // Uploaded by the PBR binder, but on terrain only pseudopbr.glsl
-            // reads vv_weatherRipples and vv_weatherRainCover.
-            "weather_ripples",
-            "weather_raincover",
+            // Empty since D62: pixel and scene reflections are drawn by the
+            // modular terrain path (pbrterrainmaterial + pbrterrainreflect).
         };
 
         /// <summary>Declared FOUNDATION ONLY in their own descriptions and in src/Atmosphere/README.md.</summary>
@@ -135,13 +124,35 @@ namespace VintageVisuals.Ui
         {
             { "pbr_normalstrength", "Judge on close stone or planks, not grass or leaves." },
             { "pbr_cavity", "Judge on close stone or planks, not grass or leaves." },
+            { "pbr_grain", "Judge on close planks and log sides in sunlight." },
+            { "pbr_foliage", "Shows on leaves and grass with a low clear sun behind them." },
+            { "pbr_dapple", "Needs shadows on. Shows on the ground under trees in sun." },
+            { "pbr_canopyradius", "Needs shadows on and Sun dapple above zero." },
+            { "pbr_sunflecks", "Needs shadows on. Shows in shade under leaves in sun, within about 40 blocks." },
+            { "pbr_moonflecks", "Needs shadows on. Shows in shade under leaves at night with the moon up." },
+            { "pbr_shafts", "Needs god-rays on in the game's settings. Look toward the sun through a canopy." },
+            { "pbr_motes", "Shows in sun shafts under a canopy, within about 12 blocks, on a clear day." },
+            { "pbr_gusts", "Needs wind. Watch a grass field or crowns from a little way off." },
+            { "pbr_contactshade", "Shows at the foot of grass, flowers and crops, close up." },
+            { "pbr_torchfalloff", "Shows in a room or cave lit by torches: walls beside a torch stay bright, walls between torches fall darker. Blocks only; creatures and items keep vanilla light." },
+            { "pbr_crevicewater", "Shows on stone and brick open to the sky: pools in the joints between stones while the ground is wet, streams sliding down walls along each stone while it rains. Debug view 73 shows the joints and paths found, 75 the water." },
+            { "pbr_damp", "Shows on rough stone, logs and soil under trees or in half-shade, in a rainy climate." },
+            { "pbr_drips", "Stand under leaves during or just after rain." },
+            { "pbr_pollen", "Warm dry day in spring or summer, over grass or flowers." },
+            { "pbr_fireflies", "Dusk or a warm summer night, over grass, ideally humid ground." },
+            { "pbr_leaves", "Near trees. Most in autumn and in wind; watch for a gust crossing the crowns." },
+            { "atmosphere_foresthaze", "Inside a forest, looking between the trunks." },
+            { "atmosphere_groundmist", "Still, humid night or early morning, or after rain, near low ground or water." },
             { "pbr_detaildistance", "Grass and leaves are excluded in this build." },
-            { "pbr_blocklight", "Creatures, items and particles only in this build." },
-            { "pbr_emissive", "Glowing creatures, items and particles only." },
-            { "pbr_emissivetemperature", "Glowing creatures, items and particles only." },
-            { "pbr_emissiveflicker", "Glowing creatures, items and particles only." },
-            { "pbr_blocklightdir", "Creatures, items and particles only in this build." },
+            { "pbr_blocklight", "Shows near torches, lanterns and lava: relief turns toward the flame on every block, and the highlight is strongest on wet or polished ones. Debug view 74 shows it alone." },
+            { "pbr_emissive", "Shows on glowing blocks, creatures, items and particles." },
+            { "pbr_emissivetemperature", "Shows on glowing blocks, creatures, items and particles." },
+            { "pbr_emissiveflicker", "Shows on glowing blocks, creatures, items and particles." },
+            { "pbr_emissivebloom", "Shows as bloom around glowing blocks, such as torches and lava." },
+            { "pbr_blocklightdir", "Walk past a torch beside a wet or polished wall and watch the highlight move." },
             { "weather_wetness", "Shows while it rains and while surfaces dry." },
+            { "weather_ripples", "Shows on flat ground open to the sky while it rains." },
+            { "weather_raincover", "Decides which sheltered spots stay dry in rain." },
             { "weather_fogstrength", "Shows only while it is raining." },
             { "weather_fogtint", "Shows only while it is raining." },
             { "weather_frost", "Shows only in freezing weather." },
@@ -176,16 +187,8 @@ namespace VintageVisuals.Ui
                 return new SettingAvailability(AvailabilityState.Unavailable, DebugOnlyReason);
             }
 
-            if (setting.Code == "pbr_blocklight" || setting.Code == "pbr_blocklightdir")
-            {
-                // The terrain material shader does not read these, so they reach
-                // the screen only through the entity and particle programs.
-                if (config != null && !config.PseudoPBR.EntityLighting && !config.PseudoPBR.ParticleLighting)
-                {
-                    return new SettingAvailability(AvailabilityState.ParentOff,
-                        "Turn on Creature and player lighting or Particle lighting.");
-                }
-            }
+            // pbr_blocklight and pbr_blocklightdir reach terrain since D64, so
+            // they are no longer limited to the entity and particle programs.
 
             Parent[] parents;
             if (config != null && Parents.TryGetValue(setting.Code, out parents))
@@ -277,7 +280,7 @@ namespace VintageVisuals.Ui
 
             // GradeStack.Evaluate applies only the style when adaptive grading is off.
             Under(new[] { colour, world },
-                "grade_timeofday", "grade_weather", "grade_biome", "grade_indoor", "grade_depth", "grade_underwater");
+                "grade_timeofday", "grade_weather", "grade_biome", "grade_season", "grade_indoor", "grade_depth", "grade_underwater");
 
             // Read by the terrain material shader, which IsPatchGroupEnabled
             // removes entirely when Surface materials is off.
@@ -285,7 +288,8 @@ namespace VintageVisuals.Ui
                 "pbr_normalstrength", "pbr_detaildistance", "pbr_cavity", "pbr_specularstrength",
                 "pbr_ambientspecular", "pbr_roughnessbias", "pbr_metalresponse", "pbr_specularaa",
                 "pbr_specocclusion", "pbr_energy",
-                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_shafts", "pbr_canopyradius",
+                "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
+                "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_crevicewater", "pbr_torchfalloff", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
                 "reflections_scene", "pbr_pixelreflect");
 
@@ -309,7 +313,8 @@ namespace VintageVisuals.Ui
                 "atmosphere_aerial", "atmosphere_horizon", "atmosphere_sunscatter", "atmosphere_heighthaze",
                 "atmosphere_heightattenuation", "atmosphere_weatherextinction", "atmosphere_weathertint",
                 "atmosphere_cloudatmosphere", "atmosphere_precipitation", "atmosphere_godrays",
-                "atmosphere_godrayquality", "atmosphere_moon", "atmosphere_cloudedge", "atmosphere_dapple");
+                "atmosphere_godrayquality", "atmosphere_moon", "atmosphere_cloudedge", "atmosphere_dapple",
+                "atmosphere_foresthaze", "atmosphere_groundmist");
 
             return map;
         }
