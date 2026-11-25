@@ -50,6 +50,7 @@ uniform float vv_waterRipples;     // rain falling x strength, 0 none
 uniform float vv_waterRippleTime;  // 0..1 clock, whole drops per wrap
 uniform float vv_waterRippleEpoch; // whole wraps of that clock so far, mod 4096
 uniform float vv_waterRippleLayers;// quality: 1 or 2 ripple scales
+uniform float vv_waterOwnDrops;    // 1 when this mod's rain rings replace vanilla's droplet rings
 uniform float vv_waterGlints;      // sun and moon highlight strength
 uniform float vv_waterWaves;       // texel wave relief strength
 uniform float vv_waterDebug;       // debug views, 0 off
@@ -298,6 +299,17 @@ float vvWaterVanillaSpecularKeep()
 {
     if (vv_water < 0.5) return 1.0;
     return mix(1.0, VV_WATER_SPEC_KEEP, clamp(vv_waterGlints, 0.0, 1.0));
+}
+
+// Vanilla's droplet rings on water (dropletnoise) sit on a fixed grid and
+// replay in the same cells forever, beside rings that land somewhere new: two
+// rain systems that disagree on one surface. While this mod's rings are on they
+// replace vanilla's, so water and land show the same drops (D75). 1 (vanilla)
+// whenever this group is not live or the ring slider is 0.
+float vvWaterVanillaDropletKeep()
+{
+    if (vv_water < 0.5) return 1.0;
+    return 1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0);
 }
 
 // One directional glint (GGX, the same lobe terrain uses), for one light.

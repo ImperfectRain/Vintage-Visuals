@@ -3356,3 +3356,34 @@ tries at High, most rejected by the weights. GPU cost is two draws per leaf
 texture whatever the count. **Not verified**: how far a leaf can be seen
 before the thinning shows, whether the coarse map misses narrow crowns, and the
 frame cost, which `.vvbench leaves` in a forest measures.
+
+## D75 - One rain-drop system: vanilla's droplet rings step aside, impact capture rejected
+
+**Context.** Elijah (2026-11-25) asked whether the PBR drops could trigger
+only where vanilla's raindrops land on water, with the same logic on land.
+
+**What vanilla does.** Two unrelated things. (1) `WeatherSimulationParticles.
+SpawnRainParticles` (VSEssentials) does not detect impacts: every spawner tick
+it picks 300 x precipitation random columns within 60 blocks (denser near the
+player), puts a splash particle on the rain-map top there, liquid or solid, and
+spawns it. (2) `chunkliquid`'s `dropletnoise` draws rings on a FIXED grid that
+replay in the same cells forever, scaled by `dropletIntensity`.
+
+**Decision.** The mod's ring field already follows (1)'s rule: random places
+per drop (D73), count linear in precipitation, only on sky-exposed top faces,
+water and land through the same parity-checked function. (2) is the
+fixed-spot pattern Elijah objected to, so while the ring slider is above 0 it is
+multiplied out on water (`vvWaterVanillaDropletKeep`, `vv_waterOwnDrops`; 1 when
+the group is not live or the slider is 0). One drop system covers both surfaces.
+
+**Rejected: capturing vanilla's splash positions.** Possible (a postfix on the
+particle manager's Spawn matching the public static `splashParticles`), but the
+splashes are themselves random draws rather than impacts, there are thousands
+a second, they are spawned off the main thread, and matching them per fragment
+needs either a loop over a uniform array on every wet terrain fragment or a new
+sampler in `chunkopaque` (CLAUDE.md: twice cost the world render). The result
+would be the same statistics at a large cost and a VintagestoryLib hook.
+
+**Limits.** Splash particles and rings are not at the same points, only drawn
+by the same rule. L2.
+
