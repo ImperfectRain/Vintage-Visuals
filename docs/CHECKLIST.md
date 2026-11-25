@@ -114,6 +114,7 @@ from the source texture.
 | Falling leaves (`ForestLifeSpawner`, `GustField`, v15, D58) | x | x | x | x | – | – | – | – | x |
 | Textured falling leaves (`LeafRenderer`, `LeafSprites`, `LeafFlight`, v15, D60) | x | x | x | x | x | – | – | – | x |
 | Batched leaves, leaf litter, leaves on currents (`LeafRenderer`, v15d, D61) | x | x | x | x | – | – | – | – | x |
+| 50-block leaf reach, distance and view LOD, tier budget, rain and frost shedding (`LeafBudget`, `LeafSourceMap`, D78) | x | x | x | x | – | – | – | – | x |
 | Fireflies replace vanilla's (`VanillaFireflies`, swarms, v15, D59) | x | x | x | x | – | – | – | – | x |
 | Moonlight flecks | x | x | x | x | – | – | – | – | x |
 | Cloud cover from ambient and falling rain (D53) | x | x | x | x | – | – | – | – | x |

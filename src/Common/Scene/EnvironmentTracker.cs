@@ -274,6 +274,13 @@ namespace VintageVisuals.Common.Scene
         public CanopyMap Canopy { get; } = new CanopyMap();
 
         /// <summary>
+        /// D78. Where falling leaves can come from, out to 64 blocks: a coarser,
+        /// CPU-only companion to <see cref="Canopy"/>, whose reach the shader
+        /// fixes. Scanned on the tick only while asked for.
+        /// </summary>
+        public LeafSourceMap LeafSources { get; } = new LeafSourceMap();
+
+        /// <summary>
         /// v14. Where the low ground and the water are around the player, for
         /// the ground mist. Scanned on the tick only while asked for, like
         /// <see cref="Canopy"/>.
@@ -337,6 +344,7 @@ namespace VintageVisuals.Common.Scene
             SampleObserver();
             SampleSky();
             SampleCanopy(deltaSeconds);
+            SampleLeafSources();
             SampleGround();
 
             double ripple = _rippleClock + deltaSeconds / RippleSeconds;
@@ -692,6 +700,19 @@ namespace VintageVisuals.Common.Scene
             catch (Exception)
             {
                 // Held at the last scan; the mist keeps its last floor.
+            }
+        }
+
+        private void SampleLeafSources()
+        {
+            try
+            {
+                if (!LeafSources.Wanted(_capi.ElapsedMilliseconds)) return;
+                LeafSources.Scan(_capi, _capi.World?.Player?.Entity?.Pos);
+            }
+            catch (Exception)
+            {
+                // Held at the last scan; the leaves keep their last sources.
             }
         }
 

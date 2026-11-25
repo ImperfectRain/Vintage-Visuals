@@ -3,6 +3,7 @@ using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.Common.Scene;
 
 namespace VintageVisuals.PseudoPBR
@@ -120,6 +121,19 @@ namespace VintageVisuals.PseudoPBR
 
         /// <summary>The trickle that still falls in still air, as a share of a full gale's shedding.</summary>
         public const float LeafStillAir = 0.04f;
+
+        /// <summary>
+        /// D78. A downpour knocks leaves loose even in still air: at full rain
+        /// this share of the autumn peak, a third of it in the green seasons.
+        /// </summary>
+        public const float LeafRainKnock = 0.12f;
+
+        /// <summary>
+        /// D78. Frost in the leaf-fall season loosens the crowns: from 1 C down
+        /// to -3 C the season's shed rises to (1 + this) times, scaled by how
+        /// far into the leaf fall the year is, so a spring frost sheds nothing extra.
+        /// </summary>
+        public const float LeafFrostBoost = 1f;
 
         /// <summary>Evergreens (no season colour map, or the game's needle map) shed this share of a broadleaf's rate, smaller.</summary>
         public const float LeafEvergreenShare = 0.25f;
@@ -253,13 +267,14 @@ namespace VintageVisuals.PseudoPBR
             float drips = GameMath.Clamp(config.LeafDrips, 0f, 1f);
             float leaves = GameMath.Clamp(config.FallingLeaves, 0f, 1f);
             if (drips > 0.001f || leaves > 0.001f) tracker.Canopy.Request(_capi.ElapsedMilliseconds);
+            if (leaves > 0.001f) tracker.LeafSources.Request(_capi.ElapsedMilliseconds);
 
             int spawned = 0;
             spawned += SpawnDrips(drips * DripRate(world), tracker.Canopy, player);
             spawned += SpawnPollen(GameMath.Clamp(config.Pollen, 0f, 1f) * PollenRate(world), world, player);
             spawned += SpawnFireflies(GameMath.Clamp(config.Fireflies, 0f, 1f) * FireflyRate(world), player, TickSeconds);
             spawned += SpawnLeaves(leaves, GameMath.Clamp(config.WindGusts, 0f, 1f), tracker.BreezeClock,
-                                   world, tracker.Canopy, player);
+                                   world, tracker.Canopy, tracker.LeafSources, player);
 
             if (spawned > 0 && !_reported)
             {
@@ -334,9 +349,10 @@ namespace VintageVisuals.PseudoPBR
         }
 
         /// <summary>
-        /// Falling leaves, 0..1, at one place: season x wind there x a gentle
-        /// day bias (dry, warming air in the day; half as many at night, when
-        /// fewer could be seen anyway). <paramref name="gust"/> is
+        /// Falling leaves, 0..1, at one place: season (raised by autumn frost)
+        /// x wind there, plus what rain knocks loose, x a gentle day bias (dry,
+        /// warming air in the day; half as many at night, when fewer could be
+        /// seen anyway). <paramref name="gust"/> is
         /// <see cref="GustField.At"/> at the spot, 0 with gusts off.
         /// </summary>
         public static float LeafRate(EnvironmentState world, float gust)
@@ -345,8 +361,17 @@ namespace VintageVisuals.PseudoPBR
             float day = 0.5f + 0.5f * GameMath.Clamp(world.DayLight, 0f, 1f);
             float storm = GameMath.Clamp((local - LeafStormLow) / (LeafStormHigh - LeafStormLow), 0f, 1f);
             storm = storm * storm * (3f - 2f * storm);
-            float shed = Math.Max(LeafShed(world), LeafStormShed * storm);
-            return shed * LeafWind(local) * day;
+            float fall = GameMath.Clamp(world.LeafFall, 0f, 1f);
+            float season = LeafShed(world) * (1f + LeafFrostBoost * LeafFrost(world) * fall);
+            float shed = Math.Max(season, LeafStormShed * storm);
+            float knock = LeafRainKnock * GameMath.Clamp(world.Rain, 0f, 1f) * (0.3f + 0.7f * fall);
+            return GameMath.Clamp((shed * LeafWind(local) + knock) * day, 0f, 1f);
+        }
+
+        /// <summary>D78. How hard frost is biting, 0 at 1 C and above to 1 at -3 C. Pure.</summary>
+        public static float LeafFrost(EnvironmentState world)
+        {
+            return GameMath.Clamp((1f - world.Temperature) / 4f, 0f, 1f);
         }
 
         /// <summary>
@@ -371,28 +396,77 @@ namespace VintageVisuals.PseudoPBR
         /// crowns it passes and leaves the rest trickling.
         /// </summary>
         private int SpawnLeaves(float slider, float gusts, float breeze, EnvironmentState world,
-                                CanopyMap map, EntityPlayer player)
+                                CanopyMap map, LeafSourceMap far, EntityPlayer player)
         {
+            if (LeafBench.Mode == LeafBench.Off) return 0;
             if (slider < 0.001f || map == null || !map.Valid) return 0;
             IBlockAccessor blocks = _capi.World?.BlockAccessor;
             if (blocks == null) return 0;
+
+            bool legacy = LeafBench.Mode == LeafBench.Legacy;
+            float reach = LeafBudget.Reach;
+            int cap = Math.Min(LeafBudget.Cap, LeafRenderer.MaxFlying);
+            int tries = legacy ? LeafTriesPerTick : LeafBudget.TriesFor(reach, LeafTriesPerTick);
 
             Vec2f dir = world.WindDirection ?? new Vec2f(1f, 0f);
             float len = (float)Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
             float dx = len > 1e-3f ? dir.X / len : 1f;
             float dz = len > 1e-3f ? dir.Y / len : 0f;
+
+            // The camera's horizontal facing, for the view weight.
+            Vec3f view = player.SidedPos?.GetViewVector();
+            float vx = view?.X ?? 0f, vz = view?.Z ?? 0f;
+            float vlen = (float)Math.Sqrt(vx * vx + vz * vz);
+            bool facing = vlen > 1e-3f;
+            if (facing) { vx /= vlen; vz /= vlen; }
+
             var pos = new BlockPos(player.Pos.Dimension);
             int spawned = 0;
+            bool textured = _leafRenderer != null && _leafRenderer.Usable;
 
-            for (int t = 0; t < LeafTriesPerTick; t++)
+            for (int t = 0; t < tries; t++)
             {
-                bool textured = _leafRenderer != null && _leafRenderer.Usable;
-                if (_leaves >= LeafMaxAlive && (!textured || _leafRenderer.Count >= LeafRenderer.MaxFlying)) break;
-                double x = player.Pos.X + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
-                double z = player.Pos.Z + (_random.NextDouble() * 2.0 - 1.0) * LeafReach;
+                int flying = textured ? _leafRenderer.Count : (int)_leaves;
+                if (flying >= cap && (textured || _leaves >= LeafMaxAlive)) break;
+
+                double ox, oz;
+                if (legacy)
+                {
+                    ox = (_random.NextDouble() * 2.0 - 1.0) * reach;
+                    oz = (_random.NextDouble() * 2.0 - 1.0) * reach;
+                }
+                else
+                {
+                    // Uniform over the disc: radius from the square root.
+                    double a = _random.NextDouble() * Math.PI * 2.0;
+                    double r = reach * Math.Sqrt(_random.NextDouble());
+                    ox = Math.Cos(a) * r;
+                    oz = Math.Sin(a) * r;
+                }
+                float distance = (float)Math.Sqrt(ox * ox + oz * oz);
+                double x = player.Pos.X + ox, z = player.Pos.Z + oz;
+
+                float weight = 1f;
+                float below = 8f, above = 24f;
+                if (!legacy)
+                {
+                    if (textured && !LeafBudget.Admits(distance, flying, cap)) continue;
+                    weight = LeafBudget.DistanceWeight(distance, reach);
+                    if (facing && distance > 1e-3f)
+                        weight *= LeafBudget.ViewWeight((float)((ox * vx + oz * vz) / distance), distance);
+                    // Cheap rejection before any map or gust work.
+                    if (_random.NextDouble() > weight) continue;
+                    LeafBudget.HeightWindow(distance, out below, out above);
+                }
+
                 int bx = (int)Math.Floor(x), bz = (int)Math.Floor(z);
-                if (!map.TryCell(bx, bz, out int density, out int lowest)) continue;
-                if (density < 1 || lowest < player.Pos.Y - 8.0 || lowest > player.Pos.Y + 24.0) continue;
+                int density, lowest;
+                // The shader's 2-block map where it reaches; the coarse 4-block one beyond.
+                if (!map.TryCell(bx, bz, out density, out lowest))
+                {
+                    if (legacy || far == null || !far.TryCell(bx, bz, out density, out lowest)) continue;
+                }
+                if (density < 1 || lowest < player.Pos.Y - below || lowest > player.Pos.Y + above) continue;
 
                 float gust = GustField.At(Wrap(x), Wrap(z), gusts, world.WindSpeed, breeze, dir.X, dir.Y);
                 float rate = slider * LeafRate(world, gust) * (0.4f + 0.6f * Math.Min(1f, density / 7f));
@@ -408,7 +482,7 @@ namespace VintageVisuals.PseudoPBR
 
                 // A leaf with its real shape where the renderer can cut one
                 // from this tree's texture; a coloured particle where it cannot.
-                if (textured && _leafRenderer.Count < LeafRenderer.MaxFlying &&
+                if (textured && _leafRenderer.Count < cap &&
                     _leafRenderer.TrySpawn(block, pos, x, lowest - 0.2, z,
                         dx * push, -0.3f, dz * push, evergreen))
                 {

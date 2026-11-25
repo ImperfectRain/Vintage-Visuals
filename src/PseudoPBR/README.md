@@ -1409,6 +1409,12 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
   on water float with the game's current.
   The season comes from `EnvironmentState.LeafFall`, continuous across the
   handovers (D59), and leaves draw at 0.35 to 0.55.
+  Since D78 they reach 50 blocks (by quality tier, `LeafBudget`): as dense as
+  v15 near the player, thinning to 0.3 at the reach and to 0.2 behind the
+  camera, with far leaves held to 70% of the cap and landing far leaves fading
+  instead of lying. Beyond the shader's 32-block leaf map, crowns come from
+  `LeafSourceMap` (Common/Scene, CPU only). Rain and autumn frost shed leaves
+  too. `.vvbench leaves` compares no leaves, the old reach and the new one.
 - **Fireflies replace vanilla's** (v15, D59). `VanillaFireflies` zeroes the
   quantity of the game's `fireflyParticles` while ours are on and restores it
   when they are off. Ours are swarms flashing together in waves, each flash a
@@ -1417,7 +1423,10 @@ Every strength is 0 for vanilla; nothing here has been seen in game (L2).
 Cost, none measured: two noise reads for gusts per plant fragment and fleck
 evaluation; four texture reads for the rim per qualifying leaf (already paid by the
 shafts there); one leaf-map and one noise read for damp; up to 8 CPU lookups per
-particle kind every 0.2 s (36 for leaves); for textured leaves, a vertex
-rewrite of up to 400 quads and two draws per leaf texture a frame, and 40
-litter checks a frame. No sampler, pass, target or texture unit.
+particle kind every 0.2 s (leaves: 36 over v15's square, about 220 over
+D78's 50-block disc, most rejected by the distance and view weights before any
+lookup); for textured leaves, a vertex rewrite of up to the tier's cap (500 at
+High) and two draws per leaf texture a frame, two block reads per flying leaf
+a frame, and 40 litter checks a frame; `LeafSourceMap` about 2,000 block
+reads a tick while leaves are on. No sampler, pass, target or texture unit.
 

@@ -12,6 +12,8 @@ namespace VintageVisuals.Common.Diagnostics
     ///
     ///   .vvperf                 toggle the frame-time readout
     ///   .vvbench [seconds]      record the current settings (default 10 s)
+    ///   .vvbench leaves [secs]  record no falling leaves, the old 20-block
+    ///                           reach and the new one in turn (D78)
     ///   .vvbench tiers [secs]   record Low, Medium, High, Ultra in turn, then
     ///                           restore the configured tier (default 8 s each)
     ///
@@ -86,7 +88,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]' or '.vvbench tiers [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]' or '.vvbench leaves [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -107,6 +109,16 @@ namespace VintageVisuals.Common.Diagnostics
             if (_profiler.Recording || _benchCallback != 0)
             {
                 return TextCommandResult.Error("A bench is already running.");
+            }
+
+            if (string.Equals(mode, "leaves", StringComparison.OrdinalIgnoreCase))
+            {
+                int each = seconds > 0 ? seconds : 10;
+                _tierResults.Clear();
+                RunLeaves(LeafBench.Off, each);
+                return TextCommandResult.Success("Benchmarking falling leaves: none, the old 20-block reach, then the new reach, " +
+                    LeafBench.WarmSeconds.ToString("0") + " s to settle and " + each +
+                    " s recorded each. Stand still in a forest, facing the trees.");
             }
 
             if (string.Equals(mode, "tiers", StringComparison.OrdinalIgnoreCase))
@@ -153,6 +165,33 @@ namespace VintageVisuals.Common.Diagnostics
                     Report(sb.ToString());
                 }, seconds * 1000);
             }, (int)(SettleSeconds * 1000));
+        }
+
+        /// <summary>
+        /// D78. One run of '.vvbench leaves': hold the leaf mode, let the
+        /// leaves of that reach fill the air, record, then the next mode.
+        /// </summary>
+        private void RunLeaves(int mode, int seconds)
+        {
+            LeafBench.Mode = mode;
+            _benchCallback = _capi.Event.RegisterCallback(_ =>
+            {
+                _profiler.BeginBench();
+                _benchCallback = _capi.Event.RegisterCallback(__ =>
+                {
+                    bool off = mode == LeafBench.Off;
+                    _tierResults.Add(_profiler.EndBench(LeafBench.Name(mode) +
+                        (off ? "" : " - " + LeafBench.Flying + " flying, " + LeafBench.Litter + " lying")));
+                    if (mode == LeafBench.Off) { RunLeaves(LeafBench.Legacy, seconds); return; }
+                    if (mode == LeafBench.Legacy) { RunLeaves(LeafBench.Normal, seconds); return; }
+
+                    _benchCallback = 0;
+                    LeafBench.Mode = LeafBench.Normal;
+                    var sb = new StringBuilder();
+                    foreach (FrameProfiler.BenchResult r in _tierResults) sb.Append(r.Format());
+                    Report(sb.ToString());
+                }, seconds * 1000);
+            }, (int)(LeafBench.WarmSeconds * 1000));
         }
 
         private void Report(FrameProfiler.BenchResult result)

@@ -7,6 +7,7 @@ using Vintagestory.API.MathTools;
 using VintageVisuals.Atmosphere;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.Common.Scene;
 using VintageVisuals.PseudoPBR;
 
@@ -41,6 +42,7 @@ namespace VintageVisuals.SmokeTest
             Fireflies(check);
             TexturedLeaves(check);
             LeafLitter(check);
+            LeafReach(check);
         }
 
         private static string Body(string src, string sig)
@@ -546,6 +548,86 @@ namespace VintageVisuals.SmokeTest
             check("textured leaves: tinted by the game's colour, fall slowly, ride the wind, lie flat when down",
                   tint && flight && rest,
                   $"tint {tr:0.00}/{tg:0.00}/{tb:0.00}; still fall {calmFall:0.00} b/s drift {calm.X:0.0}; gale {galeAlong:0.0} b/s; spin {calmSpin:0.0}/{galeSpin:0.0}; rest {rest}");
+        }
+
+        // --- Leaf reach and budget (D78) -----------------------------------
+
+        private static void LeafReach(Action<string, bool, string> check)
+        {
+            // Reach: 50 blocks at High, inside the coarse leaf map's span with
+            // room for a crown, and every tier's cap under the renderer's.
+            bool tiers = true;
+            for (int t = QualityTier.Low; t <= QualityTier.Ultra; t++)
+            {
+                tiers &= LeafBudget.ReachFor(t) <= LeafSourceMap.HalfSpan - 4 &&
+                         LeafBudget.CapFor(t) <= LeafRenderer.MaxFlying && LeafBudget.CapFor(t) >= 150;
+                if (t > QualityTier.Low)
+                    tiers &= LeafBudget.ReachFor(t) > LeafBudget.ReachFor(t - 1) && LeafBudget.CapFor(t) > LeafBudget.CapFor(t - 1);
+            }
+            tiers &= LeafBudget.ReachFor(QualityTier.High) >= 50f && LeafBudget.ReachFor(QualityTier.Low) > LeafBudget.LegacyReach;
+
+            // Near the player the spawn is v15's: as many tries per block, and
+            // full weight. Far, it thins to the far share; behind, to the
+            // behind share; and only past the near ring.
+            float reach = LeafBudget.ReachFor(QualityTier.High);
+            int tries = LeafBudget.TriesFor(reach, ForestLifeSpawner.LeafTriesPerTick);
+            double perBlock = tries / (Math.PI * reach * reach);
+            double legacyPerBlock = ForestLifeSpawner.LeafTriesPerTick / (4.0 * LeafBudget.LegacyReach * LeafBudget.LegacyReach);
+            bool density = perBlock >= legacyPerBlock * 0.999 && perBlock < legacyPerBlock * 1.1;
+            bool distance = LeafBudget.DistanceWeight(0f, reach) == 1f &&
+                            LeafBudget.DistanceWeight(LeafBudget.NearFull, reach) == 1f &&
+                            Math.Abs(LeafBudget.DistanceWeight(reach, reach) - LeafBudget.FarShare) < 1e-5f &&
+                            LeafBudget.DistanceWeight(30f, reach) < LeafBudget.DistanceWeight(20f, reach) &&
+                            LeafBudget.DistanceWeight(30f, reach) > LeafBudget.FarShare &&
+                            LeafBudget.FarShare > 0.1f;
+            bool view = LeafBudget.ViewWeight(-1f, 5f) == 1f &&
+                        Math.Abs(LeafBudget.ViewWeight(-1f, 30f) - LeafBudget.BehindShare) < 1e-5f &&
+                        LeafBudget.ViewWeight(1f, 30f) == 1f &&
+                        LeafBudget.BehindShare > 0f;
+            int cap = LeafBudget.CapFor(QualityTier.High);
+            bool budget = LeafBudget.Admits(5f, cap - 1, cap) && !LeafBudget.Admits(5f, cap, cap) &&
+                          !LeafBudget.Admits(40f, (int)(cap * 0.9f), cap) && LeafBudget.Admits(40f, cap / 2, cap) &&
+                          LeafBudget.LitterReach < LeafRenderer.KeepRange;
+            LeafBudget.HeightWindow(0f, out float below0, out float above0);
+            LeafBudget.HeightWindow(50f, out float below50, out float above50);
+            bool height = below0 == 8f && above0 == 24f && below50 > below0 && above50 > above0;
+            check("falling leaves reach 50 blocks, as dense as before near the player, thinning far and behind (D78)",
+                  tiers && density && distance && view && budget && height,
+                  $"tiers {tiers}, tries {tries} ({perBlock:0.0000}/block vs {legacyPerBlock:0.0000}), distance {distance}, view {view}, budget {budget}, height {height}");
+
+            // The coarse leaf map's column read: a crown under the top is
+            // counted to its lowest leaf and stops after it; a bare top stops
+            // within a few blocks; litter is not a crown.
+            bool[] crown = { false, false, true, true, true, false, true, false, false, true, true };
+            int n = LeafSourceMap.ReadColumn(i => i < crown.Length && crown[i], 26, out int low);
+            int reads = 0;
+            int bare = LeafSourceMap.ReadColumn(i => { reads++; return false; }, 26, out int bareLow);
+            bool column = n == 4 && low == 6 && bare == 0 && bareLow == -1 &&
+                          reads <= LeafSourceMap.SearchUp + LeafSourceMap.BareDepth + 1 &&
+                          LeafSourceMap.Density(4) == CanopyMap.Encode(7, 0) / 512 &&
+                          LeafSourceMap.HalfSpan >= 60 && LeafSourceMap.Index(-1, -1) == LeafSourceMap.Cells - 1;
+            bool batches = LeafRenderer.GrownCapacity(64, 10, 800) == 64 &&
+                           LeafRenderer.GrownCapacity(64, 65, 800) == 128 &&
+                           LeafRenderer.GrownCapacity(512, 700, 800) == 800 &&
+                           LeafRenderer.GrownCapacity(800, 900, 800) == 800 &&
+                           LeafRenderer.FirstBatch < LeafRenderer.MaxFlying;
+            check("the leaf source map reads one crown per column and stops; leaf batches grow, not start at the cap (D78)",
+                  column && batches,
+                  $"crown {n} lowest {low}, bare {bare} in {reads} reads, batches {batches}");
+
+            // What sets the rate: rain knocks leaves loose even in still air,
+            // autumn frost strips the crowns, a spring frost sheds nothing extra.
+            float autumnCalm = ForestLifeSpawner.LeafRate(World(0.9f, 0f, 0.5f, 0f, 1f, leafFall: 0.6f), 0f);
+            float autumnRain = ForestLifeSpawner.LeafRate(World(0.9f, 0f, 0.5f, 0f, 1f, rain: 1f, leafFall: 0.6f), 0f);
+            float autumnWind = ForestLifeSpawner.LeafRate(World(0.9f, 0.4f, 0.5f, 0f, 1f, leafFall: 0.6f), 0f);
+            float autumnFrost = ForestLifeSpawner.LeafRate(World(0.9f, 0.4f, 0.5f, 0f, 1f, temperature: -4f, leafFall: 0.6f), 0f);
+            float springWarm = ForestLifeSpawner.LeafRate(World(0.9f, 0.4f, 0.5f, 0f, 1f, spring: 1f), 0f);
+            float springFrost = ForestLifeSpawner.LeafRate(World(0.9f, 0.4f, 0.5f, 0f, 1f, temperature: -4f, spring: 1f), 0f);
+            bool drivers = autumnRain > autumnCalm * 3f && autumnFrost > autumnWind * 1.5f &&
+                           Math.Abs(springFrost - springWarm) < 1e-6f && autumnRain <= 1f;
+            check("leaf fall follows rain and autumn frost as well as wind and season (D78)",
+                  drivers,
+                  $"autumn calm {autumnCalm:0.0000}, +rain {autumnRain:0.0000}, wind {autumnWind:0.0000}, +frost {autumnFrost:0.0000}, spring {springWarm:0.0000} / frost {springFrost:0.0000}");
         }
 
         private static void LeafLitter(Action<string, bool, string> check)

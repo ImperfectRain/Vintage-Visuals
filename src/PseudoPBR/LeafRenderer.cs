@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using VintageVisuals.Common.Diagnostics;
 
 namespace VintageVisuals.PseudoPBR
 {
@@ -36,12 +37,18 @@ namespace VintageVisuals.PseudoPBR
     ///
     /// Textures: one small sprite sheet per leaf texture seen (48x48 for a 64x64
     /// texture), created at EnumRenderStage.Before with no shader bound, freed
-    /// on Dispose. Meshes: two per sheet, sized to the caps. Not measured.
+    /// on Dispose. Meshes: two per sheet, starting at <see cref="FirstBatch"/>
+    /// quads and doubling as needed up to the caps (D78; before, each was
+    /// allocated at the cap and uploaded whole every frame). Leaves landing
+    /// beyond <see cref="LeafBudget.LitterReach"/> fade instead of lying.
+    /// Cost per flying leaf per frame: two block reads (fluid, then solid),
+    /// a light read and a gust sample every 0.1 s, and one quad. Not
+    /// measured; <c>.vvbench leaves</c> measures it in game.
     /// </summary>
     public sealed class LeafRenderer : IRenderer
     {
         /// <summary>Leaves in the air (and on water, and fading) at once, and lying leaves.</summary>
-        public const int MaxFlying = 400;
+        public const int MaxFlying = LeafBudget.MaxCap;
         public const int MaxLitter = 1500;
 
         /// <summary>A leaf's drawn width in blocks; the cut leaf fills about two thirds of it.</summary>
@@ -68,6 +75,14 @@ namespace VintageVisuals.PseudoPBR
 
         /// <summary>Beyond this from the player a leaf, flying or lying, is dropped.</summary>
         public const float KeepRange = 64f;
+
+        /// <summary>
+        /// D78. A batch starts this many quads big and doubles as its leaves
+        /// need, up to its cap. Every frame uploads the whole flying batch, so
+        /// a batch sized to the cap (800) would upload 3,200 vertices a frame
+        /// per tree texture for a handful of leaves.
+        /// </summary>
+        public const int FirstBatch = 64;
 
         /// <summary>The fixed tint scale: vertex colour carries tint / TintScale.</summary>
         public const float TintScale = 2.5f;
@@ -110,6 +125,7 @@ namespace VintageVisuals.PseudoPBR
             public float MeanGrey;
             public Batch Flying;
             public Batch Litter;
+            public int Count;
         }
 
         private sealed class Batch
@@ -211,8 +227,8 @@ namespace VintageVisuals.PseudoPBR
                 sheet.Texture = new LoadedTexture(_capi, 0, size, size);
                 _capi.Render.LoadOrUpdateTextureFromRgba(cut, false, 0, ref sheet.Texture);
                 sheet.Sprites = sprites;
-                sheet.Flying = NewBatch(MaxFlying);
-                sheet.Litter = NewBatch(MaxLitter);
+                sheet.Flying = NewBatch(FirstBatch);
+                sheet.Litter = NewBatch(FirstBatch);
                 sheet.Usable = sheet.Texture.TextureId != 0;
                 if (sheet.Usable) _sheetList.Add(sheet);
                 if (!_reported)
@@ -277,6 +293,26 @@ namespace VintageVisuals.PseudoPBR
             return new Batch { Data = data, Capacity = capacity, Mesh = _capi.Render.UploadMesh(data) };
         }
 
+        /// <summary>Grows a batch to hold <paramref name="needed"/> quads, doubling, at most <paramref name="cap"/>.</summary>
+        private void Reserve(Batch b, int needed, int cap)
+        {
+            int size = GrownCapacity(b.Capacity, needed, cap);
+            if (size == b.Capacity) return;
+            b.Mesh?.Dispose();
+            Batch grown = NewBatch(size);
+            b.Data = grown.Data; b.Mesh = grown.Mesh; b.Capacity = grown.Capacity;
+            b.LastUsed = 0;
+        }
+
+        /// <summary>The next batch size for a count: the current one, or doubled until it fits, at most the cap. Pure.</summary>
+        public static int GrownCapacity(int capacity, int needed, int cap)
+        {
+            if (needed <= capacity || capacity >= cap) return capacity;
+            int size = capacity;
+            while (size < needed && size < cap) size *= 2;
+            return Math.Min(size, cap);
+        }
+
         private void BeginBatch(Batch b) { b.Used = 0; }
 
         private void AddQuad(Batch b, Leaf leaf, double ox, double oy, double oz, float scale)
@@ -333,6 +369,14 @@ namespace VintageVisuals.PseudoPBR
         public void OnRenderFrame(float dt, EnumRenderStage stage)
         {
             if (_failed || stage != EnumRenderStage.Opaque) return;
+            if (LeafBench.Mode == LeafBench.Off && (_flying.Count > 0 || _litter.Count > 0))
+            {
+                // The bench's no-leaves run: none flying, none lying, nothing drawn.
+                _flying.Clear(); _litter.Clear(); _pile.Clear();
+                foreach (Sheet s in _sheetList) { BeginBatch(s.Flying); EndBatch(s.Flying); BeginBatch(s.Litter); EndBatch(s.Litter); }
+            }
+            LeafBench.Flying = _flying.Count;
+            LeafBench.Litter = _litter.Count;
             if (_flying.Count == 0 && _litter.Count == 0) return;
             EntityPlayer player = _capi.World?.Player?.Entity;
             if (player == null) return;
@@ -422,7 +466,10 @@ namespace VintageVisuals.PseudoPBR
                 {
                     long key = PileKey(_pos.X, _pos.Y, _pos.Z);
                     _pile.TryGetValue(key, out int n);
-                    if (_litter.Count >= MaxLitter || n >= PileCap)
+                    // D78: far from the player a leaf lands and fades rather than
+                    // lying, so the litter cap stays where litter is seen.
+                    bool farLanding = dx * dx + dz * dz > LeafBudget.LitterReach * LeafBudget.LitterReach;
+                    if (_litter.Count >= MaxLitter || n >= PileCap || farLanding)
                     {
                         // No room: it lands, lies a moment, and goes.
                         LeafFlight.Land(ref leaf.Flight, _pos.Y + top + 0.01 + PileStep * Math.Min(n, PileCap), false);
@@ -565,6 +612,9 @@ namespace VintageVisuals.PseudoPBR
             _cameraBrightness = Brightness(_capi.World.BlockAccessor.GetLightRGBs(_pos));
 
             // Flying (and floating, and fading) leaves: every frame, camera-relative.
+            foreach (Sheet s in _sheetList) s.Count = 0;
+            foreach (Leaf leaf in _flying) leaf.Sheet.Count++;
+            foreach (Sheet s in _sheetList) Reserve(s.Flying, s.Count, MaxFlying);
             foreach (Sheet s in _sheetList) BeginBatch(s.Flying);
             foreach (Leaf leaf in _flying)
             {
@@ -581,6 +631,9 @@ namespace VintageVisuals.PseudoPBR
                 _sinceRebuild = 0f;
                 _litterDirty = false;
                 _originX = Math.Floor(cam.X); _originY = Math.Floor(cam.Y); _originZ = Math.Floor(cam.Z);
+                foreach (Sheet s in _sheetList) s.Count = 0;
+                foreach (Leaf leaf in _litter) leaf.Sheet.Count++;
+                foreach (Sheet s in _sheetList) Reserve(s.Litter, s.Count, MaxLitter);
                 foreach (Sheet s in _sheetList) BeginBatch(s.Litter);
                 foreach (Leaf leaf in _litter) AddQuad(leaf.Sheet.Litter, leaf, _originX, _originY, _originZ, 1f);
                 foreach (Sheet s in _sheetList) EndBatch(s.Litter);

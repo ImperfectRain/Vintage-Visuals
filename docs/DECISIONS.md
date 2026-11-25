@@ -3306,3 +3306,53 @@ to normalise a raw negated position, and requires the binder to upload the
 eye; two mutations prove it. Entities, particles and the legacy pseudopbr path
 are not changed and their position space was not checked. L2, not seen in
 game; cost is one vec3 uniform and a subtraction.
+
+## D78 - Falling leaves reach 50 blocks, thinned by distance and view, inside a tier budget
+
+**Context.** In game (2026-11-25) leaves fell only right next to the trees.
+v15 tried a 40 x 40 square around the player (reach 20) against the shader's
+leaf map, whose reach the terrain shader fixes at 32 blocks (32 x 32 cells of
+2 blocks, 128 uniform vec4s). Elijah asked what a 50-block radius would cost,
+with the rate tied to what makes leaves fall.
+
+**Decision.**
+- A second, CPU-only leaf map, `LeafSourceMap` in `Common/Scene`, scanned by
+  `EnvironmentTracker` like the others and only while asked for: 32 x 32 cells
+  of 4 blocks (64 blocks each way), one column per cell, read from the rain
+  map's top (leaf blocks are not rain-permeable in the game's block types)
+  down through the crown, stopping two blocks after it. About eight reads a
+  column, so about 2,000 reads a tick against `CanopyMap`'s 10,000. Growing the
+  shader's map instead would have quadrupled its uniforms in the terrain shader
+  for a value only the spawner needs. The spawner uses the fine map where it
+  reaches and the coarse one beyond.
+- `LeafBudget` (pure): reach and cap by quality tier (Low 28/200, Medium
+  40/350, High 50/500, Ultra 56/800); tries scale with the disc's area so the
+  density near the player is exactly v15's; beyond 14 blocks the weight eases
+  to 0.3 at the reach (a leaf 50 blocks off is about ten pixels and reads as
+  forest motion, not as a leaf); beyond 10 blocks, crowns behind the camera
+  get 0.2 (a leaf lives about ten seconds, so the ring behind is not empty when
+  the player turns); leaves beyond 14 blocks may use only 70% of the cap; a
+  leaf landing beyond 28 blocks fades instead of taking a litter slot. Every
+  weight is a cheap rejection before any map, gust or block read.
+- The rate adds two of the world's own drivers: rain knocks leaves loose even
+  in still air (0.12 of the autumn peak at full rain, 0.3 of that outside the
+  leaf-fall season), and frost in the leaf-fall season (1 C down to -3 C)
+  up to doubles the season's shed. A spring frost sheds nothing extra.
+- Leaf batches start at 64 quads and double as needed to the cap. Before, each
+  sheet's flying batch was allocated at 400 and uploaded whole every frame,
+  whatever the count; at an 800 cap that would be 3,200 vertices a frame per
+  tree texture.
+- `.vvbench leaves [s]` holds three leaf modes in turn (none, v15's reach and
+  cap, the current tier's) with 15 s to settle each, and logs frame time and
+  the vv.leaves segment with the leaf counts. Runtime only (`LeafBench`), and
+  it never turns on leaves the player switched off.
+
+**Evidence.** Three smoketest checks (reach and budget shape per tier, the
+coarse map's column read and the batch growth, the rain and frost drivers) and
+seven mutations proving them. L2: built, not seen in game, cost not measured.
+The estimate it rests on: per flying leaf, two block reads a frame plus a
+light read and a gust sample every 0.1 s and one quad; per tick about 220
+tries at High, most rejected by the weights. GPU cost is two draws per leaf
+texture whatever the count. **Not verified**: how far a leaf can be seen
+before the thinning shows, whether the coarse map misses narrow crowns, and the
+frame cost, which `.vvbench leaves` in a forest measures.
