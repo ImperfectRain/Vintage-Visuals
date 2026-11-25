@@ -473,6 +473,39 @@ namespace VintageVisuals.Ui
                    "How much of the environment a reflective surface shows. One colour per texture pixel, on purpose - this is a pixel-art reflection rather than a mirror.",
                    R, "Scene reflections", 0f, 1f, 0.05f);
 
+            // ---- WATER (on the Reflections tab) ------------------------------
+            Toggle("water_enabled", "Water.Enabled", "Water surface",
+                   "This mod's water: texel-locked sky reflection, depth colour, rain ripples and sun glints, built on the game's own water. Off compiles the game's water untouched.",
+                   R, "Water", false, SettingCost.Low, true);
+
+            Slider("water_sky", "Water.SkyReflection", "Water reflection",
+                   "How much of the sky and horizon the water reflects, more at a glancing angle. One colour per water pixel, like the block reflections. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_soft", "Water.ReflectionSoftness", "Reflection softness",
+                   "A subtle blur of the water reflection between neighbouring water pixels. Each pixel stays one colour; neighbours just differ by less. 0 is the sharp pixel image.",
+                   R, "Water", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+
+            Slider("water_waves", "Water.Waves", "Wave relief",
+                   "How much the small waves tilt the reflection and the glints, per water pixel. Wind makes them taller. 0 is a flat mirror.",
+                   R, "Water", 0f, 2f, 0.05f);
+
+            Slider("water_depthtint", "Water.DepthTint", "Depth colour",
+                   "Deep water turns blue-green and opaque; shallow water stays clear. Measured from what is actually behind the surface. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_clarity", "Water.ShallowClarity", "Shallow clarity",
+                   "How see-through water less than about a block deep is. 0 keeps the game's own opacity.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_ripples", "Water.RainRipples", "Rain ripples on water",
+                   "Rings where rain lands on open water, only while rain is falling. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_glints", "Water.Glints", "Sun and moon glints",
+                   "Sharp highlights of the sun and moon on the waves, one water pixel at a time. The game's own broad highlight steps back as these come in. 0 is off.",
+                   R, "Water", 0f, 1f, 0.05f);
+
             // ---- DEBUG -------------------------------------------------------
             const SettingTab D = SettingTab.Debug;
 
@@ -487,6 +520,19 @@ namespace VintageVisuals.Ui
             Toggle("write_scene_report", "WriteSceneReport", "Write scene report",
                    "Writes one scene report describing what the world asked for and what each subsystem was allowed to change.",
                    D, "Debug utilities", true, SettingCost.Free, false, true);
+
+            Slider("water_debug", "Water.DebugView", "Water debug view",
+                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid.",
+                   D, "Water", 0f, 6f, 1f, null, false, SettingCost.Free, false, true);
+
+            // ---- PERFORMANCE (on the Debug tab) -------------------------------
+            Slider("perf_quality", "Performance.Quality", "Quality tier",
+                   "0 Low, 1 Medium, 2 High, 3 Ultra. Scales what the effects cost (canopy taps, detail distance, water blur and ripple layers), never switches on an effect that is off. 2 is the reference look.",
+                   D, "Performance", 0f, 3f, 1f);
+
+            Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
+                   "Shows milliseconds per render stage and per mod pass in the top-left corner, measured on the GPU. Also .vvperf; .vvbench records a summary to the log.",
+                   D, "Performance");
 
             return s;
         }

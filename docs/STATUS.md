@@ -69,9 +69,10 @@ Status marks: `[x]` done · `[~]` partial or unconfirmed · `[ ]` not started ·
 | `[x]` | `tools/verifypatches` — every group vs the game's own shaders | L4 | 48/24/6 define combinations. The all-groups pass now splits on mutually exclusive groups and verifies each set the game can apply; it used to skip chunkopaque and chunktopsoil outright, which hid a `pbrterrainbase` anchor collision (anchor text quoted in a shared snippet's comment) that the game log caught on 2026-11-22 |
 | `[x]` | `VINTAGE_VISUALS_DUMP` writes the merged source | L4 | how the cloud-shadow wrapper was cleared as a suspect |
 | `[~]` | **Texture slot report** (`RuntimeShaderIntrospector`) | L2 | logs every active sampler of chunkopaque and chunktopsoil with its unit, after link and again 8 s later once binders have uploaded, and warns on a unit shared by two sampler types. The first version matched a StringBuilder overload OpenTK does not have and printed no samplers; smoke now resolves every query against the game's own OpenTK.Graphics.dll. Not yet read from a real log |
-| `[ ]` | Quality tiers (potato → ultra) driving subsystem settings | — | build before the expensive systems land, not after |
+| `[~]` | Quality tiers (Low / Medium / High / Ultra) | L2 | `Performance.Quality`, `QualityTier` ([D72](DECISIONS.md)). Scales cost only: terrain canopy ring radius and detail distance, water blur taps and ripple layers. High is exactly the previous build (every scale 1, checked). Never enables an effect that is off. Not seen in game, effect on frame time not measured |
+| `[~]` | **Frame-time readout and bench** (`src/Common/Diagnostics/`) | L2 | GPU timestamp queries at the start and end of every render stage and around the mod's own passes (scene capture, falling leaves), read 3 frames late without stalling; `.vvperf` toggles the readout, `.vvbench [s]` and `.vvbench tiers [s]` log a summary to `client-main.log`. Costs nothing while off (markers unregistered). Patched-shader cost is only visible by comparison, see [D72](DECISIONS.md). Not yet run in game |
 | `[ ]` | GPU/VRAM detection suggesting a tier | — | suggest, never force |
-| `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; a HUD does not |
+| `[ ]` | Rendering debug HUD (per-system state, material under cursor) | — | debug views exist; the frame-time readout is the only HUD so far |
 | `[x]` | **Visual language rules** (information ladder, hierarchy, budgets, blacklist) | — | [VISUAL-LANGUAGE.md](VISUAL-LANGUAGE.md) |
 | `[x]` | **Visual test matrix and acceptance criteria** | — | [VISUAL-TESTS.md](VISUAL-TESTS.md). Makes L4 repeatable |
 | `[x]` | **Effect provenance report** (`WriteSceneReport`) | L2 | who removed what light, and why, in one file |
@@ -237,7 +238,8 @@ so an unmodified install is untouched.
 ## 7. Water and reflections
 
 `src/Reflections/` holds the scene-capture bridge. See `src/Reflections/README.md`
-and DECISIONS D8-D13.
+and DECISIONS D8-D13. `src/Water/` holds the water surface on vanilla's liquid
+program (patch group `water`, [D71](DECISIONS.md), `src/Water/README.md`).
 
 | | Feature | Level | Notes |
 |---|---|---|---|
@@ -248,11 +250,14 @@ and DECISIONS D8-D13.
 | `[x]` | Reflection through the existing BRDF | **L2** | Substituted into `vvAmbientSpecular`, so Fresnel, metalness, specular occlusion and wetness all apply unchanged - D13 |
 | `[x]` | Wet surfaces reflect more strongly | **L2** | No reflection-specific code: `vvApplyEnvironmentLayers` lowers roughness and raises the specular mask, and both feed the reflection |
 | `[~]` | Local world-volume reflection fallback | **L2** | 128 x 64 x 128 classified block atlas, data-driven 2D slice layout, lit representative block colour for full cubes, block/chunk invalidation and hybrid source debug. Not profiled or seen in game from this environment |
-| `[ ]` | Water reflections | — | `chunkliquid.fsh` is in NO patch group. Deliberately deferred until the geometry is validated on terrain |
+| `[~]` | Water: texel-locked sky and horizon reflection | **L2** | `water.yaml` on `chunkliquid.fsh` ([D71](DECISIONS.md)). One colour per water texel (1/32 block, the water texture's pixel) and the terrain's sky cells and analytic horizon, copied and parity-checked. Composed by Fresnel over vanilla's own water colour. Offline previews with the game's water texture only; not seen in game |
+| `[~]` | Water: subtle reflection blur | **L2** | `Water.ReflectionSoftness`, default 0.35: averages the reflection seen 3 texels away in four directions, so every texel stays one colour. Previewed offline at 0, 0.35 and 1 |
+| `[ ]` | Water: scene (screen-space) reflection | — | next, behind its own toggle and its own group: needs the capture sampler declared below vanilla's `liquidDepth` |
 | `[ ]` | Refraction | — | |
-| `[ ]` | Animated wave and micro-normals | — | vanilla animates water already; check before rebuilding |
-| `[ ]` | Depth colouration | — | |
-| `[ ]` | Rain disturbance of the water surface | — | the ripple field already exists and should be reused |
+| `[~]` | Animated wave and micro-normals | **L2** | vanilla's vertex waves stay; the texel normal adds four travelling waves (whole cycles per 4096 blocks) plus value-noise chop, height from the wind |
+| `[~]` | Depth colouration | **L2** | the path behind each water texel from vanilla's own `depthTex` (no new sampler): red absorbed first, opacity grows with depth, shallows clearer (`Water.DepthTint`, `Water.ShallowClarity`) |
+| `[~]` | Rain disturbance of the water surface | **L2** | the terrain's ripple field, copied with a parity check; driven by rain falling, open water only |
+| `[~]` | Sun and moon glints on water | **L2** | GGX from `pbrcore.glsl` on the texel normal, shadow-aware; vanilla's broad sun highlight steps back to a quarter at full strength so the sun is not drawn twice |
 | `[ ]` | Underwater: absorption, attenuation, caustics, distortion | — | |
 
 **Known limitations of the reflection, all current:**
@@ -992,8 +997,10 @@ roughness to 0.08 and the specular mask to 0.60 when wet, and both feed the same
 strongly than a dry one through the existing material path, with no reflection
 specific wetness code. That was the design intent and it holds.
 
-**Water is not patched at all.** `chunkliquid.fsh` appears in no patch group;
-the mod has never touched it. Giving it scene reflections means a new patch
+**Water was not patched at all** when this was written. (2026-11-25: it now
+has its own group, `water`, with the analytic sky reflection only - see
+[D71](DECISIONS.md). The scene reflection is still terrain-only.)
+`chunkliquid.fsh` appeared in no patch group; the mod had never touched it. Giving it scene reflections means a new patch
 group on a shader with its own animated normals and its own lighting, which is a
 second surface to debug at the same time as the first. The reflection geometry
 should be right on terrain before water inherits it - otherwise a wrong

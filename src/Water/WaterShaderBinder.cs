@@ -1,0 +1,153 @@
+using Vintagestory.API.Client;
+using Vintagestory.API.MathTools;
+using VintageVisuals.Common;
+using VintageVisuals.Common.Diagnostics;
+using VintageVisuals.Common.Scene;
+
+namespace VintageVisuals.Water
+{
+    /// <summary>
+    /// Uploads the water uniforms to chunkliquid once a frame, at
+    /// <see cref="EnumRenderStage.Before"/> (the stage documented as having no
+    /// program bound), after the environment tracker has sampled the world.
+    ///
+    /// Every uniform's zero is vanilla (water.glsl), so a skipped frame or a
+    /// rolled-back group is safe. HasUniform on the master is the ground truth
+    /// for "did the patch reach the GPU", as in every other binder.
+    /// </summary>
+    public sealed class WaterShaderBinder : IRenderer
+    {
+        public const string MasterUniform = "vv_water";
+        public const string OriginUniform = "vv_waterOrigin";
+        public const string SunDirUniform = "vv_waterSunDir";
+        public const string SunColorUniform = "vv_waterSunColor";
+        public const string MoonDirUniform = "vv_waterMoonDir";
+        public const string SkyUniform = "vv_waterSky";
+        public const string SoftUniform = "vv_waterSoft";
+        public const string SoftTapsUniform = "vv_waterSoftTaps";
+        public const string DepthTintUniform = "vv_waterDepthTint";
+        public const string ClarityUniform = "vv_waterClarity";
+        public const string RipplesUniform = "vv_waterRipples";
+        public const string RippleTimeUniform = "vv_waterRippleTime";
+        public const string RippleLayersUniform = "vv_waterRippleLayers";
+        public const string GlintsUniform = "vv_waterGlints";
+        public const string WavesUniform = "vv_waterWaves";
+        public const string DebugUniform = "vv_waterDebug";
+
+
+        /// <summary>After the environment tracker (-1) and the atmosphere (-1) have sampled.</summary>
+        private const double UploadOrder = 0.2;
+
+        private readonly ICoreClientAPI _capi;
+        private readonly VintageVisualsModSystem _mod;
+        private readonly Vec3f _v3 = new Vec3f();
+
+        private int _consecutiveSkips;
+        private bool _reportedSkipping;
+        private bool _reportedActive;
+        private bool _reportedMissing;
+
+        public WaterShaderBinder(ICoreClientAPI capi, VintageVisualsModSystem mod)
+        {
+            _capi = capi;
+            _mod = mod;
+        }
+
+        public double RenderOrder { get { return UploadOrder; } }
+        public int RenderRange { get { return 0; } }
+
+        public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
+        {
+            if (stage != EnumRenderStage.Before) return;
+
+            if (_capi.Render.CurrentActiveShader != null)
+            {
+                _consecutiveSkips++;
+                if (_consecutiveSkips > 300 && !_reportedSkipping)
+                {
+                    _reportedSkipping = true;
+                    _capi.Logger.Warning("[VintageVisuals] water: a shader program has been bound on every " +
+                        "frame for several seconds, so no water uniform has been uploaded. The water draws " +
+                        "as vanilla, and nothing else will say so.");
+                }
+                return;
+            }
+            _consecutiveSkips = 0;
+
+            IShaderProgram program = _capi.Shader.GetProgram((int)EnumShaderProgram.Chunkliquid);
+            if (program == null || !program.HasUniform(MasterUniform))
+            {
+                if (!_reportedMissing && _mod.ConfigManager.Config.Water.Enabled && _reportedActive)
+                {
+                    _reportedMissing = true;
+                    _capi.Logger.Warning("[VintageVisuals] water: chunkliquid no longer exposes " + MasterUniform +
+                        " - the water patch group did not reach the compiled program after a reload.");
+                }
+                return;
+            }
+            _reportedMissing = false;
+
+            WaterConfig config = _mod.ConfigManager.Config.Water;
+            EnvironmentTracker tracker = _mod.Environment;
+            EnvironmentState world = tracker != null ? tracker.Current : EnvironmentState.Clear;
+            AtmosphereState air = tracker != null ? tracker.Atmosphere : AtmosphereState.Clear;
+
+            program.Use();
+
+            program.Uniform(MasterUniform, config.Enabled ? 1f : 0f);
+            program.Uniform(OriginUniform, world.CameraPosition);
+
+            SetDir(program, SunDirUniform, air.SunDirection, 0f, 1f, 0f);
+            SetDir(program, MoonDirUniform, air.MoonDirection, 0f, -1f, 0f);
+            Vec3f sun = air.SunColor;
+            _v3.Set(sun == null ? 1f : sun.X, sun == null ? 1f : sun.Y, sun == null ? 1f : sun.Z);
+            program.Uniform(SunColorUniform, _v3);
+
+            program.Uniform(SkyUniform, config.SkyReflection);
+            program.Uniform(SoftUniform, config.ReflectionSoftness);
+            program.Uniform(SoftTapsUniform, QualityTier.WaterSoftTaps);
+            program.Uniform(WavesUniform, config.Waves);
+            program.Uniform(DepthTintUniform, config.DepthTint);
+            program.Uniform(ClarityUniform, config.ShallowClarity);
+
+            // Driven by the rain FALLING, like the terrain ripples: they stop
+            // the moment the shower does.
+            program.Uniform(RipplesUniform, Clamp01(world.Rain) * config.RainRipples);
+            program.Uniform(RippleTimeUniform, tracker != null ? tracker.RippleClock : 0f);
+            program.Uniform(RippleLayersUniform, QualityTier.WaterRippleLayers);
+            program.Uniform(GlintsUniform, config.Glints);
+            program.Uniform(DebugUniform, config.DebugView);
+
+            // The scene vocabulary (scene.glsl) goes through the ONE shared
+            // upload path, so the water reads daylight, overcast, wind and
+            // moonlight exactly as the terrain does. Last frame's values: the
+            // terrain binder refreshes them in the opaque stage. Without
+            // PseudoPBR they stay zero, which only switches the glints off.
+            if (_mod.Pbr != null && _mod.Pbr.Binder != null) _mod.Pbr.Binder.UploadSceneTo(program);
+
+            program.Stop();
+
+            if (!_reportedActive)
+            {
+                _reportedActive = true;
+                _capi.Logger.Notification("[VintageVisuals] water: surface active on chunkliquid (quality " +
+                                          QualityTier.Name(QualityTier.Current) + ").");
+            }
+        }
+
+        private void SetDir(IShaderProgram program, string name, Vec3f dir, float fx, float fy, float fz)
+        {
+            if (dir == null || dir.X * dir.X + dir.Y * dir.Y + dir.Z * dir.Z < 1e-8f) _v3.Set(fx, fy, fz);
+            else
+            {
+                float inv = 1f / dir.Length();
+                _v3.Set(dir.X * inv, dir.Y * inv, dir.Z * inv);
+            }
+            program.Uniform(name, _v3);
+        }
+
+        private static float Clamp01(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
+
+        public void Dispose() { }
+    }
+}

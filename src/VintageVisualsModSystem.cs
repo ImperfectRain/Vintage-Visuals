@@ -5,12 +5,14 @@ using Vintagestory.API.Common;
 using VintageVisuals.Atmosphere;
 using VintageVisuals.ColorGrade;
 using VintageVisuals.Common;
+using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.Common.Patching;
 using VintageVisuals.PseudoPBR;
 using VintageVisuals.Common.Scene;
 using VintageVisuals.Reflections;
 using VintageVisuals.Ui;
 using VintageVisuals.Weather;
+using VintageVisuals.Water;
 
 namespace VintageVisuals
 {
@@ -97,6 +99,9 @@ namespace VintageVisuals
         /// Weather would leave colour grading unable to tell it was raining.
         /// </summary>
         public EnvironmentTracker Environment { get; private set; }
+
+        /// <summary>Frame-time readout, bench commands and the quality tier.</summary>
+        public PerformanceTools Performance { get; private set; }
 
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
@@ -287,6 +292,12 @@ namespace VintageVisuals
                 return ConfigManager.Config.Atmosphere.WantsShader;
             }
 
+            // Off is vanilla's chunkliquid source, not the water code muted.
+            if (group == WaterSubsystem.GroupName)
+            {
+                return ConfigManager.Config.Water.Enabled;
+            }
+
             return true;
         }
 
@@ -303,7 +314,8 @@ namespace VintageVisuals
                    (ConfigManager.Config.PseudoPBR.ParticleLighting ? "R" : "-") +
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
                    (ConfigManager.Config.Weather.Enabled ? "W" : "-") +
-                   (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-");
+                   (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-") +
+                   (ConfigManager.Config.Water.Enabled ? "L" : "-");
         }
 
         /// <summary>
@@ -363,6 +375,10 @@ namespace VintageVisuals
 
             Pbr = new PseudoPbrSubsystem();
             _subsystems.Add(Pbr);
+
+            _subsystems.Add(new WaterSubsystem());
+
+            Performance = new PerformanceTools(Capi, Mod.Logger);
 
             // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is
             // independently toggleable by design, so registration order carries
@@ -521,6 +537,7 @@ namespace VintageVisuals
             if (_interceptor != null) _interceptor.SetShaderDumpEnabled(ConfigManager.Config.EnableShaderDebugDump);
             ReloadShadersIfPatchGatingChanged();
             WriteSceneReportOnce();
+            if (Performance != null) Performance.Apply(ConfigManager.Config.Performance);
 
             foreach (IVisualSubsystem subsystem in _subsystems)
             {
@@ -559,6 +576,12 @@ namespace VintageVisuals
             }
 
             _subsystems.Clear();
+
+            if (Performance != null)
+            {
+                Performance.Dispose();
+                Performance = null;
+            }
 
             if (_interceptor != null) _interceptor.Uninstall();
 

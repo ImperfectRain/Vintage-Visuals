@@ -101,8 +101,11 @@ hierarchy, the budgets, and what this project deliberately does not build.
   `Scene` rather than `Environment` because the latter shadows
   `System.Environment` for every file in `VintageVisuals.Common`.
 - `src/ColorGrade/`, `src/Weather/`, `src/Atmosphere/`, `src/Reflections/`,
-  `src/PseudoPBR/`, `src/Ui/` — one folder per subsystem or configuration
-  client, each with its own `README.md`.
+  `src/PseudoPBR/`, `src/Water/`, `src/Ui/` — one folder per subsystem or
+  configuration client, each with its own `README.md`.
+- `src/Common/Diagnostics/` — the frame profiler (`.vvperf`, `.vvbench`) and
+  the quality tier. Measure before and after any change that could cost frame
+  time; a tier scales cost and is exactly the reference look at High.
 - `assets/vintagevisuals/shaderpatches/*.yaml` — regex/token patches against
   **vanilla** shaders, one file per subsystem.
 - `assets/vintagevisuals/shadersnippets/*.glsl` — GLSL bodies the patches inject.
@@ -420,8 +423,9 @@ glslangValidator patched.frag      # silence means it compiled
 ```
 
 `#version` must stay line 1; strip `#extension` lines glslang does not know and
-inject `#define`s for `SSAOLEVEL`, `SHADOWQUALITY`, `GODRAYS`, `NORMALVIEW` and
-`SHINYEFFECT`, which the game supplies as prefix code. Sweep every combination
+inject `#define`s for `SSAOLEVEL`, `SHADOWQUALITY`, `GODRAYS`, `NORMALVIEW`,
+`SHINYEFFECT`, `USEOIT` and `FOAMEFFECT` (chunkliquid), which the game supplies
+as prefix code. Sweep every combination
 and compile vanilla alongside patched, so a failure is attributable to the patch
 rather than to the harness.
 

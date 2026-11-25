@@ -166,6 +166,39 @@ namespace VintageVisuals.Common
                 case "pbr_entitylighting":
                     pbr.EntityLighting = tree.GetBool("value", pbr.EntityLighting);
                     break;
+                case "water_enabled":
+                    _mod.ConfigManager.Config.Water.Enabled = tree.GetBool("value", _mod.ConfigManager.Config.Water.Enabled);
+                    break;
+                case "water_sky":
+                    _mod.ConfigManager.Config.Water.SkyReflection = tree.GetFloat("value", _mod.ConfigManager.Config.Water.SkyReflection);
+                    break;
+                case "water_soft":
+                    _mod.ConfigManager.Config.Water.ReflectionSoftness = tree.GetFloat("value", _mod.ConfigManager.Config.Water.ReflectionSoftness);
+                    break;
+                case "water_waves":
+                    _mod.ConfigManager.Config.Water.Waves = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Waves);
+                    break;
+                case "water_depthtint":
+                    _mod.ConfigManager.Config.Water.DepthTint = tree.GetFloat("value", _mod.ConfigManager.Config.Water.DepthTint);
+                    break;
+                case "water_clarity":
+                    _mod.ConfigManager.Config.Water.ShallowClarity = tree.GetFloat("value", _mod.ConfigManager.Config.Water.ShallowClarity);
+                    break;
+                case "water_ripples":
+                    _mod.ConfigManager.Config.Water.RainRipples = tree.GetFloat("value", _mod.ConfigManager.Config.Water.RainRipples);
+                    break;
+                case "water_glints":
+                    _mod.ConfigManager.Config.Water.Glints = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Glints);
+                    break;
+                case "water_debug":
+                    _mod.ConfigManager.Config.Water.DebugView = tree.GetFloat("value", _mod.ConfigManager.Config.Water.DebugView);
+                    break;
+                case "perf_quality":
+                    _mod.ConfigManager.Config.Performance.Quality = tree.GetFloat("value", _mod.ConfigManager.Config.Performance.Quality);
+                    break;
+                case "perf_frametimes":
+                    _mod.ConfigManager.Config.Performance.ShowFrameTimes = tree.GetBool("value", _mod.ConfigManager.Config.Performance.ShowFrameTimes);
+                    break;
                 case "reflections_scene":
                     _mod.ConfigManager.Config.Reflections.SceneReflections = tree.GetBool("value", _mod.ConfigManager.Config.Reflections.SceneReflections);
                     break;

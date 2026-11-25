@@ -383,6 +383,9 @@ void main(void) {
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
 
+        Console.WriteLine("Water surface and quality tiers");
+        WaterChecks.Run(Repo, Check);
+
         Console.WriteLine();
         Console.WriteLine("Canopy audit: vanilla's own sun occlusion");
         CanopyAuditChecks.Run(Repo, Check);

@@ -124,6 +124,9 @@ namespace VintageVisuals.PseudoPBR
 
         public string Name => GroupName;
 
+        /// <summary>The uniform binder, for the one shared scene upload path (water uses it).</summary>
+        public PbrShaderBinder Binder => _binder;
+
         public void Initialize(VintageVisualsModSystem mod)
         {
             _mod = mod;

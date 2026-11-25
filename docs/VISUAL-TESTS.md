@@ -191,6 +191,34 @@ The dapple field is derived from vanilla's shadow map and carries no clock or
 noise of its own, so it should move only because the leaves move. Anything that
 moves while the world is still is a defect, not a setting.
 
+## Performance baseline
+
+One fixed scene, so numbers from different builds compare like with like.
+
+- Flat ground beside a lake of at least 20 x 20 blocks, view distance as the
+  player normally plays, `/time set noon`, clear weather (`/weather clear`).
+- Stand on the shore 2 blocks above the water, facing across it, and do not
+  move or turn while a bench runs.
+- `.vvbench tiers 8` records Low, Medium, High and Ultra in turn; `.vvbench 10`
+  records the current settings. Results land in `client-main.log` as
+  `[VintageVisuals] bench ...`. Repeat once with `Water.Enabled` off for the
+  water's own cost (transparent stage, same scene).
+
+Report the GPU frame figure and the opaque and transparent stage figures, not
+the fps counter alone: fps folds in CPU and vsync.
+
+### Water
+
+- [ ] the water reflects the sky more at a glancing angle than looking down
+- [ ] the reflection is one colour per water pixel, with stepped edges (debug view 6 shows the grid)
+- [ ] Reflection softness 0 is hard steps; 0.35 keeps the steps with a softer transition; 1 is smoother but still pixelated
+- [ ] deep water is darker and bluer than the shallows, and the bed shows through near the shore
+- [ ] rain rings appear on open water only while rain falls; none under a roof
+- [ ] at noon and at a low sun the sun makes pixel glints along its path; the game's broad glow is reduced, not doubled
+- [ ] lava looks exactly as vanilla
+- [ ] Water surface off restores the game's water exactly
+- [ ] no seam or pattern jump when walking across a 4096-block boundary
+
 ## Reporting a result
 
 In `STATUS.md`, a feature moves to **L4** only with the scenes it was seen in.
