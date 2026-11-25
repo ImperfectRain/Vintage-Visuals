@@ -257,7 +257,8 @@ texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
 - [ ] no seam when crossing a 4096-block boundary
 - [ ] frame cost measured with `.vvbench` at the water test scene
 - [x] caustics (D77): flat water and a surface bed gather nothing, a focus shoulders, the visible-sun gate, the slider at 0, opacity untouched and period tiling, evaluated from the shipped GLSL, each with a mutation that fails it
-- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow
+- [x] caustics fall on a face by N.L and fade with depth and view path, evaluated from the shipped GLSL, each with a mutation
+- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow (first look 2026-11-25 failed: far too strong everywhere; amendment not yet seen)
 
 ---
 

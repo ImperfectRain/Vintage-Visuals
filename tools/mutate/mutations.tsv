@@ -289,3 +289,5 @@ flat water lights the whole bed as a caustic (D77)	assets/vintagevisuals/shaders
 caustic lines clip to white at the focus (D77)	assets/vintagevisuals/shadersnippets/water.glsl	    return gain * VV_WATER_CAUSTIC_PEAK / (VV_WATER_CAUSTIC_PEAK + gain);	    return gain;	caustics: a focus line
 the caustics slider does nothing at 0 (D77)	assets/vintagevisuals/shadersnippets/water.glsl	(gain * fade * sunLight * caustics)	(gain * fade * sunLight)	caustics: the slider at 0
 a caustic wave seams at the origin wrap (D77)	assets/vintagevisuals/shadersnippets/water.glsl	vec2(3860.0, 540.0)	vec2(3860.5, 540.0)	caustic waves have whole cycles
+caustics light walls and slopes as brightly as the floor (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= facing;	            fade *= 1.0;	caustics fall on a face by N.L
+caustics carry on undimmed into deep water (D77)	assets/vintagevisuals/shadersnippets/water.glsl	            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));	            fade *= 1.0;	caustics fade out with depth
