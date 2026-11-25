@@ -289,6 +289,15 @@ namespace VintageVisuals.SmokeTest
                   yaml.Contains("f = dropletnoise(uv) * vvWaterVanillaDropletKeep();") &&
                   Statements(dropKeep).FirstOrDefault()?.StartsWith("if (vv_water < 0.5) return 1.0", StringComparison.Ordinal) == true &&
                   dropKeep.Contains("1.0 - clamp(vv_waterOwnDrops, 0.0, 1.0)"), "");
+            string surf = FunctionBody(water, "vec4 vvWaterSurface(");
+            var coverSyms = new Func<double, double, Dictionary<string, Val>>((cover, overcast) => Syms(
+                "vv_sceneSkyCover", cover, "vv_sceneOvercast", overcast,
+                "VV_WATER_GLINT_COVER_START", Const(water, "VV_WATER_GLINT_COVER_START"),
+                "VV_WATER_GLINT_COVER_END", Const(water, "VV_WATER_GLINT_COVER_END")));
+            string clearExpr = Rhs(Statement(surf, "float clearSky ="));
+            check("water glints need a visible sun: the game's cloud cover hides them, and they shoulder rather than clip",
+                  Scalar(clearExpr, coverSyms(1.0, 0.0)) < 1e-9 && Math.Abs(Scalar(clearExpr, coverSyms(0.0, 0.0)) - 1.0) < 1e-9 &&
+                  Statement(surf, "glint *= VV_WATER_GLINT_PEAK /").Length > 0 && !surf.Contains("min(glint * glints, vec3(4.0))"), "");
             check("the water surface is never applied to lava", yaml.Contains("if (!isLava) texColor = vvWaterSurface("), "");
             // Asserting vanilla's depthTex is fine; declaring one of our own is
             // not - a sampler above vanilla's shifts every unit below it.

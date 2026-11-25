@@ -66,9 +66,16 @@ const float VV_WATER_SOFT_RADIUS = 3.0;      // texels between a texel and each 
 // surroundings, lit by the same sky at a typical ground albedo. DATA GAP: the
 // banks are not looked up, only stood in for, until water has a scene trace.
 const float VV_WATER_BANK_LOW = 0.02;
-const float VV_WATER_BANK_HIGH = 0.32;
-const float VV_WATER_BANK_SHADE = 0.30;      // the surroundings, relative to the sky lighting them
+const float VV_WATER_BANK_HIGH = 0.18;
+const float VV_WATER_BANK_SHADE = 0.42;      // the surroundings, relative to the sky lighting them
 const float VV_WATER_GLINT_ALPHA = 0.6;
+const float VV_WATER_GLINT_PEAK = 1.2;       // a glint's luminance approaches this, never clips to it
+const float VV_WATER_GLINT_FACETS = 0.62;    // share of texels with a soft facet; the rest glitter hard
+const float VV_WATER_GLINT_HARD = 1.6;
+const float VV_WATER_GLINT_SOFT = 0.3;
+const float VV_WATER_GLINT_TWINKLE = 3.0;    // facet re-deals per unit of vanilla's wave counter
+const float VV_WATER_GLINT_COVER_START = 0.45; // sky cover where the sun's path starts to fade
+const float VV_WATER_GLINT_COVER_END = 0.9;
 const float VV_WATER_RING_SHARE = 0.9;       // reflected share a full ring crest reaches, at any view angle      // most a glint may add to the water's opacity
 const float VV_WATER_SPEC_KEEP = 0.25;       // vanilla's broad sun specular kept at full glints
 
@@ -453,12 +460,28 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
     if (glints > 0.001 && skyOpen > 0)
     {
         float sunUp = smoothstep(-0.02, 0.08, vv_waterSunDir.y) * clamp(vv_sceneDayLight * 1.5, 0.0, 1.0);
-        float clearSky = 1.0 - 0.85 * clamp(vv_sceneOvercast, 0.0, 1.0);
+        // The disc has to be visible to glint: the game's own cloud tiles
+        // (sky cover) hide it, as well as the player's overcast softening. In
+        // game a grey sky still threw a white sun path (2026-11-25).
+        float clearSky = (1.0 - 0.85 * clamp(vv_sceneOvercast, 0.0, 1.0))
+                       * (1.0 - smoothstep(VV_WATER_GLINT_COVER_START, VV_WATER_GLINT_COVER_END,
+                                           clamp(vv_sceneSkyCover, 0.0, 1.0)));
         float lit = mix(0.08, 1.0, shadowBright * shadowBright);
         glint += vvWaterGlint(n, v, vv_waterSunDir, vv_waterSunColor) * sunUp * clearSky * lit;
         glint += vvWaterGlint(n, v, vv_waterMoonDir, vec3(0.55, 0.62, 0.80))
                * clamp(vv_sceneMoonLight, 0.0, 1.0) * clearSky * 0.6;
-        glint = min(glint * glints, vec3(4.0));
+        // Glitter, not a blob: the texel normals vary too little for a GGX
+        // lobe to break up on its own, so each texel carries a facet that
+        // twinkles with the waves - some catch the sun hard, the rest softly.
+        vec2 facetCell = floor(centreWorld.xz * VV_WATER_TEXELS);
+        float twinkle = mod(floor(waterWaveCounter * VV_WATER_GLINT_TWINKLE), 4096.0);
+        float facet = vvWaterCellRandom(facetCell + vec2(twinkle * 7.0, twinkle * 3.0)).x;
+        glint *= glints * (facet > VV_WATER_GLINT_FACETS ? VV_WATER_GLINT_HARD : VV_WATER_GLINT_SOFT);
+
+        // A shoulder instead of a clip: bright glints approach the peak
+        // rather than flattening into one white shape.
+        float gl = vvWaterLuma(glint);
+        glint *= VV_WATER_GLINT_PEAK / (VV_WATER_GLINT_PEAK + gl);
     }
 
     // --- compose ------------------------------------------------------------

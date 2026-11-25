@@ -3386,3 +3386,21 @@ would be the same statistics at a large cost and a VintagestoryLib hook.
 **Limits.** Splash particles and rings are not at the same points, only drawn
 by the same rule. L2.
 
+## D76 - Water glints glitter under a visible sun; far water shows more sky
+
+**Context.** In game (2026-11-25, D75 build) the rings and shallows were
+right, but the sun path was a flat white blob, even under a fully grey sky, and
+distant water read flat.
+
+**Decision.** Glints now need the sun's disc: `clearSky` also fades with the
+game's cloud cover (`vv_sceneSkyCover`, 0.45 to 0.9), not only with the
+overcast softening. Each water texel carries a facet that re-deals with
+vanilla's wave counter: 38% glitter hard (x1.6), the rest softly (x0.3), so the
+path breaks into sparkle rather than one shape. The clip at 4 is replaced by a
+shoulder approaching a luminance of 1.2. The bank stand-in (D73) now starts
+below 0.18 of elevation at 0.42 of the sky light, so far water shows the
+reflected sky's variation. Supersedes D73's 0.32 / 0.30.
+
+**Limits.** The facets are a stand-in for sub-texel wave detail. L2: previewed
+offline, not seen in game.
+
