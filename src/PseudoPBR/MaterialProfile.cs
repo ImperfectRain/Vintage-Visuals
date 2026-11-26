@@ -89,8 +89,10 @@ namespace VintageVisuals.PseudoPBR
             // Polished and worked metal: the only truly metallic surfaces, and
             // the only ones that should show sharp environment reflections.
             { EnumBlockMaterial.Metal, new MaterialProfile {
-                Roughness = 0.30f, Metalness = 1.00f, SpecularScale = 1.00f,
-                NormalStrength = 0.80f, RoughnessVariation = 0.15f } },
+                // D83: 0.30 +/- 0.15 put the busy texels of a gold or silver
+                // block at 0.45, where the reflection is already half a blur.
+                Roughness = 0.22f, Metalness = 1.00f, SpecularScale = 1.00f,
+                NormalStrength = 0.80f, RoughnessVariation = 0.12f } },
 
             // Ore is metal embedded in rock. Partially metallic so the specks
             // catch light while the host stone stays dull; the derived spec

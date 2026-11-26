@@ -133,8 +133,12 @@ namespace VintageVisuals.SmokeTest
             // D65: a pool has to stand out against the face around it. v17
             // flooded every texel below an absolute 0.46 of a per-texture
             // normalised height and left 0.55 of the wetness on the rest, so
-            // the Wetness view read white with grey specks and nothing looked
-            // like a pool. Evaluated from the shipped mix, at soaked ground.
+            // nothing looked like a pool. D83 raised the film so rain reads on
+            // stone at all, so the contrast is now asked about what is SEEN,
+            // from the shipped constants: a pool clearly darker than the film,
+            // the film visibly darker than dry stone, and the film's
+            // reflection still a gloss over the stone's grain, not a second
+            // pool. At soaked ground, slider at 1.
             string weather = GlslEval.FunctionBody(materialCode, "VvTerrainMaterial vvTerrainApplyWeather(") ?? "";
             string poolMix = null;
             try { poolMix = GlslEval.Statement(weather, "m.wetness = mix(m.wetness * mix(1.0, VV_TERRAIN_POOL_FILM, amount)"); }
@@ -143,11 +147,18 @@ namespace VintageVisuals.SmokeTest
             string contrastWhy = "the pool/film mix was not found";
             if (poolMix != null)
             {
+                string pbrCore = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shadersnippets/pbrcore.glsl"));
                 string expr = GlslEval.Rhs(poolMix).Replace("m.wetness", "w").Replace("crevice.x", "p");
                 double film = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_FILM");
+                double poolDarken = GlslEval.Const(materialCode, "VV_TERRAIN_POOL_DARKEN");
+                double wetDarken = GlslEval.Const(pbrCore, "VV_LAYER_WET_DARKEN");
+                double wetRough = GlslEval.Const(pbrCore, "VV_LAYER_WET_ROUGHNESS");
                 double Wet(double pool) => GlslEval.Scalar(expr, GlslEval.Syms(
                     "w", 1.0, "p", pool, "amount", 1.0, "VV_TERRAIN_POOL_FILM", film));
-                double contrast = Wet(1.0) - Wet(0.0);
+                double filmWet = Wet(0.0);
+                double filmBright = 1.0 - (1.0 - wetDarken) * filmWet;
+                double poolBright = (1.0 - (1.0 - wetDarken) * Wet(1.0)) * poolDarken;
+                double filmReflectRough = 0.85 + (wetRough - 0.85) * filmWet; // rough stone under the film
                 // D67: pools come from the baked joint network alone. No
                 // threshold on the height and no neighbour reads: v17 to v19
                 // each found "crevices" per texel in the shader and each
@@ -155,8 +166,8 @@ namespace VintageVisuals.SmokeTest
                 bool structural = crevice.Contains("float pool = m.jointPool * smoothstep(") &&
                                   !crevice.Contains("vvTerrainHeightAt(") &&
                                   !Regex.IsMatch(crevice, @"smoothstep\([^;]*,\s*(m\.height|h)\s*\)");
-                contrastOk = contrast >= 0.6 && structural;
-                contrastWhy = $"pool minus film {contrast:0.00} (need 0.6); pools from the baked joint map only, no per-texel guessing: {structural}";
+                contrastOk = poolBright <= filmBright * 0.7 && filmBright <= 0.9 && filmReflectRough >= 0.4 && structural;
+                contrastWhy = $"pool {poolBright:0.00} vs film {filmBright:0.00} brightness (need pool <= 0.7 x film, film <= 0.9); film reflection roughness {filmReflectRough:0.00} (need >= 0.4); joint map only: {structural}";
             }
             check("a crevice pool stands out against the film around it", contrastOk, contrastWhy);
 

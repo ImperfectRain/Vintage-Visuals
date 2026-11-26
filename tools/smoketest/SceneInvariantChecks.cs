@@ -1870,6 +1870,16 @@ namespace VintageVisuals.SmokeTest
             check("I24 a mirror's scene reflection is sharp and a rough one soft",
                   Blur(mirrorR) < 0.01 && Blur(0.7) > 2.0 && Blur(0.3) < Blur(0.5),
                   $"blur {Blur(mirrorR):F2} / {Blur(0.3):F2} / {Blur(0.5):F2} / {Blur(0.7):F2} texels");
+            // D83: a gold or silver block's busiest texel must still reflect a
+            // picture. The profile is what the atlas bakes; the mirror term is
+            // the shipped one.
+            var metal = VintageVisuals.PseudoPBR.MaterialProfiles.For(Vintagestory.API.Common.EnumBlockMaterial.Metal);
+            double busiest = metal.Roughness + metal.RoughnessVariation;
+            double mirrorBody = Walk(FunctionBody(core, "float vvReflectMirror(float roughness)"),
+                                     Syms("roughness", busiest), core).X;
+            check("I24 a polished metal block's busiest texel still reflects a picture",
+                  mirrorBody >= 0.9, $"profile {metal.Roughness}+{metal.RoughnessVariation} = {busiest:F2}, picture {mirrorBody:F2}");
+
             check("I24 cells and blur follow the reflection roughness, not the lobe's",
                   pixel.Contains("o.cells = vvReflectCells(m.reflectRoughness);"),
                   "the picture would stay as coarse as the floored highlight");

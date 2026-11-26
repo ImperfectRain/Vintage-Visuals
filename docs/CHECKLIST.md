@@ -125,6 +125,7 @@ from the source texture.
 | Terrain view vectors from the eye (D74) | x | x | x | x | – | – | – | – | x |
 | Reflection phase 0: energy split, soft ceiling, eye distances (D80) | x | x | x | x | – | – | – | – | x |
 | Reflection phase 1: shared core, reflection roughness with a mirror floor (D81) | x | x | x | x | – | – | – | – | x |
+| Metal and rain read clearly: polished metal profile, smaller metal body, thicker rain film (D83) | x | x | x | x | – | – | – | – | x |
 
 ---
 

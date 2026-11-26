@@ -3714,3 +3714,41 @@ holds no other transparent geometry (other water, glass, OIT foliage,
 particles). The hit point's fog was applied for its distance from the eye,
 not the reflected path. The caustics still assume the bed's colour, although
 the frame now holds it.
+
+## D83 - Metal blocks and rain have to read: profile, metal body, rain film
+
+**Context.** Elijah's first look at phase 1 (D81) in game, 2026-11-26: gold
+and silver blocks looked matte, with no mirror and no metallic read even in
+daylight; in rain the gold block showed barely any wetness; "the rain effect
+is hard to see". Three numbers explain most of it, each defensible alone. The
+Metal profile baked `0.30 +/- 0.15`, so a gold block's busy texels sat at
+0.45 (half a blur under D81's picture fade) before the player's roughness
+bias (Elijah: +0.17). A metal kept 55% of vanilla's lit colour as its body
+(D63), so the painted texture dominated whatever the reflection added. And on
+every block that holds water (stone, brick, ceramic, metal, ore) rain left
+only a 0.30 film between the crevice pools (D65), which darkened stone by 8%.
+
+**Decision.**
+- Metal profile `Roughness 0.22, RoughnessVariation 0.12`: the busiest texel
+  is 0.34, where the picture is 98% kept.
+- `VV_TERRAIN_METAL_BODY_SMOOTH` 0.55 -> 0.30. Rough metal keeps 0.85, so
+  D63's black rough gold cannot return (its check and mutation are kept).
+- `VV_TERRAIN_POOL_FILM` 0.30 -> 0.50. D65's check asked for a 0.6 gap in
+  the wetness VALUE; it now asks what is seen: a pool at most 0.7 of the
+  film's brightness (it is 0.52, from `VV_TERRAIN_POOL_DARKEN`), the film at
+  least 10% darker than dry stone (14%), and the film's reflection roughness
+  over rough stone still at least 0.4, so the film reads as a gloss over the
+  grain and not as a second pool. Supersedes D65's film value, not its
+  structure: pools still come only from the baked joint map.
+
+**Not changed, and why.** Elijah's own Roughness bias (+0.17) and Sky
+reflection (0.30) are his settings; at 0 and 0.35 metals and water reflect
+as designed, and he was told so. A side face reflects what is behind the
+camera, which no screen-space reflection can see; it falls back to the
+analytic sky's horizon split, and the fix for that is phase 3's block volume.
+
+**Evidence.** I24 adds "a polished metal block's busiest texel still reflects
+a picture", evaluated from the C# profile and the shipped mirror term; the
+D65 contrast check is rewritten as above. Two mutations retargeted, one added.
+L2, not seen in game; no cost change.
+

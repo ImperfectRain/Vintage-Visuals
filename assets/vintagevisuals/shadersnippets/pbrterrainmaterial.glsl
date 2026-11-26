@@ -106,7 +106,7 @@ const float VV_TERRAIN_MIRROR_ROUGHNESS = 0.04;
 // How much of vanilla's lit colour a metal keeps as its body (D63): a polished
 // one less, a rough one more. Never 1, so a metal still reads darker and more
 // saturated than the painted block it would otherwise be.
-const float VV_TERRAIN_METAL_BODY_SMOOTH = 0.55;
+const float VV_TERRAIN_METAL_BODY_SMOOTH = 0.30; // D83: the reflection carries a polished metal
 const float VV_TERRAIN_METAL_BODY_ROUGH = 0.85;
 
 // Flora taxonomy, read from vanilla's own wind modes in renderFlags. Same
@@ -447,7 +447,7 @@ vec2 vvTerrainRippleField(vec3 faceNormal, vec3 cameraRelativePos, float wetness
 // or with the slider at 0. Not measured.
 // ---------------------------------------------------------------------------
 
-const float VV_TERRAIN_POOL_FILM = 0.30;      // damp left on the stones around the water
+const float VV_TERRAIN_POOL_FILM = 0.50;      // damp left on the stones around the water (D83)
 const float VV_TERRAIN_POOL_DARKEN = 0.62;    // standing water over the wet darkening
 const float VV_TERRAIN_STREAM_BASE = 0.50;    // the film a full path keeps between drops
 const float VV_TERRAIN_STREAM_JOINT = 0.60;   // how wet a wall's joints are in rain

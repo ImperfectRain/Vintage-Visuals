@@ -19,6 +19,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   being held at the same blur as ordinary stone, so a puddle at a low angle
   shows the trees and sky clearly. Rough blocks lose the faint sky sheen they
   had. Rough surfaces show a softer reflection, smooth ones a sharp one.
+- **Metal blocks look like metal, and rain shows on stone.** Gold, silver and
+  other metal blocks are polished enough to reflect, and show less of their
+  flat painted colour. Stone, brick and metal now look properly wet in rain
+  instead of barely damp, with puddles still darker and glassier than the
+  wet film around them.
 
 ### Added
 - **Torchlight on terrain.** Highlights from torches, lanterns and lava now
