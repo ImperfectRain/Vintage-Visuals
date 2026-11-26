@@ -104,6 +104,9 @@ namespace VintageVisuals.PseudoPBR
         public const string DampUniform = "vv_pbrDamp";
         public const string HumidityUniform = "vv_pbrHumidity";
         public const string CreviceWaterUniform = "vv_pbrCreviceWater";
+        public const string GustTableUniform = "vv_gustTable";
+        public const string GustBaseUniform = "vv_gustBase";
+        public const string GustTableValidUniform = "vv_gustTableValid";
         public const string TorchFalloffUniform = "vv_pbrTorchFalloff";
         public const string RainUniform = "vv_weatherRain";
 
@@ -277,6 +280,7 @@ namespace VintageVisuals.PseudoPBR
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
             if (stage != EnumRenderStage.Opaque) return;
+            _renderFrame++;
 
             // IShaderProgram.Use() THROWS if a program is already bound -
             // "Already a different shader (gui) in use!" - and the client does
@@ -516,9 +520,13 @@ namespace VintageVisuals.PseudoPBR
                     SetIfPresent(program, RipplesUniform, 0f);
                     SetIfPresent(program, CreviceWaterUniform, 0f);
                     break;
-                case FeatureBench.NoForest:
+                case FeatureBench.NoGusts:
                     SetIfPresent(program, GustsUniform, 0f);
+                    break;
+                case FeatureBench.NoPlantShade:
                     SetIfPresent(program, ContactShadeUniform, 0f);
+                    break;
+                case FeatureBench.NoDamp:
                     SetIfPresent(program, DampUniform, 0f);
                     break;
                 case FeatureBench.NoBlockLight:
@@ -540,12 +548,52 @@ namespace VintageVisuals.PseudoPBR
         {
             SetIfPresent(program, GustsUniform, _look.WindGusts);
             SetIfPresent(program, WindDirUniform, _weather.WindDirection);
+            UploadGustTable(program);
             SetIfPresent(program, ContactShadeUniform, _look.ContactShade);
             SetIfPresent(program, DampUniform, _look.Damp);
             SetIfPresent(program, HumidityUniform, _weather.Humidity);
             SetIfPresent(program, CreviceWaterUniform, _look.CreviceWater);
             SetIfPresent(program, TorchFalloffUniform, _look.TorchFalloff);
             SetIfPresent(program, RainUniform, _weather.Rain);
+        }
+
+        private readonly float[] _gustTable = new float[GustField.TableVectors * 4];
+        private readonly float[] _gustBases = new float[4];
+        private readonly Vec4f _gustBase = new Vec4f();
+        private long _gustTableFrame = -1;
+        private long _renderFrame;
+
+        /// <summary>
+        /// D85. The gust lattice around the camera, so plant fragments read
+        /// their value-noise corners instead of hashing them. Filled once per
+        /// frame from the same breeze clock, wind direction and wrapped origin
+        /// the shader is given (both terrain programs share it); valid only
+        /// while gusts are on, so off costs one comparison.
+        /// </summary>
+        private void UploadGustTable(IShaderProgram program)
+        {
+            if (!program.HasUniform(GustTableValidUniform)) return;
+            bool on = _look.WindGusts >= 0.001f && _weather.Origin != null;
+            if (!on)
+            {
+                program.Uniform(GustTableValidUniform, 0f);
+                return;
+            }
+
+            long frame = _renderFrame;
+            if (frame != _gustTableFrame)
+            {
+                _gustTableFrame = frame;
+                Vec2f dir = _weather.WindDirection;
+                GustField.FillTable(_gustTable, _gustBases, _weather.Origin.X, _weather.Origin.Z,
+                                    _weather.Breeze, dir.X, dir.Y);
+                _gustBase.Set(_gustBases[0], _gustBases[1], _gustBases[2], _gustBases[3]);
+            }
+
+            if (program.HasUniform(GustTableUniform))
+                program.Uniforms4(GustTableUniform, GustField.TableVectors, _gustTable);
+            SetIfPresent(program, GustBaseUniform, _gustBase);
+            program.Uniform(GustTableValidUniform, 1f);
         }
 
         /// <summary>
@@ -858,6 +906,11 @@ namespace VintageVisuals.PseudoPBR
         }
 
         private static void SetIfPresent(IShaderProgram program, string name, Vec3f value)
+        {
+            if (program.HasUniform(name)) program.Uniform(name, value);
+        }
+
+        private static void SetIfPresent(IShaderProgram program, string name, Vec4f value)
         {
             if (program.HasUniform(name)) program.Uniform(name, value);
         }

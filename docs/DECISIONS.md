@@ -3782,3 +3782,34 @@ long instruction sequence on most GPUs.
 **Verification.** L2: builds, smoketest and verifypatches pass. Bench not yet
 run in game. Optimisations are to be chosen from its numbers.
 
+## D85 - The gust field is read from a lattice table, not hashed per fragment
+
+**Context.** Elijah's first `.vvbench features` (2026-11-26, High, RTX 3080):
+zeroing gusts, plant shade and damp together saved 7.48 ms of a 30.7 ms opaque
+pass in a forest and 3.14 of 11.2 at a lake. The gust is evaluated on every
+plant fragment at every distance (the sheen), and inside every fleck-field
+evaluation (the shimmer): two value-noise copies, eight lattice corners, three
+integer hashes each - and leaf blocks are drawn many layers deep. Shafts and
+beams (8.57 ms in the forest) are the other large term; flecks/canopy 0.59
+(forest) / 3.35 (lake), foliage 1.82 / 0.91, reflections 0.46 / 0.90, rain
+0.25 / 0.32, torch specular 0.21 / 0.31, entities ~0. The whole terrain
+material is 22.9 / 8.2 ms; vanilla's opaque pass alone 7.8 / 3.0.
+
+**Decision.** `GustField.FillTable` computes, once per frame, the lattice
+values of a 16 x 16 cell window (262 blocks) around where each copy's field
+sits under the camera, with the shader's own hash, keys and wrap. They go up as
+`vv_gustTable[128]` with `vv_gustBase` and `vv_gustTableValid`. The shader does
+exactly the value-noise arithmetic it did, reading the four corners instead of
+hashing them; outside the window, or with the table invalid (gusts off, an
+unset uniform), it hashes as before. Same numbers, same motion: a smoke check
+compares the table read to the hashed noise at points around three camera
+positions in the wrap (worst difference 0) and pins the layout, with two
+mutations. Uniform budget: 128 more vec4s in chunkopaque/chunktopsoil, about
+560 of NVIDIA's 1024.
+
+The bench now splits that group into gusts, plant foot shade and damp, so the
+next run shows which of the three the 7.5 ms was.
+
+**Verification.** L2: build, smoketest, verifypatches. Saving not yet
+measured; look not yet seen in game (it should be identical).
+

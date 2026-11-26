@@ -66,8 +66,8 @@ namespace VintageVisuals.SmokeTest
                 bool wrapHidden = Math.Abs(Wa(0.0)) < 1e-9 && Math.Abs(Wa(1.0)) < 1e-9 && Math.Abs(Wa(0.5) - 1.0) < 1e-9;
                 bool partition = gust.Contains("float wb = 1.0 - wa;") &&
                                  gust.Contains("float b = fract(vv_sceneBreeze + 0.5);") &&
-                                 gust.Contains("vvTerrainGustNoise(worldXZ, a, vec2(71.0, 23.0)) * wa") &&
-                                 gust.Contains("vvTerrainGustNoise(worldXZ, b, vec2(79.0, 47.0)) * wb");
+                                 gust.Contains("vvTerrainGustNoise(worldXZ, a, vec2(71.0, 23.0), 0) * wa") &&
+                                 gust.Contains("vvTerrainGustNoise(worldXZ, b, vec2(79.0, 47.0), 1) * wb");
                 double cell = GlslEval.Const(glsl, "VV_TERRAIN_GUST_CELL");
                 double period = GlslEval.Const(glsl, "VV_TERRAIN_GUST_PERIOD");
                 bool tiles = Math.Abs(cell * period - 4096.0) < 1e-6;
@@ -400,6 +400,52 @@ namespace VintageVisuals.SmokeTest
             if (!gust.Contains("smoothstep(0.55, 0.8, n)") || !gust.Contains("smoothstep(0.08, 0.5,")) mismatches.Add("cuts");
             check("falling leaves: the CPU gust field carries the shader's constants and hash",
                   mismatches.Count == 0, mismatches.Count == 0 ? "in step" : "differs: " + string.Join(", ", mismatches));
+
+            // D85: the lattice table the shader reads instead of hashing must
+            // give the hashed noise's value at every point it covers, for both
+            // copies, wherever the camera is in the wrap, and must cover the
+            // ground around the camera. A table off by a cell or built with the
+            // other copy's key moves every gust.
+            {
+                var table = new float[GustField.TableVectors * 4];
+                var bases = new float[4];
+                double worst = 0;
+                int covered = 0, probes = 0;
+                float[] origins = { 0.5f, 1234.25f, 4095.7f };
+                foreach (float ox in origins)
+                {
+                    float oz = 4096f - ox;
+                    float breeze = ox * 0.001f + 0.13f;
+                    GustField.FillTable(table, bases, ox, oz, breeze, -0.4f, 0.9f);
+                    float len = (float)Math.Sqrt(0.4f * 0.4f + 0.9f * 0.9f);
+                    for (int copy = 0; copy < 2; copy++)
+                    {
+                        float b = copy == 0 ? breeze : breeze + 0.5f;
+                        float phase = b - (float)Math.Floor(b);
+                        float sx = -(-0.4f / len) * (GustField.Travel * (phase - 0.5f));
+                        float sz = -(0.9f / len) * (GustField.Travel * (phase - 0.5f));
+                        for (int i = -12; i <= 12; i++)
+                            for (int j = -12; j <= 12; j++)
+                            {
+                                float x = ox + i * 9.7f + sx, z = oz + j * 8.9f + sz;
+                                float fromTable = GustField.NoiseFromTable(table, bases, copy, x, z);
+                                probes++;
+                                if (Math.Abs(i) <= 10 && Math.Abs(j) <= 10 && float.IsNaN(fromTable)) continue;
+                                if (float.IsNaN(fromTable)) continue;
+                                covered++;
+                                float hashed = GustField.Noise(x, z, GustField.Cell, GustField.Period,
+                                    copy == 0 ? GustField.KeyAX : GustField.KeyBX, copy == 0 ? GustField.KeyAY : GustField.KeyBY);
+                                worst = Math.Max(worst, Math.Abs(fromTable - hashed));
+                            }
+                    }
+                }
+                string side = Body(glsl, "float vvTerrainGustLattice(");
+                bool sideOk = Regex.IsMatch(glsl, @"const int VV_TERRAIN_GUST_TABLE = " + GustField.TableSide + ";") &&
+                              side.Contains("copy * " + GustField.TableVectorsPerCopy);
+                check("I-gust table: the shader's lattice table gives the hashed gust noise around the camera",
+                      worst < 1e-6 && covered > probes / 2 && sideOk,
+                      $"worst {worst:0.########} over {covered} of {probes} probes, layout {(sideOk ? "in step" : "differs")}");
+            }
 
             // And it behaves as the shader's: nothing with gusts off or in
             // still air, patches rather than everywhere, and the same value a

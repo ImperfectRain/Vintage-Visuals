@@ -74,6 +74,15 @@ uniform vec3 playerpos;
 // so it cannot shift vanilla's texture units. Two 12-bit cells per float.
 // vv_canopyMapValid 0 means "no map" and every consumer draws vanilla.
 uniform vec4 vv_canopyMap[128];
+// The gust field's lattice values around the camera, one 16 x 16 window of
+// cells per copy (copy A in 0..63, copy B in 64..127), computed on the CPU
+// with the shader's own hash (src/PseudoPBR/GustField.cs). The same numbers
+// the hash would give, read instead of computed: every plant fragment paid
+// about 24 integer hashes for the two copies (D85). Outside the window, and
+// whenever the table is not valid, the hash runs as before.
+uniform vec4 vv_gustTable[128];
+uniform vec4 vv_gustBase;        // xy copy A's first cell, zw copy B's; whole numbers
+uniform float vv_gustTableValid; // 1 when the table matches this frame's clock and wind; 0 hashes
 uniform float vv_canopyMapValid;
 uniform float vv_canopyPlaneY;   // world Y the fleck pattern is projected from
 
@@ -1666,9 +1675,38 @@ vec2 vvTerrainWindDir()
     return dot(vv_pbrWindDir, vv_pbrWindDir) > 1e-4 ? normalize(vv_pbrWindDir) : vec2(1.0, 0.0);
 }
 
-float vvTerrainGustNoise(vec2 worldXZ, float phase, vec2 key)
+const int VV_TERRAIN_GUST_TABLE = 16;   // cells per side of each copy's window
+
+// One lattice value of one copy, from the table. `local` is the cell
+// relative to that copy's window and must be inside it.
+float vvTerrainGustLattice(ivec2 local, int copy)
+{
+    int k = local.y * VV_TERRAIN_GUST_TABLE + local.x;
+    return vv_gustTable[copy * 64 + (k >> 2)][k & 3];
+}
+
+float vvTerrainGustNoise(vec2 worldXZ, float phase, vec2 key, int copy)
 {
     vec2 p = worldXZ - vvTerrainWindDir() * (VV_TERRAIN_GUST_TRAVEL * (phase - 0.5));
+    if (vv_gustTableValid > 0.5)
+    {
+        // Exactly vvTerrainFleckNoise's arithmetic, with the four corner
+        // values read rather than hashed.
+        vec2 g = p / VV_TERRAIN_GUST_CELL;
+        vec2 i = floor(g);
+        vec2 base = copy == 0 ? vv_gustBase.xy : vv_gustBase.zw;
+        ivec2 local = ivec2(i - base);
+        if (all(greaterThanEqual(local, ivec2(0))) && all(lessThan(local, ivec2(VV_TERRAIN_GUST_TABLE - 1))))
+        {
+            vec2 f = fract(g);
+            f = f * f * (3.0 - 2.0 * f);
+            float a = vvTerrainGustLattice(local, copy);
+            float b = vvTerrainGustLattice(local + ivec2(1, 0), copy);
+            float c = vvTerrainGustLattice(local + ivec2(0, 1), copy);
+            float d = vvTerrainGustLattice(local + ivec2(1, 1), copy);
+            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) - 0.5;
+        }
+    }
     return vvTerrainFleckNoise(p, VV_TERRAIN_GUST_CELL, VV_TERRAIN_GUST_PERIOD, key) - 0.5;
 }
 
@@ -1682,8 +1720,8 @@ float vvTerrainGust(vec2 worldXZ)
     float b = fract(vv_sceneBreeze + 0.5);
     float wa = 1.0 - abs(2.0 * a - 1.0);
     float wb = 1.0 - wa;
-    float n = vvTerrainGustNoise(worldXZ, a, vec2(71.0, 23.0)) * wa
-            + vvTerrainGustNoise(worldXZ, b, vec2(79.0, 47.0)) * wb;
+    float n = vvTerrainGustNoise(worldXZ, a, vec2(71.0, 23.0), 0) * wa
+            + vvTerrainGustNoise(worldXZ, b, vec2(79.0, 47.0), 1) * wb;
     n = 0.5 + n * VV_TERRAIN_GUST_CONTRAST * inversesqrt(max(wa * wa + wb * wb, 0.5));
     return smoothstep(0.55, 0.8, n) * wind * clamp(vv_pbrGusts, 0.0, 1.0);
 }

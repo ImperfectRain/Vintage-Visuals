@@ -129,5 +129,85 @@ namespace VintageVisuals.PseudoPBR
             n = 0.5f + n * Contrast / (float)Math.Sqrt(Math.Max(wa * wa + wb * wb, 0.5f));
             return Smooth(CutLow, CutHigh, n) * w * Math.Min(1f, gusts);
         }
+    
+        /// <summary>Cells per side of each copy's lattice window (the shader's VV_TERRAIN_GUST_TABLE).</summary>
+        public const int TableSide = 16;
+
+        /// <summary>vec4s per copy in vv_gustTable.</summary>
+        public const int TableVectorsPerCopy = TableSide * TableSide / 4;
+
+        /// <summary>vec4s in vv_gustTable: both copies.</summary>
+        public const int TableVectors = TableVectorsPerCopy * 2;
+
+        /// <summary>
+        /// D85. Fills the shader's gust lattice table: for each copy, the
+        /// <c>vvTerrainCellRandom</c> value of every cell in a 16 x 16 window
+        /// around where that copy's field sits under the camera this frame,
+        /// so the shader reads the four corners of its value noise instead of
+        /// hashing them. <paramref name="table"/> takes
+        /// <see cref="TableVectors"/> x 4 floats, <paramref name="bases"/> 4
+        /// (copy A's first cell x/z, copy B's). The same numbers the hash gives,
+        /// cell for cell; a cell outside the window is hashed in the shader.
+        /// </summary>
+        public static void FillTable(float[] table, float[] bases, float originX, float originZ,
+                                     float breeze, float dirX, float dirZ)
+        {
+            float len2 = dirX * dirX + dirZ * dirZ;
+            float dx = 1f, dz = 0f;
+            if (len2 > 1e-4f)
+            {
+                float len = (float)Math.Sqrt(len2);
+                dx = dirX / len;
+                dz = dirZ / len;
+            }
+
+            for (int copy = 0; copy < 2; copy++)
+            {
+                float b = copy == 0 ? breeze : breeze + 0.5f;
+                float phase = b - (float)Math.Floor(b);
+                float px = originX - dx * (Travel * (phase - 0.5f));
+                float pz = originZ - dz * (Travel * (phase - 0.5f));
+                float baseX = (float)Math.Floor(px / Cell) - TableSide / 2;
+                float baseZ = (float)Math.Floor(pz / Cell) - TableSide / 2;
+                bases[copy * 2] = baseX;
+                bases[copy * 2 + 1] = baseZ;
+                float keyX = copy == 0 ? KeyAX : KeyBX;
+                float keyY = copy == 0 ? KeyAY : KeyBY;
+                int offset = copy * TableSide * TableSide;
+                for (int j = 0; j < TableSide; j++)
+                {
+                    for (int i = 0; i < TableSide; i++)
+                    {
+                        table[offset + j * TableSide + i] =
+                            CellRandom(GlslMod(baseX + i, Period) + keyX, GlslMod(baseZ + j, Period) + keyY);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// The shader's table read (vvTerrainGustNoise's table branch), for
+        /// the parity check: NaN when the cell is outside the window, where
+        /// the shader hashes.
+        /// </summary>
+        public static float NoiseFromTable(float[] table, float[] bases, int copy, float x, float z)
+        {
+            float gx = x / Cell, gz = z / Cell;
+            float ix = (float)Math.Floor(gx), iz = (float)Math.Floor(gz);
+            int lx = (int)(ix - bases[copy * 2]);
+            int lz = (int)(iz - bases[copy * 2 + 1]);
+            if (lx < 0 || lz < 0 || lx >= TableSide - 1 || lz >= TableSide - 1) return float.NaN;
+            float fx = gx - ix, fz = gz - iz;
+            fx = fx * fx * (3f - 2f * fx);
+            fz = fz * fz * (3f - 2f * fz);
+            int o = copy * TableSide * TableSide;
+            float a = table[o + lz * TableSide + lx];
+            float b = table[o + lz * TableSide + lx + 1];
+            float c = table[o + (lz + 1) * TableSide + lx];
+            float d = table[o + (lz + 1) * TableSide + lx + 1];
+            float ab = a + (b - a) * fx;
+            float cd = c + (d - c) * fx;
+            return ab + (cd - ab) * fz;
+        }
     }
 }

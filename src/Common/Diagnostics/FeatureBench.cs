@@ -18,7 +18,9 @@ namespace VintageVisuals.Common.Diagnostics
         public const int NoReflections = 3;
         public const int NoFoliage = 4;
         public const int NoRain = 5;
-        public const int NoForest = 6;
+        public const int NoGusts = 6;
+        public const int NoPlantShade = 10;
+        public const int NoDamp = 11;
         public const int NoBlockLight = 7;
         public const int NoMaterial = 8;
         public const int NoEntities = 9;
@@ -27,7 +29,7 @@ namespace VintageVisuals.Common.Diagnostics
         public static readonly int[] Order =
         {
             Normal, NoShafts, NoCanopy, NoReflections, NoFoliage, NoRain,
-            NoForest, NoBlockLight, NoEntities, NoMaterial, Normal
+            NoGusts, NoPlantShade, NoDamp, NoBlockLight, NoEntities, NoMaterial, Normal
         };
 
         public static int Mode { get; set; } = Normal;
@@ -43,7 +45,9 @@ namespace VintageVisuals.Common.Diagnostics
                 case NoReflections: return "terrain reflections off";
                 case NoFoliage: return "foliage light off";
                 case NoRain: return "rain ripples + crevice water off";
-                case NoForest: return "gusts + plant shade + damp off";
+                case NoGusts: return "wind gusts off";
+                case NoPlantShade: return "plant foot shade off";
+                case NoDamp: return "damp + moss off";
                 case NoBlockLight: return "torch specular off";
                 case NoEntities: return "entity lighting off";
                 case NoMaterial: return "whole terrain material off";
