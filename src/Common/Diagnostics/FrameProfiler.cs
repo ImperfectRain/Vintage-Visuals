@@ -339,6 +339,8 @@ namespace VintageVisuals.Common.Diagnostics
 
             if (index == 0)
             {
+                if (HitchTrace != null && _frames > 0) TraceHitch(_slot, deltaTime * 1000.0);
+
                 // A new frame. Harvest the oldest slot, then reuse it.
                 _frames++;
                 _slot = (int)(_frames % FramesInFlight);
@@ -406,6 +408,57 @@ namespace VintageVisuals.Common.Diagnostics
                     Collect(_benchCpu, s.Key, cpu);
                 }
             }
+        }
+
+        // --- hitch trace ------------------------------------------------------
+
+        /// <summary>Receives one line per hitch while '.vvhitch' is on; null otherwise.</summary>
+        public Action<string> HitchTrace { get; set; }
+
+        private readonly double[] _recent = new double[120];
+        private int _recentCount, _recentHead;
+        private int _gc0, _gc1, _gc2;
+        private long _lastHitchFrame;
+
+        /// <summary>
+        /// Called at the start of a frame for the frame that just ended (its
+        /// markers are all in <paramref name="slot"/>). A frame over twice the
+        /// recent median and at least 12 ms over it is a hitch: log its length,
+        /// the CPU time of each stage in it, and any garbage collections since
+        /// the last frame - a gen-2 collection is the usual managed-code stutter.
+        /// </summary>
+        private void TraceHitch(int slot, double ms)
+        {
+            int gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2);
+            int d0 = gc0 - _gc0, d1 = gc1 - _gc1, d2 = gc2 - _gc2;
+            _gc0 = gc0; _gc1 = gc1; _gc2 = gc2;
+            if (ms <= 0 || ms > 5000) return;
+
+            double median = 0;
+            if (_recentCount >= 30)
+            {
+                double[] sorted = _recent.Take(_recentCount).OrderBy(v => v).ToArray();
+                median = sorted[sorted.Length / 2];
+            }
+            _recent[_recentHead] = ms;
+            _recentHead = (_recentHead + 1) % _recent.Length;
+            if (_recentCount < _recent.Length) _recentCount++;
+
+            if (median <= 0 || ms < median * 2 || ms < median + 12) return;
+            if (_frames - _lastHitchFrame < 10) return; // one line per burst
+            _lastHitchFrame = _frames;
+
+            var sb = new StringBuilder();
+            sb.Append("hitch ").Append(Ms(ms)).Append(" ms (median ").Append(Ms(median)).Append(")");
+            if (d0 + d1 + d2 > 0) sb.Append(" GC gen0+").Append(d0).Append(" gen1+").Append(d1).Append(" gen2+").Append(d2);
+            sb.Append(" | cpu:");
+            foreach (Segment s in _segments)
+            {
+                if (s.Key == "frame" || !_issued[slot, s.From] || !_issued[slot, s.To]) continue;
+                double cpu = (_cpuTicks[slot, s.To] - _cpuTicks[slot, s.From]) * 1000.0 / Stopwatch.Frequency;
+                if (cpu >= 1.0) sb.Append(' ').Append(s.Key).Append('=').Append(Ms(cpu));
+            }
+            try { HitchTrace(sb.ToString()); } catch { }
         }
 
         private static void Collect(Dictionary<string, List<double>> into, string key, double value)

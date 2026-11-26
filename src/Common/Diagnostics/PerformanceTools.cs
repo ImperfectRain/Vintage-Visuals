@@ -75,7 +75,8 @@ namespace VintageVisuals.Common.Diagnostics
             else if (!wanted && _hudAcquired)
             {
                 _hudAcquired = false;
-                _hud?.TryClose();
+                _profiler.HitchTrace = null;
+            _hud?.TryClose();
                 _profiler.Release();
             }
         }
@@ -95,6 +96,10 @@ namespace VintageVisuals.Common.Diagnostics
                             (_profiler.GpuAvailable || !_hudWanted ? "" : " (GPU timing not available yet)"));
                     });
 
+                _capi.ChatCommands.Create("vvhitch")
+                    .WithDescription("Vintage Visuals: log every frame hitch with its CPU time per render stage and garbage collections")
+                    .HandleWith(_ => ToggleHitch());
+
                 _capi.ChatCommands.Create("vvbench")
                     .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]', '.vvbench debugcode [seconds]', '.vvbench beamcode [seconds]' or '.vvbench vanilla [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
@@ -110,6 +115,24 @@ namespace VintageVisuals.Common.Diagnostics
             {
                 _logger.Warning("[VintageVisuals] could not register .vvperf/.vvbench: " + ex.Message);
             }
+        }
+
+        private bool _hitchOn;
+
+        /// <summary>'.vvhitch': log every hitch (frame over twice the median) with its CPU stages and GC.</summary>
+        private TextCommandResult ToggleHitch()
+        {
+            _hitchOn = !_hitchOn;
+            if (_hitchOn)
+            {
+                _profiler.HitchTrace = line => _logger.Notification("[VintageVisuals] " + line);
+                _profiler.Acquire();
+                return TextCommandResult.Success("Hitch trace on: every frame over twice the median is logged to client-main.log " +
+                    "with its CPU time per stage and any garbage collection. Play normally; '.vvhitch' again to stop.");
+            }
+            _profiler.HitchTrace = null;
+            _profiler.Release();
+            return TextCommandResult.Success("Hitch trace off.");
         }
 
         private TextCommandResult StartBench(string mode, int seconds)
