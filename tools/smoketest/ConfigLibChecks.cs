@@ -60,6 +60,7 @@ namespace VintageVisuals.SmokeTest
                 bool rangesSane = true;
                 string rangeDetail = "";
                 bool allClientSide = true;
+                var wrongGroup = new List<string>();
 
                 foreach (JsonProperty category in settings.EnumerateObject())
                 {
@@ -68,6 +69,26 @@ namespace VintageVisuals.SmokeTest
                         codes.Add(setting.Name);
 
                         JsonElement value = setting.Value;
+
+                        // ConfigLib types a setting by the GROUP it sits in, not
+                        // by its default. A bool filed under "float" makes it
+                        // Single.Parse("true") the saved value and drop the
+                        // mod's whole config (water_scene, 2026-11-26).
+                        if (value.TryGetProperty("default", out JsonElement defaultValue))
+                        {
+                            bool isBool = defaultValue.ValueKind == JsonValueKind.True ||
+                                          defaultValue.ValueKind == JsonValueKind.False;
+                            bool isNumber = defaultValue.ValueKind == JsonValueKind.Number;
+                            bool fits = category.Name == "boolean" ? isBool
+                                      : category.Name == "float" || category.Name == "integer" ? isNumber
+                                      : category.Name == "string" ? defaultValue.ValueKind == JsonValueKind.String
+                                      : true;
+                            string reader = category.Name == "boolean" ? "GetBool" : category.Name == "float" ? "GetFloat" : null;
+                            Match read = Regex.Match(bridge, "case \"" + Regex.Escape(setting.Name) + "\":[^;]*?tree\\.(Get\\w+)\\(");
+                            if (!fits || (reader != null && read.Success && read.Groups[1].Value != reader))
+                                wrongGroup.Add(setting.Name + " in '" + category.Name + "'" +
+                                               (read.Success ? " read with " + read.Groups[1].Value : ""));
+                        }
 
                         if (value.TryGetProperty("clientSide", out JsonElement clientSide) &&
                             clientSide.ValueKind != JsonValueKind.True)
@@ -108,6 +129,9 @@ namespace VintageVisuals.SmokeTest
                 // THE check. Two settings sharing a weight emptied the whole F7
                 // panel - not one setting, all of them.
                 check("every setting weight is unique", !duplicateWeight, duplicateDetail);
+
+                check("every setting sits in the group its default and its bridge reader expect",
+                    wrongGroup.Count == 0, string.Join(", ", wrongGroup));
 
                 ok("every setting has a distinct code", codes.Distinct().Count() == codes.Count);
                 ok("every setting is clientSide", allClientSide);

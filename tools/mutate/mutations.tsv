@@ -344,3 +344,4 @@ D88 the prepass returns before vanilla's discard	assets/vintagevisuals/shaderpat
 D88 a blended pool is treated as unblended in the prepass	src/Common/Rendering/DepthPrepass.cs	float mode = _gl.BlendEnabled(true) ? 1f : 2f;	float mode = 2f;	I-prepass: only the Opaque
 D88 the blended-pool test is skipped for every pool	assets/vintagevisuals/shaderpatches/depthprepass.yaml	if (vv_depthPrepass < 1.5 && (	if (vv_depthPrepass < 0.5 && (	I-prepass: depth only where
 D88 the prepass looks chunkopaque up by name, finds nothing and never runs (first bench)	src/Common/Rendering/DepthPrepass.cs	_capi?.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);	_capi?.Shader.GetProgramByName("chunkopaque");	I-prepass: only the Opaque
+D88b bool settings filed under float make ConfigLib drop the whole config (water_scene, shipped D82, seen in the log)	assets/vintagevisuals/config/configlib-patches.json	"boolean": {	"float": {	every setting sits in the group

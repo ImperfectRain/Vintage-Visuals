@@ -193,7 +193,10 @@ hierarchy, the budgets, and what this project deliberately does not build.
   ConfigLib parses it, builds the F7 panel from it, and raises events back by
   setting code - every link is a string. Two settings sharing a `weight` blanks
   the WHOLE panel, not one row. A settings array instead of a keyed object
-  yields zero settings. Neither shows up in a build or a log.
+  yields zero settings. Neither shows up in a build or a log. The GROUP a
+  setting sits in (`boolean`, `float`) is its type, whatever its default says:
+  a toggle filed under `float` makes ConfigLib `Single.Parse("true")` and drop
+  the mod's whole config, and that one did show up, as an error in the log.
   `tools/smoketest` now checks weights, codes, ranges, and that every setting
   has a `case` in `ConfigLibBridge` and vice versa.
 - **A new subsystem reads `SceneIntent`, it does not re-derive the world.**

@@ -85,6 +85,13 @@
         "default": false,
         "clientSide": true,
         "weight": 115
+      },
+      "water_scene": {
+        "ingui": "World in the water",
+        "comment": "Banks, trees and the far shore reflected in the water, found in the frame already drawn. Anything off screen falls back to the sky. Off compiles the sky-only water.",
+        "default": true,
+        "clientSide": true,
+        "weight": 118
       }
     },
     "float": {
@@ -1263,13 +1270,6 @@
         },
         "clientSide": true,
         "weight": 116
-      },
-      "water_scene": {
-        "ingui": "World in the water",
-        "comment": "Banks, trees and the far shore reflected in the water, found in the frame already drawn. Anything off screen falls back to the sky. Off compiles the sky-only water.",
-        "default": true,
-        "clientSide": true,
-        "weight": 118
       },
       "water_refraction": {
         "ingui": "Refraction",
