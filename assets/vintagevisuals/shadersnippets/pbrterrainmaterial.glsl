@@ -1922,6 +1922,63 @@ float vvTerrainSunRelight(float sunVisibility)
     return normalShade / max(shaded, 0.05);
 }
 
+// Sunspots: where real sunlight reaches the floor through a gap in a crown
+// (D94). Compiled in only with the fast beam pass, as the place
+// its shafts land, so the shafts slider drives both and nothing else pays.
+//
+// The patch is placed by the game's own shadow map (the sun visibility
+// vanilla already sampled, D86), never by an invented pattern, so every spot
+// sits under a real hole and moves with the real leaves. What this adds is
+// how the eye reads it: under a crown it has adapted to shade, so the same
+// sunlight looks dazzling. The lift is therefore gated on standing under a
+// crown (the leaf map's column above the fragment and the one up-sun of it),
+// scales with how much sun gets through, and adds a little bloom through
+// vanilla's glow channel. Open ground keeps vanilla's sunlit level.
+#ifdef VV_TERRAIN_BEAMS_IN_PASS
+const float VV_TERRAIN_SUNSPOT_LIFT = 0.55;   // extra share of the sunlit colour at full strength
+const float VV_TERRAIN_SUNSPOT_GLOW = 0.1;    // bloom at full strength; vanilla's own is 0.1 x shadowIntensity
+const float VV_TERRAIN_SUNSPOT_REACH = 32.0;  // the leaf map's reach
+
+vec3 vvTerrainSunspot(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float sunVisibility)
+{
+    if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return color;
+    if (sunVisibility < 0.05) return color;
+    if (!vvTerrainIsCanopyReceiver()) return color;
+    float dist = vvTerrainEyeDistance(cameraRelativePos);
+    if (dist > VV_TERRAIN_SUNSPOT_REACH) return color;
+    vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
+    if (l.y < 0.06) return color;
+
+    // Under a crown: the column above, or the column the light came down
+    // through (four blocks up-sun), has leaves above this point.
+    vec3 world = cameraRelativePos + vv_pbrOrigin;
+    vec2 up = vvTerrainCanopyCell(world.xz);
+    vec2 upSun = vvTerrainCanopyCell(world.xz + normalize(l.xz + vec2(1e-4)) * 4.0);
+    float crownHere = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, up.x)
+                    * smoothstep(world.y + 1.0, world.y + 3.0, up.y);
+    float crownSun = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, upSun.x)
+                   * smoothstep(world.y + 1.0, world.y + 3.0, upSun.y);
+    float crown = max(crownHere, crownSun);
+    if (crown <= 0.0) return color;
+
+    float facing = vvTerrainIsFlora() ? mix(0.55, 1.0, abs(dot(faceNormal, l)))
+                                      : smoothstep(0.0, 0.25, dot(faceNormal, l));
+    float fade = 1.0 - smoothstep(VV_TERRAIN_SUNSPOT_REACH - 8.0, VV_TERRAIN_SUNSPOT_REACH, dist);
+    float strength = clamp(sunVisibility, 0.0, 1.0) * crown * facing * fade
+                   * vvTerrainSunPresence() * vvTerrainClearSky()
+                   * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * (1.0 - vvTerrainLocalLightShare());
+    strength = clamp(strength, 0.0, 1.5);
+    if (strength <= 0.0) return color;
+
+    vv_fleckGlow = max(vv_fleckGlow, strength * VV_TERRAIN_SUNSPOT_GLOW);
+    // Brighter and a touch whiter, never more saturated: the v7 flecks read
+    // as yellow paint when they pushed the albedo's own hue (D51).
+    float y = vvTerrainLuma(color);
+    vec3 paler = mix(color, vec3(y), 0.2 * min(strength, 1.0));
+    return paler * (1.0 + VV_TERRAIN_SUNSPOT_LIFT * strength);
+}
+#endif
+
 // Canopy shade and sunflecks applied to a sunlit term, the one entry point
 // for opaque blocks, the forest floor and plants alike.
 // Share of the canopy shade cap a vertical block face takes (D63).
@@ -1930,6 +1987,10 @@ const float VV_TERRAIN_CANOPY_WALL = 0.45;
 vec3 vvTerrainCanopyResolve(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float fade,
                             float sunVisibility, float cap)
 {
+#ifdef VV_TERRAIN_BEAMS_IN_PASS
+    if (sunVisibility < 0.0) sunVisibility = vvTerrainSunVisibility();
+    color = vvTerrainSunspot(color, cameraRelativePos, faceNormal, sunVisibility);
+#endif
     if (vv_pbrDapple < 0.001 && vv_pbrSunflecks < 0.001) return color;
     if (!vvTerrainIsCanopyReceiver()) return color;
     if (vvTerrainEyeDistance(cameraRelativePos) > VV_TERRAIN_DAPPLE_FADE_START + VV_TERRAIN_DAPPLE_FADE_RANGE) return color;

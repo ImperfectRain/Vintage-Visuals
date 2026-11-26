@@ -4196,3 +4196,51 @@ cap), about 0.19 now. Samples outside both cascades now count as neither lit
 nor shaded. The fast-beams interaction check requires the contrast factor in
 the level, and a new mutation (the level without it) is caught. L2: not seen
 in game; cost unchanged (no extra reads).
+
+## D94 - Light through the canopy: sunspots on the floor and shafts by contrast
+
+**Context.** After the D92 amendment the shadows were back but the player
+found the beams barely noticeable (2026-11-26, top-down forest screenshots):
+he wants sunlight visibly forcing its way through the canopy, shafts in the
+air and bright spots where they land. The amendment had made the shafts safe
+by making them weak.
+
+**Decision.** Two parts, one feature, one slider (`PseudoPBR.SunShafts`).
+
+- *Sunspots* (`vvTerrainSunspot`, terrain material). Where the game's shadow
+  map says the sun reaches a fragment (vanilla's own taps, D86) AND the leaf
+  map has a crown above it or in the column the light came down through, the
+  sunlit colour is lifted by up to `VV_TERRAIN_SUNSPOT_LIFT` 0.55, moved a
+  little toward white (never more saturated, the D51 v7 lesson), and given
+  up to `VV_TERRAIN_SUNSPOT_GLOW` 0.1 of bloom through vanilla's glow
+  channel. The placement is the real holes in the real leaves; the lift is
+  how an eye adapted to shade reads them. Open ground keeps vanilla's sunlit
+  level. Compiled in only inside `#ifdef VV_TERRAIN_BEAMS_IN_PASS`, the
+  fast-pass group's define (D91), so without the pass the terrain carries none
+  of it; the sunspots are where the pass's shafts land.
+- *Shafts by contrast.* The march weighs its lit share by `1 - f^2` (f the lit
+  fraction of the air marched) instead of `4f(1-f)`, so a thin shaft seen
+  through deep shade keeps nearly all its light, and the high-sun factor is
+  back to `0.4 + 0.6 * lowSun` with `VV_BEAM_SCATTER` 0.07. What made that
+  unsafe at noon was an even veil across the screen, so the composite now
+  removes it: it compares each pixel with a depth-weighted ring of eight
+  low-resolution taps seven texels out, draws `VV_SHAFT_BASE` 0.35 of the
+  beam plus `VV_SHAFT_EDGE` 2 times whatever stands above the ring's mean, and
+  caps the add at 0.6.
+
+**Worked cases** (as in the D92 amendment). Dry noon, horizontal view, half
+the air lit, spread evenly: about 0.03 added (the veil keeps 0.35 of about
+0.08). Looking up into a single shaft at noon: about 0.13. A low sun toward
+the light with a third of the air lit: about 0.3.
+
+**Cost.** Sunspots: two leaf-map cell reads (eight array reads) and a few ALU
+per sunlit receiver fragment within 32 blocks; no texture read, no new tap.
+Composite: eight more `texelFetch` per full-resolution pixel. Not measured;
+`.vvperf` "vv light shafts pass" and `.vvbench beams` time both (the
+sunspots go with the fast-beams mode).
+
+**Verification.** L2: build; smoketest (the fast-beams check now requires the
+sunspot call inside its define, its shadow-map placement, the contrast weight
+and the composite's veil removal; three mutations run singly, all caught);
+verifypatches compiles every group in all define combinations and links both
+pass programs. Not seen in game.

@@ -202,7 +202,31 @@ void main()
     }
     vec3 beam = sum / weight;
     if (dot(beam, vec3(1.0)) <= 0.0) discard;
-    outColor = vec4(beam, 0.0);   // alpha 0: (ONE, ONE_MINUS_SRC_ALPHA) adds
+
+    // Veil removal (D94). A shaft is light standing out from the
+    // air around it, so only the part of the beam above a wide neighbourhood
+    // mean is drawn at full gain, and a level spread evenly across the screen
+    // keeps only VV_SHAFT_BASE of itself. Noon under a broken canopy is that
+    // even level, and drawing it whole hid every shadow on the ground. The
+    // neighbourhood is depth weighted like the filter above, so a trunk does
+    // not count toward the air behind it.
+    const vec2 ring[8] = vec2[8](vec2(7.0, 0.0), vec2(-7.0, 0.0), vec2(0.0, 7.0), vec2(0.0, -7.0),
+                                 vec2(5.0, 5.0), vec2(-5.0, 5.0), vec2(5.0, -5.0), vec2(-5.0, -5.0));
+    vec3 wideSum = beam;
+    float wideWeight = 1.0;
+    for (int k = 0; k < 8; k++)
+    {
+        ivec2 at = clamp(base + ivec2(ring[k]), ivec2(0), limit);
+        vec4 s = texelFetch(vv_beamLowRes, at, 0);
+        float w = exp(-abs(s.a - linear) / (tolerance * 4.0));
+        wideSum += s.rgb * w;
+        wideWeight += w;
+    }
+    vec3 wide = wideSum / wideWeight;
+    const float VV_SHAFT_BASE = 0.35;
+    const float VV_SHAFT_EDGE = 2.0;
+    vec3 shaft = beam * VV_SHAFT_BASE + max(beam - wide, vec3(0.0)) * VV_SHAFT_EDGE;
+    outColor = vec4(min(shaft, vec3(0.6)), 0.0);   // alpha 0: (ONE, ONE_MINUS_SRC_ALPHA) adds
 }
 ";
 

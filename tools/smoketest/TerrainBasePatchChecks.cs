@@ -1057,7 +1057,11 @@ void main()
                           // A ray lit all along is a veil, not a shaft: the march
                           // keeps only lit air with shade beside it, or noon under
                           // a broken canopy greys every shadow (2026-11-26).
-                          shadowBody.Contains("float contrast = 4.0 * f * (1.0 - f);") &&
+                          shadowBody.Contains("float contrast = 1.0 - f * f;") &&
+                          // D94 sunspots: placed by the game's shadow map (the sun
+                          // visibility), compiled in only with the pass.
+                          Regex.IsMatch(terrainSnippet, @"#ifdef VV_TERRAIN_BEAMS_IN_PASS\s+if \(sunVisibility < 0\.0\) sunVisibility = vvTerrainSunVisibility\(\);\s+color = vvTerrainSunspot\(color, cameraRelativePos, faceNormal, sunVisibility\);") &&
+                          terrainSnippet.Contains("float strength = clamp(sunVisibility, 0.0, 1.0) * crown * facing * fade") &&
                           shadowBody.Contains("float level = lit * contrast * sunAngle * ds") &&
                           shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&
                           sunLitBody.Contains("texture(vv_beamShadowNear, vec3(n.xy, n.z - 0.0005))") &&
@@ -1070,7 +1074,8 @@ void main()
                           // (ONE, ONE_MINUS_SRC_ALPHA) with alpha 0 is an add.
                           rendererSrc.Contains("GlToggleBlend(true, EnumBlendMode.PremultipliedAlpha);") &&
                           !rendererSrc.Contains("EnumBlendMode.Brighten") &&
-                          VintageVisuals.PseudoPBR.BeamPassSource.Composite.Contains("outColor = vec4(beam, 0.0);");
+                          VintageVisuals.PseudoPBR.BeamPassSource.Composite.Contains("vec3 shaft = beam * VV_SHAFT_BASE + max(beam - wide, vec3(0.0)) * VV_SHAFT_EDGE;") &&
+                          VintageVisuals.PseudoPBR.BeamPassSource.Composite.Contains("outColor = vec4(min(shaft, vec3(0.6)), 0.0);");
                 check("I-fast beams: the pass and the terrain never both draw, zero draws the terrain's, one march", ok,
                       $"terrain call sites {calls}, gated {gated}, march length {march.Length}");
             }
