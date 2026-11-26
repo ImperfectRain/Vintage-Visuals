@@ -1041,11 +1041,18 @@ void main()
                 int gated = Regex.Matches(beamYaml, @"if \(vv_pbrBeamPass < 0\.5\) outColor\.rgb \+= vvTerrainBeamColor\(\) \* \(vvTerrainBeamInscatter\(worldPos\.xyz").Count;
                 string marchMain = march.Contains("void main()") ? march.Substring(march.LastIndexOf("void main()", StringComparison.Ordinal)) : "";
                 bool ok = calls == 2 && gated == calls &&
-                          binderSrc.Contains("SetIfPresent(program, BeamPassUniform, BeamPass != null && BeamPass.WillDraw ? 1f : 0f);") &&
+                          binderSrc.Contains("SetIfPresent(program, BeamPassUniform, (BeamPass != null && BeamPass.WillDraw) || FeatureBench.Off(FeatureBench.NoBeams) ? 1f : 0f);") &&
                           rendererSrc.Contains("return _compiled && !_failed && Wanted();") &&
                           Regex.Matches(march, @"float vvTerrainBeamInscatter\(").Count == 1 &&
                           marchMain.Contains("float level = vvTerrainBeamInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);") &&
-                          marchMain.Contains("vvTerrainBeamColor() * level");
+                          marchMain.Contains("vvTerrainBeamColor() * level") &&
+                          // The composite must ADD. The game's Brighten is
+                          // (ZERO, ONE_MINUS_SRC_COLOR): it darkens, and the first
+                          // in-game build lost its beams to it. Premultiplied
+                          // (ONE, ONE_MINUS_SRC_ALPHA) with alpha 0 is an add.
+                          rendererSrc.Contains("GlToggleBlend(true, EnumBlendMode.PremultipliedAlpha);") &&
+                          !rendererSrc.Contains("EnumBlendMode.Brighten") &&
+                          VintageVisuals.PseudoPBR.BeamPassSource.Composite.Contains("outColor = vec4(beam, 0.0);");
                 check("I-fast beams: the pass and the terrain never both draw, zero draws the terrain's, one march", ok,
                       $"terrain call sites {calls}, gated {gated}, march length {march.Length}");
             }

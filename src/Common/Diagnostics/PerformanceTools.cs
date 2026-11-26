@@ -130,7 +130,7 @@ namespace VintageVisuals.Common.Diagnostics
                 int each = seconds > 0 ? seconds : 8;
                 _tierResults.Clear();
                 RunFeature(FeatureBench.BeamOrder, 0, each);
-                return TextCommandResult.Success("Benchmarking the beams: in the terrain shader, in the fast pass, none, " +
+                return TextCommandResult.Success("Benchmarking the beams: in the terrain shader, in the fast pass, no air beams, no shafts at all, " +
                     "then the terrain shader again, " + each + " s each. Stand still under trees facing the sun.");
             }
 

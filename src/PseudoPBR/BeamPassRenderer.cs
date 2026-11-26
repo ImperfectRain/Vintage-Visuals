@@ -307,9 +307,15 @@ namespace VintageVisuals.PseudoPBR
                 _march.Stop();
 
                 // 2. Composite onto the primary buffer, additively, colour only.
+                // PremultipliedAlpha is glBlendFunc(ONE, ONE_MINUS_SRC_ALPHA),
+                // so an output alpha of 0 is a pure add on every attachment.
+                // NOT Brighten: the game implements that as
+                // glBlendFuncSeparate(ZERO, ONE_MINUS_SRC_COLOR, ...), which
+                // DARKENS by the source colour - the first in-game build
+                // composited the beams that way and they all but vanished.
                 _capi.Render.CurrentFrameBuffer = primary;
                 _capi.Render.GlViewport(0, 0, primary.Width, primary.Height);
-                _capi.Render.GlToggleBlend(true, EnumBlendMode.Brighten);
+                _capi.Render.GlToggleBlend(true, EnumBlendMode.PremultipliedAlpha);
                 _capi.Render.GlColorMask(true, true, true, false);
 
                 _composite.Use();

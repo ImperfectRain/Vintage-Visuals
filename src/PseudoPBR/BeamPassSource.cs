@@ -135,8 +135,9 @@ void main()
         /// weighted by how close its depth is to this pixel's, so a beam behind
         /// a trunk does not bleed onto the trunk and the march's per-pixel
         /// sample offset is averaged out rather than drawn as a crosshatch.
-        /// Writes nothing but light: every other attachment gets alpha 0 under
-        /// additive blending, and alpha is masked off by the renderer.
+        /// Writes nothing but light: every output has alpha 0 under the
+        /// premultiplied blend (ONE, ONE_MINUS_SRC_ALPHA), which makes it a pure
+        /// add, and alpha is masked off by the renderer.
         /// </summary>
         public const string Composite =
 @"#version 330 core
@@ -183,7 +184,7 @@ void main()
     }
     vec3 beam = sum / weight;
     if (dot(beam, vec3(1.0)) <= 0.0) discard;
-    outColor = vec4(beam, 1.0);
+    outColor = vec4(beam, 0.0);   // alpha 0: (ONE, ONE_MINUS_SRC_ALPHA) adds
 }
 ";
 

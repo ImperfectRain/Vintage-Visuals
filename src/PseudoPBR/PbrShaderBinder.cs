@@ -492,7 +492,7 @@ namespace VintageVisuals.PseudoPBR
             UploadCanopyMap(program);
             SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
-            SetIfPresent(program, BeamPassUniform, BeamPass != null && BeamPass.WillDraw ? 1f : 0f);
+            SetIfPresent(program, BeamPassUniform, (BeamPass != null && BeamPass.WillDraw) || FeatureBench.Off(FeatureBench.NoBeams) ? 1f : 0f);
             UploadForest(program);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);

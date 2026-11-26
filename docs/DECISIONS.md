@@ -3899,4 +3899,20 @@ and matches whole method bodies instead of a 4000-character window, which the
 binder had outgrown); verifypatches compiles and LINKS both pass programs with
 and without the game's prefix defines. Not seen in game; cost not measured -
 `.vvbench beams` runs the terrain-shader beams, the fast pass, no beams, and
-the terrain-shader beams again.
+the terrain-shader beams again (see the amendment for the added run).
+
+**Amendment (2026-11-26, first in-game run).** The first build composited with
+`EnumBlendMode.Brighten`, assuming an add. Decoded from the game's
+`ClientPlatformWindows.GlToggleBlend`, Brighten is
+`glBlendFuncSeparate(ZERO, ONE_MINUS_SRC_COLOR, ONE, ONE_MINUS_SRC_ALPHA)`: it
+multiplies the frame by one minus the beam, a slight darkening, so the player
+saw almost no beams with the pass on. The composite now uses
+`PremultipliedAlpha` (`glBlendFunc(ONE, ONE_MINUS_SRC_ALPHA)`) and writes alpha
+0, a pure add on every attachment; the interaction check forbids Brighten and a
+mutation proves it. For reference, Multiply is `(DST_COLOR, ONE)`, Glow is
+`(SRC_ALPHA, ONE)` for colour, and Standard also resets attachments 2 and 3 to
+`(ONE, ZERO)` when SSAO is on. The same run's bench (forest, High, opaque GPU):
+terrain-shader beams 52.8 ms, fast pass 33.1, no shafts or beams 18.9, so the
+pass saved 19.8 ms while drawing nearly nothing visible; how much of the 14 ms
+left is the pass and how much the god-ray shaft sources was not separable, so
+`.vvbench beams` now adds a run with the air beams off and the shafts kept.
