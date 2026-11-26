@@ -207,3 +207,51 @@
   content: |
     vv_sunExposure = rgbaLightIn.a; // chunktopsoil
     vv_blockLight = rgbaLightIn.rgb; // chunktopsoil
+
+# D86: vanilla's getBrightnessFromShadowMap already takes the same eighteen
+# shadow-map taps vvTerrainSunVisibility needs (same offsets, same biases).
+# It hands its occlusion over in a global, so the material reads it instead of
+# sampling the shadow maps a second time. -1 until vanilla has run (a debug
+# view that skips vanilla's lookup, a path that never calls it): the material
+# then takes its own taps, as before. The global sits above vanilla's function
+# because that is where it is assigned.
+- type: insert_before
+  phase: Declarations
+  filename: chunkopaque.fsh
+  tokens: "float linearDepth(float depthSample)"
+  content: |
+    float vv_vanillaOcclusion = -1.0; // vanilla's sun occlusion this fragment, -1 not yet known (D86)
+
+- type: insert_before
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: "b = clamp(b + blockBrightness, 0, 1);"
+  content: |
+    vv_vanillaOcclusion = shadowCoordsFar.w > 0.0 ? totalFar * shadowCoordsFar.w : 0.0;
+    #if SHADOWQUALITY > 1
+    vv_vanillaOcclusion += shadowCoordsNear.w > 0.0 ? totalNear * shadowCoordsNear.w : 0.0;
+    #endif
+
+# D86: vanilla's getBrightnessFromShadowMap already takes the same eighteen
+# shadow-map taps vvTerrainSunVisibility needs (same offsets, same biases).
+# It hands its occlusion over in a global, so the material reads it instead of
+# sampling the shadow maps a second time. -1 until vanilla has run (a debug
+# view that skips vanilla's lookup, a path that never calls it): the material
+# then takes its own taps, as before. The global sits above vanilla's function
+# because that is where it is assigned.
+- type: insert_before
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  tokens: "float linearDepth(float depthSample)"
+  content: |
+    float vv_vanillaOcclusion = -1.0; // vanilla's sun occlusion this fragment, -1 not yet known (D86)
+
+- type: insert_before
+  phase: Material
+  filename: chunktopsoil.fsh
+  tokens: "b = clamp(b + blockBrightness, 0, 1);"
+  content: |
+    vv_vanillaOcclusion = shadowCoordsFar.w > 0.0 ? totalFar * shadowCoordsFar.w : 0.0;
+    #if SHADOWQUALITY > 1
+    vv_vanillaOcclusion += shadowCoordsNear.w > 0.0 ? totalNear * shadowCoordsNear.w : 0.0;
+    #endif

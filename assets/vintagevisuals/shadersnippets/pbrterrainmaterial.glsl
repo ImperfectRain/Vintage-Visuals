@@ -1328,6 +1328,8 @@ const float VV_TERRAIN_FLECK_VIEW_LIMIT = 40.0;
 float vvTerrainSunVisibility()
 {
 #if SHADOWQUALITY > 0
+    // D86: vanilla has already taken these exact taps this fragment.
+    if (vv_vanillaOcclusion >= 0.0) return clamp(1.0 - vv_vanillaOcclusion, 0.0, 1.0);
     float occlusion = 0.0;
     if (shadowCoordsFar.w > 0.0)
     {

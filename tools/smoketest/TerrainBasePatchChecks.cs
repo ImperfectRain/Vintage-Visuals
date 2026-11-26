@@ -24,6 +24,19 @@ in vec4 rgbaFog;
 in vec3 blockLight;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
+float linearDepth(float depthSample)
+{
+    return depthSample;
+}
+float getBrightnessFromShadowMap() {
+    float totalFar = 9.0;
+    totalFar /= 9.0;
+    float b = 1.0;
+    float totalNear = 9.0;
+    totalNear /= 9.0;
+    b = clamp(b + blockBrightness, 0, 1);
+    return b;
+}
 void main()
 {
     vec4 texColor = vec4(1);
@@ -52,6 +65,19 @@ in vec4 rgbaFog;
 in vec3 blockLight;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outGlow;
+float linearDepth(float depthSample)
+{
+    return depthSample;
+}
+float getBrightnessFromShadowMap() {
+    float totalFar = 9.0;
+    totalFar /= 9.0;
+    float b = 1.0;
+    float totalNear = 9.0;
+    totalNear /= 9.0;
+    b = clamp(b + blockBrightness, 0, 1);
+    return b;
+}
 void main()
 {
     float glow = 0;
@@ -229,8 +255,8 @@ void main()
                 patches.Count(p => p.Content.Contains("in float vv_sunExposure;")) == 2,
                 "");
 
-            check("pbrterrainmaterial.yaml parsed into twenty-six patches",
-                patches.Count == 26,
+            check("pbrterrainmaterial.yaml parsed into thirty patches",
+                patches.Count == 30,
                 patches.Count.ToString());
             check("pbrterrainmaterial group is isolated",
                 patches.All(p => p.Group == "pbrterrainmaterial"),
@@ -251,8 +277,8 @@ void main()
                 "");
             check("pbrterrainmaterial declares deterministic compiler phases",
                 patches.Count(p => p.Phase == "Assertions") == 12 &&
-                patches.Count(p => p.Phase == "Declarations") == 8 &&
-                patches.Count(p => p.Phase == "Material") == 4,
+                patches.Count(p => p.Phase == "Declarations") == 10 &&
+                patches.Count(p => p.Phase == "Material") == 6,
                 string.Join(", ", patches.Select(p => p.Phase)));
 
             string resolved = string.Join("\n", patches.Select(p => p.Content));
@@ -1037,6 +1063,28 @@ void main()
             string topsoil = patcher.Patch("chunktopsoil.fsh", TopsoilVanilla);
 
             check("pbrterrainmaterial group healthy", patcher.IsGroupHealthy("pbrterrainmaterial"), "");
+            // D86: the material reads vanilla's own shadow occlusion instead
+            // of taking the same eighteen taps again. It must be declared above
+            // vanilla's shadow function, assigned inside it before vanilla
+            // returns, carry BOTH cascades' weights, and be read only when set.
+            {
+                string sunVis = GlslEval.StripComments(GlslEval.FunctionBody(resolveSnippet("pbrterrainmaterial.glsl"), "float vvTerrainSunVisibility(") ?? "");
+                bool ordered = true;
+                foreach (string src in new[] { opaque, topsoil })
+                {
+                    int decl = src.IndexOf("float vv_vanillaOcclusion = -1.0;", StringComparison.Ordinal);
+                    int fn = src.IndexOf("float getBrightnessFromShadowMap() {", StringComparison.Ordinal);
+                    int set = src.IndexOf("vv_vanillaOcclusion = shadowCoordsFar.w > 0.0 ? totalFar * shadowCoordsFar.w : 0.0;", StringComparison.Ordinal);
+                    int near = src.IndexOf("vv_vanillaOcclusion += shadowCoordsNear.w > 0.0 ? totalNear * shadowCoordsNear.w : 0.0;", StringComparison.Ordinal);
+                    int ret = src.IndexOf("b = clamp(b + blockBrightness, 0, 1);", StringComparison.Ordinal);
+                    ordered &= decl >= 0 && fn > decl && set > fn && near > set && ret > near;
+                }
+                check("I-sun visibility reuses vanilla's shadow taps: both cascades, set before it is read, own taps otherwise",
+                      ordered && sunVis.Contains("if (vv_vanillaOcclusion >= 0.0) return clamp(1.0 - vv_vanillaOcclusion, 0.0, 1.0);") &&
+                      sunVis.Contains("texture(shadowMapFar"),
+                      ordered ? "in place" : "declaration, assignment or near cascade missing or out of order");
+            }
+
             check("chunkopaque receives primary material operation before outGlow",
                 opaque.IndexOf("outColor = vvTerrainMaterialPrimary(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >= 0 &&
                 opaque.IndexOf("outColor = vvTerrainMaterialPrimaryDebug(outColor, texColor.rgb, normal, uv, worldPos.xyz, b, fogAmount, murkiness, rgbaFog.rgb, blockLight, glowLevel);", StringComparison.Ordinal) >

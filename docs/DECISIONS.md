@@ -3813,3 +3813,29 @@ next run shows which of the three the 7.5 ms was.
 **Verification.** L2: build, smoketest, verifypatches. Saving not yet
 measured; look not yet seen in game (it should be identical).
 
+## D86 - Sun visibility reuses vanilla's shadow taps
+
+**Context.** Second `.vvbench features` (2026-11-26, after D85, High): opaque
+18.7 ms, whole material 12.0, sunflecks/canopy shade 2.9, shafts/beams 2.3,
+wind gusts 1.5 (was the bulk of the 7.5 ms group before D85), foliage 1.1,
+reflections 0.4, damp 0.4, plant foot shade, rain, torch specular and entity
+lighting about 0. Not the same view as the first run, so the before/after is
+approximate (vanilla's own opaque pass 6.8 vs 7.8 ms).
+
+`vvTerrainSunVisibility` took eighteen shadow-map taps (3 x 3 in each
+cascade) on every plant fragment and every canopy receiver. Vanilla's
+`getBrightnessFromShadowMap` takes exactly the same eighteen - same offsets,
+same depth biases - a few lines earlier in the same fragment.
+
+**Decision.** Vanilla's function hands its occlusion over in a global,
+`vv_vanillaOcclusion`, assigned just before it adds block light back and
+declared above it (at `float linearDepth(float depthSample)`, the nearest
+declaration nothing else patches). The material returns `1 - occlusion` when
+the global is set and takes its own taps when it is not (-1: a weather debug
+view that skips vanilla's lookup, any path that never calls it). Same taps,
+same weights, so the same answer; one sampling instead of two.
+
+**Verification.** L2: build, smoketest (new interaction check plus a mutation),
+verifypatches in every define combination. Saving not measured; look should be
+identical.
+
