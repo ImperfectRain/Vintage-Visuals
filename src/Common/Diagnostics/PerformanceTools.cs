@@ -147,7 +147,7 @@ namespace VintageVisuals.Common.Diagnostics
                 int each = seconds > 0 ? seconds : 8;
                 _tierResults.Clear();
                 RunPrepass(0, each);
-                return TextCommandResult.Success("Benchmarking the depth prepass: on, off, on, off, " + each +
+                return TextCommandResult.Success("Benchmarking the depth prepass: both pools, leaves only, off, twice, " + each +
                     " s each. Stand still in a forest, facing the trees." +
                     (VintageVisuals.Common.Rendering.DepthPrepass.ShaderReady() ? "" :
                         " The prepass shader group is not applied (Performance.DepthPrepass off?), so 'on' runs will match 'off'."));
@@ -300,26 +300,31 @@ namespace VintageVisuals.Common.Diagnostics
                         ? ReloadSettleSeconds : SettleSeconds) * 1000));
         }
 
-        /// <summary>'.vvbench prepass' (D88): on, off, on, off, so drift shows as the two pairs disagreeing.</summary>
-        private static readonly int[] PrepassOrder = { 1, 0, 1, 0 };
+        /// <summary>
+        /// '.vvbench prepass' (D88): both pools, leaves only, off, twice, so drift shows
+        /// as the two rounds disagreeing. Values are DepthPrepass pool masks; 0 is off.
+        /// </summary>
+        private static readonly int[] PrepassOrder = { 3, 2, 0, 3, 2, 0 };
 
         private void RunPrepass(int index, int seconds)
         {
             int mode = PrepassOrder[index];
-            VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = mode;
+            VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = mode == 0 ? 0 : 1;
+            VintageVisuals.Common.Rendering.DepthPrepass.BenchPoolMask = mode == 0 ? -1 : mode;
             _benchCallback = _capi.Event.RegisterCallback(_ =>
             {
                 _profiler.BeginBench();
                 _benchCallback = _capi.Event.RegisterCallback(__ =>
                 {
                     bool ran = VintageVisuals.Common.Rendering.DepthPrepass.RanLastFrame;
-                    _tierResults.Add(_profiler.EndBench(mode == 1
-                        ? "depth prepass on" + (ran ? "" : " (DID NOT RUN)")
+                    _tierResults.Add(_profiler.EndBench(mode != 0
+                        ? (mode == 3 ? "depth prepass on" : "depth prepass, leaves only") + (ran ? "" : " (DID NOT RUN)")
                         : "depth prepass off"));
                     if (index + 1 < PrepassOrder.Length) { RunPrepass(index + 1, seconds); return; }
 
                     _benchCallback = 0;
                     VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = -1;
+                    VintageVisuals.Common.Rendering.DepthPrepass.BenchPoolMask = -1;
                     Report(FormatFeatures(_tierResults));
                 }, seconds * 1000);
             }, (int)(SettleSeconds * 1000));
@@ -433,6 +438,7 @@ namespace VintageVisuals.Common.Diagnostics
             VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch = false;
             VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamCodeBenchHoldsMarch = false;
             VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench = 0;
+            VintageVisuals.Common.Rendering.DepthPrepass.BenchPoolMask = -1;
             _hud?.TryClose();
             _hud?.Dispose();
             _profiler.Dispose();

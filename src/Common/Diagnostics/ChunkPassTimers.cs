@@ -166,6 +166,7 @@ namespace VintageVisuals.Common.Diagnostics
                     // rest are skipped by its prefix and must not stretch the span.
                     if (pass > 1) return;
                     p.StampCode(p.PrepassStart, true);
+                    p.StampCode(p.PrepassPoolStart(pass), true);
                     __state = 100 + pass;
                 }
                 else
@@ -182,7 +183,18 @@ namespace VintageVisuals.Common.Diagnostics
             if (__state < 0 || _failed) return;
             FrameProfiler p = FrameProfiler.Active;
             if (p == null) return;
-            try { p.StampCode(__state >= 100 ? p.PrepassEnd : p.PassEnd(__state), false); }
+            try
+            {
+                if (__state >= 100)
+                {
+                    p.StampCode(p.PrepassEnd, false);
+                    p.StampCode(p.PrepassPoolEnd(__state - 100), false);
+                }
+                else
+                {
+                    p.StampCode(p.PassEnd(__state), false);
+                }
+            }
             catch (Exception ex) { Fail(ex); }
         }
     }

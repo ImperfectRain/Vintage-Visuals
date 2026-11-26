@@ -173,6 +173,9 @@ namespace VintageVisuals.Common.Diagnostics
         internal int ChunksEnd { get; private set; }
         internal int PrepassStart { get; private set; }
         internal int PrepassEnd { get; private set; }
+        internal int PrepassPoolStart(int pass) { return pass == 0 ? _prepass0Start : _prepass1Start; }
+        internal int PrepassPoolEnd(int pass) { return pass == 0 ? _prepass0End : _prepass1End; }
+        private int _prepass0Start, _prepass0End, _prepass1Start, _prepass1End;
         private readonly int[] _passStart = new int[ChunkPassCount];
         private readonly int[] _passEnd = new int[ChunkPassCount];
         internal int PassStart(int pass) { return _passStart[pass]; }
@@ -188,6 +191,10 @@ namespace VintageVisuals.Common.Diagnostics
             PrepassEnd = AddCode();
             Span("chunks", "  chunk pools, all", ChunksStart, ChunksEnd);
             Span("chunks.prepass", "  vv depth prepass", PrepassStart, PrepassEnd, true);
+            _prepass0Start = AddCode(); _prepass0End = AddCode();
+            _prepass1Start = AddCode(); _prepass1End = AddCode();
+            Span("chunks.prepass.0", "    prepass Opaque", _prepass0Start, _prepass0End, true);
+            Span("chunks.prepass.1", "    prepass leaves", _prepass1Start, _prepass1End, true);
 
             // In the order ChunkRenderer.RenderOpaque draws them (1.22), so the
             // report reads top to bottom like the frame.

@@ -4085,3 +4085,15 @@ saving of 0.3 to 0.5 ms, about the run-to-run drift. Kept: it is exact and
 costs nothing, but the march was not where D90's register pressure came from.
 `.vvbench vanilla` was added at the same time to measure the mod's whole
 overhead against the game's own shaders, with and without the depth prepass.
+
+**Amendment 3 (2026-11-26, which pools to prepass).** The chunk pass timers
+put the prepass itself at 4.3 ms, while the real Opaque pool costs only about
+0.6 ms to shade. The game draws the Opaque pool before the leaves, so its
+depth already rejects hidden leaves in the real pass; prepassing it only
+saves the Opaque pool's own overdraw. `DepthPrepass` now takes a pool mask
+(1 Opaque, 2 leaves; default both, unchanged) and `.vvbench prepass` runs
+both pools, leaves only and off, twice, with the prepass split per pool in
+the report. A pool outside the mask is not drawn in the prepass and keeps the
+game's GL_LESS in the real pass, which stays exact: what the leaf prepass
+depth rejects is behind an unblended leaf that overwrites it anyway. The
+default changes only if the bench shows leaves-only is faster.

@@ -85,6 +85,18 @@ namespace VintageVisuals.Common.Rendering
         /// <summary>-1 follows the config; 0 forces off, 1 forces on. Set only by '.vvbench prepass'.</summary>
         public static int BenchOverride { get; set; } = -1;
 
+        /// <summary>
+        /// Which pools are prepassed, as bits: 1 Opaque, 2 OpaqueNoCull (leaves).
+        /// '.vvbench prepass' sets it to compare both against leaves only. A pool
+        /// that is not prepassed keeps the game's GL_LESS in the real pass, which
+        /// stays exact: the leaf prepass depth only rejects what an unblended leaf
+        /// would overwrite anyway.
+        /// </summary>
+        public static int BenchPoolMask { get; set; } = -1;
+        private const int DefaultPoolMask = 3;
+
+        private static int PoolMask { get { return BenchPoolMask >= 0 ? BenchPoolMask : DefaultPoolMask; } }
+
         /// <summary>True while the nested prepass RenderOpaque is drawing, for the chunk pass timers.</summary>
         public static bool InPrepass { get { return _phase == Phase.Prepass; } }
 
@@ -223,7 +235,7 @@ namespace VintageVisuals.Common.Rendering
                 if (perAtlas == null) continue;
                 for (int i = 0; i < perAtlas.Length; i++)
                 {
-                    if (ReferenceEquals(perAtlas[i], pool)) return pass;
+                    if (ReferenceEquals(perAtlas[i], pool)) return ((PoolMask >> pass) & 1) != 0 ? pass : -1;
                 }
             }
             return -1;

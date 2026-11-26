@@ -97,6 +97,11 @@ void main()
                 cs.Contains("_capi.Render.GlColorMask(true, true, true, true);") &&
                 cs.Contains("GetProgram((int)EnumShaderProgram.Chunkopaque)") && !cs.Contains("GetProgramByName("),
                 "");
+
+            check("I-prepass: a pool left out of the prepass mask is neither prepassed nor given GL_LEQUAL",
+                cs.Contains("if (ReferenceEquals(perAtlas[i], pool)) return ((PoolMask >> pass) & 1) != 0 ? pass : -1;") &&
+                cs.Contains("bool prepassed = PrepassedPassOf(__instance, _chunkRenderer) >= 0;"),
+                "");
         }
     }
 }
