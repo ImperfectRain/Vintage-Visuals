@@ -370,6 +370,7 @@ namespace VintageVisuals.Common.Diagnostics
         private void Harvest(int slot)
         {
             if (_frames <= FramesInFlight) return;
+            if (_hitchLine != null && _slotFrame[slot] == _hitchFrame) FlushHitch(slot);
 
             foreach (Segment s in _segments)
             {
@@ -448,8 +449,20 @@ namespace VintageVisuals.Common.Diagnostics
             if (_frames - _lastHitchFrame < 10) return; // one line per burst
             _lastHitchFrame = _frames;
 
+            if (_hitchLine != null) FlushHitch(-1);
+
             var sb = new StringBuilder();
             sb.Append("hitch ").Append(Ms(ms)).Append(" ms (median ").Append(Ms(median)).Append(")");
+            // Where the time went: between the frame's first and last render
+            // stage (CPU), or after its last stage until this frame began - swap,
+            // present, the driver, or the game's main loop outside rendering.
+            Segment frame = _segments.FirstOrDefault(x => x.Key == "frame");
+            if (frame != null && _issued[slot, frame.From] && _issued[slot, frame.To])
+            {
+                double inside = (_cpuTicks[slot, frame.To] - _cpuTicks[slot, frame.From]) * 1000.0 / Stopwatch.Frequency;
+                double after = (_clock.ElapsedTicks - _cpuTicks[slot, frame.To]) * 1000.0 / Stopwatch.Frequency;
+                sb.Append(" stages ").Append(Ms(inside)).Append(" after-final ").Append(Ms(after));
+            }
             if (d0 + d1 + d2 > 0) sb.Append(" GC gen0+").Append(d0).Append(" gen1+").Append(d1).Append(" gen2+").Append(d2);
             sb.Append(" | cpu:");
             foreach (Segment s in _segments)
@@ -458,7 +471,33 @@ namespace VintageVisuals.Common.Diagnostics
                 double cpu = (_cpuTicks[slot, s.To] - _cpuTicks[slot, s.From]) * 1000.0 / Stopwatch.Frequency;
                 if (cpu >= 1.0) sb.Append(' ').Append(s.Key).Append('=').Append(Ms(cpu));
             }
-            try { HitchTrace(sb.ToString()); } catch { }
+            // The GPU time of this frame is only readable FramesInFlight frames
+            // later, so the line waits for that harvest.
+            _hitchLine = sb.ToString();
+            _hitchFrame = _slotFrame[slot];
+        }
+
+        private string _hitchLine;
+        private long _hitchFrame;
+
+        /// <summary>Emit the pending hitch line, with its GPU frame time when <paramref name="slot"/> holds it.</summary>
+        private void FlushHitch(int slot)
+        {
+            string line = _hitchLine;
+            _hitchLine = null;
+            if (line == null) return;
+            Segment frame = _segments.FirstOrDefault(x => x.Key == "frame");
+            if (slot >= 0 && frame != null && _gl != null && _issued[slot, frame.From] && _issued[slot, frame.To])
+            {
+                try
+                {
+                    if (_gl.TryRead(_queries[slot, frame.From], out long a) &&
+                        _gl.TryRead(_queries[slot, frame.To], out long b))
+                        line += " | gpu frame=" + Ms((b - a) / 1e6);
+                }
+                catch { }
+            }
+            try { HitchTrace?.Invoke(line); } catch { }
         }
 
         private static void Collect(Dictionary<string, List<double>> into, string key, double value)
