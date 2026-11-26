@@ -383,6 +383,7 @@ void main(void) {
         Console.WriteLine("Every shader uniform is actually uploaded");
         UniformWiringChecks.Run(Repo, Check);
         DepthPrepassChecks.Run(Repo, Check);
+        ChunkPassTimerChecks.Run(Repo, Check);
 
         Console.WriteLine("Water surface and quality tiers");
         WaterChecks.Run(Repo, Check);

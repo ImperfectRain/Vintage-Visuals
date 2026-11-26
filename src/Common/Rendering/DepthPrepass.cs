@@ -85,6 +85,9 @@ namespace VintageVisuals.Common.Rendering
         /// <summary>-1 follows the config; 0 forces off, 1 forces on. Set only by '.vvbench prepass'.</summary>
         public static int BenchOverride { get; set; } = -1;
 
+        /// <summary>True while the nested prepass RenderOpaque is drawing, for the chunk pass timers.</summary>
+        public static bool InPrepass { get { return _phase == Phase.Prepass; } }
+
         /// <summary>Whether the prepass ran on the last frame, for the bench report and the log.</summary>
         public static bool RanLastFrame { get; private set; }
 

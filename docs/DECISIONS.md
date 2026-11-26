@@ -3984,3 +3984,35 @@ records this for `final`). It now uses `GetProgram((int)EnumShaderProgram.Chunko
 the interaction check requires that and forbids the name lookup, and a
 mutation proves it. The failure mode was the safe one: no prepass, vanilla
 rendering, no error.
+
+**Amendment 2 (2026-11-26, second in-game bench).** With the lookup fixed the
+prepass ran in every "on" run. Two on/off pairs in a forest (RTX 3080,
+2560x1440, view distance 480): frame 38.0 ms (26 fps) off, 25.1 ms (40 fps)
+on; opaque GPU 31.4 ms off, 19.0 ms on, a 12.4 ms saving. The p99 spike of one
+"off" run (115 ms) is a single hitch, not the prepass. L3: measured, not yet
+compared image against image.
+
+## D89 - Time the chunk pools inside the opaque stage
+
+**Context.** Since D84 every optimisation has been judged by one figure, the
+opaque stage, which holds the game's terrain pools, the mod's terrain
+material, entities and now the depth prepass. Stage markers are renderers at
+the ends of a stage and cannot see inside the game's own `ChunkRenderer`.
+
+**Decision.** `ChunkPassTimers` (src/Common/Diagnostics) adds Harmony
+prefix/finalizer on `ChunkRenderer.RenderOpaque` (outermost call only) and
+prefix/postfix on `MeshDataPoolManager.Render`, stamping code markers in the
+existing `FrameProfiler`: the chunk pools in all, each render pass, and the
+depth prepass. A pass's first pool call stamps its start and each pool call's
+end stamps its end, so the per-atlas calls of one pass read as one span. The
+pool's pass is found by reference in `poolsByRenderPass`. The RenderOpaque
+prefix runs at `Priority.First` so the chunk span opens before the depth
+prepass draws its nested pass. No hook can skip the original or change GL
+state, and the timers are installed on the profiler's first use only.
+
+**Alternatives.** Per-pool on/off benches: they measure the same thing a
+frame at a time and cannot see the prepass's own cost. GPU vendor tools: not
+something every player who reports a slow frame has.
+
+**Verification.** L2: build, smoketest (four checks), four mutations run
+singly. Not yet run in game.

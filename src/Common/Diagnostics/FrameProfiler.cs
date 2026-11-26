@@ -77,9 +77,12 @@ namespace VintageVisuals.Common.Diagnostics
             public readonly EnumRenderStage Stage;
             private readonly double _order;
 
-            public Marker(FrameProfiler owner, int index, EnumRenderStage stage, double order)
+            /// <summary>Stamped from code (a Harmony hook), never registered as a renderer.</summary>
+            public readonly bool CodeOnly;
+
+            public Marker(FrameProfiler owner, int index, EnumRenderStage stage, double order, bool codeOnly = false)
             {
-                _owner = owner; Index = index; Stage = stage; _order = order;
+                _owner = owner; Index = index; Stage = stage; _order = order; CodeOnly = codeOnly;
             }
 
             public double RenderOrder { get { return _order; } }
@@ -131,6 +134,7 @@ namespace VintageVisuals.Common.Diagnostics
             int leavesEnd = Add(EnumRenderStage.Opaque, 0.501);
             int opaqueEnd = Add(EnumRenderStage.Opaque, Last);
             Span("opaque", "opaque (terrain, entities)", opaqueStart, opaqueEnd);
+            AddChunkPassSpans();
             Span("vv.leaves", "vv falling leaves", leavesStart, leavesEnd, true);
 
             Bracket("oit", "transparent (water, glass)", EnumRenderStage.OIT);
@@ -153,6 +157,76 @@ namespace VintageVisuals.Common.Diagnostics
             // first marker of the frame to the last. Swap and driver work
             // after the final composition are outside it.
             Span("frame", "GPU frame (markers)", frameStart, finalEnd);
+        }
+
+        // --- inside the opaque stage ---------------------------------------
+        //
+        // A stage marker cannot see inside the game's own ChunkRenderer, and
+        // that is where the terrain cost is. ChunkPassTimers hooks it and
+        // stamps these code markers, so a bench says which chunk pool the
+        // milliseconds went to and what the depth prepass itself costs.
+
+        /// <summary>Highest EnumChunkRenderPass value timed (Decor).</summary>
+        internal const int ChunkPassCount = 9;
+
+        internal int ChunksStart { get; private set; }
+        internal int ChunksEnd { get; private set; }
+        internal int PrepassStart { get; private set; }
+        internal int PrepassEnd { get; private set; }
+        private readonly int[] _passStart = new int[ChunkPassCount];
+        private readonly int[] _passEnd = new int[ChunkPassCount];
+        internal int PassStart(int pass) { return _passStart[pass]; }
+        internal int PassEnd(int pass) { return _passEnd[pass]; }
+
+        private ChunkPassTimers _chunkTimers;
+
+        private void AddChunkPassSpans()
+        {
+            ChunksStart = AddCode();
+            ChunksEnd = AddCode();
+            PrepassStart = AddCode();
+            PrepassEnd = AddCode();
+            Span("chunks", "  chunk pools, all", ChunksStart, ChunksEnd);
+            Span("chunks.prepass", "  vv depth prepass", PrepassStart, PrepassEnd, true);
+
+            // In the order ChunkRenderer.RenderOpaque draws them (1.22), so the
+            // report reads top to bottom like the frame.
+            foreach (int pass in new[] { 0, 5, 2, 1, 8, 3, 4, 6, 7 })
+            {
+                _passStart[pass] = AddCode();
+                _passEnd[pass] = AddCode();
+                string name = Enum.GetName(typeof(EnumChunkRenderPass), pass) ?? ("pass " + pass);
+                if (pass == 1) name += " (leaves)";
+                Span("chunks." + pass, "    " + name, _passStart[pass], _passEnd[pass]);
+            }
+        }
+
+        private int AddCode()
+        {
+            var m = new Marker(this, _markers.Count, EnumRenderStage.Opaque, 0, codeOnly: true);
+            _markers.Add(m);
+            return m.Index;
+        }
+
+        /// <summary>The profiler a hook should stamp into, or null when nobody is measuring.</summary>
+        internal static FrameProfiler Active { get; private set; }
+
+        /// <summary>
+        /// Stamp a code marker. <paramref name="once"/> keeps the first stamp of
+        /// the frame (a span's start); otherwise the latest wins (its end), which
+        /// is how a pass drawn as several per-atlas calls becomes one span.
+        /// </summary>
+        internal void StampCode(int index, bool once)
+        {
+            if (!_registered || _queries == null) return;
+            if (once && _issued[_slot, index]) return;
+            _cpuTicks[_slot, index] = _clock.ElapsedTicks;
+            if (_gl != null)
+            {
+                try { _gl.Stamp(_queries[_slot, index]); }
+                catch { _gl = null; }
+            }
+            _issued[_slot, index] = true;
         }
 
         public IReadOnlyList<Segment> Segments { get { return _segments; } }
@@ -190,17 +264,31 @@ namespace VintageVisuals.Common.Diagnostics
             if (_registered) return;
             foreach (Marker m in _markers)
             {
+                if (m.CodeOnly) continue;
                 _capi.Event.RegisterRenderer(m, m.Stage, "vintagevisuals-profiler-" + m.Index);
             }
             _registered = true;
+            Active = this;
+
+            // Hooked on first use, so a player who never measures never has the
+            // game's chunk renderer patched by the profiler at all.
+            if (_chunkTimers == null)
+            {
+                _chunkTimers = new ChunkPassTimers(_logger);
+                _chunkTimers.Install();
+            }
         }
 
         public void Release()
         {
             if (_users > 0) _users--;
             if (_users > 0 || !_registered) return;
-            foreach (Marker m in _markers) _capi.Event.UnregisterRenderer(m, m.Stage);
+            foreach (Marker m in _markers)
+            {
+                if (!m.CodeOnly) _capi.Event.UnregisterRenderer(m, m.Stage);
+            }
             _registered = false;
+            if (Active == this) Active = null;
         }
 
         private void EnsureGl()
@@ -403,9 +491,15 @@ namespace VintageVisuals.Common.Diagnostics
         {
             if (_registered)
             {
-                foreach (Marker m in _markers) _capi.Event.UnregisterRenderer(m, m.Stage);
+                foreach (Marker m in _markers)
+                {
+                    if (!m.CodeOnly) _capi.Event.UnregisterRenderer(m, m.Stage);
+                }
                 _registered = false;
             }
+            if (Active == this) Active = null;
+            _chunkTimers?.Uninstall();
+            _chunkTimers = null;
 
             if (_gl != null && _queries != null)
             {

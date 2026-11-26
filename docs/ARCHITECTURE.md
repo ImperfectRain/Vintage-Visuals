@@ -560,7 +560,7 @@ measured by comparison.
 | Colour grading | one fullscreen pass | yes | no | resolution |
 | Water surface (`water`, D71) | per water fragment: 4 waves + 2 value-noise octaves per tap, 1-5 taps (tier), one `depthTex` read, two GGX lobes; no sampler, no pass | per water fragment | no | water on screen |
 | Water world reflection (`waterscene`, D82) | per top-face water texel that can show a reflection: one projected ray, up to 16/24/40 march steps (tier) + 5 bisections, each a `depthTex` read, one colour read on a hit; refraction one colour and one depth read; no pass, no target, Primary colour sampled in place | per water fragment | no | water on screen |
-| Frame profiler (D72) | ~26 timestamp queries and reflected GL calls per frame | only while the readout or a bench is on | reads queries 3 frames old | — |
+| Frame profiler (D72, chunk pass timers D89) | ~26 stage timestamp queries plus up to ~30 inside the chunk renderer (D89), and reflected GL calls, per frame | only while the readout or a bench is on | reads queries 3 frames old | — |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene
 capture, the local world-reflection/canopy scan, and terrain-wide shadow taps.
