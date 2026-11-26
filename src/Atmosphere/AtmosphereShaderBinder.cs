@@ -159,7 +159,11 @@ namespace VintageVisuals.Atmosphere
 
             if (!reached)
             {
-                if (!_reportedMissing)
+                // Only a fault if the shader group was WANTED. With every
+                // shader-side strength at zero, or the subsystem off, the group
+                // is gated off on purpose and there is nothing to reach; the
+                // warning then landed in the game's red startup issue list.
+                if (!_reportedMissing && config.WantsShader)
                 {
                     _reportedMissing = true;
                     _capi.Logger.Warning("[VintageVisuals] atmosphere: no patched program exposes " +

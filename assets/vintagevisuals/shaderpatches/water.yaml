@@ -54,7 +54,7 @@
 # Vanilla's broad sun highlight steps back as the texel glints take over, so
 # the sun is not drawn twice. The keep factor is exactly 1 while this group's
 # uniforms are unset.
-- type: token
+- type: replace
   phase: Material
   filename: chunkliquid.fsh
   tokens: float specular = pow(p, 50) * sunb;
@@ -64,7 +64,7 @@
 # Vanilla's droplet rings stand aside while this mod's rain rings are on, so one
 # drop system covers water and land alike (D75). Keep is exactly 1 while this
 # group's uniforms are unset or the ring slider is 0.
-- type: token
+- type: replace
   phase: Material
   filename: chunkliquid.fsh
   tokens: f = dropletnoise(uv);
@@ -74,7 +74,7 @@
 # Vanilla's depth-edge foam steps back while this mod's foam line is on (D79).
 # Keep is exactly 1 while this group's uniforms are unset or the slider is 0.
 # The lava branch has its own line (x1000) and is untouched.
-- type: token
+- type: replace
   phase: Material
   filename: chunkliquid.fsh
   tokens: float diff = intensity * clamp(1 - diffTotal*1500 - noise1/2 + noise2/2, 0, 1);
