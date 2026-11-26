@@ -30,7 +30,7 @@ uniform vec2 vv_beamShadowValid; // x far cascade usable, y near cascade usable;
 
 const int VV_BEAM_STEPS = 20;          // samples along the view ray
 const float VV_BEAM_REACH = 32.0;      // blocks of air marched; the leaf map's reach
-const float VV_BEAM_SCATTER = 0.07;    // share of the sunlit colour per block of lit air seen
+const float VV_BEAM_SCATTER = 0.035;   // share of the sunlit colour per block of lit air seen
 const float VV_BEAM_UNDER_LEAF = 0.5;  // air must be this far below the lowest leaf of its column
 
 // 1 where the sun reaches this camera-relative point, 0 in shadow, -1 where
@@ -102,16 +102,27 @@ float vvBeamShadowInscatter(vec3 cameraRelativePos, float fogDensity)
     // depth-aware filter, so the steps read as a smooth integral.
     float offset = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     float lit = 0.0;
+    float seen = 0.0;   // gated air marched, lit or not
     for (int i = 0; i < VV_BEAM_STEPS; i++)
     {
         vec3 rel = vv_pbrEye + dir * ((float(i) + offset) * ds);
         float gate = vvBeamUnderCanopy(rel + vv_pbrOrigin);
         if (gate <= 0.0) continue;
         float s = vvBeamSunLit(rel);
-        if (s <= 0.0) continue;
+        if (s < 0.0) continue;   // no cascade covers it: neither lit nor shaded
+        seen += gate;
         lit += s * gate;
     }
     if (lit <= 0.0) return 0.0;
+
+    // A shaft is CONTRAST: lit air with shaded air beside it. Air that is lit
+    // all along the ray (noon under a broken canopy) is not a shaft, it is a
+    // veil, and adding it lifted every shadowed patch of ground to the same
+    // grey (2026-11-26, "shadows look disabled"). So the march keeps only the
+    // part of the lit share that has shade around it: 4f(1-f) is 1 for a ray
+    // half in shafts and half in shade, 0 for a ray lit or shaded throughout.
+    float f = lit / max(seen, 1e-4);
+    float contrast = 4.0 * f * (1.0 - f);
 
     float cosView = dot(dir, l);
     float phase = 0.45 + 0.55 * pow(max(cosView, 0.0), 3.0);
@@ -119,7 +130,10 @@ float vvBeamShadowInscatter(vec3 cameraRelativePos, float fogDensity)
     float fog = clamp((fogDensity - 0.00125) / 0.01, 0.0, 1.0);
     float humid = 0.6 + 0.4 * clamp(max(fog, max(clamp(vv_sceneWetness, 0.0, 1.0), lowSun)), 0.0, 1.0);
 
-    float level = lit * ds * VV_BEAM_SCATTER * phase * humid * clearSky * sun
+    // Shafts are a low-sun sight; overhead, the same air reads as haze.
+    float sunAngle = 0.15 + 0.85 * lowSun;
+
+    float level = lit * contrast * sunAngle * ds * VV_BEAM_SCATTER * phase * humid * clearSky * sun
                 * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * vvSceneVisibilityDampen();
     // A soft shoulder instead of a clip: a long run of lit air approaches
     // the cap without flattening into one milky level.

@@ -1054,6 +1054,11 @@ void main()
                           !marchMain.Contains("vvTerrainBeamInscatter(") &&
                           shadowBody.Contains("float s = vvBeamSunLit(rel);") &&
                           shadowBody.Contains("lit += s * gate;") &&
+                          // A ray lit all along is a veil, not a shaft: the march
+                          // keeps only lit air with shade beside it, or noon under
+                          // a broken canopy greys every shadow (2026-11-26).
+                          shadowBody.Contains("float contrast = 4.0 * f * (1.0 - f);") &&
+                          shadowBody.Contains("float level = lit * contrast * sunAngle * ds") &&
                           shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&
                           sunLitBody.Contains("texture(vv_beamShadowNear, vec3(n.xy, n.z - 0.0005))") &&
                           sunLitBody.Contains("texture(vv_beamShadowFar, vec3(f.xy, f.z - 0.0009))") &&

@@ -4170,3 +4170,29 @@ requires the shadow march, its shadow gate and both cascades, and forbids the
 projection march in the pass; two new mutations plus one refreshed, run singly,
 all caught); verifypatches compiles and links both pass programs with and
 without the game's prefix defines. Not seen in game.
+
+**Amendment (2026-11-26): a lit ray is a veil, not a shaft.** Seen in game the
+same morning: at noon under a broken canopy D92 made the world look as if game
+shadows were off and the lighting flat. Bisected by the performance thread:
+reinstalling the build before D92 brought the shadows back. The cause is the
+composition, not one line. The pass ADDS an absolute amount of sunlight (up to
+`VV_TERRAIN_BEAM_MAX` 0.32 of the sun colour), and at noon nearly every ray
+under a gappy crown crosses enough lit air to reach that cap, so every shaded
+patch of ground was lifted by the same grey and the shadow contrast vanished.
+Three changes, all in `beampass.glsl`:
+
+- the march counts the gated air it saw (`seen`) as well as the lit part, and
+  keeps only `4f(1-f)` of it, f being the lit share: 1 for a ray half in light
+  and half in shade, 0 for a ray lit (or shaded) all along. A shaft is lit air
+  with shade beside it, so this is the definition rather than a tune;
+- a high sun scales the result to 0.15 (`0.15 + 0.85 * lowSun`): overhead, the
+  same air reads as haze, while a low sun is where shafts are seen;
+- `VV_BEAM_SCATTER` 0.07 to 0.035.
+
+Worked case, dry noon, a horizontal view, half the air lit over the full 32
+blocks: about 0.30 of the sun colour added before, about 0.02 now. A low sun
+seen toward the light with a third of the air lit: about 0.31 before (at the
+cap), about 0.19 now. Samples outside both cascades now count as neither lit
+nor shaded. The fast-beams interaction check requires the contrast factor in
+the level, and a new mutation (the level without it) is caught. L2: not seen
+in game; cost unchanged (no extra reads).
