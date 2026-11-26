@@ -62,6 +62,13 @@ namespace VintageVisuals.SmokeTest
                 mod.Contains("if (group == PseudoPbrSubsystem.TerrainFastBeamsGroupName)") &&
                 beamPass.Contains("try { Failed?.Invoke(); } catch { }"),
                 "");
+
+            check("vanilla bench: every patch group off, or all but the depth prepass, and the choice reloads",
+                mod.Contains("return vanilla == 2 && group == VintageVisuals.Common.Rendering.DepthPrepass.GroupName;") &&
+                mod.IndexOf("int vanilla = VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;", StringComparison.Ordinal) <
+                    mod.IndexOf("if (group == PseudoPbrSubsystem.TerrainBaseGroupName)", StringComparison.Ordinal) &&
+                mod.Contains("VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;\n        }"),
+                "");
         }
     }
 }

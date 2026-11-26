@@ -29,6 +29,12 @@ namespace VintageVisuals.Common.Rendering
                    !DebugCodeWanted(debugView);
         }
 
+        /// <summary>
+        /// '.vvbench vanilla' only: 0 normal, 1 every patch group off (the game's
+        /// own shaders), 2 every group off except the depth prepass.
+        /// </summary>
+        public static int VanillaBench { get; set; }
+
         /// <summary>True during the "compiled in" runs of '.vvbench beamcode' (D91).</summary>
         public static bool BeamCodeBenchHoldsMarch { get; set; }
 

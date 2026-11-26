@@ -4078,3 +4078,10 @@ reload there are no beams for a moment, never a broken frame.
 singly), verifypatches (with and without the group, beam pass links). Not
 measured; `.vvbench beamcode` runs the march compiled out, in, out, in (with
 FastBeams on), each after a reload.
+
+**Amendment (2026-11-26, measured).** `.vvbench beamcode` in a forest: opaque
+13.7 / 14.6 ms with the march compiled out, 14.2 / 14.8 ms compiled in, a
+saving of 0.3 to 0.5 ms, about the run-to-run drift. Kept: it is exact and
+costs nothing, but the march was not where D90's register pressure came from.
+`.vvbench vanilla` was added at the same time to measure the mod's whole
+overhead against the game's own shaders, with and without the depth prepass.

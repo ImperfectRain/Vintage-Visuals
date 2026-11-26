@@ -252,6 +252,15 @@ namespace VintageVisuals
         /// </summary>
         private bool IsPatchGroupEnabled(string group)
         {
+            // '.vvbench vanilla': every shader the game's own source, optionally
+            // with only the depth prepass, to measure the mod's whole overhead
+            // and whether the prepass speeds up the game without the mod.
+            int vanilla = VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;
+            if (vanilla > 0)
+            {
+                return vanilla == 2 && group == VintageVisuals.Common.Rendering.DepthPrepass.GroupName;
+            }
+
             if (group == PseudoPbrSubsystem.TerrainBaseGroupName)
             {
                 return PseudoPbrSubsystem.TerrainBasePatchEnabled &&
@@ -378,7 +387,8 @@ namespace VintageVisuals
                    (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
                    (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
                    (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
-                   (TerrainBeamsInPass() ? "Q" : "-");
+                   (TerrainBeamsInPass() ? "Q" : "-") +
+                   VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;
         }
 
         private bool TerrainBeamsInPass()
