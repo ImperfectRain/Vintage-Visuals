@@ -4097,3 +4097,19 @@ the report. A pool outside the mask is not drawn in the prepass and keeps the
 game's GL_LESS in the real pass, which stays exact: what the leaf prepass
 depth rejects is behind an unblended leaf that overwrites it anyway. The
 default changes only if the bench shows leaves-only is faster.
+
+**Measured (2026-11-26, `.vvbench vanilla` and the per-pool prepass bench).**
+The mod costs 8.7 ms in a forest: 23.0 ms against 14.3 ms with every group
+off (opaque 13.2 against 4.1; shadows are the same in both). The prepass
+makes the unmodded game slower, 14.9-15.1 against 14.2-14.3 ms, because the
+game's own leaf shading is cheap: it is not a vanilla speed-up and stays tied
+to the mod. Leaves only is 1.0 ms slower than both pools, so the default mask
+stays at both. The prepass of the leaf pool alone costs 3.7 ms, about what the
+game's whole leaf draw costs (3.25 ms): leaves are bound by their geometry,
+not their shading, so the next saving has to come from the leaf geometry or
+from not drawing it twice.
+
+A bench bug found on the way: the profiler is released between bench runs,
+so each run's first harvests were the previous run's last frames, and a span
+the new run never draws (the prepass, in the "vanilla" run) reported the old
+run's figure. Each run now counts only frames drawn after it began.

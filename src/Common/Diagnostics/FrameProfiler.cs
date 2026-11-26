@@ -102,6 +102,8 @@ namespace VintageVisuals.Common.Diagnostics
         private int[,] _queries;
         private bool[,] _issued;
         private long[,] _cpuTicks;
+        private long[] _slotFrame;
+        private long _benchStartFrame = long.MaxValue;
         private int _slot;
         private long _frames;
         private int _dropped;
@@ -306,6 +308,7 @@ namespace VintageVisuals.Common.Diagnostics
             _queries = new int[FramesInFlight, _markers.Count];
             _issued = new bool[FramesInFlight, _markers.Count];
             _cpuTicks = new long[FramesInFlight, _markers.Count];
+            _slotFrame = new long[FramesInFlight];
 
             if (_gl == null)
             {
@@ -340,6 +343,7 @@ namespace VintageVisuals.Common.Diagnostics
                 _frames++;
                 _slot = (int)(_frames % FramesInFlight);
                 Harvest(_slot);
+                _slotFrame[_slot] = _frames;
                 for (int i = 0; i < _markers.Count; i++) _issued[_slot, i] = false;
 
                 double ms = deltaTime * 1000.0;
@@ -392,7 +396,11 @@ namespace VintageVisuals.Common.Diagnostics
                 if (gpu < 0 || gpu > 1000) continue;
                 s.Push(double.IsNaN(gpu) ? 0 : gpu, cpu);
 
-                if (_benchGpu != null)
+                // Results arrive FramesInFlight frames late, so the first harvests
+                // of a bench belong to the frames before it - the previous run's
+                // configuration. Only frames drawn after BeginBench count (a span
+                // the new run never draws would otherwise report the old run's).
+                if (_benchGpu != null && _slotFrame[slot] >= _benchStartFrame)
                 {
                     if (!double.IsNaN(gpu)) Collect(_benchGpu, s.Key, gpu);
                     Collect(_benchCpu, s.Key, cpu);
@@ -414,6 +422,7 @@ namespace VintageVisuals.Common.Diagnostics
             _benchFrames = new List<double>();
             _benchGpu = new Dictionary<string, List<double>>();
             _benchCpu = new Dictionary<string, List<double>>();
+            _benchStartFrame = _frames + 1;
         }
 
         /// <summary>Stops recording and returns the summary, one line per figure.</summary>

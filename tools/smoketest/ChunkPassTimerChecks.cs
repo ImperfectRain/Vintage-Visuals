@@ -34,6 +34,13 @@ namespace VintageVisuals.SmokeTest
 
             check("chunk timers: only pools 0 and 1 stretch the prepass span",
                 timers.Contains("if (pass > 1) return;"), "");
+
+            // The profiler is released between bench runs, so its first harvests
+            // in a run are the previous run's last frames. A span the new run never
+            // draws (the prepass in "vanilla") reported the old run's figure.
+            check("bench: a run only counts frames drawn after it began",
+                profiler.Contains("if (_benchGpu != null && _slotFrame[slot] >= _benchStartFrame)") &&
+                profiler.Contains("_benchStartFrame = _frames + 1;"), "");
         }
     }
 }
