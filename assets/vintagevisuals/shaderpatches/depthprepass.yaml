@@ -61,3 +61,39 @@
         if (vv_depthPrepass < 1.5 && (outColor.a < 0.998 || (renderFlags & ReflectiveBitMask) != 0)) discard;
         return;
     }
+
+# Colour-only work the prepass can skip (amendment 4). Each is asserted to
+# reach only outColor.rgb before the discard: the underwater murk feeds the
+# fog weight (applyFog keeps alpha, vanilla's and the atmosphere's alike) and
+# applyUnderwaterEffects (rgb), and the distance sky fade under haxyFade only
+# mixes rgb. So the alpha the discard tests, and with it which fragments write
+# prepass depth, is unchanged. The leaf pool draws with haxyFade on, so the
+# sky lookup was running for every far leaf fragment of the prepass.
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "float murkiness=getUnderwaterMurkiness(); outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1),"
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "outColor.rgb = mix(skyColor.rgb, outColor.rgb, max(1-dayLight, max(0.0, rgba.a)));"
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "outColor.rgb = applyUnderwaterEffects(outColor.rgb, murkiness);"
+
+- type: replace
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: "float murkiness=getUnderwaterMurkiness();"
+  content: |
+    float murkiness = vv_depthPrepass > 0.5 ? 0.0 : getUnderwaterMurkiness(); // D88: murk only tints rgb
+
+- type: replace
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: "if (haxyFade > 0) {"
+  content: |
+    if (haxyFade > 0 && vv_depthPrepass < 0.5) { // D88: the sky fade only mixes rgb

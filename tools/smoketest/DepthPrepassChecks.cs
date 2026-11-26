@@ -41,7 +41,14 @@ void main()
 	if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1);
 
 	float b = getBrightnessFromShadowMap();
-	outColor = applyFogAndShadowFromBrightness(texColor, 0, b, vec3(0));
+	float murkiness=getUnderwaterMurkiness();
+	outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1), min(b, nb), worldPos.xyz);
+	if (haxyFade > 0) {           // test the uniform first, for higher performance
+	    if (rgba.a < 0.999) {
+			outColor.rgb = mix(skyColor.rgb, outColor.rgb, max(1-dayLight, max(0.0, rgba.a)));
+	    }
+	}
+	outColor.rgb = applyUnderwaterEffects(outColor.rgb, murkiness);
 #if NORMALVIEW == 0
 	float aTest = outColor.a;
 	if (aTest < alphaTest || rgba.a < 0.005) discard;
@@ -85,6 +92,21 @@ void main()
                 src.Contains("rgbaPixel *= vec4(b, b, b, 1);") &&
                 src.Contains("if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1);"),
                 "");
+
+            // Amendment 4: what the prepass skips before the discard must reach only rgb.
+            // Between the murk line and the discard nothing may write outColor whole or
+            // its alpha, and murkiness may feed only the fog weight and the rgb murk.
+            int murk = src.IndexOf("float murkiness = vv_depthPrepass > 0.5 ? 0.0 : getUnderwaterMurkiness();", StringComparison.Ordinal);
+            string between = murk >= 0 && discard > murk ? src.Substring(murk, discard - murk) : "";
+            string afterMurkLine = between.Length > 0 ? between.Substring(between.IndexOf('\n') + 1) : "";
+            check("I-prepass: the skipped murk and sky fade reach only rgb before the discard",
+                murk >= 0 && murk < early &&
+                src.Contains("if (haxyFade > 0 && vv_depthPrepass < 0.5) {") &&
+                Regex.Matches(afterMurkLine, @"outColor\s*=").Count == 1 &&
+                afterMurkLine.Contains("outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1),") &&
+                !Regex.IsMatch(afterMurkLine, @"outColor\.a\s*[-+*/]?=") &&
+                Regex.Matches(afterMurkLine, @"\bmurkiness\b").Count == 2,
+                "murk@" + murk);
 
             string cs = File.ReadAllText(Path.Combine(repo, "src/Common/Rendering/DepthPrepass.cs"));
             check("I-prepass: only the Opaque and OpaqueNoCull pools draw in the prepass, and the real pass resets the flag",

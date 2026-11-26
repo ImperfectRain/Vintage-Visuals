@@ -4113,3 +4113,16 @@ A bench bug found on the way: the profiler is released between bench runs,
 so each run's first harvests were the previous run's last frames, and a span
 the new run never draws (the prepass, in the "vanilla" run) reported the old
 run's figure. Each run now counts only frames drawn after it began.
+
+**Amendment 4 (2026-11-26, colour-only work skipped in the prepass).** Before
+vanilla's discard the leaf pool also ran the underwater murk (two
+`liquidDepth` reads) and, under `haxyFade`, the distance sky fade
+(`getSkyColorAt`) for every far fragment, in the prepass too. Both reach only
+`outColor.rgb`: the murk feeds the fog weight (both `applyFog`s keep alpha)
+and `applyUnderwaterEffects`; the sky fade mixes rgb. The prepass now skips
+both (murk 0, sky fade branch off), so the alpha the discard tests is
+unchanged. The group asserts each line's shape, and an interaction check
+requires that between the murk line and the discard nothing writes
+`outColor` whole (except the fog call) or its alpha, and that murkiness feeds
+exactly those two uses. L2: verifypatches 48 combinations; saving not
+measured (`.vvbench prepass`).
