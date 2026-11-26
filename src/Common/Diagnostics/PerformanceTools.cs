@@ -92,7 +92,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]' or '.vvbench features [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]' or '.vvbench beams [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -125,11 +125,20 @@ namespace VintageVisuals.Common.Diagnostics
                     " s recorded each. Stand still in a forest, facing the trees.");
             }
 
+            if (string.Equals(mode, "beams", StringComparison.OrdinalIgnoreCase))
+            {
+                int each = seconds > 0 ? seconds : 8;
+                _tierResults.Clear();
+                RunFeature(FeatureBench.BeamOrder, 0, each);
+                return TextCommandResult.Success("Benchmarking the beams: in the terrain shader, in the fast pass, none, " +
+                    "then the terrain shader again, " + each + " s each. Stand still under trees facing the sun.");
+            }
+
             if (string.Equals(mode, "features", StringComparison.OrdinalIgnoreCase))
             {
                 int each = seconds > 0 ? seconds : 6;
                 _tierResults.Clear();
-                RunFeature(0, each);
+                RunFeature(FeatureBench.Order, 0, each);
                 return TextCommandResult.Success("Benchmarking " + FeatureBench.Order.Length + " runs of " + each +
                     " s: everything on, each feature off in turn, then everything on again. About " +
                     (int)(FeatureBench.Order.Length * (each + SettleSeconds) + 0.5f) +
@@ -214,9 +223,9 @@ namespace VintageVisuals.Common.Diagnostics
         /// the next. The report gives each run's frame and opaque-pass time
         /// against the first all-on run, which is the price of that feature.
         /// </summary>
-        private void RunFeature(int index, int seconds)
+        private void RunFeature(int[] order, int index, int seconds)
         {
-            int mode = FeatureBench.Order[index];
+            int mode = order[index];
             FeatureBench.Mode = mode;
             _benchCallback = _capi.Event.RegisterCallback(_ =>
             {
@@ -224,7 +233,7 @@ namespace VintageVisuals.Common.Diagnostics
                 _benchCallback = _capi.Event.RegisterCallback(__ =>
                 {
                     _tierResults.Add(_profiler.EndBench(FeatureBench.Name(mode)));
-                    if (index + 1 < FeatureBench.Order.Length) { RunFeature(index + 1, seconds); return; }
+                    if (index + 1 < order.Length) { RunFeature(order, index + 1, seconds); return; }
 
                     _benchCallback = 0;
                     FeatureBench.Mode = FeatureBench.Normal;
@@ -239,7 +248,7 @@ namespace VintageVisuals.Common.Diagnostics
             if (results.Count == 0) return "no runs";
             FrameProfiler.BenchResult first = results[0];
             double baseOpaque = OpaqueGpu(first);
-            sb.Append("features (quality ").Append(QualityTier.Name(QualityTier.Current)).Append("), saving vs everything on\n");
+            sb.Append("features (quality ").Append(QualityTier.Name(QualityTier.Current)).Append("), saving vs the first run\n");
             foreach (FrameProfiler.BenchResult r in results)
             {
                 double opaque = OpaqueGpu(r);

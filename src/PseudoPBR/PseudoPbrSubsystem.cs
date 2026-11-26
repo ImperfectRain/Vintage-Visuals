@@ -150,6 +150,15 @@ namespace VintageVisuals.PseudoPBR
             // the only pairing Dispose() can honour.
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Opaque, "vintagevisuals-pbr");
 
+            // D87: the fast beams. Registered always and idle unless wanted,
+            // like the binder; when it cannot draw, the terrain's own beams do.
+            _beams = new BeamPassRenderer(mod.Capi, ReadSnippet, FastBeamsWanted, () => _binder != null && _binder.TerrainLive,
+                                          program => _binder?.UploadBeamUniforms(program));
+            _binder.BeamPass = _beams;
+            mod.Capi.Event.RegisterRenderer(_beams, EnumRenderStage.Opaque, "vintagevisuals-beams");
+            mod.Capi.Event.ReloadShader += OnShadersReloaded;
+            RegisterBeamCommand(mod.Capi);
+
             _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
             mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
             _leafRenderer = new LeafRenderer(mod.Capi, LeafWind);
@@ -160,6 +169,62 @@ namespace VintageVisuals.PseudoPBR
         }
 
         private DustMoteSpawner _motes;
+        private BeamPassRenderer _beams;
+
+        private bool OnShadersReloaded()
+        {
+            _beams?.OnShadersReloaded();
+            return true;
+        }
+
+        /// <summary>A shipped snippet's text for the beam pass, null when missing.</summary>
+        private string ReadSnippet(string name)
+        {
+            try
+            {
+                var asset = _mod?.Capi?.Assets.TryGet(new AssetLocation("vintagevisuals",
+                    VintageVisuals.Common.Patching.ShaderPatchLoader.SnippetCategory + "/" + name));
+                return asset?.ToText();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>The player's FastBeams (or a bench's override), and only while beams are on at all.</summary>
+        private bool FastBeamsWanted()
+        {
+            PseudoPbrConfig config = _mod?.ConfigManager?.Config?.PseudoPBR;
+            if (config == null || !config.Enabled || config.SunShafts < 0.001f) return false;
+            return VintageVisuals.Common.Diagnostics.FeatureBench.UseFastBeams(config.FastBeams);
+        }
+
+        /// <summary>'.vvbeams': flip PseudoPBR.FastBeams and save it, to compare the two in game.</summary>
+        private void RegisterBeamCommand(ICoreClientAPI capi)
+        {
+            try
+            {
+                capi.ChatCommands.Create("vvbeams")
+                    .WithDescription("Vintage Visuals: switch the canopy beams between the terrain shader and the fast pass")
+                    .HandleWith(_ =>
+                    {
+                        var manager = _mod?.ConfigManager;
+                        PseudoPbrConfig config = manager?.Config?.PseudoPBR;
+                        if (config == null) return TextCommandResult.Error("No config loaded.");
+                        config.FastBeams = !config.FastBeams;
+                        manager.Save();
+                        manager.NotifyChanged();
+                        return TextCommandResult.Success(config.FastBeams
+                            ? "Beams: fast pass (half resolution, after the terrain). '.vvbeams' again for the old ones."
+                            : "Beams: in the terrain shader, as before. '.vvbeams' again for the fast pass.");
+                    });
+            }
+            catch (Exception ex)
+            {
+                capi.Logger.Warning("[VintageVisuals] could not register .vvbeams: " + ex.Message);
+            }
+        }
         private ForestLifeSpawner _forestLife;
         private LeafRenderer _leafRenderer;
 
@@ -659,6 +724,13 @@ namespace VintageVisuals.PseudoPBR
             if (_mod != null && _mod.Capi != null && _binder != null)
             {
                 _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Opaque);
+            }
+            if (_mod != null && _mod.Capi != null && _beams != null)
+            {
+                _mod.Capi.Event.UnregisterRenderer(_beams, EnumRenderStage.Opaque);
+                _mod.Capi.Event.ReloadShader -= OnShadersReloaded;
+                _beams.Dispose();
+                _beams = null;
             }
             if (_mod != null && _mod.Capi != null && _motes != null)
             {

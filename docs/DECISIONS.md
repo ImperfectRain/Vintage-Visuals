@@ -3839,3 +3839,64 @@ same weights, so the same answer; one sampling instead of two.
 verifypatches in every define combination. Saving not measured; look should be
 identical.
 
+
+## D87 - Canopy beams can be drawn in one half-resolution screen pass
+
+**Context.** Third bench (2026-11-26, forest, after D86): the air-beam march
+(`vvTerrainBeamInscatter`) was the largest single cost left, about 13 ms of
+opaque GPU time. It runs inside every terrain fragment, and a forest is mostly
+overdrawn leaves, so the same eight-step march is paid several times per
+screen pixel. The player's forest screenshots also showed a fine crosshatch
+over the beams: the march's per-pixel sample offset, recomputed in each
+overdrawn leaf and never averaged.
+
+**Decision.** A second way to draw the SAME beams, as a toggle beside the old
+one (`PseudoPBR.FastBeams`, `.vvbeams`), off by default until the player has
+compared them in game. `BeamPassRenderer` runs at the end of the opaque stage
+(order 0.98, after every opaque renderer):
+
+1. March: one fragment per pixel of a half-by-half RGBA16F target, no
+   overdraw. The feet-origin position is rebuilt from the primary depth with
+   the inverse of `CurrentProjectionMatrix x CameraMatrixOriginf` (the space
+   the terrain's positions are in, D74), vanilla's vertex-stage
+   `getFogLevel` is evaluated for it, and the terrain's own
+   `vvTerrainBeamInscatter` and `vvTerrainBeamColor` run on it. The program is
+   assembled in memory from the shipped snippets (`BeamPassSource`), so there
+   is one march, not a copy: chunk-shader names the snippet mentions become
+   inert globals, every fragment input becomes a zero global, and the prefix
+   defines are pinned to 0 so the source compiles the same whatever the game
+   prepends to a memory program.
+2. Composite: full resolution, a 3x3 depth-aware filter of the march (which
+   also averages the sample offset away), added onto the primary colour with
+   depth test and writes off and alpha masked; the glow and G-buffer
+   attachments receive alpha 0.
+
+The terrain skips its own beams when `vv_pbrBeamPass` is 1, which the binder
+uploads only when the pass says it will draw (compiled, not failed, wanted).
+Zero, the unset value, draws the terrain's beams exactly as before, so a pass
+that fails or is off costs nothing visible. The pass never compiles from the
+binder's upload path (a program is bound there); it builds on its own frame and
+draws from the next, so the first frame is not doubled.
+
+**Render target (atmosphere rule 8).** One RGBA16F colour attachment at half
+the primary buffer's width and height (rgb beam light, alpha linear depth):
+about 7 MB at 2560x1440. Created on the first frame the pass draws, recreated
+when the primary size changes, destroyed when the toggle goes off and in
+Dispose.
+
+**Differences from the in-shader beams.** Beams now also fall in front of
+entities and the textured falling leaves (anything that wrote depth), not only
+terrain fragments. Fog uses the game's blended fog values from
+`IAmbientManager` rather than the per-program uniforms, so an atmosphere
+change to `fogDensityIn` inside the terrain shader is not seen (it only moves
+the humid-air term and the fog fade). Still nothing in front of open sky
+(DATA GAP, unchanged).
+
+**Verification.** L2: build; smoketest (new interaction check that the two
+paths never both draw and zero draws the terrain's, plus three mutations, each
+run singly and caught; the uniform-wiring check now reads the pass's own GLSL
+and matches whole method bodies instead of a 4000-character window, which the
+binder had outgrown); verifypatches compiles and LINKS both pass programs with
+and without the game's prefix defines. Not seen in game; cost not measured -
+`.vvbench beams` runs the terrain-shader beams, the fast pass, no beams, and
+the terrain-shader beams again.

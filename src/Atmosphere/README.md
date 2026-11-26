@@ -210,6 +210,7 @@ atmosphere's godray level in, accepting that the two would then share a fate.
 | `Before`, order 0.1 | `AtmosphereShaderBinder` derives `AtmosphereInputs` **once** and uploads it to four programs |
 | the game's own frame setup | Vintage Story blends the ambient stack, including this mod's modifier |
 | opaque pass | `applyFog` runs per fragment. One `pow`, one `length`, one `mix` |
+| `Opaque`, order 0.98 | `BeamPassRenderer` (D87, only with `PseudoPBR.FastBeams`) marches canopy beams at half resolution and adds them onto the primary buffer |
 | `AfterPostProcessing` | `SceneCaptureRenderer` copies the finished frame for reflections |
 
 Nothing here touches GL outside a render stage. `Before` is the one stage this

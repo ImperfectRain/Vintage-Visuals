@@ -1022,6 +1022,34 @@ void main()
                       $"side at a dry noon {sideNoon:0.000}, toward the sun after rain {towardRain:0.000} (cap {cap}), phase side {Phase(0.0):0.00} toward {Phase(1.0):0.00}");
             }
             catch (Exception ex) { check("I-terrain beam march is readable", false, ex.Message); }
+            // D87 fast beams. The pass and the terrain must never BOTH draw the
+            // beams (double light), and never NEITHER while beams are wanted: the
+            // terrain draws its own exactly when vv_pbrBeamPass is below 0.5,
+            // zero (unset, rolled back, pass off or failed) included, and the
+            // binder uploads 1 only when the pass says it will draw. The pass
+            // must run the terrain's ONE march, assembled from the shipped
+            // snippets, with the same fog factor the terrain applies.
+            try
+            {
+                string beamYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainmaterial.yaml"));
+                string binderSrc = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/PbrShaderBinder.cs"));
+                string rendererSrc = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/BeamPassRenderer.cs"));
+                string snippetDir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
+                string march = VintageVisuals.PseudoPBR.BeamPassSource.March(n =>
+                    File.Exists(Path.Combine(snippetDir, n)) ? File.ReadAllText(Path.Combine(snippetDir, n)) : null) ?? "";
+                int calls = Regex.Matches(beamYaml, @"vvTerrainBeamInscatter\(worldPos\.xyz").Count;
+                int gated = Regex.Matches(beamYaml, @"if \(vv_pbrBeamPass < 0\.5\) outColor\.rgb \+= vvTerrainBeamColor\(\) \* \(vvTerrainBeamInscatter\(worldPos\.xyz").Count;
+                string marchMain = march.Contains("void main()") ? march.Substring(march.LastIndexOf("void main()", StringComparison.Ordinal)) : "";
+                bool ok = calls == 2 && gated == calls &&
+                          binderSrc.Contains("SetIfPresent(program, BeamPassUniform, BeamPass != null && BeamPass.WillDraw ? 1f : 0f);") &&
+                          rendererSrc.Contains("return _compiled && !_failed && Wanted();") &&
+                          Regex.Matches(march, @"float vvTerrainBeamInscatter\(").Count == 1 &&
+                          marchMain.Contains("float level = vvTerrainBeamInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);") &&
+                          marchMain.Contains("vvTerrainBeamColor() * level");
+                check("I-fast beams: the pass and the terrain never both draw, zero draws the terrain's, one march", ok,
+                      $"terrain call sites {calls}, gated {gated}, march length {march.Length}");
+            }
+            catch (Exception ex) { check("I-fast beams are readable", false, ex.Message); }
             check("terrain leaf sheen is exactly off at a specular strength of zero",
                 GlslEval.StripComments(GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainCuticleSpecular(") ?? "")
                     .Contains("if (vv_pbrSpecularStrength < 0.001) return vec3(0.0);"),

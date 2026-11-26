@@ -24,6 +24,8 @@ namespace VintageVisuals.Common.Diagnostics
         public const int NoBlockLight = 7;
         public const int NoMaterial = 8;
         public const int NoEntities = 9;
+        public const int OldBeams = 12;
+        public const int FastBeams = 13;
 
         /// <summary>The run order: all on, each feature off in turn, then all on again to show drift.</summary>
         public static readonly int[] Order =
@@ -32,7 +34,23 @@ namespace VintageVisuals.Common.Diagnostics
             NoGusts, NoPlantShade, NoDamp, NoBlockLight, NoEntities, NoMaterial, Normal
         };
 
+        /// <summary>
+        /// '.vvbench beams' (D87): the in-shader beams, the fast pass, then no
+        /// beams at all, then the in-shader beams again for drift. The first
+        /// two choose WHERE the beams are computed, not whether they are on:
+        /// the strength is still the player's SunShafts, and at zero both are off.
+        /// </summary>
+        public static readonly int[] BeamOrder = { OldBeams, FastBeams, NoShafts, OldBeams };
+
         public static int Mode { get; set; } = Normal;
+
+        /// <summary>Whether the fast beam pass draws, given the player's setting and any bench override.</summary>
+        public static bool UseFastBeams(bool configured)
+        {
+            if (Mode == OldBeams) return false;
+            if (Mode == FastBeams) return true;
+            return configured;
+        }
 
         public static bool Off(int feature) { return Mode == feature; }
 
@@ -51,6 +69,8 @@ namespace VintageVisuals.Common.Diagnostics
                 case NoBlockLight: return "torch specular off";
                 case NoEntities: return "entity lighting off";
                 case NoMaterial: return "whole terrain material off";
+                case OldBeams: return "beams in the terrain shader";
+                case FastBeams: return "beams in the fast pass (D87)";
                 default: return "everything on";
             }
         }

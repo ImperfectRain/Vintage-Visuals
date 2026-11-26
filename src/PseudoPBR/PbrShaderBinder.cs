@@ -98,6 +98,7 @@ namespace VintageVisuals.PseudoPBR
         public const string ReflectWorldAtlasGridUniform = "vv_reflectWorldAtlasGrid";
         public const string ReflectWorldAtlasSizeUniform = "vv_reflectWorldAtlasSize";
         public const string ShaftUniform = "vv_pbrShafts";
+        public const string BeamPassUniform = "vv_pbrBeamPass";
         public const string GustsUniform = "vv_pbrGusts";
         public const string WindDirUniform = "vv_pbrWindDir";
         public const string ContactShadeUniform = "vv_pbrContactShade";
@@ -223,6 +224,18 @@ namespace VintageVisuals.PseudoPBR
         public SceneCaptureRenderer SceneCapture { get; set; }
 
         /// <summary>
+        /// D87. The fast beam pass, when the subsystem made one. While it
+        /// draws, the terrain is told to skip its own beams (vv_pbrBeamPass).
+        /// </summary>
+        public BeamPassRenderer BeamPass { get; set; }
+
+        /// <summary>
+        /// True when this frame's terrain programs received their uniforms, so
+        /// a pass sharing them (the fast beams) has current values to read.
+        /// </summary>
+        public bool TerrainLive { get; private set; }
+
+        /// <summary>
         /// The leaf map, owned by the environment tracker. Null, or not yet
         /// fully scanned, uploads a validity of 0 and the shader draws no
         /// sunflecks - the vanilla answer.
@@ -281,6 +294,7 @@ namespace VintageVisuals.PseudoPBR
         {
             if (stage != EnumRenderStage.Opaque) return;
             _renderFrame++;
+            TerrainLive = false;
 
             // IShaderProgram.Use() THROWS if a program is already bound -
             // "Already a different shader (gui) in use!" - and the client does
@@ -398,6 +412,7 @@ namespace VintageVisuals.PseudoPBR
 
             _reportedMissingUniform = false;
             _programsThinkEnabled = true;
+            TerrainLive = true;
 
             if (!_reportedActive)
             {
@@ -477,6 +492,7 @@ namespace VintageVisuals.PseudoPBR
             UploadCanopyMap(program);
             SetIfPresent(program, PixelReflectUniform, _look.PixelReflection);
             SetIfPresent(program, ShaftUniform, _look.SunShafts);
+            SetIfPresent(program, BeamPassUniform, BeamPass != null && BeamPass.WillDraw ? 1f : 0f);
             UploadForest(program);
             SetIfPresent(program, BlockLightUniform, _look.BlockLightSpecular);
             SetIfPresent(program, BlockLightDirUniform, _look.BlockLightDirectionality);
@@ -490,6 +506,23 @@ namespace VintageVisuals.PseudoPBR
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// D87. What the fast beam pass's march reads, from the same values the
+        /// terrain was given this frame: the shaft strength, the leaf map, the
+        /// wrapped origin, the eye and the scene block, then the bench's
+        /// switch-off so '.vvbench' measures both beam paths alike. Must be
+        /// called with the march program bound.
+        /// </summary>
+        public void UploadBeamUniforms(IShaderProgram program)
+        {
+            SetIfPresent(program, ShaftUniform, _look.SunShafts);
+            UploadCanopyMap(program);
+            SetIfPresent(program, OriginUniform, _weather.Origin);
+            SetIfPresent(program, EyeUniform, Eye());
+            UploadScene(program);
+            ApplyFeatureBench(program);
         }
 
         /// <summary>

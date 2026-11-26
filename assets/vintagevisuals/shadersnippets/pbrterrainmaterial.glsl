@@ -57,6 +57,7 @@ uniform float vv_pbrCanopyRadius;  // shadow-map ring radius in texels; 0 disabl
 uniform float vv_pbrSunflecks;     // sunflecks inside canopy shade; 0 is vanilla
 uniform float vv_pbrMoonFlecks;    // the moon's faint version of them; 0 is none
 uniform float vv_pbrShafts;        // beams from real gaps into vanilla's god-ray pass; 0 is vanilla
+uniform float vv_pbrBeamPass;      // 1 when the fast beam pass draws the air beams instead (D87); 0 draws them here
 // v14 forest pass. Every strength is 0 for vanilla, and so is an unset uniform.
 uniform float vv_pbrGusts;         // travelling gusts on plants and in the flecks; 0 is vanilla
 uniform vec2 vv_pbrWindDir;        // the game's wind direction in world XZ; 0 reads as +X, harmless at 0 gusts

@@ -377,6 +377,33 @@ WorldReflectionVolume src/Reflections/           |
                                             final colour
 ```
 
+### The fast beam pass (D87, optional)
+
+With `PseudoPBR.FastBeams` on, the canopy beams leave the terrain shader and
+run once per pixel after the opaque stage. The march is the terrain's own
+`vvTerrainBeamInscatter`, compiled into a memory program that
+`BeamPassSource` assembles from the shipped snippets; its uniforms come from
+the same binder upload as the terrain's (`PbrShaderBinder.UploadBeamUniforms`).
+
+```
+Opaque, order 0.98 (after every opaque renderer)
+        |
+primary depth --> BeamPassRenderer march    half x half RGBA16F target (~7 MB at 1440p)
+                    feet-origin position from inverse(P x CameraMatrixOriginf)
+                    vanilla getFogLevel, vvTerrainBeamInscatter, vvTerrainBeamColor
+                    rgb = beam light, a = linear depth
+        |
+        +--> composite, full res, 3x3 depth-aware, additive onto Primary colour
+             (depth test/writes off, alpha masked, other attachments get 0)
+
+binder: vv_pbrBeamPass = 1 only while the pass will draw -> terrain skips its beams
+        0 (unset, off, failed) -> terrain draws them as before
+```
+
+The target lives only while the toggle is on: created on the first frame the
+pass draws, recreated on a primary-size change, destroyed when the toggle goes
+off and in Dispose. No texture unit is taken from any vanilla program.
+
 ## Data ownership
 
 Where each rendering input comes from, and who consumes it. The rule from the

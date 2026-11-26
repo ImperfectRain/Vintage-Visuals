@@ -1005,6 +1005,14 @@ namespace VintageVisuals.Common
         /// </summary>
         public float SunShafts { get; set; } = 0.45f;
 
+        /// <summary>
+        /// D87. Draw the air beams under a canopy in one half-resolution
+        /// screen pass instead of inside every terrain fragment. Same beams,
+        /// same strength (SunShafts); a different place to compute them.
+        /// Off by default until compared in game; '.vvbeams' flips it.
+        /// </summary>
+        public bool FastBeams { get; set; } = false;
+
 
         /// <summary>
         /// Strength of the sky reflection, using vanilla's fog colour as the

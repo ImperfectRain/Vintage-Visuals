@@ -33,6 +33,12 @@ namespace VintageVisuals.SmokeTest
             string snippets = string.Join("\n",
                 Directory.GetFiles(snippetDir, "*.glsl").OrderBy(f => f).Select(File.ReadAllText));
 
+            // D87: the fast beam pass's own GLSL lives in C# (it is assembled
+            // around the snippets at runtime), and its uniforms are shader
+            // uniforms like any other.
+            string beamPass = Path.Combine(repo, "src/PseudoPBR/BeamPassSource.cs");
+            if (File.Exists(beamPass)) snippets += "\n" + File.ReadAllText(beamPass);
+
             string binders = string.Join("\n",
                 Directory.GetFiles(Path.Combine(repo, "src"), "*.cs", SearchOption.AllDirectories)
                     .OrderBy(f => f)
@@ -52,7 +58,7 @@ namespace VintageVisuals.SmokeTest
             // Uniforms4 counts too - it is how an array of vec4s is pushed, and
             // a check that only knew about Uniform() would report the cloud tile
             // window as never uploaded.
-            var uploads = Regex.Matches(binders, @"Uniforms?4?\(\s*(\w+)\s*,")
+            var uploads = Regex.Matches(binders, @"(?:Uniforms?4?|UniformMatrix)\(\s*(\w+)\s*,")
                 .Select(m => m.Groups[1].Value)
                 .ToHashSet();
 
@@ -171,8 +177,7 @@ namespace VintageVisuals.SmokeTest
             foreach (string method in new[] { "private bool Upload(", "private void UploadEntities(", "private void UploadParticles(" })
             {
                 int at = binderSource.IndexOf(method, StringComparison.Ordinal);
-                string body = at < 0 ? "" : binderSource.Substring(at,
-                    Math.Min(4000, binderSource.Length - at));
+                string body = at < 0 ? "" : MethodBody(binderSource, at);
 
                 check("UploadScene is called from " + method.Trim('(').Split(' ').Last(),
                     at >= 0 && body.Contains("UploadScene(program)"), method);
@@ -196,7 +201,7 @@ namespace VintageVisuals.SmokeTest
                 int at = binderSource.IndexOf(method, StringComparison.Ordinal);
                 if (at < 0) continue;
 
-                string body = binderSource.Substring(at, Math.Min(4000, binderSource.Length - at));
+                string body = MethodBody(binderSource, at);
                 bool callsScene = body.Contains("UploadScene(program)");
 
                 var unreached = coreUniforms
@@ -210,6 +215,25 @@ namespace VintageVisuals.SmokeTest
             }
 
             check("the material sampler is bound", binders.Contains("BindTexture2D(SamplerUniform"), "");
+        }
+
+        /// <summary>
+        /// The whole body of the method declared at <paramref name="at"/>, by
+        /// brace matching. A fixed-length window used to stand in for it, and
+        /// the method outgrew the window (D87's one extra line pushed
+        /// UploadScene past it), so the check reported a call that is there.
+        /// </summary>
+        static string MethodBody(string source, int at)
+        {
+            int open = source.IndexOf('{', at);
+            if (open < 0) return "";
+            int depth = 0;
+            for (int i = open; i < source.Length; i++)
+            {
+                if (source[i] == '{') depth++;
+                else if (source[i] == '}' && --depth == 0) return source.Substring(at, i + 1 - at);
+            }
+            return source.Substring(at);
         }
     }
 }

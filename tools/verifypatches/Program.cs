@@ -100,6 +100,8 @@ namespace VintageVisuals.VerifyPatches
 
             VerifyCombined(yamlPaths, referenceDir, haveGlslang);
 
+            VerifyBeamPass(haveGlslang);
+
             Console.WriteLine();
             Console.WriteLine(failures == 0 ? "ALL PATCHES VERIFIED" : failures + " FAILURE(S)");
             return failures == 0 ? 0 : 1;
@@ -501,6 +503,94 @@ namespace VintageVisuals.VerifyPatches
             finally
             {
                 try { File.Delete(temp); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// D87. The fast beam pass is not a patch: it is a program the mod
+        /// builds in memory from the same snippets the terrain group injects.
+        /// So it is compiled and LINKED here (vertex with each fragment stage),
+        /// with no prefix and with the prefix defines the game might prepend,
+        /// because a memory program's prefix is not something this repo has
+        /// seen. A link failure is the failure that matters: a fragment input
+        /// nothing writes compiles cleanly and does not link.
+        /// </summary>
+        static void VerifyBeamPass(bool haveGlslang)
+        {
+            Console.WriteLine();
+            Console.WriteLine("beam pass (D87, built in memory from the shipped snippets)");
+
+            string snippetDir = Path.Combine(Repo, "assets", "vintagevisuals", "shadersnippets");
+            string march = VintageVisuals.PseudoPBR.BeamPassSource.March(name =>
+            {
+                string path = Path.Combine(snippetDir, name);
+                return File.Exists(path) ? File.ReadAllText(path) : null;
+            });
+
+            if (march == null) { Fail("beam pass: the march source could not be assembled from the snippets"); return; }
+            Pass("beam pass: march source assembled (" + march.Length + " chars)");
+
+            if (!haveGlslang) return;
+
+            var prefixes = new[]
+            {
+                new Dictionary<string, int>(),
+                new Dictionary<string, int> { { "SHADOWQUALITY", 2 }, { "SSAOLEVEL", 1 }, { "GODRAYS", 1 }, { "NORMALVIEW", 1 } },
+            };
+
+            foreach (var prefix in prefixes)
+            {
+                foreach (var stage in new[] { ("march", march), ("composite", VintageVisuals.PseudoPBR.BeamPassSource.Composite) })
+                {
+                    string label = "beam pass " + stage.Item1 + " links with prefix [" + Describe(prefix) + "]";
+                    if (TryLink(VintageVisuals.PseudoPBR.BeamPassSource.Vertex, stage.Item2, prefix, out string error))
+                        Pass(label);
+                    else
+                        Fail(label + ": " + error);
+                }
+            }
+        }
+
+        static string WithPrefix(string source, Dictionary<string, int> defines)
+        {
+            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            var body = new List<string> { lines[0] };
+            body.AddRange(defines.Select(d => "#define " + d.Key + " " + d.Value));
+            body.AddRange(lines.Skip(1));
+            return string.Join("\n", body);
+        }
+
+        static bool TryLink(string vertex, string fragment, Dictionary<string, int> defines, out string error)
+        {
+            error = null;
+            string stem = Path.Combine(Path.GetTempPath(), "vv-beam-" + Guid.NewGuid().ToString("N"));
+            string v = stem + ".vert";
+            string f = stem + ".frag";
+            try
+            {
+                File.WriteAllText(v, WithPrefix(vertex, defines));
+                File.WriteAllText(f, WithPrefix(fragment, defines));
+                var process = Process.Start(new ProcessStartInfo("glslangValidator", "-l \"" + v + "\" \"" + f + "\"")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                });
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+                if (process.ExitCode == 0) return true;
+                error = output.Split('\n').FirstOrDefault(l => l.Contains("ERROR"))?.Trim() ?? "link failed";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            finally
+            {
+                try { File.Delete(v); } catch { }
+                try { File.Delete(f); } catch { }
             }
         }
 
