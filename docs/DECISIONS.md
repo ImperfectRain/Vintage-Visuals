@@ -3974,3 +3974,13 @@ resets the flag; nine mutations, each run singly and caught); verifypatches
 compiles chunkopaque with the group alone and with every other group in all 48
 define combinations. Not seen in game; the saving is not measured -
 `.vvbench prepass` runs on, off, on, off.
+
+**Amendment (2026-11-26, first in-game bench).** Every "on" run reported
+"DID NOT RUN" and the opaque pass was unchanged (20.3 ms on and off). The
+readiness check looked chunkopaque up with `GetProgramByName("chunkopaque")`,
+which is always null for the game's built-in programs: they are registered by
+`EnumShaderProgram`, not in the name table (the ColorGrade README already
+records this for `final`). It now uses `GetProgram((int)EnumShaderProgram.Chunkopaque)`;
+the interaction check requires that and forbids the name lookup, and a
+mutation proves it. The failure mode was the safe one: no prepass, vanilla
+rendering, no error.

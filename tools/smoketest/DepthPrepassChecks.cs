@@ -94,7 +94,8 @@ void main()
                 cs.Contains("if (!prepassed || !hasUniform) return false;") &&
                 cs.Contains("float mode = _gl.BlendEnabled(true) ? 1f : 2f;") &&
                 cs.Contains("if (hasUniform) shader.Uniform(PrepassUniform, 0f);") &&
-                cs.Contains("_capi.Render.GlColorMask(true, true, true, true);"),
+                cs.Contains("_capi.Render.GlColorMask(true, true, true, true);") &&
+                cs.Contains("GetProgram((int)EnumShaderProgram.Chunkopaque)") && !cs.Contains("GetProgramByName("),
                 "");
         }
     }

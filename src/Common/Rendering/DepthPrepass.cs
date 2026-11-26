@@ -160,7 +160,10 @@ namespace VintageVisuals.Common.Rendering
         /// <summary>Whether chunkopaque carries the depthprepass group right now.</summary>
         public static bool ShaderReady()
         {
-            IShaderProgram program = _capi?.Shader.GetProgramByName("chunkopaque");
+            // By enum, never by name: the game's built-in programs are not in the
+            // name table, so a lookup by the name "chunkopaque" is always null and the
+            // prepass never ran (first in-game bench, 2026-11-26).
+            IShaderProgram program = _capi?.Shader.GetProgram((int)EnumShaderProgram.Chunkopaque);
             return program != null && program.HasUniform(PrepassUniform);
         }
 
