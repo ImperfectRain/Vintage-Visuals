@@ -134,10 +134,13 @@ namespace VintageVisuals.Common.Diagnostics
             int opaqueStart = Add(EnumRenderStage.Opaque, First);
             int leavesStart = Add(EnumRenderStage.Opaque, 0.499);
             int leavesEnd = Add(EnumRenderStage.Opaque, 0.501);
+            int beamsStart = Add(EnumRenderStage.Opaque, 0.979);   // BeamPassRenderer runs at 0.98 (D87/D92)
+            int beamsEnd = Add(EnumRenderStage.Opaque, 0.981);
             int opaqueEnd = Add(EnumRenderStage.Opaque, Last);
             Span("opaque", "opaque (terrain, entities)", opaqueStart, opaqueEnd);
             AddChunkPassSpans();
             Span("vv.leaves", "vv falling leaves", leavesStart, leavesEnd, true);
+            Span("vv.beams", "vv light shafts pass", beamsStart, beamsEnd, true);
 
             Bracket("oit", "transparent (water, glass)", EnumRenderStage.OIT);
             Bracket("afteroit", "after transparent", EnumRenderStage.AfterOIT);

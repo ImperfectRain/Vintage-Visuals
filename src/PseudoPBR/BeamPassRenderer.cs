@@ -302,6 +302,7 @@ namespace VintageVisuals.PseudoPBR
                 _march.Uniform(FogUniform, _fog);
                 _march.Uniform(ZPlanesUniform, _z);
                 _march.Uniform("lightPosition", _capi.Render.ShaderUniforms.LightPosition3D);
+                BindShadowMaps(_march);
                 _uploadScene?.Invoke(_march);
                 _capi.Render.RenderMesh(_quad);
                 _march.Stop();
@@ -355,6 +356,83 @@ namespace VintageVisuals.PseudoPBR
                 catch { }
                 Fail("the beam pass failed while rendering: " + e.Message);
             }
+        }
+
+        private readonly Vec2f _shadowValid = new Vec2f();
+        private System.Reflection.PropertyInfo _shadowQualityProperty;
+        private bool _shadowQualityLooked;
+        private bool _reportedShadows;
+
+        /// <summary>
+        /// D92. The game's shadow-map quality: 0 no shadows, 1 the far cascade,
+        /// 2 and up both cascades - the same number the game hands its own
+        /// shaders as SHADOWQUALITY. Read by reflection from VintagestoryLib's
+        /// ClientSettings (not a stable API); unknown reads as 1, far only.
+        /// </summary>
+        private int ShadowQuality()
+        {
+            try
+            {
+                if (!_shadowQualityLooked)
+                {
+                    _shadowQualityLooked = true;
+                    Type settings = Type.GetType("Vintagestory.Client.NoObf.ClientSettings, VintagestoryLib");
+                    _shadowQualityProperty = settings?.GetProperty("ShadowMapQuality",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                }
+                object v = _shadowQualityProperty?.GetValue(null);
+                return v is int q ? q : 1;
+            }
+            catch
+            {
+                return 1;
+            }
+        }
+
+        /// <summary>
+        /// D92. The cascades the shafts read, with the matrices the game used to
+        /// draw them this frame. A cascade the game is not rendering is marked
+        /// unusable rather than bound stale; with neither, no shafts are drawn.
+        /// </summary>
+        private void BindShadowMaps(IShaderProgram program)
+        {
+            int quality = ShadowQuality();
+            var uniforms = _capi.Render.ShaderUniforms;
+            FrameBufferRef far = Buffer(EnumFrameBuffer.ShadowmapFar);
+            FrameBufferRef near = Buffer(EnumFrameBuffer.ShadowmapNear);
+            bool farOk = quality >= 1 && far != null && far.DepthTextureId != 0 && uniforms.ToShadowMapSpaceMatrixFar != null;
+            bool nearOk = quality >= 2 && near != null && near.DepthTextureId != 0 && uniforms.ToShadowMapSpaceMatrixNear != null;
+
+            if (farOk)
+            {
+                program.BindTexture2D(ShadowFarUniform, far.DepthTextureId, 1);
+                program.UniformMatrix(ToShadowFarUniform, uniforms.ToShadowMapSpaceMatrixFar);
+            }
+            if (nearOk)
+            {
+                program.BindTexture2D(ShadowNearUniform, near.DepthTextureId, 2);
+                program.UniformMatrix(ToShadowNearUniform, uniforms.ToShadowMapSpaceMatrixNear);
+            }
+            _shadowValid.X = farOk ? 1f : 0f;
+            _shadowValid.Y = nearOk ? 1f : 0f;
+            program.Uniform(ShadowValidUniform, _shadowValid);
+
+            if (!_reportedShadows)
+            {
+                _reportedShadows = true;
+                _capi.Logger.Notification("[VintageVisuals] pseudopbr: light shafts read the game's shadow map (D92) - shadow quality " +
+                    quality + ", far cascade " + (farOk ? "used" : "not available") + ", near cascade " +
+                    (nearOk ? "used" : "not available") + (farOk || nearOk ? "." : "; no shafts can be drawn without shadows."));
+            }
+        }
+
+        private FrameBufferRef Buffer(EnumFrameBuffer kind)
+        {
+            var buffers = _capi.Render.FrameBuffers;
+            int index = (int)kind;
+            if (buffers == null || index < 0 || index >= buffers.Count) return null;
+            FrameBufferRef buffer = buffers[index];
+            return buffer == null || buffer.Disposed ? null : buffer;
         }
 
         private FrameBufferRef Primary()

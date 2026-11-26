@@ -6,8 +6,11 @@ namespace VintageVisuals.PseudoPBR
 {
     /// <summary>
     /// D87. The GLSL of the fast beam pass, assembled from the SAME snippets
-    /// the terrain shader injects, so the pass calls the one
-    /// <c>vvTerrainBeamInscatter</c> rather than a copy of it.
+    /// the terrain shader injects, so it shares every helper (the leaf map,
+    /// the scene gates, the beam colour) rather than copying them. Since D92
+    /// its march is <c>vvBeamShadowInscatter</c> (beampass.glsl), which reads
+    /// the game's shadow map; the terrain's own <c>vvTerrainBeamInscatter</c>
+    /// is only the fallback used while this pass is off or has failed.
     ///
     /// Pure string work with no game types, so <c>tools/verifypatches</c> can
     /// build exactly what the game will compile and run glslang over it.
@@ -26,6 +29,7 @@ namespace VintageVisuals.PseudoPBR
         public const string CoreSnippet = "pbrcore.glsl";
         public const string TerrainSnippet = "pbrterrainmaterial.glsl";
         public const string ReflectSnippet = "reflect.glsl";
+        public const string BeamSnippet = "beampass.glsl";   // D92: the shadow-map march
 
         /// <summary>Where the terrain group pastes reflect.glsl; the pass does the same.</summary>
         public const string ReflectMarker = "// vintagevisuals-hook: terrain scene capture define";
@@ -36,6 +40,11 @@ namespace VintageVisuals.PseudoPBR
         public const string LowResUniform = "vv_beamLowRes";
         public const string LowSizeUniform = "vv_beamLowSize";
         public const string ZPlanesUniform = "vv_beamZ";          // zNear, zFar
+        public const string ShadowFarUniform = "vv_beamShadowFar";
+        public const string ShadowNearUniform = "vv_beamShadowNear";
+        public const string ToShadowFarUniform = "vv_beamToShadowFar";
+        public const string ToShadowNearUniform = "vv_beamToShadowNear";
+        public const string ShadowValidUniform = "vv_beamShadowValid";
 
         /// <summary>
         /// The prefix defines the game may or may not supply to a memory
@@ -112,18 +121,27 @@ float vvBeamFogLevel(vec3 p)
 void main()
 {
     float d = texture(vv_beamDepth, vv_beamUv).r;
-    if (d >= 1.0)
-    {
-        vv_beamOut = vec4(0.0, 0.0, 0.0, vv_beamZ.y);
-        return;
-    }
-    vec4 p = vv_beamInvViewProj * vec4(vv_beamUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
-    vec3 pos = p.xyz / p.w;
-    float fogAmount = vvBeamFogLevel(pos);
-    float level = vvTerrainBeamInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);
     float zn = vv_beamZ.x;
     float zf = vv_beamZ.y;
-    float linear = (2.0 * zn * zf) / (zf + zn - (d * 2.0 - 1.0) * (zf - zn));
+    vec4 p = vv_beamInvViewProj * vec4(vv_beamUv * 2.0 - 1.0, min(d, 0.9999) * 2.0 - 1.0, 1.0);
+    vec3 pos = p.xyz / p.w;
+    float fogAmount;
+    float linear;
+    if (d >= 1.0)
+    {
+        // D92: open sky behind. The air in front of it still carries shafts
+        // (looking up through a gap), so march a ray of full reach; the sky
+        // is already fogged by the game, so no surface fog applies.
+        pos = vv_pbrEye + normalize(pos - vv_pbrEye) * VV_BEAM_REACH;
+        fogAmount = 0.0;
+        linear = zf;
+    }
+    else
+    {
+        fogAmount = vvBeamFogLevel(pos);
+        linear = (2.0 * zn * zf) / (zf + zn - (d * 2.0 - 1.0) * (zf - zn));
+    }
+    float level = vvBeamShadowInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);
     vv_beamOut = vec4(vvTerrainBeamColor() * level, linear);
 }
 ";
@@ -158,10 +176,10 @@ void main()
     outGNormal = vec4(0.0);
     outGPosition = vec4(0.0);
     float d = texture(vv_beamDepth, vv_beamUv).r;
-    if (d >= 1.0) discard;
     float zn = vv_beamZ.x;
     float zf = vv_beamZ.y;
-    float linear = (2.0 * zn * zf) / (zf + zn - (d * 2.0 - 1.0) * (zf - zn));
+    // The sky is zFar, as the march stores it (D92 draws shafts against it).
+    float linear = d >= 1.0 ? zf : (2.0 * zn * zf) / (zf + zn - (d * 2.0 - 1.0) * (zf - zn));
     float tolerance = 0.06 * linear + 0.15;
 
     vec2 texel = vv_beamUv * vv_beamLowSize - 0.5;
@@ -201,7 +219,8 @@ void main()
             string core = snippet(CoreSnippet);
             string terrain = snippet(TerrainSnippet);
             string reflect = snippet(ReflectSnippet);
-            if (scene == null || core == null || terrain == null || reflect == null) return null;
+            string beam = snippet(BeamSnippet);
+            if (scene == null || core == null || terrain == null || reflect == null || beam == null) return null;
 
             int marker = terrain.IndexOf(ReflectMarker, StringComparison.Ordinal);
             if (marker < 0) return null;
@@ -218,6 +237,7 @@ void main()
             sb.Append(Globalise(scene)).Append('\n');
             sb.Append(Globalise(core)).Append('\n');
             sb.Append(Globalise(terrain)).Append('\n');
+            sb.Append(beam).Append('\n');
             sb.Append(MarchMain);
             return sb.ToString();
         }

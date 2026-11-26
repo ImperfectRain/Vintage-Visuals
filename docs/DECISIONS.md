@@ -4126,3 +4126,47 @@ requires that between the murk line and the discard nothing writes
 `outColor` whole (except the fog call) or its alpha, and that murkiness feeds
 exactly those two uses. L2: verifypatches 48 combinations; saving not
 measured (`.vvbench prepass`).
+
+## D92 - The fast beam pass draws light shafts from the game's shadow map
+
+**Context.** In game (2026-11-26, six screenshots, low western sun) the fast
+beams read as smeared horizontal bands across the trunks, not shafts from the
+sun; the player called the effect rough and not shippable. Cause: the beam
+model (D56, kept by D87) decides whether a point of air is in a beam by
+projecting it up the sun ray to a canopy plane and asking the fleck field
+there. The projected point must stay within 28 blocks of the camera (the leaf
+map's reach), and at a low sun `rise / l.y` is large, so every point more than
+a few blocks below the crown failed that gate. Only a thin layer just under
+the leaves survived: a horizontal band. No retune fixes that; it is the model.
+
+**Decision.** The pass's march is now `vvBeamShadowInscatter`
+(`beampass.glsl`, used only by the pass): twenty samples along the view ray
+over up to 32 blocks, each asking the game's own shadow map whether the sun
+reaches it (near cascade where it covers the point, far otherwise, vanilla's
+depth biases), counted only under a crown and below its lowest leaf (the leaf
+map, read bilinearly so cell edges draw no squares). Lit air beside shaded air
+IS a shaft, through the real holes in the real leaves, at any sun height. The
+scatter, forward phase, humid-air lift, clear-sky, sun-presence and dampen
+terms are the terrain helpers, unchanged; a soft shoulder replaces the hard cap.
+Sky pixels are marched too, so shafts show against open sky (the D56 DATA GAP
+is closed for the pass). With shadows off in the game's settings no shafts are
+drawn (read from `ClientSettings.ShadowMapQuality` by reflection; 1 is the far
+cascade only, 2 and up both).
+
+The terrain's `vvTerrainBeamInscatter` stays only as the fallback while the
+pass is off or has failed (D91 compiles it out otherwise). Two marches with
+different inputs is a stated, temporary state: once the shadow shafts are seen
+working, the terrain march and its fleck-field beam constants should be
+deleted rather than kept as a second implementation.
+
+**Cost.** Twenty PCF shadow taps and up to eighty leaf-map array reads per
+half-resolution pixel, against the old model's two noise reads and several
+leaf-map reads per step. Not measured; the profiler now times the pass as
+"vv light shafts pass" (Opaque 0.979 to 0.981). Budget agreed with the
+performance thread: well under 1 ms.
+
+**Verification.** L2: build; smoketest (the fast-beams interaction check now
+requires the shadow march, its shadow gate and both cascades, and forbids the
+projection march in the pass; two new mutations plus one refreshed, run singly,
+all caught); verifypatches compiles and links both pass programs with and
+without the game's prefix defines. Not seen in game.

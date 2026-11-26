@@ -122,6 +122,11 @@ namespace VintageVisuals.SmokeTest
             string corpus = string.Join("\n", snippets.Values) + "\n" +
                             string.Join("\n", Directory.GetFiles(patchDir, "*.yaml").Select(File.ReadAllText));
 
+            // D87/D92: the beam pass assembles its own program around the
+            // snippets in C#, and its main is where beampass.glsl is called.
+            string beamPass = Path.Combine(repo, "src/PseudoPBR/BeamPassSource.cs");
+            if (File.Exists(beamPass)) corpus += "\n" + File.ReadAllText(beamPass);
+
             var deadUniforms = new List<string>();
             var deadFunctions = new List<string>();
 

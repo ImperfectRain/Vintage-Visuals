@@ -1039,12 +1039,25 @@ void main()
                     File.Exists(Path.Combine(snippetDir, n)) ? File.ReadAllText(Path.Combine(snippetDir, n)) : null) ?? "";
                 int calls = Regex.Matches(beamYaml, @"vvTerrainBeamInscatter\(worldPos\.xyz").Count;
                 int gated = Regex.Matches(beamYaml, @"if \(vv_pbrBeamPass < 0\.5\) outColor\.rgb \+= vvTerrainBeamColor\(\) \* \(vvTerrainBeamInscatter\(worldPos\.xyz").Count;
+                string beamSnippet = File.ReadAllText(Path.Combine(snippetDir, "beampass.glsl"));
+                string shadowBody = GlslEval.StripComments(GlslEval.FunctionBody(beamSnippet, "float vvBeamShadowInscatter(") ?? "");
+                string sunLitBody = GlslEval.StripComments(GlslEval.FunctionBody(beamSnippet, "float vvBeamSunLit(") ?? "");
                 string marchMain = march.Contains("void main()") ? march.Substring(march.LastIndexOf("void main()", StringComparison.Ordinal)) : "";
                 bool ok = calls == 2 && gated == calls &&
                           binderSrc.Contains("SetIfPresent(program, BeamPassUniform, (BeamPass != null && BeamPass.WillDraw) || FeatureBench.Off(FeatureBench.NoBeams) ? 1f : 0f);") &&
                           rendererSrc.Contains("return _compiled && !_failed && Wanted();") &&
-                          Regex.Matches(march, @"float vvTerrainBeamInscatter\(").Count == 1 &&
-                          marchMain.Contains("float level = vvTerrainBeamInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);") &&
+                          // D92: the pass marches the game's shadow map, once, and
+                          // never the terrain's projection march (whose low-sun
+                          // failure drew horizontal bands across the trunks).
+                          Regex.Matches(march, @"float vvBeamShadowInscatter\(").Count == 1 &&
+                          marchMain.Contains("float level = vvBeamShadowInscatter(pos, vv_beamFog.x) * (1.0 - fogAmount);") &&
+                          !marchMain.Contains("vvTerrainBeamInscatter(") &&
+                          shadowBody.Contains("float s = vvBeamSunLit(rel);") &&
+                          shadowBody.Contains("lit += s * gate;") &&
+                          shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&
+                          sunLitBody.Contains("texture(vv_beamShadowNear, vec3(n.xy, n.z - 0.0005))") &&
+                          sunLitBody.Contains("texture(vv_beamShadowFar, vec3(f.xy, f.z - 0.0009))") &&
+                          sunLitBody.Contains("return -1.0;") &&
                           marchMain.Contains("vvTerrainBeamColor() * level") &&
                           // The composite must ADD. The game's Brighten is
                           // (ZERO, ONE_MINUS_SRC_COLOR): it darkens, and the first

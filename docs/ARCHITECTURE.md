@@ -422,10 +422,14 @@ the config so the terrain gets it back.
 ### The fast beam pass (D87, optional)
 
 With `PseudoPBR.FastBeams` on, the canopy beams leave the terrain shader and
-run once per pixel after the opaque stage. The march is the terrain's own
-`vvTerrainBeamInscatter`, compiled into a memory program that
-`BeamPassSource` assembles from the shipped snippets; its uniforms come from
-the same binder upload as the terrain's (`PbrShaderBinder.UploadBeamUniforms`).
+run once per pixel after the opaque stage. Since D92 the march is
+`vvBeamShadowInscatter` (`beampass.glsl`), which reads the game's shadow
+cascades (`ShadowmapFar`/`ShadowmapNear` depth textures and the frame's
+`ToShadowMapSpaceMatrix*`, bound to the pass's own units 1 and 2) and the leaf
+map, compiled into a memory program that `BeamPassSource` assembles around the
+shipped snippets; its other uniforms come from the same binder upload as the
+terrain's (`PbrShaderBinder.UploadBeamUniforms`). The terrain's
+`vvTerrainBeamInscatter` is only the fallback while the pass is off or failed.
 
 ```
 Opaque, order 0.98 (after every opaque renderer)

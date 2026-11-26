@@ -95,7 +95,7 @@ namespace VintageVisuals.SmokeTest
 
             var orphans = constants.Keys.Concat(literals)
                 .Distinct()
-                .Where(u => !declared.Contains(u) && !snippets.Contains("uniform sampler2D " + u))
+                .Where(u => !declared.Contains(u) && !snippets.Contains("uniform sampler2D " + u) && !snippets.Contains("uniform sampler2DShadow " + u))
                 .ToList();
 
             check("every uploaded uniform is declared in a shader", orphans.Count == 0,
