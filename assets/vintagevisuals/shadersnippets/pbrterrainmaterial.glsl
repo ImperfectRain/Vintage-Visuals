@@ -2118,6 +2118,10 @@ float vvTerrainBeamDensity(vec2 src)
 
 float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
 {
+#ifdef VV_TERRAIN_BEAMS_IN_PASS
+    // D91: the fast beam pass draws the beams; the terrain carries no march.
+    return 0.0;
+#else
     if (vv_pbrShafts < 0.001 || vv_canopyMapValid < 0.5) return 0.0;
     float sun = vvTerrainSunPresence();
     if (sun < 0.01) return 0.0;
@@ -2183,6 +2187,7 @@ float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)
     float level = beam * ds * VV_TERRAIN_BEAM_SCATTER * phase * humid * clearSky * sun
                 * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * vvSceneVisibilityDampen();
     return clamp(level, 0.0, VV_TERRAIN_BEAM_MAX);
+#endif
 }
 
 // The colour beams add: the sun's own colour, warmer as it drops.

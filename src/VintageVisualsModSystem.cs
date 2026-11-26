@@ -274,6 +274,13 @@ namespace VintageVisuals
                        VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView);
             }
 
+            // D91. The terrain's beam march is compiled out while the fast beam
+            // pass draws the beams.
+            if (group == PseudoPbrSubsystem.TerrainFastBeamsGroupName)
+            {
+                return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled && TerrainBeamsInPass();
+            }
+
             // The capture sampler exists in source only while the player wants
             // scene reflections, so "off" is vanilla's material-path source
             // rather than a declared, bound and muted sampler.
@@ -370,7 +377,15 @@ namespace VintageVisuals
                    (ConfigManager.Config.Water.Enabled ? "L" : "-") +
                    (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
                    (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
-                   (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-");
+                   (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
+                   (TerrainBeamsInPass() ? "Q" : "-");
+        }
+
+        private bool TerrainBeamsInPass()
+        {
+            PseudoPbrConfig pbr = ConfigManager.Config.PseudoPBR;
+            return VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamsInPass(
+                pbr.Enabled, pbr.SunShafts, pbr.FastBeams, BeamPassRenderer.AnyFailed, pbr.DebugView);
         }
 
         /// <summary>

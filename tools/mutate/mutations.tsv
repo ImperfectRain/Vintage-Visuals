@@ -351,3 +351,6 @@ D89 chunk timers: skipped prepass pools stretch the prepass span	src/Common/Diag
 D90 the debug views compile in when no view is selected	assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl	#ifndef VV_TERRAIN_DEBUG_VIEWS	#ifdef VV_TERRAIN_DEBUG_VIEWS	D90: without the debug group
 D90 the debug views stay compiled in at view 0	src/Common/Rendering/ShaderSpecialisation.cs	return (int)(debugView + 0.5f) != 0;	return (int)(debugView + 0.5f) != 1;	D90: the debug views compile in only
 D90 moving the debug slider never reloads the shaders	src/VintageVisualsModSystem.cs	DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-")	DebugCodeWanted(0f) ? "V" : "-")	D90: the debug views compile in only
+D91 the define keeps the terrain's march and removes nothing	assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl	#ifdef VV_TERRAIN_BEAMS_IN_PASS	#ifndef VV_TERRAIN_BEAMS_IN_PASS	D91: the define compiles out only
+D91 the march stays compiled out after the beam pass fails, so no beams at all	src/Common/Rendering/ShaderSpecialisation.cs	fastBeams && !passFailed &&	fastBeams &&	D91: the march stays in source
+D91 a beam pass failure never rebuilds the terrain	src/PseudoPBR/BeamPassRenderer.cs	try { Failed?.Invoke(); } catch { }	{ }	D91: the march stays in source

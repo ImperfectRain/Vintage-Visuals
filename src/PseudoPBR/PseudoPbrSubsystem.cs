@@ -43,6 +43,9 @@ namespace VintageVisuals.PseudoPBR
         /// </summary>
         public const string TerrainDebugGroupName = "pbrterraindebug";
 
+        /// <summary>D91. Compiles the terrain's beam march out while the fast beam pass draws the beams.</summary>
+        public const string TerrainFastBeamsGroupName = "pbrterrainfastbeams";
+
         /// <summary>
         /// The scene-capture bridge on the modular terrain path. Its own group
         /// because it owns a sampler (unit 13); it asserts the material group's
@@ -161,6 +164,10 @@ namespace VintageVisuals.PseudoPBR
             _beams = new BeamPassRenderer(mod.Capi, ReadSnippet, FastBeamsWanted, () => _binder != null && _binder.TerrainLive,
                                           program => _binder?.UploadBeamUniforms(program));
             _binder.BeamPass = _beams;
+            // D91: the terrain may have its march compiled out while this pass
+            // draws; if the pass fails, re-apply the config (next tick, never
+            // mid-draw) so the patch gating rebuilds the terrain with it.
+            _beams.Failed = () => mod.Capi.Event.RegisterCallback(_ => _mod?.ConfigManager?.NotifyChanged(), 0);
             mod.Capi.Event.RegisterRenderer(_beams, EnumRenderStage.Opaque, "vintagevisuals-beams");
             mod.Capi.Event.ReloadShader += OnShadersReloaded;
             RegisterBeamCommand(mod.Capi);

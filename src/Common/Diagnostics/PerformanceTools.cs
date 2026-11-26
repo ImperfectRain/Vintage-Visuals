@@ -96,7 +96,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]' or '.vvbench debugcode [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]', '.vvbench debugcode [seconds]' or '.vvbench beamcode [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -133,6 +133,10 @@ namespace VintageVisuals.Common.Diagnostics
             {
                 int each = seconds > 0 ? seconds : 8;
                 _tierResults.Clear();
+                // D91: the "terrain shader" runs need the terrain's own march in
+                // source, so hold it there for the whole bench (one reload each end).
+                VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch = true;
+                _reapply?.Invoke();
                 RunFeature(FeatureBench.BeamOrder, 0, each);
                 return TextCommandResult.Success("Benchmarking the beams: in the terrain shader, in the fast pass, no air beams, no shafts at all, " +
                     "then the terrain shader again, " + each + " s each. Stand still under trees facing the sun.");
@@ -154,9 +158,22 @@ namespace VintageVisuals.Common.Diagnostics
                 if (_reapply == null) return TextCommandResult.Error("This build cannot reload shaders from a bench.");
                 int each = seconds > 0 ? seconds : 8;
                 _tierResults.Clear();
-                RunDebugCode(0, each);
+                RunSpecialisation("debug views", m => VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = m, 0, each);
                 return TextCommandResult.Success("Benchmarking the terrain debug views compiled out, in, out, in (view 0 throughout), " + each +
                     " s each after a shader reload. Stand still in a forest, facing the trees. The world may flicker at each reload.");
+            }
+
+            if (string.Equals(mode, "beamcode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_reapply == null) return TextCommandResult.Error("This build cannot reload shaders from a bench.");
+                int each = seconds > 0 ? seconds : 8;
+                _tierResults.Clear();
+                // "compiled in" = the march held in the terrain source; "out" = as configured
+                // (out only while FastBeams is on and the pass is healthy).
+                RunSpecialisation("terrain beam march",
+                    m => VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamCodeBenchHoldsMarch = m == 1, 0, each);
+                return TextCommandResult.Success("Benchmarking the terrain's beam march compiled out, in, out, in (needs FastBeams on), " + each +
+                    " s each after a shader reload. Stand still under trees facing the sun. The world may flicker at each reload.");
             }
 
             if (string.Equals(mode, "features", StringComparison.OrdinalIgnoreCase))
@@ -262,9 +279,15 @@ namespace VintageVisuals.Common.Diagnostics
 
                     _benchCallback = 0;
                     FeatureBench.Mode = FeatureBench.Normal;
+                    if (VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch)
+                    {
+                        VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch = false;
+                        _reapply?.Invoke();
+                    }
                     Report(FormatFeatures(_tierResults));
                 }, seconds * 1000);
-            }, (int)(SettleSeconds * 1000));
+            }, (int)((index == 0 && VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch
+                        ? ReloadSettleSeconds : SettleSeconds) * 1000));
         }
 
         /// <summary>'.vvbench prepass' (D88): on, off, on, off, so drift shows as the two pairs disagreeing.</summary>
@@ -296,21 +319,22 @@ namespace VintageVisuals.Common.Diagnostics
         private static readonly int[] DebugCodeOrder = { 0, 1, 0, 1 };
         private const float ReloadSettleSeconds = 5f;
 
-        private void RunDebugCode(int index, int seconds)
+        /// <param name="set">1 compiles the code in, 0 out, -1 restores the normal decision.</param>
+        private void RunSpecialisation(string what, Action<int> set, int index, int seconds)
         {
             int mode = DebugCodeOrder[index];
-            VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = mode;
+            set(mode);
             _reapply();
             _benchCallback = _capi.Event.RegisterCallback(_ =>
             {
                 _profiler.BeginBench();
                 _benchCallback = _capi.Event.RegisterCallback(__ =>
                 {
-                    _tierResults.Add(_profiler.EndBench(mode == 1 ? "debug views compiled in" : "debug views compiled out"));
-                    if (index + 1 < DebugCodeOrder.Length) { RunDebugCode(index + 1, seconds); return; }
+                    _tierResults.Add(_profiler.EndBench(what + (mode == 1 ? " compiled in" : " compiled out")));
+                    if (index + 1 < DebugCodeOrder.Length) { RunSpecialisation(what, set, index + 1, seconds); return; }
 
                     _benchCallback = 0;
-                    VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = -1;
+                    set(-1);
                     _reapply();
                     Report(FormatFeatures(_tierResults));
                 }, seconds * 1000);
@@ -371,6 +395,8 @@ namespace VintageVisuals.Common.Diagnostics
             FeatureBench.Mode = FeatureBench.Normal;
             VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = -1;
             VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = -1;
+            VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamBenchHoldsMarch = false;
+            VintageVisuals.Common.Rendering.ShaderSpecialisation.BeamCodeBenchHoldsMarch = false;
             _hud?.TryClose();
             _hud?.Dispose();
             _profiler.Dispose();

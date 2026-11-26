@@ -374,8 +374,20 @@ namespace VintageVisuals.PseudoPBR
                 _capi.Logger.Warning("[VintageVisuals] pseudopbr: fast beams skipped 120 frames in a row - " + why + ".");
         }
 
+        /// <summary>D91: once any beam pass has failed, the terrain must keep its own march in source.</summary>
+        public static bool AnyFailed { get; private set; }
+
+        /// <summary>Called once when the pass fails, so the shaders can be rebuilt with the terrain's march.</summary>
+        public Action Failed { get; set; }
+
         private void Fail(string why)
         {
+            bool first = !AnyFailed;
+            AnyFailed = true;
+            if (first)
+            {
+                try { Failed?.Invoke(); } catch { }
+            }
             _failed = true;
             _compiled = false;
             _capi.Logger.Warning("[VintageVisuals] pseudopbr: fast beams DISABLED - " + why +

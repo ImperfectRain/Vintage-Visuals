@@ -39,6 +39,29 @@ namespace VintageVisuals.SmokeTest
                 mod.Contains("if (group == PseudoPbrSubsystem.TerrainDebugGroupName)") &&
                 mod.Contains("(VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? \"V\" : \"-\")"),
                 "");
+
+            // D91. The terrain's beam march compiled out while the fast pass draws.
+            string fastYaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/pbrterrainfastbeams.yaml"));
+            string beamSource = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/BeamPassSource.cs"));
+            string beamPass = File.ReadAllText(Path.Combine(repo, "src/PseudoPBR/BeamPassRenderer.cs"));
+            int march = snippet.IndexOf("float vvTerrainBeamInscatter(vec3 cameraRelativePos, float fogDensity)\n{\n", StringComparison.Ordinal);
+            string marchHead = march < 0 ? "" : snippet.Substring(march, Math.Min(220, snippet.Length - march));
+
+            check("D91: the define compiles out only the terrain's beam march, never the beam pass's",
+                march > anchor && anchor >= 0 &&
+                marchHead.Contains("{\n#ifdef VV_TERRAIN_BEAMS_IN_PASS\n") &&
+                fastYaml.Contains("tokens: \"uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;\"") &&
+                fastYaml.Contains("#define VV_TERRAIN_BEAMS_IN_PASS 1") &&
+                !beamSource.Contains("VV_TERRAIN_BEAMS_IN_PASS"),
+                "march@" + march);
+
+            check("D91: the march stays in source unless the fast pass is wanted and healthy, and a pass failure rebuilds the terrain",
+                spec.Contains("return !BeamBenchHoldsMarch && !BeamCodeBenchHoldsMarch && pbrEnabled && sunShafts >= 0.001f && fastBeams && !passFailed &&") &&
+                spec.Contains("!DebugCodeWanted(debugView);") &&
+                mod.Contains("(TerrainBeamsInPass() ? \"Q\" : \"-\")") &&
+                mod.Contains("if (group == PseudoPbrSubsystem.TerrainFastBeamsGroupName)") &&
+                beamPass.Contains("try { Failed?.Invoke(); } catch { }"),
+                "");
         }
     }
 }

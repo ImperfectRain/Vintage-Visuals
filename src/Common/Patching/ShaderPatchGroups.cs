@@ -52,6 +52,8 @@ namespace VintageVisuals.Common.Patching
                 // so the debug group rides that path alone.
                 new[] { "pbrterraindebug", "pseudopbr" },
                 new[] { "pbrterraindebug", "pseudopbrtopsoil" },
+                new[] { "pbrterrainfastbeams", "pseudopbr" },
+                new[] { "pbrterrainfastbeams", "pseudopbrtopsoil" },
             };
 
         /// <summary>
@@ -67,6 +69,7 @@ namespace VintageVisuals.Common.Patching
             {
                 { "pbrterrainreflect", new[] { "pbrterrainmaterial" } },
                 { "pbrterraindebug", new[] { "pbrterrainmaterial" } },
+                { "pbrterrainfastbeams", new[] { "pbrterrainmaterial" } },
             };
 
         /// <summary>The groups a group requires, or none.</summary>

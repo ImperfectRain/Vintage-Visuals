@@ -1,0 +1,45 @@
+# Vintage Visuals - the terrain's beam march compiled out while the fast beam
+# pass draws the beams (D91, shader specialisation, second cut).
+#
+# With PseudoPBR.FastBeams on, the beams come from the half-resolution pass
+# (D87) and the terrain skips vvTerrainBeamInscatter with a uniform branch
+# (vv_pbrBeamPass). Skipped is not free: the march is a twelve-step loop with
+# canopy reads that the compiler still allocates registers for, and D90
+# measured exactly that kind of dead code at about 6 ms in a forest. This
+# group defines VV_TERRAIN_BEAMS_IN_PASS, which turns the march's body into
+# `return 0.0`. It is applied only while the fast pass is wanted, has not
+# failed, no debug view is selected and no '.vvbench beams' is running (see
+# ShaderSpecialisation.BeamsInPass); a beam pass failure re-applies the config
+# so the terrain gets its march back. The beam pass builds its own program
+# from the snippet without this define, so its march is untouched.
+#
+# No sampler, no uniform. Same anchor as pbrterraindebug, at the top of the
+# material snippet, so it must run after the material group.
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+
+- type: insert_before
+  phase: Declarations
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+  content: |
+    #define VV_TERRAIN_BEAMS_IN_PASS 1
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+
+- type: insert_before
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+  content: |
+    #define VV_TERRAIN_BEAMS_IN_PASS 1

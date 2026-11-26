@@ -4048,3 +4048,33 @@ singly), verifypatches compiles both variants in all define combinations.
 Not seen in game; the saving is not measured and may be none.
 `.vvbench debugcode` runs compiled out, in, out, in at view 0, each after a
 shader reload and 5 s to settle.
+
+**Amendment (2026-11-26, measured).** `.vvbench debugcode` in a forest: frame
+23.0 / 23.1 ms with the views compiled out, 28.7 / 30.0 ms compiled in; opaque
+14.5 against 20.5 / 21.0 ms, nearly all of it in the leaf pool (8.1 against
+14.2 ms). Code that never ran cost about 6 ms through register pressure, which
+makes specialisation the main lever for the terrain shader, not a tidy-up.
+
+## D91 - Compile the terrain's beam march out while the fast pass draws the beams
+
+**Context.** D90 showed dead code in the terrain shader costs real time. With
+`PseudoPBR.FastBeams` on, the beams come from the half-resolution pass (D87)
+and the terrain only skips `vvTerrainBeamInscatter` behind `vv_pbrBeamPass`;
+the twelve-step march with its canopy reads stays in the program.
+
+**Decision.** Group `pbrterrainfastbeams` defines `VV_TERRAIN_BEAMS_IN_PASS`
+at the same anchor as `pbrterraindebug`, and the march's body becomes
+`return 0.0` under it. `ShaderSpecialisation.BeamsInPass` applies the group
+only while PseudoPBR is on, shafts are above zero, FastBeams is on, no beam
+pass has failed (`BeamPassRenderer.AnyFailed`), no debug view is selected
+(view 68 reads the march) and `.vvbench beams` is not running (it holds the
+march in source for the whole bench, one reload each end). The beam pass
+builds its own program from the snippet without the define, so its march is
+untouched. A beam pass failure re-applies the config on the next tick so the
+patch gating rebuilds the terrain with its march; between the failure and the
+reload there are no beams for a moment, never a broken frame.
+
+**Verification.** L2: build, smoketest (two checks, three mutations run
+singly), verifypatches (with and without the group, beam pass links). Not
+measured; `.vvbench beamcode` runs the march compiled out, in, out, in (with
+FastBeams on), each after a reload.

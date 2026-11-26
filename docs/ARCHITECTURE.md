@@ -414,7 +414,10 @@ compiler allocates for the largest path. `ShaderSpecialisation` holds the
 decisions. First cut: the 75 terrain debug views (`pbrterraindebug`, applied
 while `PseudoPBR.DebugView` is not 0; requires `pbrterrainmaterial`, exclusive
 with the legacy `pseudopbr` path in `ShaderPatchGroups`). `.vvbench debugcode`
-measures compiled out against compiled in at view 0.
+measures compiled out against compiled in at view 0 (about 6 ms in a forest,
+D90). Second cut (D91): `pbrterrainfastbeams` compiles the terrain's beam march
+out while the fast beam pass draws the beams; a beam pass failure re-applies
+the config so the terrain gets it back.
 
 ### The fast beam pass (D87, optional)
 
