@@ -366,6 +366,13 @@ namespace VintageVisuals
                 return ConfigManager.Config.Water.Enabled && ConfigManager.Config.Water.SceneReflections;
             }
 
+            // D93. The caustic web exists in source only while its slider is
+            // above 0, so off carries none of its registers.
+            if (group == WaterSubsystem.CausticsGroupName)
+            {
+                return ConfigManager.Config.Water.Enabled && ConfigManager.Config.Water.CausticsCompiled;
+            }
+
             return true;
         }
 
@@ -385,6 +392,7 @@ namespace VintageVisuals
                    (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-") +
                    (ConfigManager.Config.Water.Enabled ? "L" : "-") +
                    (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
+                   (ConfigManager.Config.Water.CausticsCompiled ? "K" : "-") +
                    (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
                    (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
                    (TerrainBeamsInPass() ? "Q" : "-") +

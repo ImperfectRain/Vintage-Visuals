@@ -80,10 +80,16 @@ namespace VintageVisuals.Common.Diagnostics
             get { return Pick(1f, 2f, 2f, 2f); }
         }
 
-        /// <summary>Focusing waves behind the water caustics: 3 on Low, 6 otherwise.</summary>
+        /// <summary>Focusing waves behind the water caustics: 5 on Low, 10 otherwise.</summary>
         public static float WaterCausticWaves
         {
-            get { return Pick(3f, 6f, 6f, 6f); }
+            get { return Pick(5f, 10f, 10f, 10f); }
+        }
+
+        /// <summary>Caustic blur taps: 1 is the analytic softness alone, 5 adds the four texel neighbours.</summary>
+        public static float WaterCausticTaps
+        {
+            get { return Pick(1f, 5f, 5f, 5f); }
         }
 
         private static float Pick(float low, float medium, float high, float ultra)

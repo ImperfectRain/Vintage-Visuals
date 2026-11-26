@@ -511,7 +511,19 @@ namespace VintageVisuals.Ui
                    R, "Water", 0f, 1f, 0.05f);
 
             Slider("water_caustics", "Water.Caustics", "Caustics",
-                   "Moving lines of sunlight the waves focus onto the bottom of open water. They follow the game's sun colour, shadows and clouds, sharpen in a block or two of depth and fade out deeper. 0 is off.",
+                   "Moving web of sunlight the waves focus onto the bottom of open water: brighter lines, dimmer cells, the same light overall, in the colour of the bottom it lands on. Follows the game's sun colour, shadows and clouds, soft in the shallows, sharpest a few blocks down and fading deeper. 0 is off and compiles the caustic code out.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_causticblur", "Water.CausticBlur", "Caustic softness",
+                   "Blurs the caustic web on the bottom's own pixel grid. 0 is crisp focus lines, around 0.35 the soft glow of a clear sunlit lake, 1 broad dappled light.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_causticglow", "Water.CausticGlow", "Caustic glow",
+                   "Blurs the brightest caustic lines more than the dim ones, so strong focused light blooms into a soft halo while the cells between keep their edges. 0 is even softness.",
+                   R, "Water", 0f, 1f, 0.05f);
+
+            Slider("water_causticdispersion", "Water.CausticDispersion", "Caustic colour split",
+                   "Water bends blue light slightly more than red, so the sharpest caustic lines get faint coloured fringes. 0 is none; 1 exaggerates it for style.",
                    R, "Water", 0f, 1f, 0.05f);
 
             Toggle("water_scene", "Water.SceneReflections", "World in the water",

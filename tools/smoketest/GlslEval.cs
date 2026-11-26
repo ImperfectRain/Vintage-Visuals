@@ -414,6 +414,7 @@ namespace VintageVisuals.SmokeTest
                     case "sqrt": return Map(a[0], Math.Sqrt);
                     case "exp": return Map(a[0], Math.Exp);
                     case "log": return Map(a[0], Math.Log);
+                    case "log2": return Map(a[0], Math.Log2);
                     case "sin": return Map(a[0], Math.Sin);
                     case "cos": return Map(a[0], Math.Cos);
                     case "fract": return Map(a[0], x => x - Math.Floor(x));

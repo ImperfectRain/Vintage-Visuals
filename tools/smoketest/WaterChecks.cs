@@ -37,7 +37,7 @@ namespace VintageVisuals.SmokeTest
             Tiers(check, repo);
             PerDropRipples(repo, check);
             EyeFromView(check);
-            Caustics(check, water);
+            Caustics(check, water, repo);
             ShoreAndFlow(check, water, yaml);
             Scene(check, water, repo);
         }
@@ -104,7 +104,10 @@ namespace VintageVisuals.SmokeTest
             // must change nothing over any background, and it never lowers
             // the opacity. That is the interaction a line-by-line read misses:
             // a colour added and an alpha raised that do not pay each other.
-            string addR = stmts.FirstOrDefault(x => x.StartsWith("premult += bentBed.rgb", StringComparison.Ordinal)) ?? "premult += 99.0";
+            // The bent copy's share is kept (bentShare) for the caustics, then added.
+            string addR = stmts.Any(x => x == "premult += bentShare")
+                ? stmts.FirstOrDefault(x => x.StartsWith("bentShare = bentBed.rgb", StringComparison.Ordinal)) ?? "premult += 99.0"
+                : "premult += 99.0";
             string alphaR = stmts.FirstOrDefault(x => x.StartsWith("outAlpha = mix(outAlpha, 1.0", StringComparison.Ordinal)) ?? "outAlpha = 99.0";
             double worst = 0, drop = 0;
             for (int ai = 0; ai <= 10; ai++)
@@ -242,54 +245,135 @@ namespace VintageVisuals.SmokeTest
         }
 
         /// <summary>
-        /// Caustics (D77): light the waves focus onto the bed, added by the
-        /// water pass. The interactions that matter are evaluated from the
-        /// shipped lines: flat water focuses nothing, a focus line is bright
-        /// but shoulders, the light needs the same visible sun the glints do,
-        /// and the addition never touches the water's opacity.
+        /// Caustics (D93, replacing D77): the waves REDISTRIBUTE the sun on
+        /// the bed. The interactions that matter are evaluated from the
+        /// shipped lines: flat water and a bed at the surface focus nothing,
+        /// the web's average over the bed is 1 (it neither lifts nor dims the
+        /// pond, the D92 lesson), the light needs the same visible sun the
+        /// glints do, the slider at 0 is a web of exactly 1, and the
+        /// composition scales what shows through by the web without letting a
+        /// web of 1 change a single value.
         /// </summary>
-        static void Caustics(Action<string, bool, string> check, string water)
+        static void Caustics(Action<string, bool, string> check, string water, string repo)
         {
-            string gainBody = FunctionBody(water, "float vvWaterCausticGain(");
-            var gainStmts = Statements(gainBody);
-            int from = gainStmts.FindIndex(x => x.StartsWith("float lensDepth =", StringComparison.Ordinal));
-            var consts = new[] { "VV_WATER_CAUSTIC_FOCUS", "VV_WATER_ETA", "VV_WATER_CAUSTIC_SHARP",
-                                 "VV_WATER_CAUSTIC_SPREAD", "VV_WATER_CAUSTIC_PEAK" };
-            double Gain(double depth, Val h, double relief)
+            // --- the lens: flat water and a bed at the surface gather nothing ---
+            string rawBody = FunctionBody(water, "float vvWaterCausticRaw(");
+            string detExpr = Rhs(Statement(rawBody, "float det ="));
+            string rawRet = Rhs(Statements(rawBody).First(x => x.StartsWith("return ", StringComparison.Ordinal)));
+            Func<Val, double, double, double> raw = (h, f, s) =>
             {
-                var sy = Syms("depth", depth, "relief", relief);
+                var sy = Syms("f", f, "s", s);
                 sy["h"] = h;
-                foreach (var c in consts) sy[c] = new Val(Const(water, c));
-                for (int i = Math.Max(0, from); i < gainStmts.Count; i++)
-                {
-                    string st = gainStmts[i];
-                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Scalar(Rhs(st), sy);
-                    var m = Regex.Match(st, @"^float (\w+) =");
-                    if (m.Success) sy[m.Groups[1].Value] = Eval(Rhs(st), sy);
-                }
-                return double.NaN;
-            }
-
-            double relief0 = Const(water, "VV_WATER_CAUSTIC_RELIEF");
+                sy["det"] = new Val(Scalar(detExpr, sy));
+                return Scalar(rawRet, sy);
+            };
             double flatWorst = 0, surfaceWorst = 0;
-            foreach (double d in new[] { 0.25, 1.0, 2.5, 6.0 })
-                flatWorst = Math.Max(flatWorst, Math.Abs(Gain(d, Vec(0, 0, 0), relief0)));
-            foreach (var h in new[] { Vec(30, 5, -20), Vec(-40, 0, 40), Vec(10, 10, 10) })
-                surfaceWorst = Math.Max(surfaceWorst, Math.Abs(Gain(0.0, h, relief0)));
-            check("caustics: flat water, and a bed right at the surface, gather no light",
-                  from >= 0 && flatWorst < 1e-9 && surfaceWorst < 1e-9, "flat " + flatWorst + ", at the surface " + surfaceWorst);
+            foreach (double f in new[] { 0.1, 0.5, 1.0 })
+                foreach (double s in new[] { 0.05, 0.3, 0.8 })
+                    flatWorst = Math.Max(flatWorst, Math.Abs(raw(Vec(0, 0, 0), f, s) - 1.0));
+            foreach (var h in new[] { Vec(3, 0.5, -2), Vec(-4, 0, 4), Vec(1, 1, 1) })
+                surfaceWorst = Math.Max(surfaceWorst, Math.Abs(raw(h, 0.0, 0.1) - 1.0));
+            double focus = raw(Vec(2.0, 0, 0), 0.5, 0.07);
+            check("caustics: flat water, and a bed right at the surface, gather no light; a focus is bright",
+                  flatWorst < 1e-9 && surfaceWorst < 1e-9 && focus > 5.0,
+                  "flat " + flatWorst + ", at the surface " + surfaceWorst + ", at a focus " + focus);
 
-            // A curvature that puts the bed exactly at a focus (det J = 0)
-            // makes the brightest line; it must be bright and stay below peak.
-            double peak = Const(water, "VV_WATER_CAUSTIC_PEAK");
-            double depthAt = 2.0;
-            double lens = Scalar(Rhs(Statement(gainBody, "float lensDepth =")),
-                                 Syms("depth", depthAt, "VV_WATER_CAUSTIC_FOCUS", Const(water, "VV_WATER_CAUSTIC_FOCUS")));
-            double fAt = lens * (1.0 - Const(water, "VV_WATER_ETA")) * relief0;
-            double focus = fAt > 0 ? Gain(depthAt, Vec(1.0 / fAt, 0, 0), relief0) : 0;
-            check("caustics: a focus line is bright and shoulders below its peak", focus > 0.5 && focus < peak,
-                  "gain at focus " + focus + ", peak " + peak);
+            // --- the web conserves light: its mean over the bed is 1 ---------
+            // The shipped waves, warp and tables, driven over a 4 x 4 block
+            // patch at a few lens strengths and softnesses. The lens and the
+            // shoulder are the shipped statements; only the wave sum is a C#
+            // loop, over the wave constants read from the shipped call list.
+            string curv = FunctionBody(water, "vec3 vvWaterCausticCurvature(");
+            var waves = Regex.Matches(curv, @"vvWaterCausticWave\(world, t, vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\),\s*([\d.]+),\s*([\d.]+)\)")
+                             .Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value), D(m.Groups[3].Value), D(m.Groups[4].Value) })
+                             .ToList();
+            double curve = Const(water, "VV_WATER_CAUSTIC_CURVE"), warp = Const(water, "VV_WATER_CAUSTIC_WARP");
+            double[] mean = ConstArray(water, "VV_WATER_CAUSTIC_MEAN"), norm = ConstArray(water, "VV_WATER_CAUSTIC_NORM");
+            // The relative-to-average, shoulder and renormalise chain, as it
+            // ships: the last four statements of vvWaterCausticWeb, run through
+            // the evaluator over a fine grid of m / mean (the chain only sees
+            // that ratio) with the second table stubbed to its value.
+            string webBody = FunctionBody(water, "vec3 vvWaterCausticWeb(");
+            var webStmts = Statements(webBody);
+            int qAt = webStmts.FindIndex(x => x.StartsWith("vec3 q = m / mean", StringComparison.Ordinal));
+            double shoulder = Const(water, "VV_WATER_CAUSTIC_SHOULDER");
+            Func<double, double[]> chainFor = normV =>
+            {
+                var lut = new double[2001];
+                for (int k = 0; k <= 2000 && qAt >= 0; k++)
+                {
+                    var sy = Syms("mean", 1.0, "VV_WATER_CAUSTIC_SHOULDER", shoulder, "normV", normV);
+                    double r = k * 0.02;
+                    sy["m"] = Vec(r, r, r);
+                    lut[k] = double.NaN;
+                    for (int i = qAt; i < webStmts.Count; i++)
+                    {
+                        string st = StubCall(webStmts[i], "vvWaterCausticTable", "normV");
+                        if (st.StartsWith("return ", StringComparison.Ordinal)) { lut[k] = Eval(Rhs(st), sy).X; break; }
+                        var mm = Regex.Match(st, @"^(?:vec3 )?(\w+) =");
+                        if (mm.Success) sy[mm.Groups[1].Value] = Eval(Rhs(st), sy);
+                    }
+                }
+                return lut;
+            };
+            string tableBody = FunctionBody(water, "float vvWaterCausticTable(");
+            string fiExpr = Rhs(Statement(tableBody, "float fi =")), siExpr = Rhs(Statement(tableBody, "float si ="));
+            Func<double[], double, double, double> table = (tab, f, s) =>
+            {
+                double fi = Scalar(fiExpr, Syms("f", f)), si = Scalar(siExpr, Syms("s", s));
+                int a = (int)fi, b = (int)si; double u = fi - a, v = si - b; int i = a * 6 + b;
+                return (tab[i] * (1 - v) + tab[i + 1] * v) * (1 - u) + (tab[i + 6] * (1 - v) + tab[i + 7] * v) * u;
+            };
+            // The sweep below runs the lens in C# for speed; it is the shipped
+            // statement, as long as the two agree here.
+            Func<double, double, double, double, double, double> Raw = (xx, xz, zz, f, s) =>
+            {
+                double det = (1 - f * xx) * (1 - f * zz) - f * f * xz * xz;
+                return Math.Sqrt(1 + s * s) / Math.Sqrt(det * det + s * s);
+            };
+            double rawAgree = 0;
+            foreach (var h in new[] { Vec(3, 0.5, -2), Vec(-1.2, 0.7, 2.2), Vec(2.0, 0, 0) })
+                foreach (double f in new[] { 0.3, 0.5, 0.9 })
+                    rawAgree = Math.Max(rawAgree, Math.Abs(raw(h, f, 0.2) - Raw(h.X, h.Y, h.Z, f, 0.2)));
+            const double TW = 2 * Math.PI / 4096.0;
+            double worstMean = 0;
+            string meanDetail = "";
+            if (waves.Count == 10 && mean.Length == 54 && norm.Length == 54)
+            {
+                foreach (double f in new[] { 0.3, 0.55, 0.8 })
+                    foreach (double s in new[] { 0.12, 0.25, 0.5 })
+                    {
+                        double sum = 0; int n = 0;
+                        double[] lut = chainFor(table(norm, f, s));
+                        double meanFS = table(mean, f, s);
+                        foreach (double t in new[] { 2.0, 9.0, 17.0 })
+                            for (int ix = 0; ix < 192; ix++)
+                                for (int iz = 0; iz < 128; iz++)
+                                {
+                                    double x = 37.0 + (ix + 0.5) / 16.0, z = 91.0 + (iz + 0.5) / 16.0;
+                                    double wx = x + warp * Math.Sin((2300 * x - 1300 * z) * TW - t * 0.7);
+                                    double wz = z + warp * Math.Sin((1100 * x + 2500 * z) * TW + t * 0.6);
+                                    double hxx = 0, hxz = 0, hzz = 0;
+                                    foreach (var w in waves)
+                                    {
+                                        double kx = w[0] * TW, kz = w[1] * TW;
+                                        double sn = Math.Sin(kx * wx + kz * wz - t * w[2]) * w[3] / (kx * kx + kz * kz);
+                                        hxx -= kx * kx * sn; hxz -= kx * kz * sn; hzz -= kz * kz * sn;
+                                    }
+                                    double r = Raw(hxx * curve, hxz * curve, hzz * curve, f, s) / meanFS / 0.02;
+                                    int k0 = Math.Min((int)r, 1999);
+                                    double fr = Math.Min(r - k0, 1.0);
+                                    sum += lut[k0] * (1 - fr) + lut[k0 + 1] * fr; n++;
+                                }
+                        double m = sum / n;
+                        worstMean = Math.Max(worstMean, Math.Abs(m - 1));
+                        meanDetail += " f" + f + "/s" + s + "=" + m.ToString("0.000");
+                    }
+            }
+            check("caustics conserve light: the web's mean over the bed stays within 6 % of 1 (no lift, no dimming)",
+                  waves.Count == 10 && worstMean < 0.06 && rawAgree < 1e-9, waves.Count + " waves;" + meanDetail);
 
+            // --- the sun gate and the slider ----------------------------------
             string surf = FunctionBody(water, "vec4 vvWaterSurface(");
             var stmts = Statements(surf);
             string sunLightExpr = Rhs(Statement(surf, "float sunLight ="));
@@ -299,39 +383,60 @@ namespace VintageVisuals.SmokeTest
                   sun(0, 1, 1) < 1e-12 && sun(1, 0, 1) < 1e-12 && sun(1, 1, 0) < 1e-12 && Math.Abs(sun(1, 1, 1) - 1) < 1e-12,
                   sunLightExpr);
 
-            string lightStmt = Statement(surf, "causticLight = vv_waterSunColor");
-            var lightSyms = Syms("downTransmit", 1.0, "gain", 0.8, "fade", 1.0, "sunLight", 1.0, "caustics", 0.0);
-            lightSyms["vv_waterSunColor"] = Vec(1, 1, 1);
-            bool zeroOff = Eval(Rhs(lightStmt), lightSyms).X == 0;
-            lightSyms["caustics"] = new Val(0.6);
-            bool onLights = Eval(Rhs(lightStmt), lightSyms).X > 0;
-            check("caustics: the slider at 0 adds no light, and above 0 it does", zeroOff && onLights, lightStmt);
-
-            int addAt = stmts.FindIndex(x => x.StartsWith("premult += causticLight", StringComparison.Ordinal));
-            // The opacity the glints leave is set before the caustics, and no
-            // assignment to it reads the caustic light (the shoreline edits
-            // opacity later, from its own depth, not from the caustics).
-            var alphaSets = stmts.Select((x, i) => (x, i)).Where(t => Regex.IsMatch(t.x, @"^(float )?outAlpha\s*[-+*/]?=")).ToList();
-            int lastAlpha = alphaSets.Where(t => t.i < addAt).Select(t => t.i).DefaultIfEmpty(-1).Max();
-            int resultAt = stmts.FindIndex(x => x.StartsWith("vec4 result =", StringComparison.Ordinal));
-            string addExpr = addAt >= 0 ? stmts[addAt] : "";
-            bool alphaFree = addAt > lastAlpha && addAt < resultAt && lastAlpha >= 0 && !addExpr.Contains("outAlpha =")
-                             && !alphaSets.Any(t => t.x.Contains("causticLight"));
-            double ab = Const(water, "VV_WATER_CAUSTIC_ALBEDO");
-            double At(double light, double alpha)
+            string webStmt = Statement(surf, "causticWeb = 1.0 +");
+            double share = Const(water, "VV_WATER_CAUSTIC_SUN_SHARE");
+            Func<double, double, double, Val> webAt = (slider, sunL, fade) =>
             {
-                var sy = Syms("outAlpha", alpha, "VV_WATER_CAUSTIC_ALBEDO", ab);
-                sy["causticLight"] = Vec(light, light, light);
-                return addAt >= 0 ? Eval(Rhs(addExpr), sy).X : double.NaN;
-            }
-            check("caustics add to the colour only: the opacity is final before them, and none adds nothing",
-                  alphaFree && At(0, 0.5) == 0 && At(1, 0.5) > 0 && At(1, 1.0) == 0 && ab < 1.0,
-                  "add at " + addAt + ", last alpha at " + lastAlpha + ", result at " + resultAt);
+                var sy = Syms("sunLight", sunL, "caustics", slider, "fade", fade, "VV_WATER_CAUSTIC_SUN_SHARE", share);
+                sy["web"] = Vec(1.8, 0.6, 1.2); sy["downTransmit"] = Vec(0.9, 1, 1);
+                return Eval(Rhs(webStmt), sy);
+            };
+            Val off = webAt(0, 1, 1), shaded = webAt(0.6, 0, 1), on = webAt(0.6, 1, 1);
+            check("caustics: the slider at 0, or no sun, is a web of exactly 1; above 0 the web shows",
+                  off.X == 1 && off.Y == 1 && off.Z == 1 && shaded.X == 1 && shaded.Y == 1 && on.X > 1.2 && on.Y < 0.9 && share < 1.0,
+                  webStmt);
+
+            // --- the composition: the web scales what shows through -----------
+            // Blending premult + dst * (1 - outAlpha) over a bed whose colour is
+            // dst, the result must equal the plain composition plus
+            // dst * through * (web - 1): the bed seen through the water, lit by
+            // the web, exactly. A web of 1 changes nothing.
+            int stepAt = stmts.FindIndex(x => x.StartsWith("float through = 1.0 - outAlpha", StringComparison.Ordinal));
+            string lowExpr = Rhs(Statement(surf, "float low ="));
+            string liftExpr = Rhs(Statement(surf, "vec3 lift ="));
+            string addExpr = Rhs(Statement(surf, "premult += bentShare * (causticWeb - 1.0)"));
+            string alphaExpr = Rhs(stmts.FirstOrDefault(x => x.StartsWith("outAlpha = 1.0 - through", StringComparison.Ordinal)) ?? "outAlpha = 99.0");
+            double worstCompose = 0;
+            foreach (var web in new[] { Vec(1, 1, 1), Vec(0.5, 0.5, 0.5), Vec(1.6, 1.6, 1.6), Vec(0.8, 1.0, 1.3) })
+                foreach (double alpha in new[] { 0.2, 0.7 })
+                {
+                    var bed = Vec(0.4, 0.35, 0.2); var pre = Vec(0.1, 0.15, 0.12);
+                    var sy = Syms("outAlpha", alpha);
+                    sy["causticWeb"] = web; sy["bedColor"] = bed; sy["bentShare"] = Vec(0, 0, 0);
+                    double through = 1 - alpha;
+                    sy["through"] = new Val(through);
+                    sy["low"] = new Val(Scalar(lowExpr, sy));
+                    sy["lift"] = Eval(liftExpr, sy);
+                    Val add = Eval(addExpr, sy);
+                    double newAlpha = Scalar(alphaExpr, sy);
+                    double[] w = { web.X, web.Y, web.Z }, b = { bed.X, bed.Y, bed.Z }, p = { pre.X, pre.Y, pre.Z }, a = { add.X, add.Y, add.Z };
+                    for (int c = 0; c < 3; c++)
+                    {
+                        double got = p[c] + a[c] + b[c] * (1 - newAlpha);
+                        double want = p[c] + b[c] * through * w[c];
+                        worstCompose = Math.Max(worstCompose, Math.Abs(got - want));
+                    }
+                }
+            int resultAt = stmts.FindIndex(x => x.StartsWith("vec4 result =", StringComparison.Ordinal));
+            int refrAt = stmts.FindIndex(x => x.StartsWith("bentShare = bentBed.rgb", StringComparison.Ordinal));
+            check("caustics light the bed seen through the water by the web, exactly, and a web of 1 changes nothing",
+                  worstCompose < 1e-9 && stepAt > refrAt && refrAt >= 0 && stepAt < resultAt,
+                  "worst " + worstCompose + ", refraction at " + refrAt + ", caustics at " + stepAt + ", result at " + resultAt);
 
             // Light falls on a face by N.L: a wall under the water takes less
             // than the floor, and a face turned from the sun takes none.
             string facingExpr = Rhs(Statement(surf, "float facing ="));
-            Func<Val, double> face = n => { var sy = Syms(); sy["bedNormal"] = n; sy["down"] = Vec(0.2, -0.95, 0.1); return Scalar(facingExpr, sy); };
+            Func<Val, double> face = nrm => { var sy = Syms(); sy["bedNormal"] = nrm; sy["down"] = Vec(0.2, -0.95, 0.1); return Scalar(facingExpr, sy); };
             double floorLit = face(Vec(0, 1, 0)), wallLit = face(Vec(1, 0, 0)), awayLit = face(Vec(-0.6, -0.8, 0));
             check("caustics fall on a face by N.L: a wall takes less than the floor, a face turned away none",
                   floorLit > 0.9 && wallLit < 0.5 * floorLit && awayLit == 0 && stmts.Any(x => x.StartsWith("fade *= facing", StringComparison.Ordinal)),
@@ -339,22 +444,41 @@ namespace VintageVisuals.SmokeTest
 
             // Gone by VV_WATER_CAUSTIC_DEEP, untouched in the shallows; and the
             // view path through the water dims them as well.
-            string depthFade = Rhs(Statement(surf, "float fade =", "VV_WATER_CAUSTIC_DEEP"));
+            string depthFade = Rhs(Statement(surf, "fade *=", "VV_WATER_CAUSTIC_DEEP"));
             double deep = Const(water, "VV_WATER_CAUSTIC_DEEP");
             Func<double, double> fd = dd => Scalar(depthFade, Syms("depth", dd, "VV_WATER_CAUSTIC_DEEP", deep));
             check("caustics fade out with depth and with the view path through the water",
-                  fd(deep) < 1e-9 && Math.Abs(fd(1.0) - 1.0) < 1e-9 && deep <= 6.0 &&
+                  fd(deep) < 1e-9 && Math.Abs(fd(1.0) - 1.0) < 1e-9 && deep <= 8.0 &&
                   stmts.Any(x => x.StartsWith("fade *= dot(exp(-VV_WATER_ABSORB * path", StringComparison.Ordinal)),
                   "deep " + deep + ", at 1 block " + fd(1.0));
 
-            var ks = Regex.Matches(gainBody, @"vec2\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)")
-                          .Select(m => (double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
-                                        double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture)))
-                          .ToList();
-            bool whole = ks.Count >= 8 && ks.All(k => k.Item1 == Math.Floor(k.Item1) && k.Item2 == Math.Floor(k.Item2));
+            bool whole = waves.Count == 10 && waves.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
+            var warpK = Regex.Matches(curv, @"vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\)\s*\*\s*K").Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value) }).ToList();
+            whole &= warpK.Count == 2 && warpK.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
             check("caustic waves have whole cycles per 4096 blocks",
-                  whole && FunctionBody(water, "vec3 vvWaterCausticWave(").Contains("/ 4096.0") && gainBody.Contains("/ 4096.0"),
-                  ks.Count + " vectors: " + string.Join(" ", ks));
+                  whole && FunctionBody(water, "vec3 vvWaterCausticWave(").Contains("/ 4096.0") && curv.Contains("/ 4096.0"),
+                  waves.Count + " waves, " + warpK.Count + " warp vectors");
+
+            // Compiled in only by its own group: water.glsl never defines the
+            // switch, the watercaustics group does, gated on the slider.
+            string yamlC = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/watercaustics.yaml"));
+            string mod = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
+            check("the caustic code compiles in only through the watercaustics group, gated on Water.Caustics",
+                  !Regex.IsMatch(water, @"#define\s+VV_WATER_CAUSTICS") && yamlC.Contains("#define VV_WATER_CAUSTICS 1")
+                  && water.Contains("#ifdef VV_WATER_CAUSTICS")
+                  && Regex.IsMatch(mod, @"group == WaterSubsystem\.CausticsGroupName\)\s*\{\s*return ConfigManager\.Config\.Water\.Enabled && ConfigManager\.Config\.Water\.CausticsCompiled;")
+                  && Regex.IsMatch(mod, @"CausticsCompiled \? ""K"""),
+                  "define only in watercaustics.yaml; group gated and in the gating signature");
+        }
+
+        static double D(string s) => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>The values of a `const float NAME[n] = float[n](...)` array.</summary>
+        static double[] ConstArray(string source, string name)
+        {
+            var m = Regex.Match(StripComments(source), @"const float " + name + @"\[\d+\]\s*=\s*float\[\d+\]\(([^)]*)\)");
+            if (!m.Success) return new double[0];
+            return m.Groups[1].Value.Split(',').Select(x => D(x.Trim())).ToArray();
         }
 
         /// <summary>

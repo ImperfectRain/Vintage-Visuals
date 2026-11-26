@@ -43,6 +43,21 @@ namespace VintageVisuals.Common
         public float Caustics { get; set; } = 0.6f;
 
         /// <summary>
+        /// Softness of the caustic web (D93): 0 the sharp focus lines, 1 the
+        /// soft glow of a sunlit lake. Blurs on the bed's texel grid.
+        /// </summary>
+        public float CausticBlur { get; set; } = 0.35f;
+
+        /// <summary>Extra softness where the focused light is brightest, so lines bloom into a halo. 0 none.</summary>
+        public float CausticGlow { get; set; } = 0.3f;
+
+        /// <summary>Colour split at the focus lines (water bends blue more than red). 0 none.</summary>
+        public float CausticDispersion { get; set; } = 0.25f;
+
+        /// <summary>Whether the caustic code is compiled at all (patch group "watercaustics").</summary>
+        public bool CausticsCompiled { get { return Caustics > 0.001f; } }
+
+        /// <summary>
         /// Shorelines: the water thins out where it is only a sliver deep, and a
         /// pixel foam line laps in and out along the bank. 0 is off (vanilla's own foam).
         /// </summary>
@@ -76,6 +91,9 @@ namespace VintageVisuals.Common
             RainRipples = ColorGradeConfig.Clamp(RainRipples, 0f, 1f, "Water.RainRipples", corrections);
             Glints = ColorGradeConfig.Clamp(Glints, 0f, 1f, "Water.Glints", corrections);
             Caustics = ColorGradeConfig.Clamp(Caustics, 0f, 1f, "Water.Caustics", corrections);
+            CausticBlur = ColorGradeConfig.Clamp(CausticBlur, 0f, 1f, "Water.CausticBlur", corrections);
+            CausticGlow = ColorGradeConfig.Clamp(CausticGlow, 0f, 1f, "Water.CausticGlow", corrections);
+            CausticDispersion = ColorGradeConfig.Clamp(CausticDispersion, 0f, 1f, "Water.CausticDispersion", corrections);
             Shore = ColorGradeConfig.Clamp(Shore, 0f, 1f, "Water.Shore", corrections);
             Refraction = ColorGradeConfig.Clamp(Refraction, 0f, 1f, "Water.Refraction", corrections);
             DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 9f, "Water.DebugView", corrections);

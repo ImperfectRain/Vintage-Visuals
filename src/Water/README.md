@@ -47,15 +47,20 @@ never reaches it.
    the texel normal, shadow-aware, hidden by the game's cloud cover, broken into
    per-texel glitter and shouldered at a luminance of 1.2 (D76). Vanilla's broad sun highlight steps back to a
    quarter at full strength (`vvWaterVanillaSpecularKeep`).
-6. **Caustics** (`Caustics`, D77): the bed seen through a top-face texel (from
-   vanilla's `depthTex`) gets the sunlight six short focusing waves gather onto
-   it, a refraction model (`vvWaterCausticGain`, 0 on flat water) sampled where
-   the refracted sun entered the surface, snapped to 1/32 block. Gated by the
-   glints' visible-sun term and the surface shadow, added to the colour after
-   the opacity is final. Fades from 1.5 to 5 blocks of depth, with the view
-   path through the water and with distance, and falls on slopes and walls by
-   N.L (the bed's normal from its screen slope). DATA
-   GAP: the bed's colour is assumed. Tier: 3 waves on Low, 6 above.
+6. **Caustics** (`Caustics`, `CausticBlur`, `CausticGlow`,
+   `CausticDispersion`; D93, replacing D77): the bed seen through a top-face
+   texel (from vanilla's `depthTex`) is lit through ten focusing waves
+   (`vvWaterCausticWeb`), sampled at the bed texel (1/32 block) where the
+   refracted sun entered the surface. The web is a multiplier with a mean of 1:
+   cells dim by raising the opacity with no colour, lines brighten by adding the
+   bed's own colour (the waterscene frame; an assumed albedo without it), and
+   the refracted copy is scaled alike. Softness grows with depth, the blur
+   slider and distance; Medium and above also average four texel neighbours;
+   glow blurs bright lines more; dispersion splits red and blue focus. Gated by
+   the glints' visible-sun term and the surface shadow, fades by 6 blocks of
+   depth, with the view path and with distance, falls on slopes and walls by
+   N.L. Compiled in only through the `watercaustics` group while Caustics is
+   above 0. Tier: 5 waves and no taps on Low, 10 waves and 4 taps above.
 7. **Shoreline** (`Shore`, D79): the distance from the texel to the bank or bed
    behind it, measured across that surface; the water thins out over the last
    0.06 block, and a per-texel foam line laps in and out, composited over the
@@ -101,8 +106,8 @@ Wind sets their height.
 ## Debug views (`Water.DebugView`)
 
 1 texel normal, 2 reflected sky image, 3 depth behind the surface (8 blocks is
-white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic
-light on the bed, 8 foam (red), flow (green) and far swell (blue), 9 the world the reflected ray
+white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 the
+caustic web (0.5 grey is none, brighter is a line), 8 foam (red), flow (green) and far swell (blue), 9 the world the reflected ray
 found (black is a miss).
 
 ## Status
@@ -115,5 +120,8 @@ game. Performance not measured** - use
 `.vvbench` at the water test scene in `docs/VISUAL-TESTS.md`.
 
 D82 (the world reflected, refraction) is L2: previewed offline with banks
-and trees, not seen in game, cost not measured. Not done: underwater; the
-caustics still assume the bed's colour although the frame now holds it.
+and trees, not seen in game, cost not measured. Not done: underwater.
+
+D93 (caustics rebuilt: redistributed light in the bed's colour, texel-grid
+blur, glow, dispersion, compiled only while on) is L2: previewed offline, not
+seen in game, cost not measured.

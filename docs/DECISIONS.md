@@ -4244,3 +4244,111 @@ sunspot call inside its define, its shadow-map placement, the contrast weight
 and the composite's veil removal; three mutations run singly, all caught);
 verifypatches compiles every group in all define combinations and links both
 pass programs. Not seen in game.
+
+## D93 - Caustics redistribute the sun on the bed, in the bed's own colour, softened on the texel grid
+
+**Context.** Elijah's screenshots (2026-11-26) still showed the D77 web as a
+harsh pale net laid over the lake, and he asked for caustics modelled on real
+ones, after reference photos of shallow sunlit water, above all a soft teal
+lake with smooth sunlight dispersing through it: what causes them, which game
+values can drive them, and a cheap system on the mod's texel grid with a
+panel-controlled blur and optionally a blur tied to the light's intensity.
+
+**What a real caustic is.** The sun reaches a wavy surface as nearly parallel
+light and refracts (n about 1.33). Each patch of surface is a small lens: where
+it curves up the rays converge, where it curves down they spread. On a floor
+`d` below, a ray is displaced by about `-d (1 - 1/n) grad h`, so the floor sees
+the surface through `J = I - f H` (H the surface curvature, `f = d (1 - 1/n)`)
+and the irradiance is `1 / |det J|`. Three regimes follow from `f |H|`: well
+short of the focus the light is soft blobs (very shallow water); near
+`det J = 0` it gathers into the familiar bright network of lines with dim cells
+between; past it the folds overlap and the pattern softens again. Light is
+conserved: the lines are bright exactly by what the cells lose, so the floor's
+average is unchanged. What softens it: the sun is a 0.5 degree disc (lines
+blur by about `d x 0.0047` blocks), skylight is diffuse and is not focused at
+all (the darkest a cell gets is the sky's share), longer waves and a calmer
+surface move the focus deeper, and absorption on the way down tints deep
+caustics toward the water's colour. Dispersion (n runs from 1.331 red to 1.343
+blue) gives the sharpest lines faint coloured fringes.
+
+**What the game and the mod give us.** The sun direction and colour
+(`AtmosphereState`, already reddened by the game), whether it is up and
+visible (`sunUp`, `clearSky`: the game's cloud tiles and overcast), the
+surface shadow (`shadowBright`, which carries the tree and canopy shadows),
+the water depth behind each texel (vanilla's `depthTex`), the bed's slope (its
+screen derivatives), the wind (`vv_sceneWind`), vanilla's flow vector and wave
+clock, and, with the waterscene group, the live opaque frame behind the water,
+which IS the bed's colour as the game lit it. DATA GAP: the wave shape is the
+mod's, not the game's (vanilla's water has no height field a fragment can
+read), so the focusing waves are an invented spectrum tuned to the reference
+photos.
+
+**Decision.**
+- *Waves.* Ten travelling sines from 1.5 down to 0.4 blocks, directions and
+  lengths drawn at random once and kept (the D77 set of six read as a lattice
+  in the offline preview), each carrying the same curvature
+  (`VV_WATER_CAUSTIC_CURVE` 1.1); whole cycles per 4096 blocks; a slow warp.
+  Rivers streak the curvature along the flow (`S H S`, the same streak as the
+  surface slope). Low uses the five longest, scaled by sqrt 2.
+- *Lens.* `f = lens(d) (1 - 1/1.33) (0.7 + 0.6 wind)`, the lens settling at
+  `VV_WATER_CAUSTIC_FOCUS` 3 blocks, so a pond 1 to 3 blocks deep sits near the
+  network and the shallows stay soft. Intensity `sqrt(1 + s^2) / sqrt(det^2 +
+  s^2)`, exactly 1 on flat water, with softness
+  `s = 0.07 + 0.03 d + 0.4 blur + 4 x footprint` (the sun disc, the blur
+  slider, and distance as a level of detail).
+- *Energy.* The web is divided by its own average over the bed, read from a
+  9 x 6 table (`VV_WATER_CAUSTIC_MEAN`, lens strength by log-spaced
+  softness) measured offline from these exact waves, shouldered at 2.5 over
+  the average, and divided by the shouldered average (`VV_WATER_CAUSTIC_NORM`)
+  so the mean stays 1. The smoketest drives the shipped lens and chain over a
+  12 x 8 block patch and requires the mean within 6 % of 1.
+- *Composition.* The web multiplies the bed's light by
+  `1 + (web - 1) x downTransmit x 0.75 x sunLight x Caustics x fade` (0.75 the
+  sun's share of the bed's light; the rest is sky the waves do not focus).
+  Darker cells are drawn by raising the water's opacity with no colour, which
+  the OIT blend turns into exactly "less of what is behind", whatever the bed's
+  colour; brighter channels add the bed's colour, read from the waterscene
+  frame at the texel's own screen position (or an assumed albedo without it);
+  the bent copy of the bed (refraction, D82) is scaled the same way. This
+  supersedes D77's "the water pass can only add": it can also take away.
+- *Blur on the grid.* The sample point is the bed texel (1/32 block) where the
+  refracted sun ray entered; `Water.CausticBlur` (0.35) adds softness and, on
+  Medium and above, averages the texel with four neighbours 1 to 2 whole texels
+  away, so each texel stays one flat value. `Water.CausticGlow` (0.3) gives a
+  texel more of the blurred value the brighter it is, so a line blooms into a
+  halo while the cells keep their edges. `Water.CausticDispersion` (0.25)
+  evaluates red and blue at a lens 8 % x the slider nearer and further.
+- *Compiled only while on.* The web sits under `#ifdef VV_WATER_CAUSTICS`,
+  defined by its own group `watercaustics` (requires `water`), applied while
+  `Water.Caustics` is above 0, with a reload when it crosses 0 (D90's lesson:
+  unused code still costs registers).
+
+**Rejected.** Caustics in the terrain material pass (D77's reason stands).
+A caustic texture or render target: the analytic web costs no unit and no
+pass. Thresholding the web into fixed-width lines: the photos show widths that
+follow the focus. A per-channel Fresnel/absorption model of the down path
+beyond the existing absorption: below what the texel grid can show.
+
+**Cost.** Per sunlit, visible, top-face water fragment within about 50 blocks:
+ten sines plus a warp at the texel, three determinants, two table lookups; on
+Medium and above four more curvature evaluations (about 50 sines in all) and
+one `textureLod` of the frame already bound. Nothing at all with
+`Water.Caustics` 0. Not measured: compare `.vvperf` on the lake with Caustics
+0 and 0.6, or Quality Low against High.
+
+**Limits.** The shadow is the surface's, not the bed's. Side faces get none.
+The table comes from the High wave set; Low's average differs by up to 15 %
+at the sharpest settings (a slight lift or dimming there). Without the
+waterscene group the brightening uses an assumed albedo. The waves are not the
+surface waves the reflection and glints use (the glints' waves are far gentler
+than a caustic needs), so a glint and a line below it do not move together.
+
+**Verification.** L2: build; smoketest (flat water and a bed at the surface
+gather nothing, the mean over the bed stays within 6 % of 1, the visible-sun
+gate, the slider and no sun give a web of exactly 1, the composition lights
+what shows through by exactly the web, N.L, the depth and path fades, whole
+cycles, the group gating and reload; uniforms wired both ways); thirteen
+mutations run singly, all caught; verifypatches compiles water, water +
+watercaustics and water + watercaustics + waterscene against the game's own
+`chunkliquid.fsh` in every define combination. Previewed offline in Python
+with the same formulas. Not seen in game.

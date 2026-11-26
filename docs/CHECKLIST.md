@@ -259,15 +259,17 @@ texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
 - [x] eye recovery from the view matrix tested on built matrices (`WaterChecks`); per-drop ripple hashing checked in all three copies
 - [ ] no seam when crossing a 4096-block boundary
 - [ ] frame cost measured with `.vvbench` at the water test scene
-- [x] caustics (D77): flat water and a surface bed gather nothing, a focus shoulders, the visible-sun gate, the slider at 0, opacity untouched and period tiling, evaluated from the shipped GLSL, each with a mutation that fails it
+- [x] caustics (D93, replacing D77's checks): flat water and a surface bed gather nothing, the web's mean over the bed stays within 6 % of 1, the visible-sun gate, the slider and no sun give a web of exactly 1, the composition lights what shows through by exactly the web, period tiling, compiled only through the watercaustics group with a reload; evaluated from the shipped GLSL, each with a mutation that fails it (run singly)
 - [x] caustics fall on a face by N.L and fade with depth and view path, evaluated from the shipped GLSL, each with a mutation
+- [x] `watercaustics.yaml` with `water.yaml` (and `waterscene.yaml`) matches and compiles against the game's own `chunkliquid.fsh` in every define combination (`tools/verifypatches`)
 - [x] shoreline, rivers and swells (D79): zero is vanilla, the edge only thins, foam composites over, no flow is the old waves, still-water calm only without wind, swells tile the period; evaluated from the shipped GLSL, each with a mutation
 - [ ] shoreline foam, river streaks and far swells seen in game
 - [x] world reflection and refraction (D82): one sampler below vanilla's last in the real shader, textureLod only, zero is the sky-only water, hit mixed after the roof factor, refraction redistributes without thinning, gated with a reload, unit 10 unshared, per-draw bind on depthTex, uniforms wired both ways; evaluated from the shipped sources, each with a mutation
 - [x] `waterscene.yaml` with `water.yaml` matches and compiles against the game's own `chunkliquid.fsh` in every define combination (`tools/verifypatches`)
 - [ ] banks and trees seen reflected in game, holding still while the camera moves and wobbling with the waves; refraction seen over a sandy bed
 - [ ] water scene reflection frame cost measured with `.vvperf` (toggle off vs on, Medium vs Ultra)
-- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow (first look 2026-11-25 failed: far too strong everywhere; amendment not yet seen)
+- [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow (D77 failed twice: 2026-11-25 far too strong, 2026-11-26 a harsh pale net; D93 not yet seen)
+- [ ] caustic frame cost measured with `.vvperf` on the lake (Caustics 0 vs 0.6, Low vs High)
 
 ---
 

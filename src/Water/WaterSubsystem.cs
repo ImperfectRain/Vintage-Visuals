@@ -22,6 +22,9 @@ namespace VintageVisuals.Water
         /// <summary>The scene reflection and refraction group (D82): it declares the sampler.</summary>
         public const string SceneGroupName = "waterscene";
 
+        /// <summary>D93. Defines VV_WATER_CAUSTICS, so the caustic web compiles in only while Water.Caustics is above 0.</summary>
+        public const string CausticsGroupName = "watercaustics";
+
         private VintageVisualsModSystem _mod;
         private WaterShaderBinder _binder;
         private WaterSceneBindInterceptor _sceneBind;

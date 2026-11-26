@@ -70,6 +70,7 @@ namespace VintageVisuals.Common.Patching
                 { "pbrterrainreflect", new[] { "pbrterrainmaterial" } },
                 { "pbrterraindebug", new[] { "pbrterrainmaterial" } },
                 { "pbrterrainfastbeams", new[] { "pbrterrainmaterial" } },
+                { "watercaustics", new[] { "water" } },
             };
 
         /// <summary>The groups a group requires, or none.</summary>
