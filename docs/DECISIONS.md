@@ -3752,3 +3752,33 @@ a picture", evaluated from the C# profile and the shipped mirror term; the
 D65 contrast check is rewritten as above. Two mutations retargeted, one added.
 L2, not seen in game; no cost change.
 
+## D84 - Per-feature cost bench, before any optimisation
+
+**Context.** Elijah's frame at High is 25 ms by a lake and about 41 ms in a
+forest, and almost all of it is the opaque pass (18.8 to 19.5 ms at the lake,
+about 35 ms in the forest). Nothing said which of the terrain features inside
+chunkopaque pays for it, and a patched shader's cost is only visible by
+comparison (D72). Reading the source ranks suspects - per-fragment shadow-map
+taps for sun visibility and the canopy ring, the canopy-overhead and beam
+marches over the leaf map, the terrain screen-space reflection march - but a
+ranking from source is a guess.
+
+**Decision.** `.vvbench features [s]` runs the same scene eleven times:
+everything on, then with one feature's strength uniform zeroed at a time
+(shafts and beams, sunflecks and canopy shade, terrain reflections, foliage
+light, rain ripples and crevice water, gusts/plant shade/damp, torch specular,
+entity lighting, the whole terrain material), then everything on again so drift
+shows. The override (`FeatureBench`) is applied by `PbrShaderBinder` after its
+own uploads, only zeroes, and is never saved, so it cannot turn on anything the
+player turned off. The report gives each run's frame and opaque-pass time with
+the saving against the first run.
+
+Also: `vvTerrainCanopyCell` wraps its cell with `& 31` instead of
+`((c % 32) + 32) % 32`. Identical for every int, and GLSL leaves `%` undefined
+for a negative operand; this function runs up to ~60 times per fragment under
+a crown (overhead march, beam march, shafts, rim), and an integer modulo is a
+long instruction sequence on most GPUs.
+
+**Verification.** L2: builds, smoketest and verifypatches pass. Bench not yet
+run in game. Optimisations are to be chosen from its numbers.
+

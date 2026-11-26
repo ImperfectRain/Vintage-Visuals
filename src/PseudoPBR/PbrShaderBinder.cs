@@ -482,9 +482,53 @@ namespace VintageVisuals.PseudoPBR
             SetIfPresent(program, OriginUniform, _weather.Origin);
             SetIfPresent(program, EyeUniform, Eye());
             UploadScene(program);
+            ApplyFeatureBench(program);
 
             program.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// '.vvbench features': zero the strength of the one feature the bench
+        /// is measuring, after the real uploads, so the shader takes the early
+        /// out it already has. Never saved, and never turns anything on.
+        /// </summary>
+        private void ApplyFeatureBench(IShaderProgram program)
+        {
+            switch (FeatureBench.Mode)
+            {
+                case FeatureBench.NoShafts:
+                    SetIfPresent(program, ShaftUniform, 0f);
+                    break;
+                case FeatureBench.NoCanopy:
+                    SetIfPresent(program, SunflecksUniform, 0f);
+                    SetIfPresent(program, MoonFlecksUniform, 0f);
+                    SetIfPresent(program, DappleUniform, 0f);
+                    SetIfPresent(program, CanopyRadiusUniform, 0f);
+                    break;
+                case FeatureBench.NoReflections:
+                    SetIfPresent(program, PixelReflectUniform, 0f);
+                    break;
+                case FeatureBench.NoFoliage:
+                    SetIfPresent(program, FoliageUniform, 0f);
+                    break;
+                case FeatureBench.NoRain:
+                    SetIfPresent(program, RipplesUniform, 0f);
+                    SetIfPresent(program, CreviceWaterUniform, 0f);
+                    break;
+                case FeatureBench.NoForest:
+                    SetIfPresent(program, GustsUniform, 0f);
+                    SetIfPresent(program, ContactShadeUniform, 0f);
+                    SetIfPresent(program, DampUniform, 0f);
+                    break;
+                case FeatureBench.NoBlockLight:
+                    SetIfPresent(program, BlockLightUniform, 0f);
+                    break;
+                case FeatureBench.NoMaterial:
+                    SetIfPresent(program, EnabledUniform, 0f);
+                    SetIfPresent(program, ShaftUniform, 0f);
+                    break;
+            }
         }
 
         /// <summary>
@@ -835,7 +879,8 @@ namespace VintageVisuals.PseudoPBR
 
                 program.Use();
 
-                SetIfPresent(program, EntityEnabledUniform, _look.EntityLighting ? 1f : 0f);
+                SetIfPresent(program, EntityEnabledUniform,
+                             _look.EntityLighting && !FeatureBench.Off(FeatureBench.NoEntities) ? 1f : 0f);
                 SetIfPresent(program, EntityRoughnessUniform, _look.EntityRoughness);
                 SetIfPresent(program, EntitySpecularUniform, _look.EntitySpecular);
                 SetIfPresent(program, EyeUniform, Eye());

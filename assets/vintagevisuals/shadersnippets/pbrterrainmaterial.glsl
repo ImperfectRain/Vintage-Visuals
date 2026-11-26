@@ -1526,8 +1526,12 @@ vec3 vvTerrainApplyCanopy(vec3 color, float shaded, float cap)
 vec2 vvTerrainCanopyCell(vec2 worldXZ)
 {
     ivec2 c = ivec2(floor(worldXZ / 2.0));
-    int ix = ((c.x % 32) + 32) % 32;
-    int iz = ((c.y % 32) + 32) % 32;
+    // Wrapped with a mask, not %: GLSL leaves % undefined for a negative
+    // operand, and an integer divide is many instructions on most GPUs while
+    // this runs dozens of times per fragment under a crown. Identical result
+    // to the positive modulo for every int (two's complement).
+    int ix = c.x & 31;
+    int iz = c.y & 31;
     int i = iz * 32 + ix;
     float cellPair = vv_canopyMap[i >> 3][(i >> 1) & 3];
     float code = (i & 1) == 0 ? mod(cellPair, 4096.0) : floor(cellPair / 4096.0);

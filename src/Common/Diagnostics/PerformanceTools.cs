@@ -16,6 +16,10 @@ namespace VintageVisuals.Common.Diagnostics
     ///                           reach and the new one in turn (D78)
     ///   .vvbench tiers [secs]   record Low, Medium, High, Ultra in turn, then
     ///                           restore the configured tier (default 8 s each)
+    ///   .vvbench features [s]   everything on, then each terrain/entity
+    ///                           feature off in turn, then everything on again,
+    ///                           with each run's cost against the first
+    ///                           (default 6 s each)
     ///
     /// Bench results go to chat and to client-main.log, prefixed
     /// "[VintageVisuals] bench", so they can be read back later. Stand still
@@ -88,7 +92,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]' or '.vvbench leaves [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]' or '.vvbench features [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -119,6 +123,17 @@ namespace VintageVisuals.Common.Diagnostics
                 return TextCommandResult.Success("Benchmarking falling leaves: none, the old 20-block reach, then the new reach, " +
                     LeafBench.WarmSeconds.ToString("0") + " s to settle and " + each +
                     " s recorded each. Stand still in a forest, facing the trees.");
+            }
+
+            if (string.Equals(mode, "features", StringComparison.OrdinalIgnoreCase))
+            {
+                int each = seconds > 0 ? seconds : 6;
+                _tierResults.Clear();
+                RunFeature(0, each);
+                return TextCommandResult.Success("Benchmarking " + FeatureBench.Order.Length + " runs of " + each +
+                    " s: everything on, each feature off in turn, then everything on again. About " +
+                    (int)(FeatureBench.Order.Length * (each + SettleSeconds) + 0.5f) +
+                    " s. Stand still and don't touch anything.");
             }
 
             if (string.Equals(mode, "tiers", StringComparison.OrdinalIgnoreCase))
@@ -194,6 +209,63 @@ namespace VintageVisuals.Common.Diagnostics
             }, (int)(LeafBench.WarmSeconds * 1000));
         }
 
+        /// <summary>
+        /// One run of '.vvbench features': hold one feature off, record, then
+        /// the next. The report gives each run's frame and opaque-pass time
+        /// against the first all-on run, which is the price of that feature.
+        /// </summary>
+        private void RunFeature(int index, int seconds)
+        {
+            int mode = FeatureBench.Order[index];
+            FeatureBench.Mode = mode;
+            _benchCallback = _capi.Event.RegisterCallback(_ =>
+            {
+                _profiler.BeginBench();
+                _benchCallback = _capi.Event.RegisterCallback(__ =>
+                {
+                    _tierResults.Add(_profiler.EndBench(FeatureBench.Name(mode)));
+                    if (index + 1 < FeatureBench.Order.Length) { RunFeature(index + 1, seconds); return; }
+
+                    _benchCallback = 0;
+                    FeatureBench.Mode = FeatureBench.Normal;
+                    Report(FormatFeatures(_tierResults));
+                }, seconds * 1000);
+            }, (int)(SettleSeconds * 1000));
+        }
+
+        internal static string FormatFeatures(List<FrameProfiler.BenchResult> results)
+        {
+            var sb = new StringBuilder();
+            if (results.Count == 0) return "no runs";
+            FrameProfiler.BenchResult first = results[0];
+            double baseOpaque = OpaqueGpu(first);
+            sb.Append("features (quality ").Append(QualityTier.Name(QualityTier.Current)).Append("), saving vs everything on\n");
+            foreach (FrameProfiler.BenchResult r in results)
+            {
+                double opaque = OpaqueGpu(r);
+                sb.Append("  ").Append(r.Label.PadRight(34))
+                  .Append(" frame ").Append(FrameProfiler.Ms(r.FrameAvg).PadLeft(6))
+                  .Append(" (").Append(Signed(first.FrameAvg - r.FrameAvg)).Append(")")
+                  .Append("  opaque ").Append(double.IsNaN(opaque) ? "  n/a" : FrameProfiler.Ms(opaque).PadLeft(6))
+                  .Append(double.IsNaN(opaque) || double.IsNaN(baseOpaque) ? "" : " (" + Signed(baseOpaque - opaque) + ")")
+                  .Append('\n');
+            }
+            sb.Append("full detail:\n");
+            foreach (FrameProfiler.BenchResult r in results) sb.Append(r.Format());
+            return sb.ToString();
+        }
+
+        private static double OpaqueGpu(FrameProfiler.BenchResult r)
+        {
+            foreach (var s in r.Segments) if (s.Key == "opaque") return s.Gpu;
+            return double.NaN;
+        }
+
+        private static string Signed(double v)
+        {
+            return (v >= 0 ? "+" : "") + FrameProfiler.Ms(v);
+        }
+
         private void Report(FrameProfiler.BenchResult result)
         {
             Report(result.Format());
@@ -212,6 +284,7 @@ namespace VintageVisuals.Common.Diagnostics
         {
             if (_benchCallback != 0) _capi.Event.UnregisterCallback(_benchCallback);
             QualityTier.SetOverride(-1);
+            FeatureBench.Mode = FeatureBench.Normal;
             _hud?.TryClose();
             _hud?.Dispose();
             _profiler.Dispose();
