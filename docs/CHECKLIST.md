@@ -262,6 +262,10 @@ texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.
 - [x] caustics fall on a face by N.L and fade with depth and view path, evaluated from the shipped GLSL, each with a mutation
 - [x] shoreline, rivers and swells (D79): zero is vanilla, the edge only thins, foam composites over, no flow is the old waves, still-water calm only without wind, swells tile the period; evaluated from the shipped GLSL, each with a mutation
 - [ ] shoreline foam, river streaks and far swells seen in game
+- [x] world reflection and refraction (D82): one sampler below vanilla's last in the real shader, textureLod only, zero is the sky-only water, hit mixed after the roof factor, refraction redistributes without thinning, gated with a reload, unit 10 unshared, per-draw bind on depthTex, uniforms wired both ways; evaluated from the shipped sources, each with a mutation
+- [x] `waterscene.yaml` with `water.yaml` matches and compiles against the game's own `chunkliquid.fsh` in every define combination (`tools/verifypatches`)
+- [ ] banks and trees seen reflected in game, holding still while the camera moves and wobbling with the waves; refraction seen over a sandy bed
+- [ ] water scene reflection frame cost measured with `.vvperf` (toggle off vs on, Medium vs Ultra)
 - [ ] caustics seen in game in shallow sunlit water, gone under cloud and in shadow (first look 2026-11-25 failed: far too strong everywhere; amendment not yet seen)
 
 ---

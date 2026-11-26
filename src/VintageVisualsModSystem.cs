@@ -298,6 +298,14 @@ namespace VintageVisuals
                 return ConfigManager.Config.Water.Enabled;
             }
 
+            // The water's scene sampler exists in source only while the player
+            // wants the world in the water, so off is the sky-only water and
+            // not a declared, bound and muted sampler.
+            if (group == WaterSubsystem.SceneGroupName)
+            {
+                return ConfigManager.Config.Water.Enabled && ConfigManager.Config.Water.SceneReflections;
+            }
+
             return true;
         }
 
@@ -315,7 +323,8 @@ namespace VintageVisuals
                    (ConfigManager.Config.ColorGrade.Enabled ? "C" : "-") +
                    (ConfigManager.Config.Weather.Enabled ? "W" : "-") +
                    (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-") +
-                   (ConfigManager.Config.Water.Enabled ? "L" : "-");
+                   (ConfigManager.Config.Water.Enabled ? "L" : "-") +
+                   (ConfigManager.Config.Water.SceneReflections ? "O" : "-");
         }
 
         /// <summary>

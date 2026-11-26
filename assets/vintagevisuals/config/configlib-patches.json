@@ -1264,13 +1264,32 @@
         "clientSide": true,
         "weight": 116
       },
+      "water_scene": {
+        "ingui": "World in the water",
+        "comment": "Banks, trees and the far shore reflected in the water, found in the frame already drawn. Anything off screen falls back to the sky. Off compiles the sky-only water.",
+        "default": true,
+        "clientSide": true,
+        "weight": 118
+      },
+      "water_refraction": {
+        "ingui": "Refraction",
+        "comment": "How much the waves bend the view of the bottom. Needs World in the water. 0 is the straight view.",
+        "default": 0.5,
+        "range": {
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05
+        },
+        "clientSide": true,
+        "weight": 119
+      },
       "water_debug": {
         "ingui": "Water debug view",
-        "comment": "0 off. 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam, flow and far swell.",
+        "comment": "0 off. 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam, flow and far swell, 9 the world the reflected ray found.",
         "default": 0.0,
         "range": {
           "min": 0.0,
-          "max": 8.0,
+          "max": 9.0,
           "step": 1.0
         },
         "clientSide": true,

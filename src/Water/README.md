@@ -61,6 +61,19 @@ never reaches it.
    0.06 block, and a per-texel foam line laps in and out, composited over the
    water. Vanilla's edge foam steps back to 0.35 (`vvWaterVanillaFoamKeep`).
 
+8. **The world in the water** (`SceneReflections`, group `waterscene`, D82):
+   each top-face texel's reflected ray, from the eye and following 0.4 of the
+   wave tilt, is projected with vanilla's matrices, cut at the screen edge and
+   marched by the shared `vvReflectMarch` (reflect.glsl) over the LIVE opaque
+   frame: Primary's colour, bound on unit 10 by `WaterSceneBindInterceptor`
+   at the moment vanilla binds `depthTex` (the water draws into the
+   Transparent framebuffer, so that frame is complete and not being written),
+   and vanilla's `depthTex`. A hit replaces the sky after the roof factor; a
+   miss keeps the sky. Steps 0/16/24/40 by tier.
+9. **Refraction** (`Refraction`, same group): the bed behind the texel moved
+   along the wave slope (to 2 blocks of path), sampled from the same frame,
+   covering the same share of the transmitted light it replaces.
+
 Rivers (D79): vanilla's flow vector streaks the wave slope along the current
 and quickens the chop and the glitter; still water in still air calms to 0.6.
 Far swells (two ~12-block waves) blend in from 20 to 60 blocks.
@@ -75,8 +88,10 @@ Wind sets their height.
   `vvWaterSurface`; the specular keep factor is 1 while it is 0.
 - **Off is vanilla source.** `Water.Enabled` gates the patch group
   (`IsPatchGroupEnabled`), and toggling it reloads shaders.
-- **No sampler.** `depthTex` is vanilla's. The scene-capture reflection will
-  come as its own group, with its sampler below vanilla's last (`liquidDepth`).
+- **No sampler in `water`.** `depthTex` is vanilla's. The one mod sampler,
+  `vv_waterScene`, lives in the `waterscene` group, declared below vanilla's
+  last (`liquidDepth`), so switching the world reflection off removes it from
+  the source.
 - **Shared code is copied, not shared at runtime**, because each group must
   roll back alone. The ripple and sky-cell functions are parity-checked against
   `pbrterrainmaterial.glsl` in `tools/smoketest/WaterChecks.cs`.
@@ -87,7 +102,8 @@ Wind sets their height.
 
 1 texel normal, 2 reflected sky image, 3 depth behind the surface (8 blocks is
 white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic
-light on the bed, 8 foam (red), flow (green) and far swell (blue).
+light on the bed, 8 foam (red), flow (green) and far swell (blue), 9 the world the reflected ray
+found (black is a miss).
 
 ## Status
 
@@ -98,4 +114,6 @@ daylight water, drops on fixed spots); D73 fixes both and is **not yet seen in
 game. Performance not measured** - use
 `.vvbench` at the water test scene in `docs/VISUAL-TESTS.md`.
 
-Not done: scene (screen-space) reflection on water, refraction, underwater.
+D82 (the world reflected, refraction) is L2: previewed offline with banks
+and trees, not seen in game, cost not measured. Not done: underwater; the
+caustics still assume the bed's colour although the frame now holds it.

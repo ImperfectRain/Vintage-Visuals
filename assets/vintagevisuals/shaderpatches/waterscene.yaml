@@ -1,0 +1,34 @@
+# Vintage Visuals - water scene reflection and refraction (patch group
+# "waterscene", D82).
+#
+# Its own group because it declares a sampler, and a sampler is the thing that
+# has cost this project whole frames before (CLAUDE.md). Gated on
+# Water.Enabled AND Water.SceneReflections, so off is the water group alone,
+# with no sampler declared.
+#
+# Declared directly below vanilla's last sampler (liquidDepth) and its two
+# neighbours, so every vanilla sampler keeps its place; frameSize, depthTex,
+# zFar and linearDepth are all declared above the anchor. water.glsl, injected
+# further down, calls the trace under #ifdef VV_WATER_SCENE.
+#
+# Verified against 1.22.x with tools/verifypatches.
+
+- type: assert
+  phase: Assertions
+  filename: chunkliquid.fsh
+  tokens: uniform sampler2D liquidDepth;
+
+- type: insert_after
+  phase: Declarations
+  filename: chunkliquid.fsh
+  tokens: uniform vec2 frameSize;
+  snippet: waterscene.glsl
+
+# The shared reflection core (reflect.glsl, D81), placed at the marker the
+# snippet above carries, so this group carries its own copy and rolls back
+# alone. It declares no sampler and no uniform.
+- type: insert_before
+  phase: SharedFunctions
+  filename: chunkliquid.fsh
+  tokens: "// vintagevisuals-hook: water reflect core"
+  snippet: reflect.glsl

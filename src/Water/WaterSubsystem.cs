@@ -19,8 +19,12 @@ namespace VintageVisuals.Water
     {
         public const string GroupName = "water";
 
+        /// <summary>The scene reflection and refraction group (D82): it declares the sampler.</summary>
+        public const string SceneGroupName = "waterscene";
+
         private VintageVisualsModSystem _mod;
         private WaterShaderBinder _binder;
+        private WaterSceneBindInterceptor _sceneBind;
 
         public string Name { get { return GroupName; } }
 
@@ -28,6 +32,12 @@ namespace VintageVisuals.Water
         {
             _mod = mod;
             if (mod == null || mod.Capi == null) return;
+
+            // Installed whatever the config says: the hook is inert until the
+            // binder publishes a texture, and the binder publishes one only
+            // while the waterscene group reached chunkliquid.
+            _sceneBind = new WaterSceneBindInterceptor(mod.HarmonyId, mod.Mod.Logger);
+            _sceneBind.Install();
 
             _binder = new WaterShaderBinder(mod.Capi, mod);
             mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-water-uniforms");
@@ -45,6 +55,8 @@ namespace VintageVisuals.Water
                 _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Before);
             }
             _binder = null;
+            if (_sceneBind != null) _sceneBind.Uninstall();
+            _sceneBind = null;
         }
     }
 }

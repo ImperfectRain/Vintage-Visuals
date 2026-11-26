@@ -514,6 +514,14 @@ namespace VintageVisuals.Ui
                    "Moving lines of sunlight the waves focus onto the bottom of open water. They follow the game's sun colour, shadows and clouds, sharpen in a block or two of depth and fade out deeper. 0 is off.",
                    R, "Water", 0f, 1f, 0.05f);
 
+            Toggle("water_scene", "Water.SceneReflections", "World in the water",
+                   "Banks, trees and the far shore reflected in the water, one colour per water pixel, found in the frame already drawn. Needs no scene capture. Anything off screen falls back to the sky. Off compiles the sky-only water.",
+                   R, "Water", false, SettingCost.Medium, true);
+
+            Slider("water_refraction", "Water.Refraction", "Refraction",
+                   "How much the waves bend the view of the bottom through the water. Needs World in the water. 0 is the straight view.",
+                   R, "Water", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+
             // ---- DEBUG -------------------------------------------------------
             const SettingTab D = SettingTab.Debug;
 
@@ -530,8 +538,8 @@ namespace VintageVisuals.Ui
                    D, "Debug utilities", true, SettingCost.Free, false, true);
 
             Slider("water_debug", "Water.DebugView", "Water debug view",
-                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed, 8 foam line (red), river flow (green) and far swell (blue).",
-                   D, "Water", 0f, 8f, 1f, null, false, SettingCost.Free, false, true);
+                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed, 8 foam line (red), river flow (green) and far swell (blue), 9 the world the reflected ray found (black is a miss).",
+                   D, "Water", 0f, 9f, 1f, null, false, SettingCost.Free, false, true);
 
             // ---- PERFORMANCE (on the Debug tab) -------------------------------
             Slider("perf_quality", "Performance.Quality", "Quality tier",

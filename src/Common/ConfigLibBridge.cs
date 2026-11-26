@@ -196,6 +196,12 @@ namespace VintageVisuals.Common
                 case "water_caustics":
                     _mod.ConfigManager.Config.Water.Caustics = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Caustics);
                     break;
+                case "water_scene":
+                    _mod.ConfigManager.Config.Water.SceneReflections = tree.GetBool("value", _mod.ConfigManager.Config.Water.SceneReflections);
+                    break;
+                case "water_refraction":
+                    _mod.ConfigManager.Config.Water.Refraction = tree.GetFloat("value", _mod.ConfigManager.Config.Water.Refraction);
+                    break;
                 case "water_debug":
                     _mod.ConfigManager.Config.Water.DebugView = tree.GetFloat("value", _mod.ConfigManager.Config.Water.DebugView);
                     break;

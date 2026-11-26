@@ -39,6 +39,132 @@ namespace VintageVisuals.SmokeTest
             EyeFromView(check);
             Caustics(check, water);
             ShoreAndFlow(check, water, yaml);
+            Scene(check, water, repo);
+        }
+
+        /// <summary>
+        /// The world in the water and the bent bed (patch group "waterscene",
+        /// D82): its own group with the one sampler, below vanilla's last;
+        /// zero is the sky-only water; refraction redistributes what the water
+        /// already lets through rather than adding or removing light; and the
+        /// C# side binds per draw, on a unit nothing else uses.
+        /// </summary>
+        static void Scene(Action<string, bool, string> check, string water, string repo)
+        {
+            string dir = Path.Combine(repo, "assets/vintagevisuals/shadersnippets");
+            string scene = File.ReadAllText(Path.Combine(dir, "waterscene.glsl"));
+            string yaml = File.ReadAllText(Path.Combine(repo, "assets/vintagevisuals/shaderpatches/waterscene.yaml"));
+            string bare = StripComments(scene);
+
+            // One sampler, injected below vanilla's last (liquidDepth) - the
+            // rule that cost the world render twice (CLAUDE.md).
+            int samplers = Regex.Matches(bare, @"^\s*uniform\s+sampler", RegexOptions.Multiline).Count;
+            bool anchored = yaml.Contains("tokens: uniform sampler2D liquidDepth;") &&
+                            Regex.IsMatch(yaml, @"type: insert_after[^-]*tokens: uniform vec2 frameSize;[^-]*snippet: waterscene\.glsl");
+            string refShader = Path.Combine(repo, "reference/game-shaders/chunkliquid.fsh");
+            bool below = true;
+            string where = "no reference shader";
+            if (File.Exists(refShader))
+            {
+                string r = File.ReadAllText(refShader);
+                int ld = r.IndexOf("uniform sampler2D liquidDepth;", StringComparison.Ordinal);
+                int fs = r.IndexOf("uniform vec2 frameSize;", StringComparison.Ordinal);
+                int lastSampler = Regex.Matches(r, @"^\s*uniform\s+sampler\w*\s+\w+;", RegexOptions.Multiline)
+                                       .Cast<Match>().Select(m => m.Index).DefaultIfEmpty(-1).Max();
+                below = ld >= 0 && fs > ld && fs > lastSampler;
+                where = "liquidDepth at " + ld + ", frameSize at " + fs + ", last sampler at " + lastSampler;
+            }
+            check("waterscene declares its one sampler below every vanilla sampler", samplers == 1 && anchored && below,
+                  samplers + " sampler(s), anchored " + anchored + ", " + where);
+            check("waterscene samples only with textureLod (its reads sit in loops and branches)",
+                  !Regex.IsMatch(bare, @"\btexture\s*\("), "");
+
+            // Zero is the sky-only water.
+            string trace = FunctionBody(scene, "vec4 vvWaterSceneTrace(");
+            string first = Statements(trace)[0];
+            check("the scene trace misses unless the frame is bound, the tier marches and the mix is on",
+                  first.Contains("vv_waterSceneOn < 0.5") && first.Contains("vv_waterSceneSteps < 0.5") &&
+                  first.Contains("vv_waterSceneMix < 0.001") && first.Contains("return vec4(0.0)"), first);
+
+            string surf = FunctionBody(water, "vec4 vvWaterSurface(");
+            var stmts = Statements(surf);
+            int sky = stmts.FindIndex(x => x.StartsWith("image *= skyFactor", StringComparison.Ordinal));
+            int mixAt = stmts.FindIndex(x => x.StartsWith("image = mix(image, sceneHit.rgb", StringComparison.Ordinal));
+            check("what the trace finds is mixed in after the roof dims the sky, not dimmed by it",
+                  sky >= 0 && mixAt > sky && !stmts[mixAt].Contains("skyFactor"), "skyFactor at " + sky + ", scene mix at " + mixAt);
+            check("the water marches with the shared core: reflect.glsl injected at the group's own marker, window depth from depthTex",
+                  Regex.IsMatch(yaml, @"type: insert_before[^-]*tokens: ""// vintagevisuals-hook: water reflect core""[^-]*snippet: reflect\.glsl") &&
+                  bare.Contains("// vintagevisuals-hook: water reflect core") == false && scene.Contains("// vintagevisuals-hook: water reflect core") &&
+                  trace.Contains("vvReflectMarch(vv_waterScene, depthTex, 1.0, vec2(zNear, zFar)") &&
+                  !Regex.IsMatch(bare, @"\bstruct\s+VvReflectHit\b"), "");
+            check("only top faces looking up trace, and only where the reflection can show",
+                  surf.Contains("if (top > 0.5 && reflectShare > 0.004)") && surf.Contains("if (rs.y > 0.0) sceneHit = vvWaterSceneTrace("), "");
+
+            // Refraction: with the bent copy equal to the straight view it
+            // must change nothing over any background, and it never lowers
+            // the opacity. That is the interaction a line-by-line read misses:
+            // a colour added and an alpha raised that do not pay each other.
+            string addR = stmts.FirstOrDefault(x => x.StartsWith("premult += bentBed.rgb", StringComparison.Ordinal)) ?? "premult += 99.0";
+            string alphaR = stmts.FirstOrDefault(x => x.StartsWith("outAlpha = mix(outAlpha, 1.0", StringComparison.Ordinal)) ?? "outAlpha = 99.0";
+            double worst = 0, drop = 0;
+            for (int ai = 0; ai <= 10; ai++)
+                for (int ki = 0; ki <= 10; ki++)
+                    for (int bi = 0; bi <= 4; bi++)
+                    {
+                        double a = ai / 10.0, k = ki / 10.0, bg = bi / 4.0, pre = 0.3 * a;
+                        var sy = Syms("outAlpha", a, "k", k);
+                        sy["bentBed"] = new Val(bg, bg, bg);
+                        sy["bentBed.rgb"] = new Val(bg, bg, bg);
+                        double pre2 = pre + Eval(Rhs(addR), sy).X;
+                        double a2 = Scalar(Rhs(alphaR), Syms("outAlpha", a, "k", k));
+                        worst = Math.Max(worst, Math.Abs((pre2 + (1 - a2) * bg) - (pre + (1 - a) * bg)));
+                        drop = Math.Max(drop, a - a2);
+                    }
+            check("refraction with no bend changes nothing over any background, and never thins the water",
+                  worst < 1e-9 && drop < 1e-12, "worst " + worst + ", drop " + drop);
+            check("refraction needs the frame bound and its slider above zero",
+                  surf.Contains("if (refraction > 0.001 && top > 0.5 && vv_waterSceneOn > 0.5 && path > 0.0)"), "");
+
+            // C#: gated, bound per draw, on a unit nothing else uses.
+            string gating = File.ReadAllText(Path.Combine(repo, "src/VintageVisualsModSystem.cs"));
+            check("the waterscene group is gated on Water.Enabled and Water.SceneReflections, and toggling it reloads",
+                  Regex.IsMatch(gating, @"group == WaterSubsystem\.SceneGroupName\)\s*\{\s*return ConfigManager\.Config\.Water\.Enabled && ConfigManager\.Config\.Water\.SceneReflections;") &&
+                  gating.Contains("ConfigManager.Config.Water.SceneReflections ? \"O\""), "");
+
+            string hook = File.ReadAllText(Path.Combine(repo, "src/Water/WaterSceneBindInterceptor.cs"));
+            string binder = File.ReadAllText(Path.Combine(repo, "src/Water/WaterShaderBinder.cs"));
+            int Unit(string file, string name)
+            {
+                var m = Regex.Match(File.ReadAllText(Path.Combine(repo, file)), name + @"\s*=\s*(\d+);");
+                return m.Success ? int.Parse(m.Groups[1].Value) : -1;
+            }
+            int mine = Unit("src/Water/WaterSceneBindInterceptor.cs", "public const int TextureUnit");
+            var others = new[] {
+                Unit("src/Reflections/WorldReflectionVolume.cs", "public const int TextureUnit"),
+                Unit("src/Reflections/WorldReflectionVolume.cs", "public const int CanopyTextureUnit"),
+                Unit("src/Reflections/SceneCaptureRenderer.cs", "public const int TextureUnit"),
+                Unit("src/PseudoPBR/MaterialAtlasTexture.cs", "public const int TextureUnit"),
+                Unit("src/PseudoPBR/MaterialAtlasTexture.cs", "public const int SecondTextureUnit") };
+            check("the water scene unit is above chunkliquid's five and shared with no other mod texture",
+                  mine > 4 && mine < 16 && !others.Contains(mine) && !others.Contains(-1),
+                  "water " + mine + ", others " + string.Join(",", others));
+            check("the water scene colour is bound when vanilla binds depthTex, filtered on our sampler",
+                  hook.Contains("DepthSampler = \"depthTex\"") && hook.Contains("program.HasUniform(SceneSampler)") &&
+                  hook.Contains("gl.TrySet(previous)"), "");
+            check("the binder publishes no texture unless the program has the scene sampler",
+                  Regex.IsMatch(binder, @"if \(!program\.HasUniform\(WaterSceneBindInterceptor\.SceneSampler\)\)\s*\{\s*WaterSceneBindInterceptor\.SetSceneTexture\(0\);"), "");
+
+            // Every vv_water uniform declared in either snippet is uploaded by
+            // the binder, and every upload names a declared uniform.
+            var declared = Regex.Matches(StripComments(water) + "\n" + bare, @"uniform\s+\w+\s+(vv_water\w*)\s*;")
+                                .Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet();
+            var uploaded = Regex.Matches(binder, "\"(vv_water\\w*)\"")
+                                .Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet();
+            uploaded.Remove("vv_waterScene");
+            declared.Remove("vv_waterScene");
+            var missing = declared.Except(uploaded).Concat(uploaded.Except(declared).Select(u => "~" + u)).ToList();
+            check("every water uniform is declared and uploaded, both ways", missing.Count == 0 && declared.Count > 20,
+                  string.Join(", ", missing));
         }
 
         /// <summary>

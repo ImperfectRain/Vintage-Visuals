@@ -40,6 +40,12 @@ namespace VintageVisuals.Water
         public const string ShoreUniform = "vv_waterShore";
         public const string DebugUniform = "vv_waterDebug";
 
+        // waterscene group (D82). Present only while that group is applied.
+        public const string SceneOnUniform = "vv_waterSceneOn";
+        public const string SceneStepsUniform = "vv_waterSceneSteps";
+        public const string SceneMixUniform = "vv_waterSceneMix";
+        public const string RefractionUniform = "vv_waterRefraction";
+
 
         /// <summary>After the environment tracker (-1) and the atmosphere (-1) have sampled.</summary>
         private const double UploadOrder = 0.2;
@@ -130,6 +136,7 @@ namespace VintageVisuals.Water
             program.Uniform(CausticWavesUniform, QualityTier.WaterCausticWaves);
             program.Uniform(ShoreUniform, config.Shore);
             program.Uniform(DebugUniform, config.DebugView);
+            UploadScene(program, config);
 
             // The scene vocabulary (scene.glsl) goes through the ONE shared
             // upload path, so the water reads daylight, overcast, wind and
@@ -146,6 +153,48 @@ namespace VintageVisuals.Water
                 _capi.Logger.Notification("[VintageVisuals] water: surface active on chunkliquid (quality " +
                                           QualityTier.Name(QualityTier.Current) + ").");
             }
+        }
+
+        /// <summary>
+        /// The waterscene group's inputs, and the texture the bind hook puts
+        /// on its unit when vanilla binds the opaque depth. Guarded on
+        /// HasUniform: with the group rolled back or switched off there is no
+        /// sampler, the hook is told 0 and binds nothing.
+        ///
+        /// vv_waterSceneOn is 1 only with a colour texture to bind. The
+        /// sampler unit is assigned here too (an unbound sampler2D reads unit
+        /// 0, the block atlas), so the program never samples a wrong texture
+        /// even on the frame before the hook first fires.
+        /// </summary>
+        private void UploadScene(IShaderProgram program, WaterConfig config)
+        {
+            if (!program.HasUniform(WaterSceneBindInterceptor.SceneSampler))
+            {
+                WaterSceneBindInterceptor.SetSceneTexture(0);
+                return;
+            }
+
+            int colour = PrimaryColourTexture();
+            WaterSceneBindInterceptor.SetSceneTexture(colour);
+            bool on = colour != 0 && config.SceneReflections;
+
+            program.Uniform(WaterSceneBindInterceptor.SceneSampler, WaterSceneBindInterceptor.TextureUnit);
+            program.Uniform(SceneOnUniform, on ? 1f : 0f);
+            program.Uniform(SceneStepsUniform, QualityTier.WaterMarchSteps);
+            program.Uniform(SceneMixUniform, on ? 1f : 0f);
+            program.Uniform(RefractionUniform, on ? config.Refraction : 0f);
+        }
+
+        /// <summary>Primary's colour attachment 0: the finished opaque frame. 0 if absent.</summary>
+        private int PrimaryColourTexture()
+        {
+            var buffers = _capi.Render.FrameBuffers;
+            int index = (int)EnumFrameBuffer.Primary;
+            if (buffers == null || index < 0 || index >= buffers.Count) return 0;
+            FrameBufferRef primary = buffers[index];
+            if (primary == null || primary.Disposed || primary.ColorTextureIds == null ||
+                primary.ColorTextureIds.Length == 0) return 0;
+            return primary.ColorTextureIds[0];
         }
 
         private void SetDir(IShaderProgram program, string name, Vec3f dir, float fx, float fy, float fz)

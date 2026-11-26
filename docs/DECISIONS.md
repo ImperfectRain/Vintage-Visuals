@@ -3628,3 +3628,89 @@ performance not measured (the march is unchanged in cost; the blur adds three
 capture reads per hit on rough surfaces only, and the weight one more fit
 evaluation per terrain fragment).
 
+
+## D82 - Water reflects the world from the live opaque frame, through the shared march
+
+**Context.** Since D71 the water reflected an analytic sky and stood a dim
+"bank" colour in for anything near the horizon (DATA GAP). Elijah chose bank
+and tree reflections plus refraction as the fourth water step (2026-11-25),
+then paused it until the reflection system had one design (D80, D81), and
+asked for the water to get "all of the attention and care it needs". The
+terrain's scene reflection marches a capture of the previous frame; the water
+does not need one.
+
+**Decision.**
+- **The image is the live opaque frame.** The water draws in the OIT pass,
+  into the Transparent framebuffer, whose colour targets are its own and whose
+  depth is Primary's. So Primary's colour attachment 0 is complete and not
+  being written while the water samples it: no copy, no render target, no
+  extra pass, no frame of lag. Its depth is vanilla's own `depthTex`.
+- **Its own patch group, `waterscene`**, gated on `Water.Enabled` AND
+  `Water.SceneReflections` (default on), so off is the D79 water with no
+  sampler in the source. It declares `vv_waterScene` directly after
+  `uniform vec2 frameSize;`, which follows vanilla's last sampler
+  (`liquidDepth`); re-declares vanilla's `projectionMatrix` and
+  `modelViewMatrix` (already uploaded for the vertex shader); and injects its
+  own copy of `reflect.glsl` at a marker in its snippet. `water.glsl` calls the
+  trace and the refraction under `#ifdef VV_WATER_SCENE`.
+- **Bound per draw, not per frame.** `WaterSceneBindInterceptor` is a Harmony
+  postfix on `ShaderProgramBase.BindTexture2D`: when vanilla binds `depthTex`
+  into a program that declares `vv_waterScene` (chunkliquid, while the group
+  is applied), it binds Primary's colour on unit 10 and restores the active
+  unit. A texture unit is global state; the terrain capture taught that a
+  per-frame bind is replaced by whatever draws in between. Unit 10 is used by
+  no other mod texture (11 canopy, 12 world volume, 13 capture, 14 and 15
+  material atlases), so it means one texture in every program even if the
+  world volume later reaches the water.
+- **One ray per water texel**, from the texel centre, starting at the EYE
+  (`vv_waterEye`). It follows 0.4 of the wave tilt (`VV_WSCENE_WAVE`): the sky
+  is smooth and takes the full tilt, but a bank or a tree is a few degrees
+  tall, and the full tilt scattered each texel's ray clean off it, leaving a
+  reflection of noise (previewed). It is projected once with vanilla's
+  matrices, cut where it leaves the screen or would pass behind the eye, and
+  handed to `vvReflectMarch` (depth mode 1, `zNear`/`zFar`), so every step
+  lands on the visible stretch: a far shore at 200 blocks costs what a near
+  bank does. Steps by quality tier (`QualityTier.WaterMarchSteps`: 0, 16, 24,
+  40). A miss keeps the sky, bank stand-in included. A hit replaces the sky
+  AFTER the roof factor dims it, because it is real content. Not traced where
+  the reflected share is under 1/256 or the ray points down.
+- **Refraction** (`Water.Refraction`, 0.5): the bed behind a texel, moved
+  along the wave slope by up to 1.2 x the path (to 2 blocks), sampled from the
+  same frame; a sample that lands in front of the water keeps the straight
+  view. It REDISTRIBUTES what the water already lets through: the bent copy
+  covers share k of the transmitted (1 - alpha) and alpha rises by the same
+  share, so with no bend the composite over any background is unchanged.
+- The water's sky copy stays (the sky-only water must work without this
+  group); WaterChecks compares it against `reflect.glsl` now (D81).
+
+**Alternatives rejected.**
+- Reading the terrain's capture: a frame old, half resolution, and only
+  present when the expensive Scene reflections toggle is on.
+- World-space marching of the reflected ray: the terrain's first march did
+  this and smeared trunks down to the viewer's feet; it also cannot reach a
+  far shore in a budget.
+- Binding at `EnumRenderStage.Before`: replaced by intervening draws.
+- Full wave tilt on the traced ray: physically consistent with the sky, but
+  previewed as a speckle in which no tree could be read.
+
+**Evidence.** `WaterChecks.Scene`: one sampler, below every vanilla sampler in
+the game's own `chunkliquid.fsh`; textureLod only; zero is the sky-only water;
+the scene hit mixed after the roof factor; refraction with no bend changes
+nothing over any background and never thins the water; gating and reload;
+unit 10 shared with nothing; the hook follows `depthTex` and filters on our
+sampler; the binder publishes nothing to a program without it; every water
+uniform declared and uploaded both ways. Ten mutations, each caught.
+`tools/verifypatches`: water + waterscene compile together in every define
+combination. Previewed offline in a two-pass harness (opaque frame with banks
+and oak trees, then the real water snippets marching it): trunks and crowns
+reflect under the far shore, wobbling with the waves; refraction shimmers the
+bed. L2: not seen in game; frame cost not measured (the march is up to 40
+steps plus 5 bisections, two reads each, per top-face water texel that can
+show a reflection).
+
+**Limits.** Screen space: what is off screen, behind the camera or hidden
+behind something nearer is not reflected and falls back to the sky. The frame
+holds no other transparent geometry (other water, glass, OIT foliage,
+particles). The hit point's fog was applied for its distance from the eye,
+not the reflected path. The caustics still assume the bed's colour, although
+the frame now holds it.

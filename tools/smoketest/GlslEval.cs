@@ -111,7 +111,10 @@ namespace VintageVisuals.SmokeTest
         /// <summary>Every top-level-ish statement in a body, comments removed, whitespace collapsed.</summary>
         public static List<string> Statements(string source)
         {
-            string bare = StripComments(source);
+            // Preprocessor lines end at the newline, not at a semicolon, so
+            // left in they would fuse with the statement after them.
+            string bare = System.Text.RegularExpressions.Regex.Replace(
+                StripComments(source), @"(?m)^[ \t]*#.*$", "");
             var outp = new List<string>();
             int depth = 0, start = 0;
             for (int i = 0; i < bare.Length; i++)

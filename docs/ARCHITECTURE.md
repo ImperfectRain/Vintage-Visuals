@@ -265,6 +265,10 @@ Water surface                  src/Water/         patched chunkliquid.fsh (OIT)
   caustics on the bed behind each texel (same depthTex, no pass, no sampler),
   shoreline foam and edge, flow-streaked waves, far swells;
   scene.glsl + pbrcore.glsl injected again, scene block via UploadSceneTo
+  waterscene.glsl (own group, D82): the world reflected and the bed refracted,
+  marched with reflect.glsl over the LIVE opaque frame (Primary colour 0,
+  bound per draw on unit 10 by WaterSceneBindInterceptor when vanilla binds
+  depthTex) - no capture, no pass, no render target
         |
         |
         v
@@ -502,6 +506,7 @@ measured by comparison.
 | v14 ground map | 9 columns per tick, 81 in all | CPU, while ground mist is on | no | — |
 | Colour grading | one fullscreen pass | yes | no | resolution |
 | Water surface (`water`, D71) | per water fragment: 4 waves + 2 value-noise octaves per tap, 1-5 taps (tier), one `depthTex` read, two GGX lobes; no sampler, no pass | per water fragment | no | water on screen |
+| Water world reflection (`waterscene`, D82) | per top-face water texel that can show a reflection: one projected ray, up to 16/24/40 march steps (tier) + 5 bisections, each a `depthTex` read, one colour read on a hit; refraction one colour and one depth read; no pass, no target, Primary colour sampled in place | per water fragment | no | water on screen |
 | Frame profiler (D72) | ~26 timestamp queries and reflected GL calls per frame | only while the readout or a bench is on | reads queries 3 frames old | — |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene

@@ -48,7 +48,22 @@ namespace VintageVisuals.Common
         /// </summary>
         public float Shore { get; set; } = 0.7f;
 
-        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam (red), flow (green), far swell (blue).</summary>
+        /// <summary>
+        /// The world in the water: banks, trees and the far shore, found by
+        /// marching each water texel's reflected ray across the finished
+        /// opaque frame (patch group "waterscene", D82). Gates the PATCH, so
+        /// off declares no sampler and the water reflects the sky alone.
+        /// Needs no scene capture: the water reads the live frame.
+        /// </summary>
+        public bool SceneReflections { get; set; } = true;
+
+        /// <summary>
+        /// How far the bed is bent through the waves, seen from above. Needs
+        /// SceneReflections (the same group carries it). 0 is the straight view.
+        /// </summary>
+        public float Refraction { get; set; } = 0.5f;
+
+        /// <summary>Debug views: 1 normal, 2 sky image, 3 depth behind, 4 reflected share, 5 glints, 6 texel grid, 7 caustics, 8 foam (red), flow (green), far swell (blue), 9 the world the reflected ray found.</summary>
         public float DebugView { get; set; } = 0f;
 
         public void ClampToValidRanges(List<string> corrections)
@@ -62,7 +77,8 @@ namespace VintageVisuals.Common
             Glints = ColorGradeConfig.Clamp(Glints, 0f, 1f, "Water.Glints", corrections);
             Caustics = ColorGradeConfig.Clamp(Caustics, 0f, 1f, "Water.Caustics", corrections);
             Shore = ColorGradeConfig.Clamp(Shore, 0f, 1f, "Water.Shore", corrections);
-            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 8f, "Water.DebugView", corrections);
+            Refraction = ColorGradeConfig.Clamp(Refraction, 0f, 1f, "Water.Refraction", corrections);
+            DebugView = ColorGradeConfig.Clamp(DebugView, 0f, 9f, "Water.DebugView", corrections);
         }
     }
 }

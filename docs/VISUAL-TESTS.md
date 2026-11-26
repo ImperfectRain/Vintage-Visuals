@@ -221,6 +221,9 @@ the fps counter alone: fps folds in CPU and vsync.
 - [ ] facing a bank across water, a thin pixel foam line laps in and out where the water meets it, and the water thins just before the bank; Shorelines 0 restores the game's own edge foam (D79)
 - [ ] a flowing river shows waves streaked along the current and quicker glitter; a still pond in calm air is smoother than before (D79)
 - [ ] a large lake seen from a hill keeps a slow swell pattern in the distance instead of a flat colour (D79)
+- [ ] standing at a pond's edge, the far bank's trunks and crowns show in the water under the shore, wobbling with the waves, and stay put while you walk; looking straight down shows mostly the bed; World in the water off gives the sky-only water (D82)
+- [ ] something that leaves the screen stops being reflected and the sky takes its place, without a hard seam at the screen edge (D82)
+- [ ] over a sandy bed in sunlight, the bed shimmers through moving waves; Refraction 0 holds it still (D82)
 - [ ] lava looks exactly as vanilla
 - [ ] Water surface off restores the game's water exactly
 - [ ] no seam or pattern jump when walking across a 4096-block boundary
