@@ -403,6 +403,19 @@ read per fragment) and one frustum cull per pool. Saves the mod's whole
 per-fragment material on every hidden layer. Final depth equals vanilla's, so
 nothing downstream (entities, water, scene capture, beam pass) changes.
 
+### Shader specialisation (D90)
+
+Code that only some settings need is compiled in only while those settings
+ask for it: a patch group adds a `#define`, and `IsPatchGroupEnabled` applies
+that group only while it is wanted, so the decision is part of the
+patch-gating signature and a change reloads the shaders once. A uniform branch
+alone skips the work at run time but still costs registers, because the
+compiler allocates for the largest path. `ShaderSpecialisation` holds the
+decisions. First cut: the 75 terrain debug views (`pbrterraindebug`, applied
+while `PseudoPBR.DebugView` is not 0; requires `pbrterrainmaterial`, exclusive
+with the legacy `pseudopbr` path in `ShaderPatchGroups`). `.vvbench debugcode`
+measures compiled out against compiled in at view 0.
+
 ### The fast beam pass (D87, optional)
 
 With `PseudoPBR.FastBeams` on, the canopy beams leave the terrain shader and

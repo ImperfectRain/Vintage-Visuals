@@ -47,6 +47,11 @@ namespace VintageVisuals.Common.Patching
                 // pbrterrainmaterial, which already excludes pseudopbr; this
                 // says so where the patcher and verifypatches can read it.
                 new[] { "pbrterrainreflect", "pseudopbr" },
+
+                // D90. The debug define sits in the modular material snippet,
+                // so the debug group rides that path alone.
+                new[] { "pbrterraindebug", "pseudopbr" },
+                new[] { "pbrterraindebug", "pseudopbrtopsoil" },
             };
 
         /// <summary>
@@ -61,6 +66,7 @@ namespace VintageVisuals.Common.Patching
             new Dictionary<string, string[]>(StringComparer.Ordinal)
             {
                 { "pbrterrainreflect", new[] { "pbrterrainmaterial" } },
+                { "pbrterraindebug", new[] { "pbrterrainmaterial" } },
             };
 
         /// <summary>The groups a group requires, or none.</summary>

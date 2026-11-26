@@ -2653,6 +2653,10 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
                                    float murkiness, vec3 environmentColor,
                                    vec3 blockLight, float glowLevel)
 {
+#ifndef VV_TERRAIN_DEBUG_VIEWS
+    // D90: compiled in only by the pbrterraindebug group, while a view is selected.
+    return color;
+#else
     int mode = int(vv_pbrDebugView + 0.5);
     if (mode == 0) return color;
     blockLight = vvTerrainTorchLight(); // as the shading reads it
@@ -2923,4 +2927,5 @@ vec4 vvTerrainMaterialPrimaryDebug(vec4 color, vec3 baseColor, vec3 faceNormal,
     }
 
     return color;
+#endif
 }

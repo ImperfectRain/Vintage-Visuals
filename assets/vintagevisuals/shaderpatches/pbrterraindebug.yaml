@@ -1,0 +1,45 @@
+# Vintage Visuals - terrain debug views compiled in only while one is selected
+# (D90, shader specialisation, first cut).
+#
+# vvTerrainMaterialPrimaryDebug holds the 75 terrain debug views, about 270
+# lines that every chunkopaque and chunktopsoil fragment carried even at view
+# 0. A uniform branch skips them at run time, but the compiler still has to
+# allocate registers for the largest path through the shader, so the code can
+# cost occupancy without ever running. Its body is now inside
+# `#ifdef VV_TERRAIN_DEBUG_VIEWS`, and this group is the only thing that
+# defines it. The group is applied only while PseudoPBR.DebugView is not 0
+# (see IsPatchGroupEnabled); moving the slider off or back to 0 reloads the
+# shaders once. Without the group the function returns its input untouched,
+# which is exactly what view 0 did.
+#
+# It touches no sampler and no uniform. The define lands at the top of the
+# material snippet, above both debug functions, so it asserts that snippet's
+# first uniforms and must run after the material group.
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+
+- type: insert_before
+  phase: Declarations
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+  content: |
+    #define VV_TERRAIN_DEBUG_VIEWS 1
+
+- type: assert
+  phase: Assertions
+  filename: chunktopsoil.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+
+- type: insert_before
+  phase: Declarations
+  filename: chunktopsoil.fsh
+  after: pbrterrainmaterial
+  tokens: "uniform float vv_pbrEnabled; uniform float vv_pbrDebugView;"
+  content: |
+    #define VV_TERRAIN_DEBUG_VIEWS 1

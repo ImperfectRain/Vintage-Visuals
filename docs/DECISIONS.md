@@ -4016,3 +4016,35 @@ something every player who reports a slow frame has.
 
 **Verification.** L2: build, smoketest (four checks), four mutations run
 singly. Not yet run in game.
+
+## D90 - Compile the terrain debug views in only while one is selected
+
+**Context.** Step 3 of the performance design is shader specialisation:
+dead code should not be in the shader, not merely skipped by a uniform
+branch. A coherent uniform branch costs almost nothing to run, but the
+compiler allocates registers for the largest path through the program, and
+the terrain shader is the one whose occupancy matters. The 75 terrain debug
+views are about 270 lines every chunkopaque and chunktopsoil fragment carried
+at view 0.
+
+**Decision.** The body of `vvTerrainMaterialPrimaryDebug` is inside
+`#ifdef VV_TERRAIN_DEBUG_VIEWS` (otherwise it returns its input, which is what
+view 0 did). A new group, `pbrterraindebug`, inserts the define at the top of
+the material snippet; `IsPatchGroupEnabled` applies it only while the
+material path is on and `PseudoPBR.DebugView` rounds to a non-zero view, and
+the decision is in the patch-gating signature, so leaving view 0 or returning
+to it reloads the shaders once. `ShaderSpecialisation` (Common/Rendering)
+holds the decision and the bench override. `ShaderPatchGroups` records that
+the group requires `pbrterrainmaterial` and excludes the legacy path.
+
+**Not done.** The scene reflection's debug views 41 and 42
+(`vvTerrainReflectDebug`) stay compiled in: views 41 and 42 read the capture
+sampler, and making a sampler inactive changes link-time unit assignment.
+Specialising zeroed FEATURES (sliders at 0) is the next cut and needs the
+same per-feature care; most players run them on, so it was not first.
+
+**Verification.** L2: build, smoketest (two checks, three mutations run
+singly), verifypatches compiles both variants in all define combinations.
+Not seen in game; the saving is not measured and may be none.
+`.vvbench debugcode` runs compiled out, in, out, in at view 0, each after a
+shader reload and 5 s to settle.

@@ -453,8 +453,11 @@ both directions.
 ## Debug views
 
 `PseudoPBR.DebugView` replaces the finished image with one layer of the material
-system. It applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd> or the F7 slider
-— because it is a uniform, not a patch decision.
+system. Switching between views applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd>
+or the F7 slider — because the view number is a uniform. Leaving view 0, or
+returning to it, reloads the shaders once (D90): the view code exists in the
+terrain shaders only while the `pbrterraindebug` group defines
+`VV_TERRAIN_DEBUG_VIEWS`, so normal play compiles without it.
 
 The reflection texel diagnostics deliberately use the projected material-texel
 footprint from `dFdx`, `dFdy` and `fwidth`, not camera distance. View 33 fades

@@ -264,6 +264,16 @@ namespace VintageVisuals
                        ConfigManager.Config.PseudoPBR.Enabled;
             }
 
+            // D90. The debug views exist in source only while one is selected,
+            // so view 0 compiles without them. Requires the material group,
+            // whose snippet this group's define sits in.
+            if (group == PseudoPbrSubsystem.TerrainDebugGroupName)
+            {
+                return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled &&
+                       ConfigManager.Config.PseudoPBR.Enabled &&
+                       VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView);
+            }
+
             // The capture sampler exists in source only while the player wants
             // scene reflections, so "off" is vanilla's material-path source
             // rather than a declared, bound and muted sampler.
@@ -359,7 +369,8 @@ namespace VintageVisuals
                    (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-") +
                    (ConfigManager.Config.Water.Enabled ? "L" : "-") +
                    (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
-                   (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-");
+                   (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
+                   (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-");
         }
 
         /// <summary>
@@ -422,7 +433,7 @@ namespace VintageVisuals
 
             _subsystems.Add(new WaterSubsystem());
 
-            Performance = new PerformanceTools(Capi, Mod.Logger);
+            Performance = new PerformanceTools(Capi, Mod.Logger, () => ConfigManager.NotifyChanged());
 
             // D88. Hooks the chunk renderer; fails closed to vanilla on its own.
             _depthPrepass = new VintageVisuals.Common.Rendering.DepthPrepass(HarmonyIdValue, Capi, Mod.Logger,

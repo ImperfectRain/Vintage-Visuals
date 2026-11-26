@@ -348,3 +348,6 @@ D88b bool settings filed under float make ConfigLib drop the whole config (water
 D89 chunk timers: the chunk span opens after the prepass and hides it	src/Common/Diagnostics/ChunkPassTimers.cs	nameof(RenderOpaquePrefix)) { priority = Priority.First }	nameof(RenderOpaquePrefix)) { priority = Priority.Last }	chunk timers: the chunk span opens before
 D89 chunk timers: code markers registered as opaque renderers	src/Common/Diagnostics/FrameProfiler.cs	if (m.CodeOnly) continue;	if (m == null) continue;	chunk timers: code markers are never
 D89 chunk timers: skipped prepass pools stretch the prepass span	src/Common/Diagnostics/ChunkPassTimers.cs	if (pass > 1) return;	if (pass > 8) return;	chunk timers: only pools 0 and 1
+D90 the debug views compile in when no view is selected	assets/vintagevisuals/shadersnippets/pbrterrainmaterial.glsl	#ifndef VV_TERRAIN_DEBUG_VIEWS	#ifdef VV_TERRAIN_DEBUG_VIEWS	D90: without the debug group
+D90 the debug views stay compiled in at view 0	src/Common/Rendering/ShaderSpecialisation.cs	return (int)(debugView + 0.5f) != 0;	return (int)(debugView + 0.5f) != 1;	D90: the debug views compile in only
+D90 moving the debug slider never reloads the shaders	src/VintageVisualsModSystem.cs	DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-")	DebugCodeWanted(0f) ? "V" : "-")	D90: the debug views compile in only

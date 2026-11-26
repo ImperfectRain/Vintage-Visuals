@@ -38,6 +38,12 @@ namespace VintageVisuals.PseudoPBR
         public const string TerrainMaterialGroupName = "pbrterrainmaterial";
 
         /// <summary>
+        /// D90. Defines VV_TERRAIN_DEBUG_VIEWS so the 75 terrain debug views are
+        /// compiled in; applied only while a debug view is selected.
+        /// </summary>
+        public const string TerrainDebugGroupName = "pbrterraindebug";
+
+        /// <summary>
         /// The scene-capture bridge on the modular terrain path. Its own group
         /// because it owns a sampler (unit 13); it asserts the material group's
         /// tokens, so it cannot apply where the material path did not.

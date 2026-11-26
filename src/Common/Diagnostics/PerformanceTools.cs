@@ -41,10 +41,14 @@ namespace VintageVisuals.Common.Diagnostics
         private long _benchCallback;
         private readonly List<FrameProfiler.BenchResult> _tierResults = new List<FrameProfiler.BenchResult>();
 
-        public PerformanceTools(ICoreClientAPI capi, ILogger logger)
+        private readonly Action _reapply;
+
+        /// <param name="reapply">Re-applies the config, so a bench override that gates a shader patch reloads the shaders.</param>
+        public PerformanceTools(ICoreClientAPI capi, ILogger logger, Action reapply = null)
         {
             _capi = capi;
             _logger = logger;
+            _reapply = reapply;
             _profiler = new FrameProfiler(capi, logger);
             RegisterCommands();
         }
@@ -92,7 +96,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]' or '.vvbench prepass [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]' or '.vvbench debugcode [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -143,6 +147,16 @@ namespace VintageVisuals.Common.Diagnostics
                     " s each. Stand still in a forest, facing the trees." +
                     (VintageVisuals.Common.Rendering.DepthPrepass.ShaderReady() ? "" :
                         " The prepass shader group is not applied (Performance.DepthPrepass off?), so 'on' runs will match 'off'."));
+            }
+
+            if (string.Equals(mode, "debugcode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_reapply == null) return TextCommandResult.Error("This build cannot reload shaders from a bench.");
+                int each = seconds > 0 ? seconds : 8;
+                _tierResults.Clear();
+                RunDebugCode(0, each);
+                return TextCommandResult.Success("Benchmarking the terrain debug views compiled out, in, out, in (view 0 throughout), " + each +
+                    " s each after a shader reload. Stand still in a forest, facing the trees. The world may flicker at each reload.");
             }
 
             if (string.Equals(mode, "features", StringComparison.OrdinalIgnoreCase))
@@ -278,6 +292,31 @@ namespace VintageVisuals.Common.Diagnostics
             }, (int)(SettleSeconds * 1000));
         }
 
+        /// <summary>'.vvbench debugcode' (D90): compiled out, in, out, in, each after a shader reload.</summary>
+        private static readonly int[] DebugCodeOrder = { 0, 1, 0, 1 };
+        private const float ReloadSettleSeconds = 5f;
+
+        private void RunDebugCode(int index, int seconds)
+        {
+            int mode = DebugCodeOrder[index];
+            VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = mode;
+            _reapply();
+            _benchCallback = _capi.Event.RegisterCallback(_ =>
+            {
+                _profiler.BeginBench();
+                _benchCallback = _capi.Event.RegisterCallback(__ =>
+                {
+                    _tierResults.Add(_profiler.EndBench(mode == 1 ? "debug views compiled in" : "debug views compiled out"));
+                    if (index + 1 < DebugCodeOrder.Length) { RunDebugCode(index + 1, seconds); return; }
+
+                    _benchCallback = 0;
+                    VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = -1;
+                    _reapply();
+                    Report(FormatFeatures(_tierResults));
+                }, seconds * 1000);
+            }, (int)(ReloadSettleSeconds * 1000));
+        }
+
         internal static string FormatFeatures(List<FrameProfiler.BenchResult> results)
         {
             var sb = new StringBuilder();
@@ -331,6 +370,7 @@ namespace VintageVisuals.Common.Diagnostics
             QualityTier.SetOverride(-1);
             FeatureBench.Mode = FeatureBench.Normal;
             VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = -1;
+            VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeBenchOverride = -1;
             _hud?.TryClose();
             _hud?.Dispose();
             _profiler.Dispose();
