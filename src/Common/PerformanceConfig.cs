@@ -20,6 +20,14 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool ShowFrameTimes { get; set; } = false;
 
+        /// <summary>
+        /// Exact depth prepass for the opaque and leaf chunk passes (D88): each
+        /// visible pixel runs the terrain material once instead of once per
+        /// overlapping leaf layer. Gates the <c>depthprepass</c> patch group,
+        /// so off is vanilla source. Also toggled with .vvprepass.
+        /// </summary>
+        public bool DepthPrepass { get; set; } = true;
+
         public void ClampToValidRanges(List<string> corrections)
         {
             Quality = ColorGradeConfig.Clamp(Quality, 0f, 3f, "Performance.Quality", corrections);

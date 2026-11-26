@@ -1,0 +1,63 @@
+# Vintage Visuals - exact depth prepass for the chunk opaque passes (D88).
+#
+# src/Common/Rendering/DepthPrepass.cs runs the game's own RenderOpaque once
+# more, colour writes off, with vv_depthPrepass = 1, drawing only the Opaque
+# and OpaqueNoCull pools. This group makes that draw cheap and keeps it exact:
+#
+# - vanilla's shadow-map lookup is skipped: `b` only scales colour
+#   (`rgbaPixel *= vec4(b, b, b, 1)`, asserted below), never alpha, so the
+#   alpha the discard tests is unchanged;
+# - right after vanilla's own alpha discard the prepass returns, so none of
+#   the mod's material runs. For a pool the game draws BLENDED (Opaque, value
+#   1) it also discards whatever the real pass would not draw fully opaque
+#   (alpha below 1, or the reflective blocks whose alpha vanilla changes AFTER
+#   the discard), so those write no prepass depth. For a pool drawn with
+#   blending off (OpaqueNoCull, the leaves: value 2) every fragment past the
+#   discard overwrites what is behind it, so all of them qualify, including
+#   the mipmapped half-alpha leaf edges in the distance.
+#
+# The uniform is a float, never a sampler, so it cannot move a texture unit.
+# The replace pastes its anchor (vanilla's rust line) back. Zero (unset) is vanilla: both branches are skipped. Gated on
+# Performance.DepthPrepass, so "off" is vanilla source.
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "if (aTest < alphaTest || rgba.a < 0.005) discard;"
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "vec4 applyFogAndShadowFromBrightness(vec4 rgbaPixel, float fogAmount, float b, vec3 worldPos) { b *= 1+max(0.0, shadowIntensity * 2.0 - 1.66) / 1.5; rgbaPixel *= vec4(b, b, b, 1);"
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  tokens: "if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1); float b = getBrightnessFromShadowMap();"
+
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.fsh
+  tokens: "uniform float alphaTest;"
+  snippet: depthprepass.glsl
+
+- type: replace
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: "if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1); float b = getBrightnessFromShadowMap();"
+  content: |
+    if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1);
+    float b = vv_depthPrepass > 0.5 ? 1.0 : getBrightnessFromShadowMap(); // D88: b never reaches alpha
+
+- type: insert_after # the early-out, after vanilla's discard
+  phase: Material
+  filename: chunkopaque.fsh
+  tokens: "if (aTest < alphaTest || rgba.a < 0.005) discard;"
+  content: |
+    if (vv_depthPrepass > 0.5) {
+        // D88: depth only where the real pass draws fully opaque. 1 = this pool is
+        // drawn BLENDED, so only alpha 1 that nothing later changes qualifies;
+        // 2 = drawn with blending off, so everything past the discard is opaque.
+        if (vv_depthPrepass < 1.5 && (outColor.a < 0.998 || (renderFlags & ReflectiveBitMask) != 0)) discard;
+        return;
+    }

@@ -92,7 +92,7 @@ namespace VintageVisuals.Common.Diagnostics
                     });
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]' or '.vvbench beams [seconds]'")
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]' or '.vvbench prepass [seconds]'")
                     .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
                     .HandleWith(args =>
                     {
@@ -132,6 +132,17 @@ namespace VintageVisuals.Common.Diagnostics
                 RunFeature(FeatureBench.BeamOrder, 0, each);
                 return TextCommandResult.Success("Benchmarking the beams: in the terrain shader, in the fast pass, no air beams, no shafts at all, " +
                     "then the terrain shader again, " + each + " s each. Stand still under trees facing the sun.");
+            }
+
+            if (string.Equals(mode, "prepass", StringComparison.OrdinalIgnoreCase))
+            {
+                int each = seconds > 0 ? seconds : 8;
+                _tierResults.Clear();
+                RunPrepass(0, each);
+                return TextCommandResult.Success("Benchmarking the depth prepass: on, off, on, off, " + each +
+                    " s each. Stand still in a forest, facing the trees." +
+                    (VintageVisuals.Common.Rendering.DepthPrepass.ShaderReady() ? "" :
+                        " The prepass shader group is not applied (Performance.DepthPrepass off?), so 'on' runs will match 'off'."));
             }
 
             if (string.Equals(mode, "features", StringComparison.OrdinalIgnoreCase))
@@ -242,6 +253,31 @@ namespace VintageVisuals.Common.Diagnostics
             }, (int)(SettleSeconds * 1000));
         }
 
+        /// <summary>'.vvbench prepass' (D88): on, off, on, off, so drift shows as the two pairs disagreeing.</summary>
+        private static readonly int[] PrepassOrder = { 1, 0, 1, 0 };
+
+        private void RunPrepass(int index, int seconds)
+        {
+            int mode = PrepassOrder[index];
+            VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = mode;
+            _benchCallback = _capi.Event.RegisterCallback(_ =>
+            {
+                _profiler.BeginBench();
+                _benchCallback = _capi.Event.RegisterCallback(__ =>
+                {
+                    bool ran = VintageVisuals.Common.Rendering.DepthPrepass.RanLastFrame;
+                    _tierResults.Add(_profiler.EndBench(mode == 1
+                        ? "depth prepass on" + (ran ? "" : " (DID NOT RUN)")
+                        : "depth prepass off"));
+                    if (index + 1 < PrepassOrder.Length) { RunPrepass(index + 1, seconds); return; }
+
+                    _benchCallback = 0;
+                    VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = -1;
+                    Report(FormatFeatures(_tierResults));
+                }, seconds * 1000);
+            }, (int)(SettleSeconds * 1000));
+        }
+
         internal static string FormatFeatures(List<FrameProfiler.BenchResult> results)
         {
             var sb = new StringBuilder();
@@ -294,6 +330,7 @@ namespace VintageVisuals.Common.Diagnostics
             if (_benchCallback != 0) _capi.Event.UnregisterCallback(_benchCallback);
             QualityTier.SetOverride(-1);
             FeatureBench.Mode = FeatureBench.Normal;
+            VintageVisuals.Common.Rendering.DepthPrepass.BenchOverride = -1;
             _hud?.TryClose();
             _hud?.Dispose();
             _profiler.Dispose();

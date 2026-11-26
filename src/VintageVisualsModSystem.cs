@@ -103,6 +103,33 @@ namespace VintageVisuals
         /// <summary>Frame-time readout, bench commands and the quality tier.</summary>
         public PerformanceTools Performance { get; private set; }
 
+        private VintageVisuals.Common.Rendering.DepthPrepass _depthPrepass;
+
+        /// <summary>'.vvprepass': flip Performance.DepthPrepass and save it (D88). Reloads shaders through the gating signature.</summary>
+        private void RegisterPrepassCommand()
+        {
+            try
+            {
+                Capi.ChatCommands.Create("vvprepass")
+                    .WithDescription("Vintage Visuals: switch the exact depth prepass (each pixel shaded once) on or off")
+                    .HandleWith(_ =>
+                    {
+                        PerformanceConfig config = ConfigManager?.Config?.Performance;
+                        if (config == null) return TextCommandResult.Error("No config loaded.");
+                        config.DepthPrepass = !config.DepthPrepass;
+                        ConfigManager.Save();
+                        ConfigManager.NotifyChanged();
+                        return TextCommandResult.Success(config.DepthPrepass
+                            ? "Depth prepass on: hidden leaf layers are no longer shaded. Shaders reload."
+                            : "Depth prepass off: the opaque pass renders as before. Shaders reload.");
+                    });
+            }
+            catch (Exception ex)
+            {
+                Mod.Logger.Warning("[VintageVisuals] could not register .vvprepass: " + ex.Message);
+            }
+        }
+
         /// <summary>Null when ConfigLib is not installed. Optional by design.</summary>
         private ConfigLibBridge _configLibBridge;
         private VisualTuningStudioDialog _tuningStudioDialog;
@@ -269,6 +296,13 @@ namespace VintageVisuals
                 return ConfigManager.Config.PseudoPBR.ParticleLighting;
             }
 
+            // D88. Not tied to any subsystem: the prepass speeds up vanilla's
+            // own opaque pass too, so it is gated on its own flag alone.
+            if (group == VintageVisuals.Common.Rendering.DepthPrepass.GroupName)
+            {
+                return ConfigManager.Config.Performance.DepthPrepass;
+            }
+
             if (group == ColorGradeSubsystem.GroupName)
             {
                 return ConfigManager.Config.ColorGrade.Enabled;
@@ -324,7 +358,8 @@ namespace VintageVisuals
                    (ConfigManager.Config.Weather.Enabled ? "W" : "-") +
                    (ConfigManager.Config.Atmosphere.WantsShader ? "A" : "-") +
                    (ConfigManager.Config.Water.Enabled ? "L" : "-") +
-                   (ConfigManager.Config.Water.SceneReflections ? "O" : "-");
+                   (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
+                   (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-");
         }
 
         /// <summary>
@@ -388,6 +423,12 @@ namespace VintageVisuals
             _subsystems.Add(new WaterSubsystem());
 
             Performance = new PerformanceTools(Capi, Mod.Logger);
+
+            // D88. Hooks the chunk renderer; fails closed to vanilla on its own.
+            _depthPrepass = new VintageVisuals.Common.Rendering.DepthPrepass(HarmonyIdValue, Capi, Mod.Logger,
+                () => ConfigManager.Config.Performance.DepthPrepass);
+            _depthPrepass.Install();
+            RegisterPrepassCommand();
 
             // Phases 2-4 land here: Weather, Reflections, PseudoPBR. Each is
             // independently toggleable by design, so registration order carries
@@ -591,6 +632,9 @@ namespace VintageVisuals
                 Performance.Dispose();
                 Performance = null;
             }
+
+            _depthPrepass?.Uninstall();
+            _depthPrepass = null;
 
             if (_interceptor != null) _interceptor.Uninstall();
 

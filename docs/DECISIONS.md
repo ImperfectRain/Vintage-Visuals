@@ -3916,3 +3916,61 @@ terrain-shader beams 52.8 ms, fast pass 33.1, no shafts or beams 18.9, so the
 pass saved 19.8 ms while drawing nearly nothing visible; how much of the 14 ms
 left is the pass and how much the god-ray shaft sources was not separable, so
 `.vvbench beams` now adds a run with the air beams off and the shafts kept.
+
+
+## D88 - An exact depth prepass for the opaque and leaf chunk pools
+
+**Problem.** `ChunkRenderer.RenderOpaque` draws each pass's pools through
+`MeshDataPoolManager.Render` in pool order. Nothing sorts them front to back,
+so with depth complexity d a pixel runs the fragment shader about H(d) times
+(the harmonic number: 2.1 at four overlapping leaf layers, 2.7 at eight). The
+game's own terrain shading is cheap enough that this never mattered. The mod's
+material is not: D84 to D87 found most of the forest's opaque pass was the
+material and the beams, multiplied by leaf overdraw.
+
+**Decision.** Before the game's RenderOpaque runs, run that same method once
+more with colour writes off and `vv_depthPrepass` set, letting only pools 0
+(Opaque) and 1 (OpaqueNoCull: leaves and plants) draw. The `depthprepass`
+group skips vanilla's shadow lookup in that draw (its `b` only scales colour,
+asserted) and returns right after vanilla's own alpha discard. Then the real
+pass draws pools 0 and 1 with GL_LEQUAL. Same program, same vertex shader,
+same uniforms, same draw calls: the depth is bit-identical, and every fragment
+behind the nearest opaque surface is rejected before it is shaded.
+
+**Why it is exact.** The prepass writes depth only for fragments that the real
+pass then draws fully opaque. Pool 0 is drawn blended, so there it requires
+alpha >= 0.998 and no ReflectiveBitMask (vanilla changes reflective alpha
+after the discard). Pool 1 is drawn with blending off (read from GL per draw,
+not assumed), so every fragment past the discard overwrites what is behind it
+and all of them qualify, including mipmapped half-alpha leaf edges. Under
+those rules, anything the prepass hides was going to be overwritten in
+vanilla anyway, whatever the draw order. Pools 2, 5 and 8 keep GL_LESS and are
+not prepassed. The final depth buffer equals vanilla's.
+
+**Known difference.** Two different triangles of pools 0/1 at bit-identical
+depth: vanilla's GL_LESS keeps the first drawn, GL_LEQUAL the last. Exactly
+coplanar duplicate faces z-fight in vanilla too; none is known in the base game.
+
+**Alternatives.** Sorting pools front to back: pools are shared buffers of many
+chunks, so there is nothing to sort cheaply. A separate depth-only program:
+risks depth that differs in the last bit from the real pass, and z-fighting
+with it. `early_fragment_tests`: writes depth for discarded fragments, which
+would close every leaf hole. Deferred shading: the larger, later step in the
+performance design (it also removes quad overshading and lets effects run at
+reduced rate); the prepass gets most of the overdraw saving now at a fraction
+of the risk.
+
+**Safety.** Gated on `Performance.DepthPrepass` (default on; `.vvprepass`
+toggles and saves it), so off is vanilla source. At runtime it also requires
+chunkopaque to declare the uniform, so a rolled-back group means no prepass
+rather than a prepass running the full shader. Any missing internal or
+exception switches it off for the session and restores the depth function.
+
+**Verification.** L2: build; smoketest (three interaction checks: the
+early-out lands after vanilla's discard and before the material and refuses
+partial alpha and reflective blocks in a blended pool; the shadow skip is
+prepass-only and feeds colour only; only pools 0 and 1 draw and the real pass
+resets the flag; nine mutations, each run singly and caught); verifypatches
+compiles chunkopaque with the group alone and with every other group in all 48
+define combinations. Not seen in game; the saving is not measured -
+`.vvbench prepass` runs on, off, on, off.

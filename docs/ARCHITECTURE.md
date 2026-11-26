@@ -377,6 +377,32 @@ WorldReflectionVolume src/Reflections/           |
                                             final colour
 ```
 
+### The depth prepass (D88)
+
+The chunk renderer draws its mesh pools in pool order, never sorted by
+distance, so without help a leaf behind another leaf is shaded about half the
+time and then overwritten. `DepthPrepass` (Harmony prefix on
+`ChunkRenderer.RenderOpaque`, prefix/postfix on `MeshDataPoolManager.Render`)
+fixes the order problem without sorting anything:
+
+```
+RenderOpaque prefix
+   colour mask off, vv_depthPrepass = 1 (pool drawn blended) or 2 (unblended)
+   run RenderOpaque itself: only pools 0 Opaque and 1 OpaqueNoCull draw
+       chunkopaque skips vanilla's shadow taps, returns after vanilla's discard
+       (blended pool: discards alpha < 1 and reflective blocks first)
+   colour mask on
+RenderOpaque (the game's own, unchanged)
+   pools 0 and 1 drawn with GL_LEQUAL, vv_depthPrepass = 0
+   -> fragments behind the nearest opaque surface fail early-Z, unshaded
+   pools 5 TopSoil, 2 BlendNoCull, 8 Decor: the game's GL_LESS, no prepass
+```
+
+Costs one extra geometry pass for pools 0 and 1 (vertex work plus a texture
+read per fragment) and one frustum cull per pool. Saves the mod's whole
+per-fragment material on every hidden layer. Final depth equals vanilla's, so
+nothing downstream (entities, water, scene capture, beam pass) changes.
+
 ### The fast beam pass (D87, optional)
 
 With `PseudoPBR.FastBeams` on, the canopy beams leave the terrain shader and
