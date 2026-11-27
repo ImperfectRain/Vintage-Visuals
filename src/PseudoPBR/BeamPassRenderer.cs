@@ -27,8 +27,8 @@ namespace VintageVisuals.PseudoPBR
     ///      added onto the primary colour. Depth test and depth writes off,
     ///      alpha masked, every other attachment gets nothing.
     ///
-    /// TOGGLE. PseudoPBR.FastBeams (and '.vvbeams'). Off by default until the
-    /// player has compared the two in game. When this pass draws, the binder
+    /// TOGGLE. PseudoPBR.FastBeams (and '.vvbeams'). On by default since
+    /// 2026-11-27, chosen after comparing the two in game. When this pass draws, the binder
     /// uploads vv_pbrBeamPass = 1 and the terrain skips its own beams, so the
     /// two never add together; when the pass cannot draw (off, not compiled,
     /// failed) the uniform is 0 and the old beams are exactly as before.

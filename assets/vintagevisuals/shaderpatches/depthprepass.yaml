@@ -47,14 +47,14 @@
   tokens: "if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1); float b = getBrightnessFromShadowMap();"
   content: |
     if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1);
-    float b = vv_depthPrepass > 0.5 ? 1.0 : getBrightnessFromShadowMap(); // D88: b never reaches alpha
+    float b = VV_PREPASS_ON ? 1.0 : getBrightnessFromShadowMap(); // D88: b never reaches alpha
 
 - type: insert_after # the early-out, after vanilla's discard
   phase: Material
   filename: chunkopaque.fsh
   tokens: "if (aTest < alphaTest || rgba.a < 0.005) discard;"
   content: |
-    if (vv_depthPrepass > 0.5) {
+    if (VV_PREPASS_ON) {
         // D88: depth only where the real pass draws fully opaque. 1 = this pool is
         // drawn BLENDED, so only alpha 1 that nothing later changes qualifies;
         // 2 = drawn with blending off, so everything past the discard is opaque.
@@ -89,11 +89,11 @@
   filename: chunkopaque.fsh
   tokens: "float murkiness=getUnderwaterMurkiness();"
   content: |
-    float murkiness = vv_depthPrepass > 0.5 ? 0.0 : getUnderwaterMurkiness(); // D88: murk only tints rgb
+    float murkiness = VV_PREPASS_ON ? 0.0 : getUnderwaterMurkiness(); // D88: murk only tints rgb
 
 - type: replace
   phase: Material
   filename: chunkopaque.fsh
   tokens: "if (haxyFade > 0) {"
   content: |
-    if (haxyFade > 0 && vv_depthPrepass < 0.5) { // D88: the sky fade only mixes rgb
+    if (haxyFade > 0 && !VV_PREPASS_ON) { // D88: the sky fade only mixes rgb

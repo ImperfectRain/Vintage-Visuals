@@ -1054,6 +1054,10 @@ void main()
                           !marchMain.Contains("vvTerrainBeamInscatter(") &&
                           shadowBody.Contains("float s = vvBeamSunLit(rel);") &&
                           shadowBody.Contains("lit += s * gate;") &&
+                          // The crown glow (2026-11-27): lit air inside the crown, from
+                          // the same shadow map, through the shared gate read.
+                          shadowBody.Contains("glowLit += s * gates.y;") &&
+                          shadowBody.Contains("vec2 gates = vvBeamGates(rel + vv_pbrOrigin);") &&
                           // A ray lit all along is a veil, not a shaft: the march
                           // keeps only lit air with shade beside it, or noon under
                           // a broken canopy greys every shadow (2026-11-26).
@@ -1066,8 +1070,8 @@ void main()
                           // own cell: that cell is the gap the light came through
                           // (in game 2026-11-27, no spots and no shafts under a canopy).
                           (GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainSunspot(") ?? "").Contains("vec2 around = vvTerrainCrownAroundSmooth(world.xz);") &&
-                          (GlslEval.FunctionBody(beamSnippet, "float vvBeamUnderCanopy(") ?? "").Contains("vec2 around = vvTerrainCrownAround(p.xz);") &&
-                          shadowBody.Contains("float level = lit * contrast * sunAngle * ds") &&
+                          (GlslEval.FunctionBody(beamSnippet, "vec2 vvBeamGates(") ?? "").Contains("vec2 around = vvTerrainCrownAround(p.xz);") &&
+                          shadowBody.Contains("float level = (lit * contrast * sunAngle + glow) * ds") &&
                           shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&
                           sunLitBody.Contains("texture(vv_beamShadowNear, vec3(n.xy, n.z - 0.0005))") &&
                           sunLitBody.Contains("texture(vv_beamShadowFar, vec3(f.xy, f.z - 0.0009))") &&

@@ -4,8 +4,8 @@
     "boolean": {
       "pbr_fastbeams": {
         "ingui": "Fast shaft pass",
-        "comment": "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. Showed fewer beams under a canopy than the full pass in testing. Changing it rebuilds shaders.",
-        "default": false,
+        "comment": "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. On by default; turn it off for the full per-pixel beams, which showed more beams under a canopy in testing. Changing it rebuilds shaders.",
+        "default": true,
         "clientSide": true,
         "weight": 47
       },
@@ -15,6 +15,13 @@
         "default": true,
         "clientSide": true,
         "weight": 219
+      },
+      "perf_split": {
+        "ingui": "Split shader programs",
+        "comment": "Draws the depth prepass and the leaves with smaller programs of their own, so they run faster on the GPU. Plants look the same; doors, trapdoors and roofing lose screen-space and mirror reflections (they keep the sky). Changing it rebuilds shaders.",
+        "default": true,
+        "clientSide": true,
+        "weight": 220
       },
       "colorgrade_enabled": {
         "ingui": "Enable colour grading",
@@ -98,7 +105,7 @@
         "comment": "Shows milliseconds per render stage and mod pass in the top-left corner. Also .vvperf and .vvbench.",
         "default": false,
         "clientSide": true,
-        "weight": 220
+        "weight": 221
       },
       "water_scene": {
         "ingui": "World in the water",

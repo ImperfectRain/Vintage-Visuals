@@ -325,6 +325,16 @@ hierarchy, the budgets, and what this project deliberately does not build.
   answering it by hooking them all is what broke. `GetMethods` ordering is a
   known weakness here and is deliberately unchanged while the delivery failure
   is unresolved.
+- **chunkopaque is drawn by three programs (D100).** The game's own, a depth
+  twin (`VV_DEPTH_ONLY`) for the prepass and a flora twin (`VV_FLORA_ONLY`)
+  for the leaf pool, all compiled from the same patched source by
+  `ChunkProgramSplit`. A mod uniform on chunkopaque reaches the flora twin by
+  the per-frame copy with no extra work. Two things do not come for free:
+  nothing before the prepass's early return may make ALPHA depend on a mod
+  uniform (the depth twin never receives them; smoketest I-split pins the one
+  mod function there), and a new block feature that should not run on leaves
+  belongs under `#ifndef VV_FLORA_ONLY` only if the trade-off is recorded.
+  `.vvprofile shaders` prints each program's registers.
 - **Never let a failed patch take down the game.** Patches are grouped by
   subsystem; a failure disables that subsystem, logs `[VintageVisuals] CRITICAL
   shader patch failure in <group>`, and lets everything else load. This is

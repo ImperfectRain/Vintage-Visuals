@@ -125,6 +125,21 @@ float vvTerrainMirrorDebug();
 const float VV_TERRAIN_MIRROR_POLISHED = 0.02;
 #endif
 
+// D100. The leaf program. src/Common/Rendering/ChunkProgramSplit.cs compiles
+// this whole source a second time with VV_FLORA_ONLY defined and draws the
+// OpaqueNoCull pool (leaves, plants, and a few blocks: doors, trapdoors,
+// roofing) with it, so the leaves stop paying the register budget of the
+// heaviest block path. Plants shade exactly as in the main program. The few
+// blocks in that pool lose the two most expensive block features: the
+// screen-space scene march (their reflection is the analytic sky, which is
+// what every surface shows when the capture is unavailable) and the mirrors.
+// VISUAL TRADE-OFF, recorded in docs/DECISIONS.md D100. The main program is
+// untouched: VV_FLORA_ONLY is never defined there.
+#ifdef VV_FLORA_ONLY
+#undef VV_TERRAIN_SCENE_CAPTURE
+#undef VV_TERRAIN_MIRRORS
+#endif
+
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 // The floor for the reflection alone: still water, a polished metal, glass.
 const float VV_TERRAIN_MIRROR_ROUGHNESS = 0.04;

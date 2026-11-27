@@ -21,6 +21,16 @@ namespace VintageVisuals.Common.Rendering
              .Note("the governor (D95) may stand it aside where it does not pay; '.vvbench prepass' splits it per pool")
              .ActiveWhen(c => c.Performance.DepthPrepass);
 
+            r.Declare("terrainsplit", "Split chunk programs")
+             .Groups(ChunkProgramSplit.GroupName)
+             .Settings("Performance.SplitPrograms")
+             .Sweep("perf_split")
+             .CpuScopes(ChunkProgramSplit.CopySpanName, ChunkProgramSplit.BuildSpanName)
+             .GpuSpans("chunks.1")
+             .Scenes("F", "V")
+             .Note("D100: the prepass and the leaf pool draw with twin programs; '.vvprofile shaders' prints each program's registers")
+             .ActiveWhen(c => c.Performance.SplitPrograms);
+
             r.Declare("quality", "Quality tier")
              .Settings("Performance.Quality")
              .Sweep("perf_quality")

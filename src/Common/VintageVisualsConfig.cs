@@ -1009,9 +1009,11 @@ namespace VintageVisuals.Common
         /// D87. Draw the air beams under a canopy in one half-resolution
         /// screen pass instead of inside every terrain fragment. Same beams,
         /// same strength (SunShafts); a different place to compute them.
-        /// Off by default until compared in game; '.vvbeams' flips it.
+        /// On by default since 2026-11-27 (Elijah's choice after the D99
+        /// bench: 2.3 to 3.7 ms saved, fewer beams under a canopy until the
+        /// pass is tuned to match); '.vvbeams' flips it.
         /// </summary>
-        public bool FastBeams { get; set; } = false;
+        public bool FastBeams { get; set; } = true;
 
 
         /// <summary>

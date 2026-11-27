@@ -220,6 +220,9 @@ namespace VintageVisuals.Common
                 case "perf_prepass":
                     _mod.ConfigManager.Config.Performance.DepthPrepass = tree.GetBool("value", _mod.ConfigManager.Config.Performance.DepthPrepass);
                     break;
+                case "perf_split":
+                    _mod.ConfigManager.Config.Performance.SplitPrograms = tree.GetBool("value", _mod.ConfigManager.Config.Performance.SplitPrograms);
+                    break;
                 case "pbr_fastbeams":
                     pbr.FastBeams = tree.GetBool("value", pbr.FastBeams);
                     break;

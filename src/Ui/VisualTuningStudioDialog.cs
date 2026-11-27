@@ -713,7 +713,8 @@ namespace VintageVisuals.Ui
             y += step;
 
             AddOverviewRow("PERFORMANCE", null, SettingTab.Performance,
-                "Quality " + ValueByCode("perf_quality") + " · Depth prepass " + OnOff("Performance.DepthPrepass"),
+                "Quality " + ValueByCode("perf_quality") + " · Depth prepass " + OnOff("Performance.DepthPrepass") +
+                " · Split programs " + OnOff("Performance.SplitPrograms"),
                 "Open the quality tier, the frame-time readout and benches.", left, y, cardHeight);
             AddOverviewRow("DEBUG", null, SettingTab.Debug,
                 _controller.CompareActive ? "Compare with vanilla is on" : "Normal rendering",

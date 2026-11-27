@@ -22,7 +22,7 @@ namespace VintageVisuals.Common.Diagnostics
     ///        groups + every declared sweep, in each scene in turn
     ///   .vvbench stop | status
     ///   .vvscene save &lt;name&gt; [rain=0..1] [wind=code] [note..] | list | go &lt;name&gt; | delete &lt;name&gt; | release
-    ///   .vvprofile [coverage|cpu|systems]
+    ///   .vvprofile [coverage|cpu|systems|shaders]
     ///
     /// What is measured is decided by <see cref="ProfileRegistry"/> plus the
     /// shipped patch groups and panel settings, never by a list here, so a new
@@ -69,7 +69,7 @@ namespace VintageVisuals.Common.Diagnostics
                     .HandleWith(args => SceneCommand(Words(args[0] as string)));
 
                 _capi.ChatCommands.Create("vvprofile")
-                    .WithDescription("Vintage Visuals: profiler coverage and CPU timers. '.vvprofile coverage', '.vvprofile cpu', '.vvprofile systems'")
+                    .WithDescription("Vintage Visuals: profiler coverage and CPU timers. '.vvprofile coverage', '.vvprofile cpu', '.vvprofile systems', '.vvprofile shaders'")
                     .WithArgs(parsers.OptionalAll("args"))
                     .HandleWith(args => ProfileCommand(Words(args[0] as string)));
             }
@@ -472,6 +472,17 @@ namespace VintageVisuals.Common.Diagnostics
             string sub = w.Length > 0 ? w[0].ToLowerInvariant() : "coverage";
             if (sub == "cpu") return TextCommandResult.Success(CpuReport());
             if (sub == "systems") return TextCommandResult.Success(SystemsReport());
+            if (sub == "shaders")
+            {
+                // D100. Registers and instructions per chunk program, read back
+                // from the driver's own binary, so a split can be judged by the
+                // number it exists to change rather than by frame time alone.
+                string report = VintageVisuals.Common.Rendering.ChunkProgramSplit.ShaderReport();
+                string file = null;
+                try { file = BenchResultsFile.WriteText(_capi, "shaders.txt", report); } catch { }
+                foreach (string line in report.TrimEnd().Split('\n')) _logger.Notification("[VintageVisuals] shaders " + line);
+                return TextCommandResult.Success(report + (file != null ? "Saved to " + file : ""));
+            }
 
             string text = CoverageReport();
             string path = null;

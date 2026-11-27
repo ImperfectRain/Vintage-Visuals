@@ -1,0 +1,32 @@
+# Vintage Visuals - split chunk programs (D100).
+#
+# src/Common/Rendering/ChunkProgramSplit.cs compiles the game's chunkopaque
+# program (with every other group's patches already in it) a second and third
+# time with one extra define each, and draws part of the frame with those
+# twins instead of the game's program:
+#
+# - VV_DEPTH_ONLY: the depth prepass (D88). The material after the prepass's
+#   early return is dead code there, so the twin carries a vanilla-sized
+#   register budget instead of the whole material's.
+# - VV_FLORA_ONLY: the OpaqueNoCull pool, mostly leaves and plants. See the
+#   comment at VV_FLORA_ONLY in pbrterrainmaterial.glsl for what it drops.
+#
+# This group carries only what the twins need from the GAME'S program so
+# their depth agrees with it to the bit: `invariant gl_Position`. GL promises
+# identical depth for one program; across two programs it promises it only
+# when the vertex output is declared invariant in both (GLSL 4.30 4.6.1). The
+# main pass draws with GL_LEQUAL against the prepass's depth, so a difference
+# of one ulp would let the sky or the room behind show through as speckle.
+# The vertex SOURCE of all three programs is the same text with the same
+# prefix; the defines go on the fragment shader only.
+#
+# No varying, no uniform, no sampler. Gated on Performance.SplitPrograms, so
+# "off" is the source exactly as before and no twin is built (the C# looks
+# for this line in the game's program before it builds anything).
+
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.vsh
+  tokens: uniform vec3 origin;
+  content: |
+    invariant gl_Position; // vintagevisuals D100: twin programs share this depth to the bit

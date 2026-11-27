@@ -218,7 +218,7 @@ namespace VintageVisuals.Ui
                    L, "Sunlight under trees", 0f, 2f, 0.05f);
 
             Toggle("pbr_fastbeams", "PseudoPBR.FastBeams", "Fast shaft pass",
-                   "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. In the 2026-11-27 test it showed fewer beams under a canopy than the full pass.",
+                   "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. On by default; turn it off for the full per-pixel beams, which showed more beams under a canopy in the 2026-11-27 test.",
                    L, "Sunlight under trees", false, SettingCost.Low, true);
 
             Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
@@ -588,6 +588,10 @@ namespace VintageVisuals.Ui
 
             Toggle("perf_prepass", "Performance.DepthPrepass", "Depth prepass",
                    "Draws the world's depth first so hidden pixels are skipped later. It stands aside on its own where measured GPU time says it costs more than it saves. Changing it rebuilds shaders.",
+                   P, "Quality", false, SettingCost.Low, true);
+
+            Toggle("perf_split", "Performance.SplitPrograms", "Split shader programs",
+                   "Draws the depth prepass and the leaves with smaller programs of their own, so they run faster on the GPU. Plants look the same; doors, trapdoors and roofing lose screen-space and mirror reflections (they keep the sky). Changing it rebuilds shaders.",
                    P, "Quality", false, SettingCost.Low, true);
 
             Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
