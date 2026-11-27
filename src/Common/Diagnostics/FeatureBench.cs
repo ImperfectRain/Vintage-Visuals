@@ -27,12 +27,13 @@ namespace VintageVisuals.Common.Diagnostics
         public const int OldBeams = 12;
         public const int FastBeams = 13;
         public const int NoBeams = 14;
+        public const int NoCaustics = 15;
 
         /// <summary>The run order: all on, each feature off in turn, then all on again to show drift.</summary>
         public static readonly int[] Order =
         {
             Normal, NoShafts, NoCanopy, NoReflections, NoFoliage, NoRain,
-            NoGusts, NoPlantShade, NoDamp, NoBlockLight, NoEntities, NoMaterial, Normal
+            NoGusts, NoPlantShade, NoDamp, NoBlockLight, NoEntities, NoMaterial, NoCaustics, Normal
         };
 
         /// <summary>
@@ -75,6 +76,7 @@ namespace VintageVisuals.Common.Diagnostics
                 case OldBeams: return "beams in the terrain shader";
                 case FastBeams: return "beams in the fast pass (D87)";
                 case NoBeams: return "air beams off (shafts kept)";
+                case NoCaustics: return "water caustics off (code kept)";
                 default: return "everything on";
             }
         }

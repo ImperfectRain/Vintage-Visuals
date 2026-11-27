@@ -4294,7 +4294,7 @@ photos.
   `VV_WATER_CAUSTIC_FOCUS` 3 blocks, so a pond 1 to 3 blocks deep sits near the
   network and the shallows stay soft. Intensity `sqrt(1 + s^2) / sqrt(det^2 +
   s^2)`, exactly 1 on flat water, with softness
-  `s = 0.07 + 0.03 d + 0.4 blur + 4 x footprint` (the sun disc, the blur
+  `s = 0.07 + 0.03 d + 0.25 blur + 4 x footprint` (0.4 blur before the amendment) (the sun disc, the blur
   slider, and distance as a level of detail).
 - *Energy.* The web is divided by its own average over the bed, read from a
   9 x 6 table (`VV_WATER_CAUSTIC_MEAN`, lens strength by log-spaced
@@ -4352,6 +4352,20 @@ mutations run singly, all caught; verifypatches compiles water, water +
 watercaustics and water + watercaustics + waterscene against the game's own
 `chunkliquid.fsh` in every define combination. Previewed offline in Python
 with the same formulas. Not seen in game.
+
+**Amendment (2026-11-27, first look in game).** A test at noon over a pond
+about 2 blocks deep showed soft mottling and no line web, even at Caustics 1;
+no overall lift and dark shade held. Cause: the web was dimmed twice by the
+water in front of it, once by the D77 view-path fade (kept from when the light
+was ADDED) and again by the composition, which already scales only what shows
+through; together they halved it at pond depth. The path fade is removed (a
+check now forbids it, with a mutation). The web was also softer than the
+offline preview intended at the default slider: `VV_WATER_CAUSTIC_BLUR_SOFT`
+0.4 -> 0.25 and the blur taps sit 1 texel out up to blur 0.5 (was 2 from
+0.35), and the sun's share of the bed light 0.75 -> 0.85. `.vvbench features`
+gains a "water caustics off (code kept)" run, which zeroes the strength
+uniform so the run prices the per-pixel work. The orange diagonal streaks on
+that pond floor stay with caustics off; they are not this decision's. L2.
 
 ## D95 - Run the depth prepass only where measured GPU time says it pays
 

@@ -58,7 +58,8 @@ never reaches it.
    slider and distance; Medium and above also average four texel neighbours;
    glow blurs bright lines more; dispersion splits red and blue focus. Gated by
    the glints' visible-sun term and the surface shadow, fades by 6 blocks of
-   depth, with the view path and with distance, falls on slopes and walls by
+   depth and with distance (the water body already veils it exactly as much as
+   the bed, so no extra view-path fade), falls on slopes and walls by
    N.L. Compiled in only through the `watercaustics` group while Caustics is
    above 0. Tier: 5 waves and no taps on Low, 10 waves and 4 taps above.
 7. **Shoreline** (`Shore`, D79): the distance from the texel to the bank or bed

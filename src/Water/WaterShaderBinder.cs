@@ -136,7 +136,9 @@ namespace VintageVisuals.Water
             // One drop system: vanilla's fixed-grid droplet rings step aside while ours are on.
             program.Uniform(OwnDropsUniform, config.RainRipples > 0.001f ? 1f : 0f);
             program.Uniform(GlintsUniform, config.Glints);
-            program.Uniform(CausticsUniform, config.Caustics);
+            // '.vvbench features' holds the web off by its strength (the code
+            // stays compiled), so the run prices the per-pixel work alone.
+            program.Uniform(CausticsUniform, FeatureBench.Off(FeatureBench.NoCaustics) ? 0f : config.Caustics);
             program.Uniform(CausticWavesUniform, QualityTier.WaterCausticWaves);
             program.Uniform(CausticTapsUniform, QualityTier.WaterCausticTaps);
             program.Uniform(CausticBlurUniform, config.CausticBlur);

@@ -114,10 +114,10 @@ const float VV_WATER_CAUSTIC_FOCUS = 3.0;    // blocks: the depth the lens settl
 const float VV_WATER_CAUSTIC_WARP = 0.12;    // blocks the web's cells are bent by
 const float VV_WATER_CAUSTIC_SHARP = 0.07;   // how soft a focus line is right under the surface
 const float VV_WATER_CAUSTIC_SPREAD = 0.03;  // ... and how much softer per block of depth
-const float VV_WATER_CAUSTIC_BLUR_SOFT = 0.4;// added softness at full blur
+const float VV_WATER_CAUSTIC_BLUR_SOFT = 0.25;// added softness at full blur
 const float VV_WATER_CAUSTIC_FAR_SOFT = 4.0; // added softness per block of bed per pixel (distance)
 const float VV_WATER_CAUSTIC_SHOULDER = 2.5; // a line approaches 1 + this over the average, never clips
-const float VV_WATER_CAUSTIC_SUN_SHARE = 0.75; // share of the bed's light that comes straight from the sun
+const float VV_WATER_CAUSTIC_SUN_SHARE = 0.85; // share of the bed's light that comes straight from the sun
 const float VV_WATER_CAUSTIC_DISPERSION = 0.08; // red and blue focus this much nearer and further at full
 const float VV_WATER_CAUSTIC_ALBEDO = 0.35;  // the bed, when its colour is not readable (DATA GAP above)
 const float VV_WATER_CAUSTIC_DEEP = 6.0;     // blocks: faded out by this depth, from 0.3 of it
@@ -462,10 +462,10 @@ vec3 vvWaterCausticWeb(vec2 world, float t, float depth, float extraSoft, vec2 f
     // Blur on the texel grid: the four neighbours r whole texels away, r
     // growing from 1 to 2 with the blur. Brighter texels take more of the
     // blurred value when glow is on, so a line spreads into a soft halo
-    // while the dim cells keep their edges.
+    // while the dim cells keep their edges. (r is 1 texel up to blur 0.5.)
     if (vv_waterCausticTaps > 1.5 && blur + vv_waterCausticGlow > 0.001)
     {
-        float r = floor(1.5 + 1.5 * blur) / VV_WATER_TEXELS;
+        float r = floor(1.25 + 1.5 * blur) / VV_WATER_TEXELS;
         float sum = m.g;
         sum += vvWaterCausticRaw(vvWaterCausticStreak(vvWaterCausticCurvature(world + vec2(r, 0.0), t, vv_waterCausticWaves), flowDir, flowAmount), f, s);
         sum += vvWaterCausticRaw(vvWaterCausticStreak(vvWaterCausticCurvature(world - vec2(r, 0.0), t, vv_waterCausticWaves), flowDir, flowAmount), f, s);
@@ -790,9 +790,10 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
             float footprint = sqrt(max(a11, a22)) * (behind / own);
             float fade = 1.0 - smoothstep(VV_WATER_CAUSTIC_FAR * 0.5, VV_WATER_CAUSTIC_FAR, footprint);
             fade *= 1.0 - smoothstep(VV_WATER_CAUSTIC_DEEP * 0.3, VV_WATER_CAUSTIC_DEEP, depth);
-            // Seen through the water: the longer the view path, the less of
-            // the bed's light comes back, even where the water is kept clear.
-            fade *= dot(exp(-VV_WATER_ABSORB * path * 2.0), vec3(0.3333));
+            // NOT dimmed by the view path here: the web scales only what shows
+            // through (step 8), so the water body already hides it exactly as
+            // much as it hides the bed. D77 dimmed it again because it added
+            // light; kept, that halved the web in a 2-block pond (2026-11-27).
             // Where the sunlight that reaches this bed point entered the
             // water: back up the refracted sun ray to the surface.
             vec3 down = refract(-vv_waterSunDir, vec3(0.0, 1.0, 0.0), VV_WATER_ETA);

@@ -442,15 +442,17 @@ namespace VintageVisuals.SmokeTest
                   floorLit > 0.9 && wallLit < 0.5 * floorLit && awayLit == 0 && stmts.Any(x => x.StartsWith("fade *= facing", StringComparison.Ordinal)),
                   "floor " + floorLit + ", wall " + wallLit + ", away " + awayLit);
 
-            // Gone by VV_WATER_CAUSTIC_DEEP, untouched in the shallows; and the
-            // view path through the water dims them as well.
-            string depthFade = Rhs(Statement(surf, "fade *=", "VV_WATER_CAUSTIC_DEEP"));
+            // Gone by VV_WATER_CAUSTIC_DEEP, untouched in the shallows...
+            string depthFade = Rhs(stmts.FirstOrDefault(x => x.StartsWith("fade *=", StringComparison.Ordinal) && x.Contains("VV_WATER_CAUSTIC_DEEP")) ?? "fade *= 1.0");
             double deep = Const(water, "VV_WATER_CAUSTIC_DEEP");
             Func<double, double> fd = dd => Scalar(depthFade, Syms("depth", dd, "VV_WATER_CAUSTIC_DEEP", deep));
-            check("caustics fade out with depth and with the view path through the water",
-                  fd(deep) < 1e-9 && Math.Abs(fd(1.0) - 1.0) < 1e-9 && deep <= 8.0 &&
-                  stmts.Any(x => x.StartsWith("fade *= dot(exp(-VV_WATER_ABSORB * path", StringComparison.Ordinal)),
-                  "deep " + deep + ", at 1 block " + fd(1.0));
+            // ...but NOT by the view path: the web scales only what shows
+            // through, so the water body already hides it as much as the bed.
+            // A second path fade halved it in a 2-block pond (2026-11-27).
+            bool pathFree = !stmts.Any(x => x.StartsWith("fade *=", StringComparison.Ordinal) && Regex.IsMatch(x, @"\bpath\b"));
+            check("caustics fade out with depth, and are not dimmed a second time by the view path",
+                  fd(deep) < 1e-9 && Math.Abs(fd(1.0) - 1.0) < 1e-9 && deep <= 8.0 && pathFree,
+                  "deep " + deep + ", at 1 block " + fd(1.0) + ", path-free " + pathFree);
 
             bool whole = waves.Count == 10 && waves.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
             var warpK = Regex.Matches(curv, @"vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\)\s*\*\s*K").Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value) }).ToList();
