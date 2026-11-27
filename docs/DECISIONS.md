@@ -4701,4 +4701,11 @@ inside vanilla's stage and is not separable without compiling it out); a
 per-uniform zero sweep for groups (measures the effect, not the source, which
 is what D90 showed is the wrong question).
 
-Verification: build, smoketest (all checks), six mutations. Not run in game (L2).
+Verification: build, smoketest (all checks), six mutations. First run in game the same day (L3, see the amendment).
+
+**Amendment (2026-11-27, first run in game).** The noise floor is now half the
+spread of the figure the cost is reported in (the GPU delta when timestamps
+exist), not the wider of the GPU and frame spreads. In the first forest bench
+the depth prepass saved 1.30 to 1.47 ms of GPU time in every round, but one
+round's frame time moved by 5 ms (a hitch outside the GPU), and the result was
+printed as noise. Frame time is still recorded beside it.

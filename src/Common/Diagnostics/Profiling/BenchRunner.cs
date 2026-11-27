@@ -454,8 +454,20 @@ namespace VintageVisuals.Common.Diagnostics.Profiling
             public double GpuDelta, GpuDeltaMin, GpuDeltaMax;
             public double CpuDelta;
 
-            /// <summary>The noise floor: half the paired spread, never below 0.05 ms.</summary>
-            public double Noise { get { return Math.Max(0.05, Math.Max(DeltaMax - DeltaMin, GpuDeltaMax - GpuDeltaMin) / 2); } }
+            /// <summary>
+            /// The noise floor: half the paired spread of the PRIMARY figure, never below 0.05 ms.
+            /// Judged on the figure the cost is reported in: one round's frame-time hitch
+            /// (a chunk upload, a GC) must not hide a GPU saving that held to 0.2 ms in every
+            /// round, which is what the first bench in game did to the depth prepass.
+            /// </summary>
+            public double Noise
+            {
+                get
+                {
+                    double spread = double.IsNaN(GpuDelta) ? DeltaMax - DeltaMin : GpuDeltaMax - GpuDeltaMin;
+                    return Math.Max(0.05, spread / 2);
+                }
+            }
             public bool Significant { get { return Math.Abs(Primary) > Noise; } }
 
             /// <summary>The GPU delta when timestamps exist (the frame can hide it when CPU-bound), else the frame delta.</summary>

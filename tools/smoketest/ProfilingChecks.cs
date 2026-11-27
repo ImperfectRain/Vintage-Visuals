@@ -142,7 +142,8 @@ namespace VintageVisuals.SmokeTest
             var a = new BenchVariant { Key = "out", Label = "out" };
             var b = new BenchVariant { Key = "in", Label = "in" };
             var c = new BenchVariant { Key = "same", Label = "same" };
-            plan.Variants.Add(a); plan.Variants.Add(b); plan.Variants.Add(c);
+            var d = new BenchVariant { Key = "hitch", Label = "hitch" };
+            plan.Variants.Add(a); plan.Variants.Add(b); plan.Variants.Add(c); plan.Variants.Add(d);
             var runs = new List<BenchRun>();
             for (int round = 0; round < 3; round++)
             {
@@ -150,6 +151,8 @@ namespace VintageVisuals.SmokeTest
                 runs.Add(Run(plan, a, round, 10 + drift));
                 runs.Add(Run(plan, b, round, 12 + drift + (round == 1 ? 0.1 : 0)));
                 runs.Add(Run(plan, c, round, 10 + drift + (round == 2 ? 0.02 : 0)));
+                // 1 ms cheaper on the GPU every round; one round's frame time spikes by 4 ms.
+                runs.Add(Run(plan, d, round, 10 + drift + (round == 1 ? 4 : 0), (10 + drift) * 0.95 - 1));
             }
             PlanSummary s = PlanSummary.From(plan, runs);
             PlanSummary.Row rb = s.Rows.First(r => r.Variant == b);
@@ -158,13 +161,17 @@ namespace VintageVisuals.SmokeTest
                   Math.Abs(rb.Primary - 2.0) < 0.11 && rb.Significant, "cost " + rb.Primary + ", noise " + rb.Noise);
             check("profiler: a variant equal to the baseline reads as noise",
                   !rc.Significant, "cost " + rc.Primary + ", noise " + rc.Noise);
+            PlanSummary.Row rd = s.Rows.First(r => r.Variant == d);
+            check("profiler: one round's frame hitch does not hide a steady GPU saving",
+                  Math.Abs(rd.Primary + 1.0) < 0.01 && rd.Significant, "cost " + rd.Primary + ", noise " + rd.Noise);
             check("profiler: the summary names the bottleneck", s.Bound == "gpu", s.Bound);
         }
 
-        private static BenchRun Run(BenchPlan plan, BenchVariant v, int round, double ms)
+        private static BenchRun Run(BenchPlan plan, BenchVariant v, int round, double ms, double gpu = double.NaN)
         {
+            if (double.IsNaN(gpu)) gpu = ms * 0.95;
             var frame = new FrameProfiler.BenchResult { Label = v.Label, Frames = 600, FrameAvg = ms, FrameP50 = ms, FrameP95 = ms + 1, FrameP99 = ms + 2 };
-            frame.Segments.Add(("frame", "GPU frame", ms * 0.95, ms * 0.5));
+            frame.Segments.Add(("frame", "GPU frame", gpu, ms * 0.5));
             return new BenchRun { Plan = plan, Variant = v, Round = round, Seconds = 6, Frame = frame };
         }
     }

@@ -80,7 +80,7 @@ tab has a Profiler section with buttons for the common ones.
   the median, over rounds, of its difference from the baseline **in the same
   round**, so drift across the bench (heat, chunks, time) cancels. The noise is
   half the spread of those differences (never below 0.05 ms), and a result is
-  significant only when it is larger than the noise.
+  significant only when it is larger than the noise. The noise is taken from the figure the cost is reported in (GPU when timestamps exist), so a frame-time hitch in one round cannot hide a steady GPU saving.
 - **Reloads.** A variant that changes the gating signature waits for the shader
   reload, then 5 s more; others wait 1.5 s.
 - **Bottleneck.** GPU frame over frame time at 0.9 or more is GPU bound, 0.75
@@ -89,7 +89,7 @@ tab has a Profiler section with buttons for the common ones.
 
 ## Known limitations
 
-- Not yet run in game (L2). Wind pattern codes for `/weather setw` are not
+- First run in game 2026-11-27 (L3, see docs/STATUS.md). The GPU was thermally limited in almost every run; paired rounds cancel most of that, but compare clocks before comparing builds. Wind pattern codes for `/weather setw` are not
   verified; `wind=` defaults to empty, which leaves the wind alone.
 - The mirror subsystem is timed as one renderer; its internal steps are not split.
 - `OnReloadShader` may fire at the start of a reload rather than the end; the
