@@ -44,7 +44,7 @@ level is tracked in [docs/CHECKLIST.md](docs/CHECKLIST.md). Design rules are in
    `VintagestoryData/ModConfig/vintagevisuals.json`, created on first run.
 3. Press <kbd>Ctrl</kbd>+<kbd>V</kbd> in game to reload the config from disk.
    With the optional [ConfigLib](https://mods.vintagestory.at/configlib) mod
-   installed, the F7 panel is also available. The native Visual Tuning Studio is
+   installed, its panel is also available. The native Visual Tuning Studio is
    opened by this mod's hotkey.
 
 ## Configuration

@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
+using Cairo;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using VintageVisuals.Common.Diagnostics;
 using VintageVisuals.PseudoPBR;
 
 namespace VintageVisuals.Ui
@@ -19,71 +22,114 @@ namespace VintageVisuals.Ui
     {
         public const string HotkeyCode = "vintagevisuals_visualtuning";
 
-        private const double DialogWidth = 860;
-        private const double DialogHeight = 610;
+        // THE PANEL SIZES ITSELF TO THE SCREEN. The fixed 860x610 panel showed
+        // about six rows at 1440p (in-game audit, 2026-11-27). The size is
+        // taken from the frame in GUI units at compose time, between these
+        // bounds, and every column below derives from it.
+        private const double MinDialogWidth = 860;
+        private const double MaxDialogWidth = 1200;
+        private const double MinDialogHeight = 610;
+        private const double MaxDialogHeight = 1000;
+
         private const double DialogPadding = 10;
         private const double SidebarWidth = 196;
         private const double SidebarPadding = 18;
         private const double ContentGap = 24;
         private const double ContentLeft = DialogPadding + SidebarWidth + ContentGap;
         private const double ContentRightPadding = 30;
-        private const double ContentWidth = DialogWidth - ContentLeft - ContentRightPadding - 10;
         private const double HeaderY = 44;
         private const double BodyY = 88;
-        private const double FooterY = 548;
-        private const double BodyHeight = FooterY - BodyY - 18;
+        private const double FooterGap = 62;
+        private const double DetailsHeight = 56;
+        private const double TabTop = 58;
+        private const double TabStep = 32;
+        private const double SearchWidth = 230;
 
-        // Rows are two lines. The first names the setting and says what it does
-        // (or why it cannot); the second gives the control most of the width,
-        // with the current value beside it and Reset in a fixed slot after that,
-        // so neither moves when a row becomes modified.
+        private double DialogWidth = MinDialogWidth;
+        private double DialogHeight = MinDialogHeight;
+        private double ContentWidth { get { return DialogWidth - ContentLeft - ContentRightPadding - 10; } }
+        private double FooterY { get { return DialogHeight - FooterGap; } }
+        private double DetailsY { get { return FooterY - DetailsHeight - 8; } }
+        private double BodyHeight { get { return DetailsY - BodyY - 14; } }
+
+        // Rows are two lines. The first names the setting and gives the first
+        // sentence of its description; the second gives the control most of the
+        // width, with the current value beside it and Reset in a fixed slot
+        // after that, so neither moves when a row becomes modified. The whole
+        // description is in the details strip under the list.
         private const double RowLeft = 0;
-        private const double RowHeight = 56;
-        private const double HeaderHeight = 26;
+        private const double RowHeight = 54;
+        private const double HeaderHeight = 28;
+        private const double NoteHeight = 22;
+        private const double ActionHeight = 38;
         private const double RowGap = 10;
         private const double RowRightPadding = 8;
-        private const double LabelWidth = 190;
+        private const double LabelWidth = 200;
         private const double InfoWidth = 8;
         private const double ValueWidth = 86;
         private const double ResetWidth = 54;
         private const double LabelX = RowLeft + 18;
         private const double InfoX = LabelX + LabelWidth + InfoWidth;
-        private const double InfoTextWidth = ContentWidth - InfoX - RowRightPadding;
+        private double InfoTextWidth { get { return ContentWidth - InfoX - RowRightPadding; } }
         private const double ControlX = LabelX;
-        private const double ControlWidth = ContentWidth - ControlX - ValueWidth - ResetWidth - 2 * RowGap - RowRightPadding;
-        private const double ValueX = ControlX + ControlWidth + RowGap;
-        private const double ResetX = ValueX + ValueWidth + RowGap;
+        private double ControlWidth { get { return ContentWidth - ControlX - ValueWidth - ResetWidth - 2 * RowGap - RowRightPadding; } }
+        private double ValueX { get { return ControlX + ControlWidth + RowGap; } }
+        private double ResetX { get { return ValueX + ValueWidth + RowGap; } }
         private const double LineOneY = 4;
-        private const double LineTwoY = 27;
-        private const int InfoChars = 52;
-        private const double WheelStep = 48;
+        private const double LineTwoY = 26;
+
+        /// <summary>Characters of detail text that fit in a width, from the font's average advance.</summary>
+        private static int CharsFor(double width) { return Math.Max(24, (int)(width / 6.3)); }
+        private int InfoChars { get { return CharsFor(InfoTextWidth); } }
+
+        /// <summary>
+        /// One wheel notch scrolls a row and a half. 48 was under one row, so the
+        /// list crawled (in-game audit, 2026-11-27).
+        /// </summary>
+        private const double WheelStep = 84;
+
         private const string ScrollbarKey = "settings-scrollbar";
         private const string AdvancedSwitchKey = "advanced-switch";
         private const string RowsContainerKey = "settings-rows";
+        private const string SearchKey = "settings-search";
+        private const string DetailsKey = "settings-details";
         private const string NotInThisBuild = "Not in this build";
 
+        // Three text colours with three meanings. Orange used to mean both "where
+        // to look" and "this is off", and section headings were orange too, so
+        // nothing stood out (in-game audit, 2026-11-27).
+        private static readonly double[] HeadingColor = { 0.91, 0.80, 0.58, 1.0 };
+        private static readonly double[] HintColor = { 0.62, 0.80, 0.96, 1.0 };
+        private static readonly double[] WarningColor = { 1.0, 0.66, 0.34, 1.0 };
+
         private readonly VisualTuningStudioController _controller;
+        private readonly SavedLooks _looks;
         private readonly Dictionary<SettingTab, double> _scrollByTab = new Dictionary<SettingTab, double>();
 
         private readonly GuiTab[] _tabs =
         {
             new GuiTab { DataInt = (int)SettingTab.Overview, Name = "Overview" },
-            new GuiTab { DataInt = (int)SettingTab.Color, Name = "Color" },
-            new GuiTab { DataInt = (int)SettingTab.Materials, Name = "Materials" },
+            new GuiTab { DataInt = (int)SettingTab.Color, Name = "Colour" },
+            new GuiTab { DataInt = (int)SettingTab.Light, Name = "Light" },
+            new GuiTab { DataInt = (int)SettingTab.Materials, Name = "Surfaces" },
+            new GuiTab { DataInt = (int)SettingTab.Nature, Name = "Nature" },
             new GuiTab { DataInt = (int)SettingTab.Weather, Name = "Weather" },
             new GuiTab { DataInt = (int)SettingTab.Atmosphere, Name = "Atmosphere" },
+            new GuiTab { DataInt = (int)SettingTab.Water, Name = "Water" },
             new GuiTab { DataInt = (int)SettingTab.Reflections, Name = "Reflections" },
+            new GuiTab { DataInt = (int)SettingTab.Performance, Name = "Performance" },
             new GuiTab { DataInt = (int)SettingTab.Debug, Name = "Debug" },
         };
 
         private readonly DebugSystem[] _debugSystems =
         {
-            new DebugSystem("Materials", DebugViewRegistry.PbrPath,
+            new DebugSystem("Surfaces", DebugViewRegistry.PbrPath,
                 v => v.Group != "Pixel reflection" && v.Group != "Scene reflection bridge" && v.Group != "Reflection march"),
             new DebugSystem("Reflections", DebugViewRegistry.PbrPath,
                 v => v.Value == 0 || v.Group == "Pixel reflection" || v.Group == "Scene reflection bridge" || v.Group == "Reflection march"),
-            new DebugSystem("Entities", DebugViewRegistry.EntityPath, v => true),
-            new DebugSystem("Weather clouds", DebugViewRegistry.CloudPath, v => true),
+            new DebugSystem("Water", DebugViewRegistry.WaterPath, v => true),
+            new DebugSystem("Creatures", DebugViewRegistry.EntityPath, v => true),
+            new DebugSystem("Cloud shadows", DebugViewRegistry.CloudPath, v => true),
             new DebugSystem("Atmosphere", DebugViewRegistry.AtmospherePath, v => true),
         };
 
@@ -93,11 +139,28 @@ namespace VintageVisuals.Ui
         private int _debugSystemIndex = 0;
         private double _currentScroll;
         private double _currentContentHeight;
-        private double _currentBodyHeight = BodyHeight;
+        private double _currentBodyHeight = 400;
         private double _currentBodyY = BodyY;
         private ElementBounds _scrollContentBounds;
         private ElementBounds _viewportBounds;
         private ElementBounds _scrollbarBounds;
+
+        /// <summary>Text in the search box. Non-empty means the list shows matches from every tab.</summary>
+        private string _search = "";
+        private bool _restoringSearch;
+        private bool _searchComposeQueued;
+
+        /// <summary>The Saved looks slot the Save and Load buttons act on, 0-based.</summary>
+        private int _lookSlot;
+
+        /// <summary>One line of feedback for the details strip after an action (a look saved, a preset applied).</summary>
+        private string _status;
+
+        /// <summary>The setting the pointer is over, whose full text the details strip shows.</summary>
+        private VisualSetting _hovered;
+
+        /// <summary>Where each composed setting row sits in the scroll content, for the details strip.</summary>
+        private readonly List<RowSpan> _rowSpans = new List<RowSpan>();
 
         /// <summary>
         /// The native scroll container every row element lives in. Not on the
@@ -139,6 +202,7 @@ namespace VintageVisuals.Ui
             : base(capi)
         {
             _controller = controller;
+            _looks = new SavedLooks(capi);
             _advanced = false;
             ComposeDialog();
         }
@@ -150,6 +214,8 @@ namespace VintageVisuals.Ui
         {
             Log("ENTER OnGuiOpened");
             base.OnGuiOpened();
+            // The window may have been resized since the panel was composed.
+            if (MeasureDialog()) ComposeDialog();
             Log("EXIT OnGuiOpened");
         }
 
@@ -239,6 +305,34 @@ namespace VintageVisuals.Ui
             return bounds != null && bounds.ParentBounds != null && bounds.PointInside(mouseX, mouseY);
         }
 
+        /// <summary>
+        /// Tracks which row the pointer is over, for the details strip. Read-only:
+        /// it changes one text element and nothing else.
+        /// </summary>
+        public override void OnMouseMove(MouseEvent args)
+        {
+            base.OnMouseMove(args);
+            if (SingleComposer == null) return;
+
+            VisualSetting over = null;
+            int mouseX = capi.Input.MouseX;
+            int mouseY = capi.Input.MouseY;
+            if (_rowSpans.Count > 0 && IsAttachedAndInside(_viewportBounds, mouseX, mouseY))
+            {
+                double scale = Math.Max(0.01, GuiElement.scaled(1));
+                double contentY = (mouseY - _viewportBounds.absY) / scale + _currentScroll;
+                foreach (RowSpan span in _rowSpans)
+                {
+                    if (contentY >= span.Top && contentY < span.Top + span.Height) { over = span.Setting; break; }
+                }
+            }
+
+            if (over == _hovered) return;
+            _hovered = over;
+            if (over != null) _status = null;
+            UpdateDetails();
+        }
+
         private GuiElementDropDown OpenDropDown()
         {
             foreach (string key in _dropdownKeys)
@@ -261,11 +355,33 @@ namespace VintageVisuals.Ui
             Log("EXIT Dispose");
         }
 
+        /// <summary>Sizes the panel to the current frame. True when the size changed.</summary>
+        private bool MeasureDialog()
+        {
+            double scale = Math.Max(0.25, GuiElement.scaled(1));
+            double screenW = capi.Render.FrameWidth / scale;
+            double screenH = capi.Render.FrameHeight / scale;
+
+            double width = Clamp(Math.Round(screenW * 0.62), MinDialogWidth, Math.Max(MinDialogWidth, Math.Min(MaxDialogWidth, screenW - 40)));
+            double height = Clamp(Math.Round(screenH * 0.86), MinDialogHeight, Math.Max(MinDialogHeight, Math.Min(MaxDialogHeight, screenH - 40)));
+
+            bool changed = Math.Abs(width - DialogWidth) > 0.5 || Math.Abs(height - DialogHeight) > 0.5;
+            DialogWidth = width;
+            DialogHeight = height;
+            return changed;
+        }
+
+        private static double Clamp(double v, double lo, double hi) { return Math.Max(lo, Math.Min(hi, v)); }
+
+        private bool Searching { get { return !string.IsNullOrWhiteSpace(_search); } }
+
         private void ComposeDialog()
         {
             _composerGeneration++;
             int generation = _composerGeneration;
             Log("ENTER ComposeDialog generation " + generation);
+
+            MeasureDialog();
 
             ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog
                 .WithAlignment(EnumDialogArea.CenterMiddle)
@@ -280,36 +396,48 @@ namespace VintageVisuals.Ui
             _scrollbarBounds = null;
             _rowsContainer = null;
             _rows.Clear();
+            _rowSpans.Clear();
             _dropdownKeys.Clear();
+            _hovered = null;
             _composedLayout = LayoutSignature();
+
+            double footerRight = DialogWidth - 40;
+            double resetWidth = 100;
+            double compareWidth = 150;
 
             SingleComposer = capi.Gui.CreateCompo("vintagevisuals-tuning-studio", dialogBounds)
                 .AddShadedDialogBG(bgBounds)
-                .AddDialogTitleBar("Vintage Visuals", OnTitleBarClose)
+                .AddDialogTitleBar("Vintage Visuals - Visual Tuning", OnTitleBarClose)
                 .BeginChildElements(bgBounds)
-                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, 380, 26))
-                    .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, 506), 2)
+                    .AddStaticText(PageTitle(), CairoFont.WhiteMediumText(), ElementBounds.Fixed(ContentLeft, HeaderY, ContentWidth - SearchWidth - 20, 26))
+                    .AddInset(ElementBounds.Fixed(DialogPadding, 42, SidebarWidth, FooterY - 42), 2)
                     .AddInset(ElementBounds.Fixed(ContentLeft - 10, BodyY - 8, ContentWidth + 20, BodyHeight + 16), 2)
+                    .AddInset(ElementBounds.Fixed(ContentLeft - 10, DetailsY - 4, ContentWidth + 20, DetailsHeight + 8), 2, 0.5f)
+                    .AddDynamicText(DetailsText(), CairoFont.WhiteDetailText(),
+                        ElementBounds.Fixed(ContentLeft, DetailsY, ContentWidth, DetailsHeight), DetailsKey)
+                    .AddTextInput(ElementBounds.Fixed(ContentLeft + ContentWidth - SearchWidth, HeaderY - 4, SearchWidth, 30),
+                        text => OnSearchChanged(generation, text), CairoFont.TextInput(), SearchKey)
                     .AddSwitch(on => Guard(generation, "AdvancedChanged", () => OnAdvancedChanged(on)),
                         ElementBounds.Fixed(ContentLeft, FooterY + 2, 30, 30), AdvancedSwitchKey, 24)
                     .AddStaticText("Show advanced and unavailable settings", CairoFont.WhiteSmallText(),
-                        ElementBounds.Fixed(ContentLeft + 36, FooterY + 4, 320, 24))
-                    .AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked), ElementBounds.Fixed(DialogWidth - 136, 548, 96, 28),
-                        CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
+                        ElementBounds.Fixed(ContentLeft + 36, FooterY + 6, 300, 24))
+                    .AddButton(_controller.CompareActive ? "Compare: on" : "Compare: off",
+                        () => Guard(generation, "Compare", OnCompareClicked),
+                        ElementBounds.Fixed(footerRight - resetWidth - 12 - compareWidth, FooterY, compareWidth, 28),
+                        CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "compare");
 
-            // The forest light presets, on the tab whose sliders they move.
-            if (_tab == SettingTab.Materials)
+            if (!Searching && _tab != SettingTab.Overview)
             {
-                SingleComposer
-                    .AddButton("Subtle", () => Guard(generation, "PresetSubtle", () => OnPresetClicked("Subtle")),
-                        ElementBounds.Fixed(DialogWidth - 270, 548, 60, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-subtle")
-                    .AddButton("Cinematic", () => Guard(generation, "PresetCinematic", () => OnPresetClicked("Cinematic")),
-                        ElementBounds.Fixed(DialogWidth - 206, 548, 66, 28), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "preset-cinematic");
+                SingleComposer.AddButton("Reset Tab", () => Guard(generation, "ResetTab", OnResetTabClicked),
+                    ElementBounds.Fixed(footerRight - resetWidth, FooterY, resetWidth, 28),
+                    CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "reset-tab");
             }
 
             AddTabs(generation);
+            AddSavedLooks(generation);
 
-            if (_tab == SettingTab.Overview) AddOverview();
+            if (Searching) AddSettingsTab(_tab);
+            else if (_tab == SettingTab.Overview) AddOverview();
             else if (_tab == SettingTab.Debug) AddDebug();
             else AddSettingsTab(_tab);
 
@@ -318,6 +446,7 @@ namespace VintageVisuals.Ui
             GuiElementSwitch advanced = SingleComposer.GetSwitch(AdvancedSwitchKey);
             if (advanced != null) advanced.On = _advanced;
 
+            RestoreSearchBox();
             ConfigureScrollbar();
 
             // Reset visibility and every other live state come from one place,
@@ -328,14 +457,14 @@ namespace VintageVisuals.Ui
 
         private void AddTabs(int generation)
         {
-            foreach (GuiTab tab in _tabs) tab.Active = tab.DataInt == (int)_tab;
+            foreach (GuiTab tab in _tabs) tab.Active = !Searching && tab.DataInt == (int)_tab;
 
             double tabX = DialogPadding + SidebarPadding;
             double tabWidth = SidebarWidth - 2 * SidebarPadding;
-            double y = 58;
+            double y = TabTop;
             foreach (GuiTab tab in _tabs)
             {
-                bool active = tab.DataInt == (int)_tab;
+                bool active = tab.Active;
                 CairoFont font = active
                     ? CairoFont.WhiteSmallText().WithColor(GuiStyle.ActiveButtonTextColor)
                     : CairoFont.WhiteSmallText();
@@ -344,142 +473,279 @@ namespace VintageVisuals.Ui
                 {
                     SelectTab((SettingTab)tab.DataInt);
                     return true;
-                }), ElementBounds.Fixed(tabX, y, tabWidth, 28), font, EnumButtonStyle.Normal, "tab-" + tab.DataInt);
+                }), ElementBounds.Fixed(tabX, y, tabWidth, 26), font, EnumButtonStyle.Normal, "tab-" + tab.DataInt);
 
-                y += 38;
+                y += TabStep;
             }
+        }
+
+        /// <summary>
+        /// Saved looks, at the foot of the sidebar: pick a slot, then Save or
+        /// Load. A look is every tuning value (never a debug view), stored in its
+        /// own file and put back through the controller like any other edit.
+        /// </summary>
+        private void AddSavedLooks(int generation)
+        {
+            double x = DialogPadding + SidebarPadding;
+            double width = SidebarWidth - 2 * SidebarPadding;
+            double y = FooterY - 104;
+            if (y < TabTop + _tabs.Length * TabStep + 4) return;
+
+            SingleComposer.AddStaticText("Saved looks", CairoFont.WhiteSmallText().WithColor(HeadingColor),
+                ElementBounds.Fixed(x, y, width, 20));
+
+            double slotWidth = (width - 2 * 6) / SavedLooks.SlotCount;
+            for (int i = 0; i < SavedLooks.SlotCount; i++)
+            {
+                int slot = i;
+                bool selected = slot == _lookSlot;
+                bool filled = _looks.Get(slot) != null;
+                CairoFont font = selected ? CairoFont.WhiteSmallText().WithColor(GuiStyle.ActiveButtonTextColor) : CairoFont.WhiteSmallText();
+                SingleComposer.AddButton((slot + 1) + (filled ? "" : " -"), () => Guard(generation, "LookSlot", () =>
+                {
+                    _lookSlot = slot;
+                    SavedLook look = _looks.Get(slot);
+                    _status = look == null ? "Look " + (slot + 1) + " is empty. Save puts your current settings in it."
+                                           : "Look " + (slot + 1) + " was saved " + look.SavedAt + ". Load puts it back.";
+                    ComposeDialog();
+                    return true;
+                }), ElementBounds.Fixed(x + i * (slotWidth + 6), y + 24, slotWidth, 26), font, EnumButtonStyle.Normal, "look-slot-" + slot);
+            }
+
+            double half = (width - 6) / 2;
+            SingleComposer
+                .AddButton("Save", () => Guard(generation, "LookSave", OnSaveLookClicked),
+                    ElementBounds.Fixed(x, y + 58, half, 26), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "look-save")
+                .AddButton("Load", () => Guard(generation, "LookLoad", OnLoadLookClicked),
+                    ElementBounds.Fixed(x + half + 6, y + 58, half, 26), CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "look-load");
+        }
+
+        private bool OnSaveLookClicked()
+        {
+            bool ok = _looks.Save(_lookSlot, _controller.CaptureLook());
+            _status = ok ? "Saved your current settings as look " + (_lookSlot + 1) + "."
+                         : "Could not save look " + (_lookSlot + 1) + "; see the log.";
+            ComposeDialog();
+            return true;
+        }
+
+        private bool OnLoadLookClicked()
+        {
+            SavedLook look = _looks.Get(_lookSlot);
+            if (look == null)
+            {
+                _status = "Look " + (_lookSlot + 1) + " is empty. Save puts your current settings in it.";
+                UpdateDetails();
+                return true;
+            }
+            int changed = 0;
+            LocalEdit(() => { changed = _controller.ApplyLook(look.Values); });
+            _status = "Loaded look " + (_lookSlot + 1) + " (" + changed + " settings changed).";
+            ComposeDialog();
+            return true;
+        }
+
+        private bool OnCompareClicked()
+        {
+            LocalEdit(() => _controller.ToggleCompare());
+            _status = _controller.CompareActive
+                ? "Compare is on: the left half of the screen is vanilla, the right half Vintage Visuals."
+                : "Compare is off.";
+            ComposeDialog();
+            return true;
         }
 
         private string PageTitle()
         {
-            if (_tab == SettingTab.Materials) return "PBR & Materials";
-            return _tabs.First(t => t.DataInt == (int)_tab).Name;
+            if (Searching) return "Search results";
+            if (_tab == SettingTab.Color) return "Colour and exposure";
+            if (_tab == SettingTab.Light) return "Sunlight and moonlight";
+            if (_tab == SettingTab.Materials) return "Surfaces and materials";
+            if (_tab == SettingTab.Nature) return "Plants and wildlife";
+            return TabName(_tab);
+        }
+
+        private string TabName(SettingTab tab)
+        {
+            GuiTab found = _tabs.FirstOrDefault(t => t.DataInt == (int)tab);
+            return found == null ? tab.ToString() : found.Name;
         }
 
         private void SelectTab(SettingTab tab)
         {
             Log("ENTER SelectTab " + tab);
+            // A click on the current tab is a no-op, unless a search is
+            // showing: then it is how the player goes back to that tab.
             if (_tab == tab)
             {
-                Log("EXIT SelectTab unchanged " + tab);
-                return;
+                if (!Searching)
+                {
+                    Log("EXIT SelectTab unchanged " + tab);
+                    return;
+                }
             }
 
             SaveScroll();
+            _search = "";
+            _status = null;
             _tab = tab;
             ComposeDialog();
             Log("EXIT SelectTab " + tab);
         }
 
-        private bool OnAdvancedChanged(bool on)
-        {
-            if (_advanced == on) return true;
+        // --- search ------------------------------------------------------------
 
-            SaveScroll();
-            _advanced = on;
-            ComposeDialog();
+        /// <summary>
+        /// A keystroke in the search box. The list is rebuilt on the next frame,
+        /// not inside the text box's own key handler: recomposing there would
+        /// dispose the element that is still handling the key. Several quick
+        /// keystrokes coalesce into one rebuild.
+        /// </summary>
+        private void OnSearchChanged(int generation, string text)
+        {
+            if (_restoringSearch || !IsCurrentGeneration(generation, "SearchChanged")) return;
+            text = text ?? "";
+            if (string.Equals(text, _search, StringComparison.Ordinal)) return;
+
+            if (!Searching) SaveScroll();
+            _search = text;
+            if (_searchComposeQueued) return;
+            _searchComposeQueued = true;
+            capi.Event.EnqueueMainThreadTask(() =>
+            {
+                _searchComposeQueued = false;
+                if (!IsOpened()) return;
+                Log("ENTER SearchRebuild");
+                ComposeDialog();
+                Log("EXIT SearchRebuild");
+            }, "vintagevisuals-studio-search");
+        }
+
+        /// <summary>Puts the typed text back in the new composer's search box and keeps the caret there.</summary>
+        private void RestoreSearchBox()
+        {
+            GuiElementTextInput input = SingleComposer.GetTextInput(SearchKey);
+            if (input == null) return;
+            input.SetPlaceHolderText("Search settings...");
+            if (!Searching && string.IsNullOrEmpty(_search)) return;
+
+            _restoringSearch = true;
+            try
+            {
+                input.SetValue(_search);
+            }
+            finally
+            {
+                _restoringSearch = false;
+            }
+            SingleComposer.FocusElement(input.TabIndex);
+        }
+
+        private static bool Matches(VisualSetting setting, string tabName, string query)
+        {
+            foreach (string word in query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                bool hit = Contains(setting.DisplayName, word) || Contains(setting.Description, word) ||
+                           Contains(setting.Section, word) || Contains(tabName, word);
+                if (!hit) return false;
+            }
             return true;
         }
 
-        private bool OnPresetClicked(string name)
+        private static bool Contains(string text, string word)
         {
-            Log("ENTER Preset " + name);
-            LocalEdit(() => _controller.ApplyPreset(name));
-            ComposeDialog();
-            Log("EXIT Preset " + name);
-            return true;
+            return text != null && text.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private bool OnResetTabClicked()
-        {
-            Log("ENTER ResetTab");
-            LocalEdit(() => _controller.ResetTab(_tab, _advanced));
-            ComposeDialog();
-            Log("EXIT ResetTab");
-            return true;
-        }
+        // --- overview ---------------------------------------------------------
 
-        private bool OnCloseClicked()
-        {
-            Log("ENTER Close");
-            TryClose();
-            Log("EXIT Close");
-            return true;
-        }
-
-        private void OnTitleBarClose()
-        {
-            Log("ENTER TitleBarClose");
-            TryClose();
-            Log("EXIT TitleBarClose");
-        }
-
-        // Overview cards. Each line is one line: static text wraps past its
-        // bounds instead of clipping, so every string is cut to fit
+        // Overview cards, two to a row. Each line is one line: static text wraps
+        // past its bounds instead of clipping, so every string is cut to fit
         // (OverviewChars) and the card is tall enough for three lines.
-        private const double OverviewCardHeight = 80;
         private const double OverviewCardGap = 8;
-        private const double OverviewCardWidth = ContentWidth - 34;
-        private const double OverviewButtonWidth = 76;
-        private const double OverviewTextWidth = OverviewCardWidth - OverviewButtonWidth - 46;
-        private const int OverviewChars = 58;
+        private const double OverviewButtonWidth = 70;
+        private double OverviewCardWidth { get { return (ContentWidth - 20 - OverviewCardGap) / 2; } }
+        private double OverviewTextWidth { get { return OverviewCardWidth - OverviewButtonWidth - 30; } }
+        private int OverviewChars { get { return CharsFor(OverviewTextWidth); } }
 
         private void AddOverview()
         {
+            double rows = 5;
+            double cardHeight = Math.Min(78, (BodyHeight - (rows - 1) * OverviewCardGap - 4) / rows);
+            double step = cardHeight + OverviewCardGap;
+            double left = ContentLeft;
+            double right = ContentLeft + OverviewCardWidth + OverviewCardGap;
             double y = BodyY + 2;
-            double step = OverviewCardHeight + OverviewCardGap;
 
-            AddOverviewRow("COLOR & EXPOSURE", "ColorGrade.Enabled", SettingTab.Color,
+            AddOverviewRow("COLOUR", "ColorGrade.Enabled", SettingTab.Color,
                 "Exposure " + ValueByCode("colorgrade_exposure") + " · Eye adaptation " + OnOff("AdaptiveExposure.Enabled"),
-                "Open exposure, tonemap, colour style and grading controls.", y);
+                "Open exposure, tonemap, colour style and grading controls.", left, y, cardHeight);
+            AddOverviewRow("LIGHT", "PseudoPBR.Enabled", SettingTab.Light,
+                "Sunflecks " + ValueByCode("pbr_sunflecks") + " · Sun shafts " + ValueByCode("pbr_shafts"),
+                "Open sunflecks, canopy shade, shafts and moonlight.", right, y, cardHeight);
             y += step;
 
-            AddOverviewRow("MATERIALS", "PseudoPBR.Enabled", SettingTab.Materials,
-                "Surface relief " + ValueByCode("pbr_normalstrength") + " · Roughness bias " + ValueByCode("pbr_roughnessbias"),
-                "Open relief, roughness, specular and emissive controls.", y);
+            AddOverviewRow("SURFACES", "PseudoPBR.Enabled", SettingTab.Materials,
+                "Surface relief " + ValueByCode("pbr_normalstrength") + " · Polish or wear " + ValueByCode("pbr_roughnessbias"),
+                "Open relief, roughness, specular and glow controls.", left, y, cardHeight);
+            AddOverviewRow("NATURE", "PseudoPBR.Enabled", SettingTab.Nature,
+                "Light through leaves " + ValueByCode("pbr_foliage") + " · Falling leaves " + ValueByCode("pbr_leaves"),
+                "Open wind, plant shading, fireflies, pollen and leaves.", right, y, cardHeight);
             y += step;
 
             AddOverviewRow("WEATHER", "Weather.Enabled", SettingTab.Weather,
-                "Wetness " + ValueByCode("weather_wetness") + " · Cloud shadows " + ValueByCode("weather_cloudshadow"),
-                "Open wetness, ripples, rain fog and cloud shadow controls.", y);
-            y += step;
-
+                "Wet surfaces " + ValueByCode("weather_wetness") + " · Cloud shadows " + ValueByCode("weather_cloudshadow"),
+                "Open wetness, ripples, rain fog and cloud shadow controls.", left, y, cardHeight);
             AddOverviewRow("ATMOSPHERE", "Atmosphere.Enabled", SettingTab.Atmosphere,
-                "Aerial perspective " + ValueByCode("atmosphere_aerial") + " · Ground haze " + ValueByCode("atmosphere_heighthaze"),
-                "Open scattering, aerial perspective and haze controls.", y);
+                "Distance haze " + ValueByCode("atmosphere_aerial") + " · Valley haze " + ValueByCode("atmosphere_heighthaze"),
+                "Open distance haze, sunlit air, mist and weather in the air.", right, y, cardHeight);
             y += step;
 
+            AddOverviewRow("WATER", "Water.Enabled", SettingTab.Water,
+                "Caustics " + ValueByCode("water_caustics") + " · Reflection " + ValueByCode("water_sky"),
+                "Open waves, reflections, depth colour, shores and caustics.", left, y, cardHeight);
             bool reflectionsUnavailable = StateByCode("reflections_scene") == NotInThisBuild;
-            AddOverviewRow("REFLECTIONS", "Reflections.SceneReflections", SettingTab.Reflections,
+            AddOverviewRow("REFLECTIONS", "PseudoPBR.Enabled", SettingTab.Reflections,
                 reflectionsUnavailable
                     ? "Needs Surface materials, which draws the reflections."
-                    : "Scene reflections " + StateByCode("reflections_scene") + " · Strength " + StateByCode("pbr_pixelreflect"),
-                "Open scene reflection controls.", y);
+                    : "Block reflections " + StateByCode("pbr_pixelreflect") + " · World on blocks " + StateByCode("reflections_scene"),
+                "Open block reflection controls.", right, y, cardHeight);
+            y += step;
+
+            AddOverviewRow("PERFORMANCE", null, SettingTab.Performance,
+                "Quality " + ValueByCode("perf_quality") + " · Depth prepass " + OnOff("Performance.DepthPrepass"),
+                "Open the quality tier, the frame-time readout and benches.", left, y, cardHeight);
+            AddOverviewRow("DEBUG", null, SettingTab.Debug,
+                _controller.CompareActive ? "Compare with vanilla is on" : "Normal rendering",
+                "Open debug views, the compare wipe and reports.", right, y, cardHeight);
         }
 
-        private void AddOverviewRow(string label, string path, SettingTab target, string summary, string description, double y)
+        private void AddOverviewRow(string label, string path, SettingTab target, string summary, string description,
+                                    double x, double y, double height)
         {
-            bool on = ConfigAccess.Get(_controller.Config, path) >= 0.5f;
-            VisualSetting master = VisualSettingRegistry.All.FirstOrDefault(v => v.Path == path);
+            bool on = path == null || ConfigAccess.Get(_controller.Config, path) >= 0.5f;
+            VisualSetting master = path == null ? null : VisualSettingRegistry.All.FirstOrDefault(v => v.Path == path);
             bool unavailable = master != null && Availability(master).State == AvailabilityState.Unavailable;
             int generation = _composerGeneration;
-            double textX = ContentLeft + 14;
+            double textX = x + 12;
+            string state = path == null ? "" : unavailable ? NotInThisBuild : on ? "● On" : "○ Off";
+            double line = Math.Max(16, (height - 10) / 3);
 
             SingleComposer
-                .AddInset(ElementBounds.Fixed(ContentLeft, y, OverviewCardWidth, OverviewCardHeight), 2, 0.42f)
-                .AddStaticText(label, CairoFont.WhiteSmallText(), ElementBounds.Fixed(textX, y + 8, 220, 20))
-                .AddStaticText(unavailable ? NotInThisBuild : on ? "● On" : "○ Off", CairoFont.WhiteSmallText(),
-                    ElementBounds.Fixed(textX + 230, y + 8, OverviewTextWidth - 230, 20))
+                .AddInset(ElementBounds.Fixed(x, y, OverviewCardWidth, height), 2, 0.42f)
+                .AddStaticText(label, CairoFont.WhiteSmallText().WithColor(HeadingColor), ElementBounds.Fixed(textX, y + 6, 140, 20))
+                .AddStaticText(state, on && !unavailable ? CairoFont.WhiteSmallText() : CairoFont.WhiteSmallText().WithColor(WarningColor),
+                    ElementBounds.Fixed(textX + 140, y + 6, OverviewTextWidth - 140, 20))
                 .AddStaticText(ShortText(summary, OverviewChars), CairoFont.WhiteDetailText(),
-                    ElementBounds.Fixed(textX, y + 33, OverviewTextWidth, 18))
-                .AddStaticText(ShortText(description, OverviewChars), CairoFont.WhiteDetailText(),
-                    ElementBounds.Fixed(textX, y + 55, OverviewTextWidth, 18))
+                    ElementBounds.Fixed(textX, y + 6 + line, OverviewTextWidth, 18))
+                .AddStaticText(ShortText(description, OverviewChars), CairoFont.WhiteDetailText().WithColor(GuiStyle.DisabledTextColor),
+                    ElementBounds.Fixed(textX, y + 6 + 2 * line, OverviewTextWidth, 18))
                 .AddButton("Open  >", () =>
                 {
                     if (!IsCurrentGeneration(generation, "OverviewRow")) return false;
                     SelectTab(target);
                     return true;
-                }, ElementBounds.Fixed(ContentLeft + OverviewCardWidth - OverviewButtonWidth - 14, y + (OverviewCardHeight - 28) / 2, OverviewButtonWidth, 28),
+                }, ElementBounds.Fixed(x + OverviewCardWidth - OverviewButtonWidth - 10, y + (height - 28) / 2, OverviewButtonWidth, 28),
                     CairoFont.WhiteSmallText(), EnumButtonStyle.Normal, "overview-" + target);
         }
 
@@ -503,6 +769,31 @@ namespace VintageVisuals.Ui
             return setting == null ? "n/a" : _controller.DisplayValue(setting);
         }
 
+        // --- the details strip ------------------------------------------------
+
+        private void UpdateDetails()
+        {
+            GuiElementDynamicText details = SingleComposer == null ? null : SingleComposer.GetDynamicText(DetailsKey);
+            if (details != null) details.SetNewText(DetailsText());
+        }
+
+        private string DetailsText()
+        {
+            int max = CharsFor(ContentWidth) * 3;
+            if (_hovered != null) return ShortText(Tooltip(_hovered), max);
+            if (!string.IsNullOrEmpty(_status)) return ShortText(_status, max);
+            if (Searching) return "Settings from every tab whose name or description contains \"" + _search.Trim() +
+                                  "\". Clear the box or pick a tab to go back.";
+            if (_tab == SettingTab.Overview)
+                return "Point at any setting to read all about it here. Search finds a setting on any tab; " +
+                       "Compare splits the screen with vanilla; Saved looks keeps up to three of your own setups.";
+            if (_tab == SettingTab.Debug)
+                return "Debug views replace the picture with one ingredient of it. Return to Normal Rendering puts everything back.";
+            return "Point at a setting to read what it does, where to look for it and what it costs.";
+        }
+
+        // --- settings tabs ----------------------------------------------------
+
         private void AddSettingsTab(SettingTab tab)
         {
             List<RowItem> rows = RowsFor(tab).ToList();
@@ -520,8 +811,48 @@ namespace VintageVisuals.Ui
                 .Where(s => _advanced || Availability(s).State != AvailabilityState.Unavailable);
         }
 
+        /// <summary>Search: matching settings from every tab, advanced ones included, in sidebar order.</summary>
+        private IEnumerable<VisualSetting> SearchResults()
+        {
+            string query = _search.Trim();
+            foreach (GuiTab tab in _tabs)
+            {
+                SettingTab id = (SettingTab)tab.DataInt;
+                foreach (VisualSetting setting in _controller.VisibleSettings(id, true))
+                {
+                    if (!_advanced && Availability(setting).State == AvailabilityState.Unavailable) continue;
+                    if (Matches(setting, tab.Name, query)) yield return setting;
+                }
+            }
+        }
+
         private IEnumerable<RowItem> RowsFor(SettingTab tab)
         {
+            if (Searching)
+            {
+                string heading = null;
+                bool found = false;
+                foreach (VisualSetting setting in SearchResults())
+                {
+                    found = true;
+                    string next = TabName(setting.Tab) + "  /  " + setting.Section;
+                    if (!string.Equals(heading, next, StringComparison.Ordinal))
+                    {
+                        heading = next;
+                        yield return RowItem.ForSection(heading);
+                    }
+                    yield return RowItem.ForSetting(setting);
+                }
+                if (!found)
+                {
+                    yield return RowItem.ForNote("No setting matches \"" + _search.Trim() + "\".");
+                    yield return RowItem.ForNote(_advanced ? "Try a shorter word." : "Try a shorter word, or tick Show advanced below.");
+                }
+                yield break;
+            }
+
+            foreach (RowItem extra in TabHeaderRows(tab)) yield return extra;
+
             string currentSection = null;
             bool any = false;
             foreach (VisualSetting setting in ShownSettings(tab))
@@ -541,16 +872,69 @@ namespace VintageVisuals.Ui
             {
                 // Plain text, not a section header: the orange header style
                 // read as an error (in-game audit, 2026-11-23).
-                bool reflections = tab == SettingTab.Reflections;
-                yield return RowItem.ForNote(reflections ? ReflectionsTabLine1 : EmptyTabLine1);
-                yield return RowItem.ForNote(reflections ? ReflectionsTabLine2 : EmptyTabLine2);
+                yield return RowItem.ForNote(EmptyTabLine1);
+                yield return RowItem.ForNote(EmptyTabLine2);
             }
+
+            foreach (RowItem extra in TabFooterRows(tab)) yield return extra;
         }
 
         public const string EmptyTabLine1 = "Nothing on this tab changes the picture in this build.";
         public const string EmptyTabLine2 = "Tick Show advanced below to see why.";
-        public const string ReflectionsTabLine1 = "Reflections are at stage one: debug views 41 and 42";
-        public const string ReflectionsTabLine2 = "on the Debug tab. Tick Show advanced for the sliders.";
+
+        /// <summary>Rows a tab shows above its settings: the Light tab's quick looks.</summary>
+        private IEnumerable<RowItem> TabHeaderRows(SettingTab tab)
+        {
+            if (tab != SettingTab.Light) yield break;
+
+            // The forest light presets, on the tab whose sliders they move. In
+            // the list rather than the footer: in the footer they overlapped
+            // Reset Tab (in-game audit, 2026-11-27).
+            yield return RowItem.ForSection("Quick looks");
+            yield return RowItem.ForAction("Sunlight under trees, all at once:",
+                new ActionButton("Subtle", () => OnPresetClicked("Subtle")),
+                new ActionButton(VisualTuningStudioController.DefaultPreset, () => OnPresetClicked(VisualTuningStudioController.DefaultPreset)),
+                new ActionButton("Cinematic", () => OnPresetClicked("Cinematic")));
+        }
+
+        /// <summary>Rows a tab shows below its settings: the Performance tab's benches and the last result.</summary>
+        private IEnumerable<RowItem> TabFooterRows(SettingTab tab)
+        {
+            if (tab != SettingTab.Performance) yield break;
+
+            yield return RowItem.ForSection("Benches");
+            yield return RowItem.ForAction("Closes this panel, then measures:",
+                new ActionButton("10 s bench", () => RunBench(".vvbench")),
+                new ActionButton("Feature costs", () => RunBench(".vvbench features")),
+                new ActionButton("Tiers", () => RunBench(".vvbench tiers")));
+
+            string report = PerformanceTools.LastBenchReport;
+            if (string.IsNullOrEmpty(report))
+            {
+                yield return RowItem.ForNote("No bench has run this session. Results also go to the chat and to client-main.log.");
+                yield break;
+            }
+
+            yield return RowItem.ForNote("Last bench, " + PerformanceTools.LastBenchAt + ":");
+            int shown = 0;
+            foreach (string raw in report.Split('\n'))
+            {
+                string line = raw.TrimEnd();
+                if (line.Length == 0) continue;
+                if (line.StartsWith("full detail", StringComparison.Ordinal)) break;
+                yield return RowItem.ForNote(ShortText(line.Trim(), CharsFor(ContentWidth - 40)));
+                if (++shown >= 18) break;
+            }
+        }
+
+        private bool RunBench(string command)
+        {
+            Log("ENTER RunBench " + command);
+            TryClose();
+            capi.TriggerChatMessage(command);
+            Log("EXIT RunBench " + command);
+            return true;
+        }
 
         private SettingAvailability Availability(VisualSetting setting)
         {
@@ -565,10 +949,10 @@ namespace VintageVisuals.Ui
         private string LayoutSignature()
         {
             var text = new System.Text.StringBuilder();
-            text.Append((int)_tab).Append(_advanced ? 'A' : '-');
-            if (_tab == SettingTab.Overview || _tab == SettingTab.Debug) return text.ToString();
+            text.Append((int)_tab).Append(_advanced ? 'A' : '-').Append('/').Append(_search ?? "");
+            if (!Searching && (_tab == SettingTab.Overview || _tab == SettingTab.Debug)) return text.ToString();
 
-            foreach (VisualSetting setting in ShownSettings(_tab))
+            foreach (VisualSetting setting in Searching ? SearchResults() : ShownSettings(_tab))
             {
                 text.Append('|').Append(setting.Code).Append(':').Append((int)Availability(setting).State);
             }
@@ -578,7 +962,7 @@ namespace VintageVisuals.Ui
         private bool CanRefreshInPlace()
         {
             if (SingleComposer == null) return false;
-            if (_tab == SettingTab.Overview || _tab == SettingTab.Debug) return false;
+            if (!Searching && (_tab == SettingTab.Overview || _tab == SettingTab.Debug)) return false;
             return string.Equals(_composedLayout, LayoutSignature(), StringComparison.Ordinal);
         }
 
@@ -608,11 +992,17 @@ namespace VintageVisuals.Ui
                 if (row.IsSection)
                 {
                     AddSection(row.Section, y, row.IsNote);
-                    y += HeaderHeight;
+                    y += row.IsNote ? NoteHeight : HeaderHeight;
+                }
+                else if (row.IsAction)
+                {
+                    AddActionRow(row, y);
+                    y += ActionHeight;
                 }
                 else
                 {
                     AddSettingRow(row.Setting, y);
+                    _rowSpans.Add(new RowSpan(y, RowHeight, row.Setting));
                     y += RowHeight;
                 }
             }
@@ -646,33 +1036,57 @@ namespace VintageVisuals.Ui
         private void AddSection(string label, double y, bool note = false)
         {
             AddRowElement(new GuiElementDynamicText(capi, label, note ? CairoFont.WhiteSmallText() : SectionFont(),
-                ElementBounds.Fixed(RowLeft, y + 4, ContentWidth - 20, 20)));
+                ElementBounds.Fixed(RowLeft, y + (note ? 2 : 8), ContentWidth - 20, 20)));
+        }
+
+        /// <summary>A label and a few buttons on one line: the Light presets, the benches.</summary>
+        private void AddActionRow(RowItem row, double y)
+        {
+            int generation = _composerGeneration;
+            AddRowElement(new GuiElementDynamicText(capi, row.Section ?? "", CairoFont.WhiteDetailText(),
+                ElementBounds.Fixed(LabelX, y + 9, LabelWidth + 60, 20)));
+
+            double x = InfoX + 60;
+            double width = Math.Min(130, (ContentWidth - x - RowRightPadding - 8 * row.Actions.Length) / Math.Max(1, row.Actions.Length));
+            foreach (ActionButton action in row.Actions)
+            {
+                ActionButton captured = action;
+                CairoFont font = CairoFont.WhiteSmallText();
+                var button = new GuiElementTextButton(capi, captured.Label, font,
+                    font.Clone().WithColor(GuiStyle.ActiveButtonTextColor),
+                    () => IsCurrentGeneration(generation, "Action " + captured.Label) && captured.Run(),
+                    ElementBounds.Fixed(x, y + 4, width, 28), EnumButtonStyle.Normal);
+                button.SetOrientation(font.Orientation);
+                AddRowElement(button);
+                x += width + 8;
+            }
         }
 
         private void AddSettingRow(VisualSetting setting, double y)
         {
             SettingAvailability availability = Availability(setting);
             bool working = availability.HasWorkingControl;
-            var widgets = new RowWidgets(setting, availability.State);
+            var widgets = new RowWidgets(setting, availability.State, working);
             _rows[setting.Code] = widgets;
 
             CairoFont nameFont = working ? CairoFont.WhiteSmallText() : DisabledFont(CairoFont.WhiteSmallText());
-            CairoFont infoFont = availability.State == AvailabilityState.Conditional
-                ? CairoFont.WhiteDetailText().WithColor(GuiStyle.ActiveButtonTextColor)
-                : working ? CairoFont.WhiteDetailText() : DisabledFont(CairoFont.WhiteDetailText());
+            CairoFont infoFont = working ? CairoFont.WhiteDetailText() : DisabledFont(CairoFont.WhiteDetailText());
 
-            string info = availability.State == AvailabilityState.Conditional
-                ? ShortText(availability.Reason, InfoChars)
-                : ShortDescription(setting);
+            // The first sentence of the description, always - the "where to look"
+            // note and the rest of the text are in the details strip.
+            string info = ShortDescription(setting);
+            string name = setting.Kind == SettingKind.Slider || !setting.RequiresShaderReload ? setting.DisplayName : setting.DisplayName + " *";
 
-            AddRowElement(new GuiElementDynamicText(capi, setting.DisplayName, nameFont,
+            AddRowElement(new GuiElementDynamicText(capi, name, nameFont,
                 ElementBounds.Fixed(LabelX, y + LineOneY, LabelWidth, 22)));
             AddRowElement(new GuiElementDynamicText(capi, info, infoFont,
                 ElementBounds.Fixed(InfoX, y + LineOneY + 3, InfoTextWidth, 18)));
 
             // Reset always exists and always sits in the same slot; it is shown
-            // only while the row differs from its default. Unavailable rows get
-            // none, since resetting a value nothing reads is not an action.
+            // only while the row differs from its default AND has a working
+            // control. A greyed-out row under a switched-off parent showed Reset
+            // (in-game audit, 2026-11-27), and unavailable rows get none, since
+            // resetting a value nothing reads is not an action.
             if (availability.State != AvailabilityState.Unavailable)
             {
                 CairoFont resetFont = CairoFont.WhiteSmallText();
@@ -687,13 +1101,19 @@ namespace VintageVisuals.Ui
             if (!working)
             {
                 // No control at all: a disabled-looking slider that still moves
-                // is exactly the thing this row is trying not to be.
-                AddRowElement(new GuiElementDynamicText(capi, availability.Reason, DisabledFont(CairoFont.WhiteDetailText()),
+                // is exactly the thing this row is trying not to be. A switched-off
+                // parent is something the player can fix, so it reads as a warning;
+                // "not in this build" is not, so it stays grey.
+                CairoFont reasonFont = availability.State == AvailabilityState.ParentOff
+                    ? CairoFont.WhiteDetailText().WithColor(WarningColor)
+                    : DisabledFont(CairoFont.WhiteDetailText());
+                AddRowElement(new GuiElementDynamicText(capi, availability.Reason, reasonFont,
                     ElementBounds.Fixed(ControlX, y + LineTwoY + 4, ControlWidth, 18)));
                 AddValueText(widgets, DisabledFont(CairoFont.WhiteSmallText()), y);
             }
             else if (setting.Kind == SettingKind.Toggle) AddToggle(setting, widgets, y);
             else if (setting.Kind == SettingKind.Dropdown) AddDropdown(setting, widgets, y);
+            else if (setting.Kind == SettingKind.Choice) AddChoice(setting, widgets, y);
             else AddSlider(setting, widgets, y);
         }
 
@@ -711,7 +1131,7 @@ namespace VintageVisuals.Ui
 
         private static CairoFont SectionFont()
         {
-            return CairoFont.WhiteSmallText().WithColor(GuiStyle.ActiveButtonTextColor);
+            return CairoFont.WhiteSmallText().WithColor(HeadingColor).WithWeight(FontWeight.Bold);
         }
 
         /// <summary>The value column, read from the config as it is NOW - after clamping.</summary>
@@ -719,32 +1139,6 @@ namespace VintageVisuals.Ui
         {
             if (setting.Kind == SettingKind.Toggle) return _controller.Value(setting) >= 0.5f ? "ON" : "OFF";
             return _controller.DisplayValue(setting);
-        }
-
-        private string Tooltip(VisualSetting setting)
-        {
-            string text = setting.DisplayName + "\n\n" +
-                          setting.Description + "\n\n" +
-                          "Default: " + DefaultValue(setting) + "\n" +
-                          "Performance: " + CostLabel(setting.Cost);
-
-            if (setting.Unit != null) text += "\nUnit: " + setting.Unit;
-            if (setting.RequiresShaderReload) text += "\nChanging this rebuilds shaders.";
-            if (setting.Advanced) text += "\nAdvanced setting.";
-
-            return text;
-        }
-
-        private string DefaultValue(VisualSetting setting)
-        {
-            if (setting.Kind == SettingKind.Dropdown) return ConfigAccess.DefaultString(setting.Path) ?? "";
-            if (setting.Kind == SettingKind.Toggle) return ConfigAccess.Default(setting.Path) >= 0.5f ? "On" : "Off";
-            return setting.Format(ConfigAccess.Default(setting.Path));
-        }
-
-        private static string CostLabel(SettingCost cost)
-        {
-            return cost == SettingCost.Free ? "None" : cost.ToString();
         }
 
         private void AddToggle(VisualSetting setting, RowWidgets widgets, double y)
@@ -773,7 +1167,7 @@ namespace VintageVisuals.Ui
             int generation = _composerGeneration;
             int steps = SliderSteps(setting);
 
-            var slider = new GuiElementSlider(capi, newValue =>
+            var slider = new StudioSlider(capi, newValue =>
             {
                 if (!IsCurrentGeneration(generation, "SliderChanged " + setting.Code)) return false;
                 Log("ENTER SliderChanged " + setting.Code);
@@ -786,7 +1180,7 @@ namespace VintageVisuals.Ui
                 AfterLocalEdit(false);
                 Log("EXIT SliderChanged " + setting.Code);
                 return true;
-            }, ElementBounds.Fixed(ControlX, y + LineTwoY, ControlWidth, 24));
+            }, ElementBounds.Fixed(ControlX, y + LineTwoY, ControlWidth, 22), _viewportBounds);
 
             slider.SetValues(SliderIndex(setting), 0, steps, 1, "");
 
@@ -795,6 +1189,13 @@ namespace VintageVisuals.Ui
             slider.OnSliderTooltip = index => setting.Format(setting.Min + index * setting.Step);
             AddRowElement(slider);
             widgets.Slider = slider;
+
+            // Where the shipped default sits on the track, so "back to normal"
+            // can be found by eye as well as by Reset.
+            float range = setting.Max - setting.Min;
+            float fraction = range > 0 ? (ConfigAccess.Default(setting.Path) - setting.Min) / range : 0f;
+            AddRowElement(new DefaultMark(capi, ElementBounds.Fixed(ControlX, y + LineTwoY + 22, ControlWidth, 5),
+                Math.Max(0f, Math.Min(1f, fraction))));
 
             AddValueText(widgets, CairoFont.WhiteSmallText(), y);
         }
@@ -829,16 +1230,44 @@ namespace VintageVisuals.Ui
             AddRowElement(widgets.Dropdown);
         }
 
+        /// <summary>A numeric setting chosen by name: a quality tier, not a slider reading "2".</summary>
+        private void AddChoice(VisualSetting setting, RowWidgets widgets, double y)
+        {
+            int generation = _composerGeneration;
+            string[] values = Enumerable.Range(0, setting.Choices.Length).Select(i => i.ToString(CultureInfo.InvariantCulture)).ToArray();
+
+            widgets.Dropdown = new GuiElementDropDown(capi, values, setting.Choices, DropdownIndex(setting),
+                (code, selectedValue) =>
+                {
+                    if (!selectedValue) return;
+                    if (!IsCurrentGeneration(generation, "ChoiceChanged " + setting.Code)) return;
+                    int index;
+                    if (!int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out index)) return;
+                    Log("ENTER ChoiceChanged " + setting.Code);
+                    LocalEdit(() => _controller.Set(setting, setting.Min + index * setting.Step));
+                    AfterLocalEdit(true);
+                    Log("EXIT ChoiceChanged " + setting.Code);
+                },
+                ElementBounds.Fixed(ControlX, y + LineTwoY, Math.Min(ControlWidth, 240), 24),
+                CairoFont.WhiteSmallText(), false);
+            AddRowElement(widgets.Dropdown);
+        }
+
         private int DropdownIndex(VisualSetting setting)
         {
+            if (setting.Kind == SettingKind.Choice)
+            {
+                int index = (int)Math.Round((_controller.Value(setting) - setting.Min) / setting.Step);
+                return Math.Max(0, Math.Min(setting.Choices.Length - 1, index));
+            }
             string current = _controller.StringValue(setting);
             int selected = Array.FindIndex(setting.Choices, c => string.Equals(c, current, StringComparison.Ordinal));
             return selected < 0 ? 0 : selected;
         }
 
-        private static string ShortDescription(VisualSetting setting)
+        private string ShortDescription(VisualSetting setting)
         {
-            return ShortText(setting.Description, InfoChars);
+            return ShortText(setting.Summary, InfoChars);
         }
 
         private static string ShortText(string text, int max)
@@ -849,6 +1278,35 @@ namespace VintageVisuals.Ui
             int cut = text.LastIndexOf(' ', max);
             if (cut < 24) cut = max;
             return text.Substring(0, cut) + "...";
+        }
+
+        /// <summary>The full story of one setting, for the details strip.</summary>
+        private string Tooltip(VisualSetting setting)
+        {
+            SettingAvailability availability = Availability(setting);
+            string text = setting.DisplayName + ": " + setting.Description;
+
+            if (availability.State == AvailabilityState.Conditional && availability.Reason != null)
+                text += "  Where to look: " + availability.Reason;
+            else if (!availability.HasWorkingControl && availability.Reason != null)
+                text += "  " + availability.Reason;
+
+            text += "  Default " + DefaultValue(setting) + ".";
+            if (setting.Cost != SettingCost.Free) text += " Cost: " + CostLabel(setting.Cost) + ".";
+            if (setting.RequiresShaderReload) text += " Changing it rebuilds shaders (a short pause).";
+            return text;
+        }
+
+        private string DefaultValue(VisualSetting setting)
+        {
+            if (setting.Kind == SettingKind.Dropdown) return ConfigAccess.DefaultString(setting.Path) ?? "";
+            if (setting.Kind == SettingKind.Toggle) return ConfigAccess.Default(setting.Path) >= 0.5f ? "on" : "off";
+            return setting.Format(ConfigAccess.Default(setting.Path));
+        }
+
+        private static string CostLabel(SettingCost cost)
+        {
+            return cost == SettingCost.Free ? "none" : cost.ToString().ToLowerInvariant();
         }
 
         private bool ResetSetting(VisualSetting setting)
@@ -865,6 +1323,47 @@ namespace VintageVisuals.Ui
             AfterLocalEdit(true);
             Log("EXIT ResetSetting " + setting.Code);
             return true;
+        }
+
+        private bool OnAdvancedChanged(bool on)
+        {
+            if (_advanced == on) return true;
+
+            SaveScroll();
+            _advanced = on;
+            ComposeDialog();
+            return true;
+        }
+
+        private bool OnPresetClicked(string name)
+        {
+            Log("ENTER Preset " + name);
+            int changed = 0;
+            LocalEdit(() => { changed = _controller.ApplyPreset(name); });
+            _status = changed == 0 ? "The sunlight sliders already match " + name + "."
+                                   : "Applied the " + name + " sunlight look (" + changed + " sliders moved).";
+            ComposeDialog();
+            Log("EXIT Preset " + name);
+            return true;
+        }
+
+        private bool OnResetTabClicked()
+        {
+            Log("ENTER ResetTab");
+            int changed = 0;
+            LocalEdit(() => { changed = _controller.ResetTab(_tab, _advanced); });
+            _status = changed == 0 ? "Everything on this tab is already at its default."
+                                   : "Reset " + changed + " settings on this tab to their defaults.";
+            ComposeDialog();
+            Log("EXIT ResetTab");
+            return true;
+        }
+
+        private void OnTitleBarClose()
+        {
+            Log("ENTER TitleBarClose");
+            TryClose();
+            Log("EXIT TitleBarClose");
         }
 
         /// <summary>
@@ -940,7 +1439,7 @@ namespace VintageVisuals.Ui
 
             if (widgets.Reset != null)
             {
-                bool modified = _controller.IsModified(setting);
+                bool modified = widgets.Working && _controller.IsModified(setting);
                 widgets.Reset.Visible = modified;
                 widgets.Reset.Enabled = modified;
             }
@@ -963,14 +1462,22 @@ namespace VintageVisuals.Ui
             }
         }
 
+        // --- debug ------------------------------------------------------------
+
         private void AddDebug()
         {
             double y = BodyY + 4;
             int generation = _composerGeneration;
             SyncDebugSystemToActiveView();
 
+            // System and view on ONE line. Stacked, they and the banner took
+            // about 40% of the page (in-game audit, 2026-11-27).
+            double systemWidth = 170;
+            double viewX = ContentLeft + 96 + systemWidth + 18;
+            double viewWidth = ContentLeft + ContentWidth - 30 - (viewX + 80);
+
             SingleComposer
-                .AddStaticText("Debug System", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 150, 22))
+                .AddStaticText("Debug System", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y + 3, 96, 22))
                 .AddDropDown(_debugSystems.Select(s => s.Label).ToArray(), _debugSystems.Select(s => s.Label).ToArray(),
                     _debugSystemIndex,
                     (code, selected) =>
@@ -978,16 +1485,15 @@ namespace VintageVisuals.Ui
                         if (!IsCurrentGeneration(generation, "DebugSystemChanged")) return;
                         OnDebugSystemChanged(code, selected);
                     },
-                    ElementBounds.Fixed(ContentLeft + LabelWidth + 8, y - 2, 220, 26), "debug-system");
+                    ElementBounds.Fixed(ContentLeft + 96, y, systemWidth, 26), "debug-system");
             _dropdownKeys.Add("debug-system");
 
-            y += 42;
             List<DebugView> views = CurrentDebugViews().ToList();
             DebugView current = CurrentDebugView(views);
             int selected = Math.Max(0, views.FindIndex(v => v.Value == current.Value));
 
             SingleComposer
-                .AddStaticText("Debug View", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft, y, 150, 22))
+                .AddStaticText("Debug View", CairoFont.WhiteSmallText(), ElementBounds.Fixed(viewX, y + 3, 80, 22))
                 .AddDropDown(views.Select(v => v.Value.ToString()).ToArray(), views.Select(v => v.Label).ToArray(),
                     selected,
                     (code, selectedValue) =>
@@ -995,23 +1501,24 @@ namespace VintageVisuals.Ui
                         if (!IsCurrentGeneration(generation, "DebugViewChanged")) return;
                         OnDebugViewChanged(code, selectedValue);
                     },
-                    ElementBounds.Fixed(ContentLeft + LabelWidth + 8, y - 2, 360, 26), "debug-view");
+                    ElementBounds.Fixed(viewX + 80, y, Math.Max(160, viewWidth), 26), "debug-view");
             _dropdownKeys.Add("debug-view");
 
-            y += 46;
-            SingleComposer.AddStaticText(ShortText(current.Description, 92), CairoFont.WhiteDetailText(),
-                ElementBounds.Fixed(ContentLeft, y - 12, ContentWidth - 40, 18));
+            y += 34;
+            SingleComposer.AddStaticText(ShortText(current.Description, CharsFor(ContentWidth - 40)), CairoFont.WhiteDetailText(),
+                ElementBounds.Fixed(ContentLeft, y, ContentWidth - 40, 18));
+            y += 22;
             if (PbrTerrainDebugLimited())
             {
                 SingleComposer.AddStaticText("Safe terrain path: material and secondary atlas masks are available.",
-                    CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft, y + 10, ContentWidth - 40, 18));
-                y += 28;
+                    CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft, y, ContentWidth - 40, 18));
+                y += 22;
             }
 
             if (current.Value != 0)
             {
                 AddDebugBanner(current, y);
-                y += 82;
+                y += 48;
             }
 
             List<RowItem> diagnostics = _controller.VisibleSettings(SettingTab.Debug, true)
@@ -1023,7 +1530,7 @@ namespace VintageVisuals.Ui
                 diagnostics.Insert(0, RowItem.ForSection("Diagnostics"));
             }
 
-            double diagnosticsY = y + 8;
+            double diagnosticsY = y + 4;
             double diagnosticsHeight = Math.Max(120, BodyY + BodyHeight - diagnosticsY);
             AddScrollableRows(diagnostics, diagnosticsY, diagnosticsHeight);
         }
@@ -1031,11 +1538,12 @@ namespace VintageVisuals.Ui
         private void AddDebugBanner(DebugView current, double y)
         {
             SingleComposer
-                .AddInset(ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 62), 2, 0.6f)
-                .AddStaticText("DEBUG VIEW ACTIVE", CairoFont.WhiteSmallText(), ElementBounds.Fixed(ContentLeft + 14, y + 8, 180, 22))
-                .AddStaticText(current.Label, CairoFont.WhiteDetailText(), ElementBounds.Fixed(ContentLeft + 14, y + 31, 330, 20))
+                .AddInset(ElementBounds.Fixed(ContentLeft, y, ContentWidth - 34, 40), 2, 0.6f)
+                .AddStaticText("DEBUG VIEW ACTIVE", CairoFont.WhiteSmallText().WithColor(WarningColor), ElementBounds.Fixed(ContentLeft + 12, y + 10, 160, 22))
+                .AddStaticText(ShortText(current.Label, CharsFor(ContentWidth - 440)), CairoFont.WhiteDetailText(),
+                    ElementBounds.Fixed(ContentLeft + 170, y + 12, ContentWidth - 440, 20))
                 .AddButton("Return to Normal Rendering", () => Guard(_composerGeneration, "ReturnToNormal", OnReturnToNormalClicked),
-                    ElementBounds.Fixed(ContentLeft + ContentWidth - 244, y + 16, 210, 28), CairoFont.WhiteSmallText(),
+                    ElementBounds.Fixed(ContentLeft + ContentWidth - 254, y + 6, 214, 28), CairoFont.WhiteSmallText(),
                     EnumButtonStyle.Normal, "normal-rendering");
         }
 
@@ -1123,11 +1631,6 @@ namespace VintageVisuals.Ui
                 ?? views.First(v => v.Value == 0);
         }
 
-        private string DebugTooltip(DebugView view)
-        {
-            return view.DisplayName + "\n\n" + view.Description + "\n\nUnderlying shader mode: " + view.Value;
-        }
-
         private void SyncDebugSystemToActiveView()
         {
             foreach (DebugSystem system in _debugSystems)
@@ -1152,9 +1655,12 @@ namespace VintageVisuals.Ui
             return true;
         }
 
+        // --- scrolling --------------------------------------------------------
+
         private double MeasureRows(List<RowItem> rows)
         {
-            return rows.Sum(row => row.IsSection ? HeaderHeight : RowHeight);
+            return rows.Sum(row => row.IsSection ? (row.IsNote ? NoteHeight : HeaderHeight)
+                                 : row.IsAction ? ActionHeight : RowHeight) + 8;
         }
 
         private void OnScrollbarChanged(float value)
@@ -1183,12 +1689,15 @@ namespace VintageVisuals.Ui
 
         private double CurrentScroll()
         {
+            if (Searching) return 0;
             double value;
             return _scrollByTab.TryGetValue(_tab, out value) ? value : 0;
         }
 
         private void SaveScroll()
         {
+            // Search results are not a place to come back to.
+            if (Searching) return;
             _scrollByTab[_tab] = _currentScroll;
         }
 
@@ -1256,7 +1765,7 @@ namespace VintageVisuals.Ui
         private void Log(string message)
         {
             int sequence = Interlocked.Increment(ref _eventSequence);
-            capi.Logger.Notification("[VV UI #" + sequence + "] " + message +
+            capi.Logger.VerboseDebug("[VV UI #" + sequence + "] " + message +
                 " tab=" + _tab +
                 " composerGen=" + _composerGeneration +
                 " thread=" + Thread.CurrentThread.ManagedThreadId +
@@ -1285,6 +1794,9 @@ namespace VintageVisuals.Ui
             public readonly VisualSetting Setting;
             public readonly AvailabilityState State;
 
+            /// <summary>Whether the row has a control. A row without one never shows Reset.</summary>
+            public readonly bool Working;
+
             // Held directly: row elements live in the scroll container, not in
             // the composer's keyed element table.
             public GuiElementDynamicText Value;
@@ -1293,10 +1805,37 @@ namespace VintageVisuals.Ui
             public GuiElementSwitch Switch;
             public GuiElementDropDown Dropdown;
 
-            public RowWidgets(VisualSetting setting, AvailabilityState state)
+            public RowWidgets(VisualSetting setting, AvailabilityState state, bool working)
             {
                 Setting = setting;
                 State = state;
+                Working = working;
+            }
+        }
+
+        private readonly struct RowSpan
+        {
+            public readonly double Top;
+            public readonly double Height;
+            public readonly VisualSetting Setting;
+
+            public RowSpan(double top, double height, VisualSetting setting)
+            {
+                Top = top;
+                Height = height;
+                Setting = setting;
+            }
+        }
+
+        private sealed class ActionButton
+        {
+            public readonly string Label;
+            public readonly Func<bool> Run;
+
+            public ActionButton(string label, Func<bool> run)
+            {
+                Label = label;
+                Run = run;
             }
         }
 
@@ -1304,16 +1843,19 @@ namespace VintageVisuals.Ui
         {
             public readonly string Section;
             public readonly VisualSetting Setting;
+            public readonly ActionButton[] Actions;
 
             public readonly bool IsNote;
 
-            public bool IsSection { get { return Section != null; } }
+            public bool IsAction { get { return Actions != null; } }
+            public bool IsSection { get { return Section != null && Actions == null; } }
 
-            private RowItem(string section, VisualSetting setting, bool note = false)
+            private RowItem(string section, VisualSetting setting, bool note = false, ActionButton[] actions = null)
             {
                 Section = section;
                 Setting = setting;
                 IsNote = note;
+                Actions = actions;
             }
 
             public static RowItem ForNote(string text)
@@ -1329,6 +1871,84 @@ namespace VintageVisuals.Ui
             public static RowItem ForSetting(VisualSetting setting)
             {
                 return new RowItem(null, setting);
+            }
+
+            public static RowItem ForAction(string label, params ActionButton[] actions)
+            {
+                return new RowItem(label, null, false, actions);
+            }
+        }
+
+        /// <summary>
+        /// The native slider, with two faults fixed for rows that scroll.
+        ///
+        /// THE VALUE BUBBLE ONLY WHILE DRAGGING. The native slider draws its
+        /// value bubble while it believes the pointer is over it, and learns that
+        /// only from mouse moves - which the scroll container stops forwarding
+        /// as soon as an earlier row handles one. So a bubble stayed on screen
+        /// after a drag ("0.70" over Sun and moon glints, in-game audit,
+        /// 2026-11-27). The value column already shows the value; the bubble is
+        /// kept for the drag, where it is next to the pointer.
+        ///
+        /// THE THUMB CLIPS WITH ITS TRACK. The thumb is taller than the track,
+        /// so when the track had scrolled just out of the list the thumb's foot
+        /// still showed inside it, a fragment with no row. While the track is
+        /// partly outside the list, the thumb is clipped to the track.
+        /// </summary>
+        private sealed class StudioSlider : GuiElementSlider
+        {
+            private static readonly FieldInfo HoverField =
+                typeof(GuiElementSlider).GetField("mouseOnSlider", BindingFlags.Instance | BindingFlags.NonPublic);
+
+            private readonly ElementBounds _viewport;
+
+            public StudioSlider(ICoreClientAPI capi, ActionConsumable<int> onNewSliderValue, ElementBounds bounds, ElementBounds viewport)
+                : base(capi, onNewSliderValue, bounds)
+            {
+                _viewport = viewport;
+            }
+
+            public override void RenderInteractiveElements(float deltaTime)
+            {
+                try { HoverField?.SetValue(this, false); } catch { }
+
+                bool partly = _viewport != null && _viewport.ParentBounds != null &&
+                              (Bounds.renderY < _viewport.renderY ||
+                               Bounds.renderY + Bounds.OuterHeight > _viewport.renderY + _viewport.OuterHeight);
+                if (partly) api.Render.PushScissor(Bounds, true);
+                base.RenderInteractiveElements(deltaTime);
+                if (partly) api.Render.PopScissor();
+            }
+        }
+
+        /// <summary>A small mark under a slider's track at the shipped default.</summary>
+        private sealed class DefaultMark : GuiElement
+        {
+            private readonly float _fraction;
+
+            public DefaultMark(ICoreClientAPI capi, ElementBounds bounds, float fraction) : base(capi, bounds)
+            {
+                _fraction = fraction;
+            }
+
+            public override void ComposeElements(Context ctx, ImageSurface surface)
+            {
+                Bounds.CalcWorldBounds();
+                // Matches GuiElementSlider's own thumb placement: 4 px padding,
+                // a 15 px thumb, the centre of the thumb at this fraction.
+                double padding = scaled(4);
+                double handle = scaled(15);
+                double travel = Bounds.InnerWidth - 2 * padding - handle / 2;
+                double x = Bounds.drawX + travel * _fraction + handle / 2 + 2;
+                double top = Bounds.drawY;
+                double height = Math.Max(2, Bounds.InnerHeight);
+
+                ctx.SetSourceRGBA(1, 1, 1, 0.55);
+                ctx.MoveTo(x, top);
+                ctx.LineTo(x + height, top + height);
+                ctx.LineTo(x - height, top + height);
+                ctx.ClosePath();
+                ctx.Fill();
             }
         }
     }

@@ -99,6 +99,7 @@ namespace VintageVisuals.Ui
         public const string EntityPath = "PseudoPBR.EntityDebugView";
         public const string AtmospherePath = "Atmosphere.AirDebugView";
         public const string CloudPath = "Weather.CloudDebugView";
+        public const string WaterPath = "Water.DebugView";
 
         private static readonly List<DebugView> _all = Build();
 
@@ -268,6 +269,20 @@ namespace VintageVisuals.Ui
             Cloud(1, "Shadow field", "The cloud shadow field alone at full strength, with vanilla's shadows out of the way.");
             Cloud(2, "Tile calibration", "The game's cloud tiles drawn straight down. Look up, then down: the patterns should match.");
             Cloud(3, "Sampling window", "The tile grid the shadow field is sampling, and its edge.");
+
+            void Water(int n, string name, string desc)
+                => v.Add(new DebugView(WaterPath, n, name, desc, "Water"));
+
+            Water(0, Off, "The world as the mod normally draws it.");
+            Water(1, "Wave normals", "The tilt of each water pixel, as colour.");
+            Water(2, "Reflected image", "What the water reflects, before it is mixed with the water's own colour.");
+            Water(3, "Depth behind the surface", "How far the view travels through the water; 8 blocks is white.");
+            Water(4, "Reflection share", "How much of each pixel is reflection, times four.");
+            Water(5, "Glints alone", "The sun and moon glints with everything else removed.");
+            Water(6, "Water pixel grid", "The grid every water effect is locked to.");
+            Water(7, "Caustics on the bed", "The caustic light reaching the bottom; mid grey is none.");
+            Water(8, "Foam, flow and swell", "Red the shoreline foam, green river flow, blue the long swell on far water.");
+            Water(9, "World found by the reflection", "What the reflected ray hit in the frame; black is a miss that falls back to the sky.");
 
             return v;
         }

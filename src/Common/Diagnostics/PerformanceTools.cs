@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Text;
 using Vintagestory.API.Client;
@@ -442,8 +443,19 @@ namespace VintageVisuals.Common.Diagnostics
             Report(result.Format());
         }
 
+        /// <summary>
+        /// The last bench summary this session, for the tuning panel's
+        /// Performance tab. Read-only to everyone else; null until a bench ends.
+        /// </summary>
+        public static string LastBenchReport { get; private set; }
+
+        /// <summary>Local time the last bench ended, "HH:mm".</summary>
+        public static string LastBenchAt { get; private set; }
+
         private void Report(string text)
         {
+            LastBenchReport = text;
+            LastBenchAt = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
             foreach (string line in text.TrimEnd().Split('\n'))
             {
                 _logger.Notification("[VintageVisuals] bench " + line);

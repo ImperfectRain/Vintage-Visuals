@@ -60,7 +60,7 @@ state instead, and neither knows the other exists.
 |---|---|
 | `src/Common/Patching/` | YAML patch engine, per-group rollback, token matching |
 | `src/Common/ConfigManager.cs` | live-reloadable config |
-| `src/Common/ConfigLibBridge.cs` | optional F7 panel, over the event bus, zero coupling |
+| `src/Common/ConfigLibBridge.cs` | optional ConfigLib panel, over the event bus, zero coupling |
 | `tools/verifypatches` | every patch against the game's own shaders, every define combination |
 | `tools/smoketest` | the engine and every pure rule, without a game |
 | `src/Common/Diagnostics/` | frame-time readout and bench (GPU timestamp queries per render stage), and the quality tier ([D72](DECISIONS.md)) |

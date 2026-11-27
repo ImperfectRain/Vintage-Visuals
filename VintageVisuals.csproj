@@ -82,6 +82,8 @@
   <ItemGroup>
     <Reference Include="VintagestoryAPI" HintPath="$(GameDirectory)/VintagestoryAPI.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameDirectory)/Lib/0Harmony.dll" Private="false" />
+    <!-- Cairo: the GUI drawing library the API composes elements with (a custom GuiElement overrides ComposeElements(Context, ImageSurface)). Shipped by the game; never copied. -->
+    <Reference Include="cairo-sharp" HintPath="$(GameDirectory)/Lib/cairo-sharp.dll" Private="false" />
   </ItemGroup>
 
   <!--

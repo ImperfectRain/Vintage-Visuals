@@ -198,6 +198,7 @@ namespace VintageVisuals
             api.Input.RegisterHotKey(StudioHotkeyCode, "Vintage Visuals: Open Visual Tuning",
                 GlKeys.U, HotkeyType.GUIOrOtherControls, ctrlPressed: true);
             api.Input.SetHotKeyHandler(StudioHotkeyCode, OnStudioHotkey);
+            Mod.Logger.Notification("[VintageVisuals] Visual Tuning panel: Ctrl+U (rebind under Controls, \"Vintage Visuals: Open Visual Tuning\").");
 
             ConfigManager.ConfigChanged += ApplyToAllSubsystems;
             ConfigManager.ConfigChanged += RefreshTuningStudio;
@@ -229,8 +230,8 @@ namespace VintageVisuals
         {
             if (!api.ModLoader.IsModEnabled(ConfigLibBridge.ConfigLibModId))
             {
-                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib not installed — settings come from " +
-                    "ModConfig/vintagevisuals.json, reloadable with Ctrl+V.");
+                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib not installed - tune live in the Visual Tuning panel (Ctrl+U), " +
+                    "or edit ModConfig/vintagevisuals.json and reload it with Ctrl+V.");
                 return;
             }
 
@@ -238,8 +239,8 @@ namespace VintageVisuals
             {
                 _configLibBridge = new ConfigLibBridge(this);
                 _configLibBridge.Install();
-                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib detected — live settings GUI available (F7). " +
-                    "ModConfig/vintagevisuals.json and Ctrl+V keep working alongside it.");
+                Mod.Logger.VerboseDebug("[VintageVisuals] ConfigLib detected - its settings window lists these settings too. " +
+                    "The mod's own Visual Tuning panel is Ctrl+U; ModConfig/vintagevisuals.json and Ctrl+V keep working alongside it.");
             }
             catch (Exception ex)
             {

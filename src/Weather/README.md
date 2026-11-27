@@ -418,7 +418,7 @@ Registration failed twice for different reasons:
 
 ### When they do not appear
 
-**Debug: cloud diagnostic** on F7 (`Weather.CloudDebugView`) draws a diagnostic
+**Debug: cloud diagnostic** in the ConfigLib panel (`Weather.CloudDebugView`) draws a diagnostic
 instead of shading. Each view answers one question, because four rounds of this
 have been spent blaming a different multiplied term each time.
 

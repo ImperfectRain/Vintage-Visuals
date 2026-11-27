@@ -190,7 +190,7 @@ hierarchy, the budgets, and what this project deliberately does not build.
   textures: `LoadOrUpdateTextureFromRgba` binds to the active unit as a side
   effect.
 - **`configlib-patches.json` is unvalidated data with a silent failure mode.**
-  ConfigLib parses it, builds the F7 panel from it, and raises events back by
+  ConfigLib parses it, builds its settings panel from it, and raises events back by
   setting code - every link is a string. Two settings sharing a `weight` blanks
   the WHOLE panel, not one row. A settings array instead of a keyed object
   yields zero settings. Neither shows up in a build or a log. The GROUP a

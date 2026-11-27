@@ -2,15 +2,24 @@ using System;
 
 namespace VintageVisuals.Ui
 {
-    /// <summary>Which tab a setting belongs to. The user-facing grouping, not the C# one.</summary>
+    /// <summary>
+    /// Which tab a setting belongs to. The user-facing grouping, not the C# one:
+    /// sunflecks are PseudoPBR properties and caustics are Water properties, but
+    /// a player looks for both under what they see (light under trees, the
+    /// water), so that is where they live. Declaration order is sidebar order.
+    /// </summary>
     public enum SettingTab
     {
         Overview,
         Color,
+        Light,
         Materials,
+        Nature,
         Weather,
         Atmosphere,
+        Water,
         Reflections,
+        Performance,
         Debug,
     }
 
@@ -19,7 +28,16 @@ namespace VintageVisuals.Ui
     {
         Toggle,
         Slider,
+
+        /// <summary>A string property chosen from <see cref="VisualSetting.Choices"/> by name.</summary>
         Dropdown,
+
+        /// <summary>
+        /// A numeric property chosen from named steps: value = Min + index * Step,
+        /// labelled by <see cref="VisualSetting.Choices"/>. For a tier or a mode,
+        /// where a slider reading "2" means nothing without a legend.
+        /// </summary>
+        Choice,
     }
 
     /// <summary>
@@ -122,8 +140,32 @@ namespace VintageVisuals.Ui
         /// <summary>A developer diagnostic. Lives on the Debug tab and never in a shipped preset.</summary>
         public bool DebugOnly { get; }
 
-        /// <summary>Labels for a dropdown, index-aligned to the stored value. Null otherwise.</summary>
+        /// <summary>Labels for a dropdown or a choice, index-aligned to the stored value. Null otherwise.</summary>
         public string[] Choices { get; }
+
+        /// <summary>
+        /// The one line a row shows beside the name: the description's first
+        /// sentence. The whole description is in the details strip under the
+        /// list when the pointer is over the row, so nothing is cut off with no
+        /// way to read the rest (in-game audit, 2026-11-27).
+        /// </summary>
+        public string Summary
+        {
+            get
+            {
+                string text = Description ?? "";
+                int end = text.IndexOf(". ", StringComparison.Ordinal);
+                return end < 0 ? text : text.Substring(0, end + 1);
+            }
+        }
+
+        /// <summary>The label for a stored numeric value of a Choice setting.</summary>
+        public string ChoiceLabel(float value)
+        {
+            if (Choices == null || Choices.Length == 0) return Format(value);
+            int index = (int)Math.Round((value - Min) / Step);
+            return index >= 0 && index < Choices.Length ? Choices[index] : Format(value);
+        }
 
         public VisualSetting(string code, string path, string displayName, string description,
                              SettingTab tab, string section, SettingKind kind,
@@ -172,6 +214,11 @@ namespace VintageVisuals.Ui
         /// <summary>The value as the player should read it, units included.</summary>
         public string Format(float value)
         {
+            if (Kind == SettingKind.Choice && Choices != null)
+            {
+                int index = (int)Math.Round((value - Min) / Step);
+                if (index >= 0 && index < Choices.Length) return Choices[index];
+            }
             string number = value.ToString("F" + DisplayDecimals);
             return Unit == null ? number : number + " " + Unit;
         }

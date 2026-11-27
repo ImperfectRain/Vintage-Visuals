@@ -467,6 +467,7 @@ namespace VintageVisuals.SmokeTest
                   "; gated on SceneReflections: " + string.Join(",", gated.OrderBy(n => n)));
             Compare("entity", DebugViewRegistry.EntityPath, "vec4 vvEntityDebugView(", Snippet("pbrentity.glsl"));
             Compare("atmosphere", DebugViewRegistry.AtmospherePath, "vec4 vvAtmosDebug(", Snippet("atmosphere.glsl"));
+            Compare("water", DebugViewRegistry.WaterPath, "vec4 vvWaterSurface(", Snippet("water.glsl"));
 
             // And the numbers must be reachable from the slider that carries them.
             foreach (var group in DebugViewRegistry.All.GroupBy(v => v.OwnerPath))
@@ -792,6 +793,23 @@ namespace VintageVisuals.SmokeTest
             check("the comparison actually found settings in common",
                   shared > 20, shared + " codes shared with ConfigLib");
 
+            // ONE ORDER, TWO PANELS. ConfigLib sorts by weight; the studio by
+            // registration. A player who learned where a setting sits in one
+            // should find it in the same neighbourhood in the other, so the
+            // weights follow the registry (tab, then section, then row).
+            var weightOf = new Dictionary<string, double>(StringComparer.Ordinal);
+            using (var doc = System.Text.Json.JsonDocument.Parse(json))
+                foreach (var group in doc.RootElement.GetProperty("settings").EnumerateObject())
+                    foreach (var entry in group.Value.EnumerateObject())
+                        if (entry.Value.TryGetProperty("weight", out var w)) weightOf[entry.Name] = w.GetDouble();
+            var registryOrder = VisualSettingRegistry.All.Select(x => x.Code).Where(weightOf.ContainsKey).ToList();
+            var configLibOrder = registryOrder.OrderBy(c => weightOf[c]).ToList();
+            int firstDiff = Enumerable.Range(0, registryOrder.Count).FirstOrDefault(i => registryOrder[i] != configLibOrder[i], -1);
+            check("the ConfigLib panel lists shared settings in the studio's order",
+                  registryOrder.Count > 20 && firstDiff < 0,
+                  firstDiff < 0 ? registryOrder.Count + " in order"
+                      : "position " + firstDiff + ": studio has " + registryOrder[firstDiff] + ", ConfigLib has " + configLibOrder[firstDiff]);
+
             // THE STUDIO MUST NOT BE A SUBSET OF THE OTHER PANEL.
             //
             // A shared code makes a disagreement detectable; a code only one
@@ -803,7 +821,7 @@ namespace VintageVisuals.SmokeTest
             var diagnosticsHandledElsewhere = new HashSet<string>(StringComparer.Ordinal)
             {
                 "pbr_debugview", "atmosphere_debugview", "weather_clouddebugview",
-                "pbr_entitydebug", "compare_wipe",
+                "pbr_entitydebug", "compare_wipe", "water_debug",
             };
 
             var studioCodes = new HashSet<string>(
@@ -824,6 +842,7 @@ namespace VintageVisuals.SmokeTest
                 string path = code == "pbr_debugview" ? DebugViewRegistry.PbrPath
                             : code == "atmosphere_debugview" ? DebugViewRegistry.AtmospherePath
                             : code == "weather_clouddebugview" ? DebugViewRegistry.CloudPath
+                            : code == "water_debug" ? DebugViewRegistry.WaterPath
                             : null;
                 if (path == null) continue;
 

@@ -160,6 +160,16 @@ namespace VintageVisuals.Ui
             { "adaptive_darkgain", "Shows in dark scenes such as caves or night." },
             { "adaptive_brightgain", "Shows in bright scenes such as snow at noon." },
             { "atmosphere_moon", "Shows on clear nights." },
+            { "pbr_fastbeams", "Only matters while Sun shafts is above 0 and god-rays are on in the game's graphics settings." },
+            { "water_caustics", "Shows on the bed of sunlit open water a block or more deep." },
+            { "water_causticblur", "Shows on the bed of sunlit open water a block or more deep." },
+            { "water_causticglow", "Shows on the bed of sunlit open water a block or more deep." },
+            { "water_causticdispersion", "Shows on the sharpest caustic lines, in clear sunlit water." },
+            { "water_ripples", "Shows on open water only while it rains." },
+            { "water_glints", "Look toward the sun or moon across open water." },
+            { "water_shore", "Shows where water meets a bank or beach." },
+            { "water_refraction", "Look down through shallow water at the bottom." },
+            { "perf_prepass", "Saves most in dense scenes; measure with .vvbench prepass." },
         };
 
         /// <summary>
@@ -263,6 +273,8 @@ namespace VintageVisuals.Ui
             var particle = new Parent("PseudoPBR.ParticleLighting", "Particle lighting");
             var weather = new Parent("Weather.Enabled", "Weather response");
             var air = new Parent("Atmosphere.Enabled", "Atmosphere");
+            var water = new Parent("Water.Enabled", "Water surface");
+            var waterScene = new Parent("Water.SceneReflections", "World in the water");
 
             void Under(Parent[] chain, params string[] codes)
             {
@@ -291,7 +303,15 @@ namespace VintageVisuals.Ui
                 "pbr_grain", "pbr_foliage", "pbr_dapple", "pbr_sunflecks", "pbr_moonflecks", "pbr_shafts", "pbr_motes", "pbr_canopyradius",
                 "pbr_gusts", "pbr_contactshade", "pbr_damp", "pbr_crevicewater", "pbr_torchfalloff", "pbr_drips", "pbr_pollen", "pbr_fireflies", "pbr_leaves",
                 "pbr_emissive", "pbr_emissivetemperature", "pbr_emissiveflicker", "pbr_emissivebloom",
-                "reflections_scene", "pbr_pixelreflect");
+                "reflections_scene", "pbr_pixelreflect", "pbr_fastbeams");
+
+            Under(new[] { water },
+                "water_sky", "water_soft", "water_waves", "water_depthtint", "water_clarity", "water_ripples",
+                "water_glints", "water_shore", "water_caustics", "water_causticblur", "water_causticglow",
+                "water_causticdispersion", "water_scene");
+
+            // Refraction bends the view the scene march found, so it needs the march.
+            Under(new[] { water, waterScene }, "water_refraction");
 
             // The entity and particle groups are gated on their own flags, not
             // on Surface materials - see IsPatchGroupEnabled.

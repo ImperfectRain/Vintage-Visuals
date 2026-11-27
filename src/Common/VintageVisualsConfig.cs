@@ -1129,7 +1129,7 @@ namespace VintageVisuals.Common
             // reconstructed Z collapses toward zero and every face starts
             // shading as though lit from its own edge, which reads as a
             // rendering fault rather than as strong relief.
-            NormalStrength = ColorGradeConfig.Clamp(NormalStrength, 0.0f, 2.0f,
+            NormalStrength = ColorGradeConfig.Clamp(NormalStrength, 0.0f, 3.0f,
                 "PseudoPBR.NormalStrength", corrections);
             SpecularStrength = ColorGradeConfig.Clamp(SpecularStrength, 0.0f, 2.0f,
                 "PseudoPBR.SpecularStrength", corrections);
@@ -1141,7 +1141,7 @@ namespace VintageVisuals.Common
                 "PseudoPBR.GrainAnisotropy", corrections);
             SunDapple = ColorGradeConfig.Clamp(SunDapple, 0.0f, 2.0f,
                 "PseudoPBR.SunDapple", corrections);
-            SunFlecks = ColorGradeConfig.Clamp(SunFlecks, 0.0f, 1.5f,
+            SunFlecks = ColorGradeConfig.Clamp(SunFlecks, 0.0f, 2.0f,
                 "PseudoPBR.SunFlecks", corrections);
             MoonFlecks = ColorGradeConfig.Clamp(MoonFlecks, 0.0f, 1.0f,
                 "PseudoPBR.MoonFlecks", corrections);
