@@ -32,6 +32,12 @@ uniform vec4 vv_mirrorAtlas[VV_MIRROR_MAX_SLOTS];      // atlas rect xy, size; z
 uniform vec4 vv_mirrorCrop[VV_MIRROR_MAX_SLOTS];       // the screen rect the capture covers, uv min, max
 uniform vec4 vv_mirrorLook[VV_MIRROR_MAX_SLOTS];       // polish, strength, LOD start, fine (half-texel) distance
 uniform mat4 vv_mirrorViewProj;                        // the view-projection this pass sees mirrors through
+uniform float vv_mirrorDebug;                          // 0 off; 1 capture alpha; 2 capture colour, raw
+
+float vvTerrainMirrorDebug()
+{
+    return vv_mirrorDebug;
+}
 
 int vvTerrainMirrorSlot(int box)
 {
@@ -96,6 +102,19 @@ vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos)
     vec4 crop = vv_mirrorCrop[slot];
     vec2 local = clamp((uv - crop.xy) / max(crop.zw - crop.xy, vec2(1e-6)), vec2(0.0), vec2(1.0 - 1e-4));
     vec4 seen = textureLod(vv_mirrorTex, atlas.xy + local * atlas.zw, 0.0);
+
+    // Debug 1: what the capture wrote as alpha. Blue: nothing drew (alpha
+    // 0). Green ramp: drew with a small alpha (bright green at 0.05 and up to
+    // 0.5). Red: alpha 0.5 or more. Debug 2: the capture's colour exactly as
+    // drawn, whatever its alpha, with no material response on top.
+    int debugMode = int(vv_mirrorDebug + 0.5);
+    if (debugMode == 1)
+    {
+        if (seen.a <= 0.0) return vec4(0.0, 0.0, 1.0, 1.0);
+        if (seen.a >= 0.5) return vec4(1.0, 0.0, 0.0, 1.0);
+        return vec4(0.0, clamp(0.2 + seen.a * 16.0, 0.0, 1.0), 0.0, 1.0);
+    }
+    if (debugMode == 2) return vec4(max(seen.rgb, vec3(0.0)), 1.0);
     // Coverage is "any alpha at all": the region is cleared to alpha 0 and
     // every program that draws into it writes something above 0 - but not
     // necessarily 1. The topsoil writes its FOG alpha (and discards below

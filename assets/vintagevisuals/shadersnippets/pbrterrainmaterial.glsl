@@ -119,6 +119,7 @@ VvReflectHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v, float blur);
 int vvTerrainMirrorFind(vec3 cameraRelativePos, vec3 faceNormal);
 vec4 vvTerrainMirrorLook(int box);
 vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos);
+float vvTerrainMirrorDebug();
 // The reflection roughness of a fully polished mirror: below the water floor,
 // because a mirror is the one surface that is meant to be a picture.
 const float VV_TERRAIN_MIRROR_POLISHED = 0.02;
@@ -2799,6 +2800,10 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
                           * m.metalness * m.perceptualRoughness;
     vec3 color = diffuse + (directSpec + blockSpec + ambientSpec) * energyCap;
     color += vvTerrainEmission(m, glowLevel, cameraRelativePos);
+#ifdef VV_TERRAIN_MIRRORS
+    // '.vvmirror debug 1|2': the mirror shows the capture itself, unshaded.
+    if (mirrorBox >= 0 && vvTerrainMirrorDebug() > 0.5) color = reflection.image;
+#endif
     return vec4(clamp(color, 0.0, 8.0), litColor.a);
 }
 

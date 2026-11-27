@@ -351,6 +351,10 @@ the topsoil writes its fog alpha (and discards below 0.005) - so the first
 cut's 0.5 threshold hid every grass-topped block. A depth-tested second mask
 draw for coverage was tried and reduced mirrors to slivers in game; removed.
 
+**Debug.** `.vvmirror debug 1` shows on each mirror what its camera wrote as
+alpha (blue nothing, green a faint alpha, red solid); `debug 2` shows the raw
+captured colour with no material response. Uniform `vv_mirrorDebug`, 0 off.
+
 **Limits.** Never water, glass or quad particles; the analytic sky, not the
 game's; per-rect, not
 per-voxel, occlusion; nested LOD from the real eye. Seen working in game

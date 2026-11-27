@@ -67,6 +67,10 @@ namespace VintageVisuals.Reflections.Mirrors
         public const string CropUniform = "vv_mirrorCrop";
         public const string LookUniform = "vv_mirrorLook";
         public const string ViewProjUniform = "vv_mirrorViewProj";
+        public const string DebugUniform = "vv_mirrorDebug";
+
+        /// <summary>'.vvmirror debug': 0 off, 1 capture alpha, 2 raw capture colour.</summary>
+        public static int DebugMode { get; set; }
         private const int LosRaysPerFrame = 64;
         private const int LosRefreshFrames = 8;
         private const double ClipBias = 0.003;     // keeps the mirror's own face out of its reflection
@@ -824,6 +828,7 @@ namespace VintageVisuals.Reflections.Mirrors
                 if (sh == null || !sh.HasUniform(CountUniform)) return;
                 Context c = _current ?? Empty;
                 sh.Uniform(CountUniform, (float)c.BoxCount);
+                if (sh.HasUniform(DebugUniform)) sh.Uniform(DebugUniform, (float)DebugMode);
                 if (c.BoxCount > 0)
                 {
                     sh.Uniforms4(BoxUniform, MaxBoxes * 2, c.Boxes);

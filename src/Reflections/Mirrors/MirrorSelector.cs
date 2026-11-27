@@ -98,6 +98,9 @@ namespace VintageVisuals.Reflections.Mirrors
                     .BeginSubCommand("set").WithDescription("cull, lod, res, depth, passes or range, then a value")
                         .WithArgs(p.Word("name"), p.Float("value"))
                         .HandleWith(a => SetSetting(a[0] as string, (float)a[1])).EndSubCommand()
+                    .BeginSubCommand("debug").WithDescription("0 off, 1 what the mirror camera drew (blue nothing, green faint alpha, red solid), 2 its raw colour")
+                        .WithArgs(p.Int("mode"))
+                        .HandleWith(a => SetDebug((int)a[0])).EndSubCommand()
                     .BeginSubCommand("stats").HandleWith(_ => TextCommandResult.Success(_stats())).EndSubCommand();
             }
             catch (Exception ex)
@@ -149,6 +152,14 @@ namespace VintageVisuals.Reflections.Mirrors
             _store.SaveSettings();
             _settingsChanged();
             return TextCommandResult.Success(DescribeSettings());
+        }
+
+        private TextCommandResult SetDebug(int mode)
+        {
+            MirrorRenderer.DebugMode = Math.Max(0, Math.Min(2, mode));
+            return TextCommandResult.Success(MirrorRenderer.DebugMode == 0 ? "Mirror debug off."
+                : MirrorRenderer.DebugMode == 1 ? "Mirror debug 1: blue = the mirror camera drew nothing there, green = drew with a faint alpha, red = drew solid."
+                : "Mirror debug 2: the mirror camera's raw colour, no material on top.");
         }
 
         public string DescribeSettings()
