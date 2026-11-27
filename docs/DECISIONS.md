@@ -4607,3 +4607,13 @@ self is drawn into a mirror, a prefix on `EntityPlayer.AnimManager` returns
 `TpAnimManager`. That is the same switch the game makes for the self's shadow
 pass, and that animator already runs every frame for the shadow, so the fix
 costs one static bool test per getter call.
+
+**Third amendment (2026-11-27).** The debug views (`.vvmirror debug 1|2`)
+showed that the mirror camera drew no floor at all. Sand tops were missing as
+well as grass tops; walls, leaves and entities were present. The cause was
+the winding parity. A single reflection reverses every triangle's winding,
+but top-level passes were marked even, so the front face stayed CCW. Front
+faces were culled and back faces drawn, and leaves and entities survived only
+because they draw without culling. Top-level passes are now odd and nested
+ones alternate. The topsoil alpha (fog alpha below 0.5) is real but was not
+what hid the floors; the any-alpha coverage stays.

@@ -358,11 +358,16 @@ namespace VintageVisuals.Reflections.Mirrors
 
             List<PlaneGeo> planes = BuildGeometry(cam);
 
-            // Top-level: what the player can see.
+            // Top-level: what the player can see. ODD: one reflection reverses
+            // the winding of every triangle, so the front faces must be CW.
+            // Shipped as false and the pass drew back faces instead: every
+            // floor (grass, sand, any top face) vanished while walls' far
+            // sides, the leaves and entities (drawn without culling) showed.
+            // Each nested reflection flips it again.
             var roots = new List<Node>();
             foreach (PlaneGeo g in planes)
             {
-                Node n = Plan(g, null, MirrorMath.Reflection(g.Nx, g.Ny, g.Nz, g.W), false, eye, vpMain, settings, cam,
+                Node n = Plan(g, null, MirrorMath.Reflection(g.Nx, g.Ny, g.Nz, g.W), true, eye, vpMain, settings, cam,
                               0, 0, 1, 1, true);
                 if (n != null) roots.Add(n);
             }
