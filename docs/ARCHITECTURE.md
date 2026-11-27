@@ -265,7 +265,8 @@ Water surface                  src/Water/         patched chunkliquid.fsh (OIT)
   caustics on the bed behind each texel (same depthTex, no pass, no sampler;
   the web multiplies what shows through, darkening by opacity and brightening
   with the bed colour from the waterscene frame; own group watercaustics
-  defines VV_WATER_CAUSTICS while Water.Caustics > 0, D93),
+  defines VV_WATER_CAUSTICS while Water.Caustics > 0, D93; varied by the
+  scene's wind and the world's rain, vv_waterCausticRain, D96),
   shoreline foam and edge, flow-streaked waves, far swells;
   scene.glsl + pbrcore.glsl injected again, scene block via UploadSceneTo
   waterscene.glsl (own group, D82): the world reflected and the bed refracted,

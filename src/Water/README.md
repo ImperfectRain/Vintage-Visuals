@@ -62,6 +62,12 @@ never reaches it.
    the bed, so no extra view-path fade), falls on slopes and walls by
    N.L. Compiled in only through the `watercaustics` group while Caustics is
    above 0. Tier: 5 waves and no taps on Low, 10 waves and 4 taps above.
+   D96 makes it vary with the scene: the odd and the even waves drift by
+   their own slow fields so the web never repeats one weave, the game's wind
+   works the lens in patches (calm air patchy, strong wind even;
+   `vvWaterCausticGust`), falling rain (`vv_waterCausticRain`, the world's
+   rain, not config-scaled) weakens and softens it, and the contrast is
+   gentler (shoulder 1.3, `VV_WATER_CAUSTIC_CONTRAST` 0.75).
 7. **Shoreline** (`Shore`, D79): the distance from the texel to the bank or bed
    behind it, measured across that surface; the water thins out over the last
    0.06 block, and a per-texel foam line laps in and out, composited over the

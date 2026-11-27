@@ -284,10 +284,15 @@ namespace VintageVisuals.SmokeTest
             // shoulder are the shipped statements; only the wave sum is a C#
             // loop, over the wave constants read from the shipped call list.
             string curv = FunctionBody(water, "vec3 vvWaterCausticCurvature(");
-            var waves = Regex.Matches(curv, @"vvWaterCausticWave\(world, t, vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\),\s*([\d.]+),\s*([\d.]+)\)")
-                             .Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value), D(m.Groups[3].Value), D(m.Groups[4].Value) })
-                             .ToList();
+            var waveM = Regex.Matches(curv, @"vvWaterCausticWave\((\w+), t, vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\),\s*([\d.]+),\s*([\d.]+)\)").Cast<Match>().ToList();
+            var waves = waveM.Select(m => new[] { D(m.Groups[2].Value), D(m.Groups[3].Value), D(m.Groups[4].Value), D(m.Groups[5].Value) }).ToList();
+            var waveDrift = waveM.Select(m => m.Groups[1].Value).ToList();
             double curve = Const(water, "VV_WATER_CAUSTIC_CURVE"), warp = Const(water, "VV_WATER_CAUSTIC_WARP");
+            double phaseWarp = Const(water, "VV_WATER_CAUSTIC_PHASE_WARP");
+            // The drift vectors and their clock rates, in order: the short
+            // warp's two, then wa's two, then wb's two.
+            var driftM = Regex.Matches(curv, @"vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\)\s*\*\s*K,\s*world\)\s*([+-])\s*t\s*\*\s*([\d.]+)").Cast<Match>()
+                              .Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value), (m.Groups[3].Value == "-" ? -1 : 1) * D(m.Groups[4].Value) }).ToList();
             double[] mean = ConstArray(water, "VV_WATER_CAUSTIC_MEAN"), norm = ConstArray(water, "VV_WATER_CAUSTIC_NORM");
             // The relative-to-average, shoulder and renormalise chain, as it
             // ships: the last four statements of vvWaterCausticWeb, run through
@@ -338,7 +343,7 @@ namespace VintageVisuals.SmokeTest
             const double TW = 2 * Math.PI / 4096.0;
             double worstMean = 0;
             string meanDetail = "";
-            if (waves.Count == 10 && mean.Length == 54 && norm.Length == 54)
+            if (waves.Count == 10 && mean.Length == 54 && norm.Length == 54 && driftM.Count == 6)
             {
                 foreach (double f in new[] { 0.3, 0.55, 0.8 })
                     foreach (double s in new[] { 0.12, 0.25, 0.5 })
@@ -351,13 +356,19 @@ namespace VintageVisuals.SmokeTest
                                 for (int iz = 0; iz < 128; iz++)
                                 {
                                     double x = 37.0 + (ix + 0.5) / 16.0, z = 91.0 + (iz + 0.5) / 16.0;
-                                    double wx = x + warp * Math.Sin((2300 * x - 1300 * z) * TW - t * 0.7);
-                                    double wz = z + warp * Math.Sin((1100 * x + 2500 * z) * TW + t * 0.6);
+                                    Func<int, double, double, double> dr = (i, px, pz) => Math.Sin((driftM[i][0] * px + driftM[i][1] * pz) * TW + t * driftM[i][2]);
+                                    double wx = x + warp * dr(0, x, z);
+                                    double wz = z + warp * dr(1, x, z);
+                                    double ax = wx + phaseWarp * dr(2, wx, wz), az = wz + phaseWarp * dr(3, wx, wz);
+                                    double bx = wx + phaseWarp * dr(4, wx, wz), bz = wz + phaseWarp * dr(5, wx, wz);
                                     double hxx = 0, hxz = 0, hzz = 0;
-                                    foreach (var w in waves)
+                                    for (int wi = 0; wi < waves.Count; wi++)
                                     {
+                                        var w = waves[wi];
+                                        bool isA = waveDrift[wi] == "wa";
+                                        double px = isA ? ax : bx, pz = isA ? az : bz;
                                         double kx = w[0] * TW, kz = w[1] * TW;
-                                        double sn = Math.Sin(kx * wx + kz * wz - t * w[2]) * w[3] / (kx * kx + kz * kz);
+                                        double sn = Math.Sin(kx * px + kz * pz - t * w[2]) * w[3] / (kx * kx + kz * kz);
                                         hxx -= kx * kx * sn; hxz -= kx * kz * sn; hzz -= kz * kz * sn;
                                     }
                                     double r = Raw(hxx * curve, hxz * curve, hzz * curve, f, s) / meanFS / 0.02;
@@ -371,7 +382,61 @@ namespace VintageVisuals.SmokeTest
                     }
             }
             check("caustics conserve light: the web's mean over the bed stays within 6 % of 1 (no lift, no dimming)",
-                  waves.Count == 10 && worstMean < 0.06 && rawAgree < 1e-9, waves.Count + " waves;" + meanDetail);
+                  waves.Count == 10 && driftM.Count == 6 && worstMean < 0.06 && rawAgree < 1e-9, waves.Count + " waves, " + driftM.Count + " drifts;" + meanDetail);
+
+            // --- the web does not repeat one weave ---------------------------
+            // The odd and the even waves drift by different slow fields, so the
+            // phase between two waves changes from place to place (D96).
+            bool alternates = waveDrift.Count == 10 && Enumerable.Range(0, 10).All(i => waveDrift[i] == (i % 2 == 0 ? "wa" : "wb"));
+            bool distinct = driftM.Count == 6 && !(driftM[2][0] == driftM[4][0] && driftM[2][1] == driftM[4][1])
+                            && !(driftM[3][0] == driftM[5][0] && driftM[3][1] == driftM[5][1]);
+            check("caustics: the odd and the even waves drift by their own slow fields, so the web never settles into one weave",
+                  alternates && distinct && phaseWarp >= 0.3 && phaseWarp <= 1.0,
+                  string.Join(",", waveDrift) + ", phase warp " + phaseWarp);
+
+            // --- the wind works the surface in patches ------------------------
+            // On still air the lens gain swings from nearly glass to a sharp
+            // web across the pond (cat's paws); a strong wind evens it out.
+            string gustBody = FunctionBody(water, "float vvWaterCausticGust(");
+            Func<double, double, double, double> gustAt = (gx, gz, wind) =>
+            {
+                var sy = Syms("t", 5.0, "wind", wind, "K", TW);
+                sy["world"] = Vec(gx, gz, 0);
+                foreach (string st in Statements(gustBody))
+                {
+                    if (st.StartsWith("return ", StringComparison.Ordinal)) return Scalar(Rhs(st), sy);
+                    var mm = Regex.Match(st, @"^float (\w+) =");
+                    if (mm.Success) sy[mm.Groups[1].Value] = new Val(Scalar(Rhs(st), sy));
+                }
+                return double.NaN;
+            };
+            double[] calmG = { 9, -9 }, windG = { 9, -9 };
+            for (int gi = 0; gi < 40; gi++)
+                for (int gj = 0; gj < 40; gj++)
+                {
+                    double gx = 300 + gi * 2.5, gz = -80 + gj * 2.5;
+                    double c0 = gustAt(gx, gz, 0.0), c1 = gustAt(gx, gz, 1.0);
+                    calmG[0] = Math.Min(calmG[0], c0); calmG[1] = Math.Max(calmG[1], c0);
+                    windG[0] = Math.Min(windG[0], c1); windG[1] = Math.Max(windG[1], c1);
+                }
+            check("caustics: still air works the surface in patches, a strong wind evenly; the gain stays bounded",
+                  calmG[0] < 0.45 && calmG[1] > 1.1 && windG[1] / windG[0] < 1.7 && calmG[0] > 0.2 && Math.Max(calmG[1], windG[1]) <= 1.3,
+                  "calm " + calmG[0].ToString("0.00") + ".." + calmG[1].ToString("0.00") + ", windy " + windG[0].ToString("0.00") + ".." + windG[1].ToString("0.00"));
+
+            // --- rain breaks the lens up --------------------------------------
+            // Falling rain weakens and softens the lens; no rain leaves it as is.
+            string fStmt = StubCall(webStmts.FirstOrDefault(x => x.StartsWith("float f =", StringComparison.Ordinal)) ?? "float f = 1.0", "vvWaterCausticGust", "gustV");
+            string sStmt = webStmts.FirstOrDefault(x => x.StartsWith("float s =", StringComparison.Ordinal)) ?? "float s = 1.0";
+            Func<string, double, double> lensAt = (st, rainV) => Scalar(Rhs(st), Syms("lensDepth", 2.0, "wind", 0.5, "rain", rainV, "gustV", 1.0,
+                "blur", 0.3, "depth", 2.0, "extraSoft", 0.0, "VV_WATER_ETA", Const(water, "VV_WATER_ETA"),
+                "VV_WATER_CAUSTIC_RAIN_FLAT", Const(water, "VV_WATER_CAUSTIC_RAIN_FLAT"), "VV_WATER_CAUSTIC_RAIN_SOFT", Const(water, "VV_WATER_CAUSTIC_RAIN_SOFT"),
+                "VV_WATER_CAUSTIC_SHARP", Const(water, "VV_WATER_CAUSTIC_SHARP"), "VV_WATER_CAUSTIC_SPREAD", Const(water, "VV_WATER_CAUSTIC_SPREAD"),
+                "VV_WATER_CAUSTIC_BLUR_SOFT", Const(water, "VV_WATER_CAUSTIC_BLUR_SOFT")));
+            double dryF = lensAt(fStmt, 0), wetF = lensAt(fStmt, 1), dryS = lensAt(sStmt, 0), wetS = lensAt(sStmt, 1);
+            double plainF = 2.0 * (1 - Const(water, "VV_WATER_ETA")) * (0.7 + 0.6 * 0.5);
+            check("caustics: falling rain weakens and softens the lens, and no rain leaves it untouched",
+                  Math.Abs(dryF - plainF) < 1e-9 && wetF < 0.8 * dryF && wetS > dryS + 0.1,
+                  "f dry " + dryF.ToString("0.000") + " wet " + wetF.ToString("0.000") + ", s dry " + dryS.ToString("0.000") + " wet " + wetS.ToString("0.000"));
 
             // --- the sun gate and the slider ----------------------------------
             string surf = FunctionBody(water, "vec4 vvWaterSurface(");
@@ -387,7 +452,8 @@ namespace VintageVisuals.SmokeTest
             double share = Const(water, "VV_WATER_CAUSTIC_SUN_SHARE");
             Func<double, double, double, Val> webAt = (slider, sunL, fade) =>
             {
-                var sy = Syms("sunLight", sunL, "caustics", slider, "fade", fade, "VV_WATER_CAUSTIC_SUN_SHARE", share);
+                var sy = Syms("sunLight", sunL, "caustics", slider, "fade", fade, "VV_WATER_CAUSTIC_SUN_SHARE", share,
+                              "VV_WATER_CAUSTIC_CONTRAST", Const(water, "VV_WATER_CAUSTIC_CONTRAST"));
                 sy["web"] = Vec(1.8, 0.6, 1.2); sy["downTransmit"] = Vec(0.9, 1, 1);
                 return Eval(Rhs(webStmt), sy);
             };
@@ -456,10 +522,12 @@ namespace VintageVisuals.SmokeTest
 
             bool whole = waves.Count == 10 && waves.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
             var warpK = Regex.Matches(curv, @"vec2\(\s*(-?[\d.]+),\s*(-?[\d.]+)\)\s*\*\s*K").Select(m => new[] { D(m.Groups[1].Value), D(m.Groups[2].Value) }).ToList();
-            whole &= warpK.Count == 2 && warpK.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
+            whole &= warpK.Count == 6 && warpK.All(w => w[0] == Math.Floor(w[0]) && w[1] == Math.Floor(w[1]));
+            var gustK = Regex.Matches(FunctionBody(water, "float vvWaterCausticGust("), @"\(\s*(-?[\d.]+) \* world\.x ([+-]) ([\d.]+) \* world\.y\)").Cast<Match>().ToList();
+            whole &= gustK.Count == 3 && gustK.All(m => D(m.Groups[1].Value) == Math.Floor(D(m.Groups[1].Value)) && D(m.Groups[3].Value) == Math.Floor(D(m.Groups[3].Value)));
             check("caustic waves have whole cycles per 4096 blocks",
                   whole && FunctionBody(water, "vec3 vvWaterCausticWave(").Contains("/ 4096.0") && curv.Contains("/ 4096.0"),
-                  waves.Count + " waves, " + warpK.Count + " warp vectors");
+                  waves.Count + " waves, " + warpK.Count + " warp vectors, " + gustK.Count + " gust fields");
 
             // Compiled in only by its own group: water.glsl never defines the
             // switch, the watercaustics group does, gated on the slider.

@@ -41,6 +41,7 @@ namespace VintageVisuals.Water
         public const string CausticBlurUniform = "vv_waterCausticBlur";
         public const string CausticGlowUniform = "vv_waterCausticGlow";
         public const string CausticDispersionUniform = "vv_waterCausticDispersion";
+        public const string CausticRainUniform = "vv_waterCausticRain";
         public const string ShoreUniform = "vv_waterShore";
         public const string DebugUniform = "vv_waterDebug";
 
@@ -144,6 +145,8 @@ namespace VintageVisuals.Water
             program.Uniform(CausticBlurUniform, config.CausticBlur);
             program.Uniform(CausticGlowUniform, config.CausticGlow);
             program.Uniform(CausticDispersionUniform, config.CausticDispersion);
+            // What the world is doing, not config-scaled: rain breaks up the lens.
+            program.Uniform(CausticRainUniform, Clamp01(world.Rain));
             program.Uniform(ShoreUniform, config.Shore);
             program.Uniform(DebugUniform, config.DebugView);
             UploadScene(program, config);

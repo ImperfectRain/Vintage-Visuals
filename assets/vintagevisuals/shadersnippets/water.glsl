@@ -62,6 +62,7 @@ uniform float vv_waterCausticTaps; // quality: 1 the texel alone, 5 with its fou
 uniform float vv_waterCausticBlur; // softness of the web, 0 the sharp focus lines
 uniform float vv_waterCausticGlow; // extra softness where the light is brightest, 0 none
 uniform float vv_waterCausticDispersion; // colour split at the focus lines, 0 none
+uniform float vv_waterCausticRain; // rain falling, 0 to 1, NOT config-scaled; 0 leaves the lens unbroken
 uniform float vv_waterShore;      // shoreline soft edge and foam line, 0 none
 uniform float vv_waterDebug;       // debug views, 0 off
 
@@ -112,12 +113,16 @@ const float VV_WATER_ETA = 0.75188;          // 1 / 1.33, air into water
 const float VV_WATER_CAUSTIC_CURVE = 1.1;    // surface curvature each focusing wave carries (1/blocks)
 const float VV_WATER_CAUSTIC_FOCUS = 3.0;    // blocks: the depth the lens settles at
 const float VV_WATER_CAUSTIC_WARP = 0.12;    // blocks the web's cells are bent by
+const float VV_WATER_CAUSTIC_PHASE_WARP = 0.6; // blocks each half of the waves drifts by, over ~11 blocks (D96)
 const float VV_WATER_CAUSTIC_SHARP = 0.07;   // how soft a focus line is right under the surface
 const float VV_WATER_CAUSTIC_SPREAD = 0.03;  // ... and how much softer per block of depth
-const float VV_WATER_CAUSTIC_BLUR_SOFT = 0.25;// added softness at full blur
+const float VV_WATER_CAUSTIC_BLUR_SOFT = 0.4; // added softness at full blur
 const float VV_WATER_CAUSTIC_FAR_SOFT = 4.0; // added softness per block of bed per pixel (distance)
-const float VV_WATER_CAUSTIC_SHOULDER = 2.5; // a line approaches 1 + this over the average, never clips
+const float VV_WATER_CAUSTIC_SHOULDER = 1.3; // a line approaches 1 + this over the average, never clips
 const float VV_WATER_CAUSTIC_SUN_SHARE = 0.85; // share of the bed's light that comes straight from the sun
+const float VV_WATER_CAUSTIC_CONTRAST = 0.75; // share of the lens's contrast shown: full read too strong in game (D96)
+const float VV_WATER_CAUSTIC_RAIN_FLAT = 0.35; // lens strength rain takes at full rain: drops break the surface up
+const float VV_WATER_CAUSTIC_RAIN_SOFT = 0.3;  // softness rain adds at full rain
 const float VV_WATER_CAUSTIC_DISPERSION = 0.08; // red and blue focus this much nearer and further at full
 const float VV_WATER_CAUSTIC_ALBEDO = 0.35;  // the bed, when its colour is not readable (DATA GAP above)
 const float VV_WATER_CAUSTIC_DEEP = 6.0;     // blocks: faded out by this depth, from 0.3 of it
@@ -127,22 +132,22 @@ const float VV_WATER_CAUSTIC_FAR = 0.06;     // blocks of bed per pixel where th
 // 1 in eighths) and softness s (columns, 0.05 x 2^(0.8 k): 0.05, 0.087,
 // 0.15, 0.26, 0.46, 0.80, log-spaced because the average climbs steeply as
 // the lines sharpen), and the average once the shoulder has compressed the
-// lines. Measured offline from these exact waves (10 of them, 12 x 8 blocks,
-// six moments); dividing by them keeps the bed's mean light where the game
+// lines. Measured offline from these exact waves and drifts (10 waves, two
+// 12 x 8 block patches, nine moments); dividing by them keeps the bed's mean light where the game
 // put it, so the web never lifts or dims the whole pond (the D92 lesson).
-// Low's 5 waves differ by at most 15 percent.
+// Low's 5 waves differ by at most 12 percent.
 const float VV_WATER_CAUSTIC_MEAN[54] = float[54](
-    1.000, 1.000, 1.000, 1.000, 1.000, 1.000,  1.115, 1.113, 1.106, 1.089, 1.058, 1.022,
-    1.991, 1.789, 1.585, 1.384, 1.199, 1.063,  2.910, 2.437, 1.997, 1.607, 1.293, 1.085,
-    3.119, 2.577, 2.078, 1.643, 1.299, 1.073,  2.920, 2.425, 1.967, 1.565, 1.245, 1.035,
-    2.591, 2.173, 1.784, 1.438, 1.160, 0.978,  2.275, 1.922, 1.593, 1.300, 1.065, 0.914,
-    1.988, 1.693, 1.416, 1.169, 0.971, 0.847);
+    1.000, 1.000, 1.000, 1.000, 1.000, 1.000,  1.109, 1.107, 1.101, 1.086, 1.057, 1.021,
+    1.959, 1.768, 1.576, 1.383, 1.202, 1.066,  3.183, 2.619, 2.108, 1.667, 1.322, 1.097,
+    3.340, 2.733, 2.181, 1.705, 1.332, 1.089,  2.995, 2.482, 2.009, 1.593, 1.262, 1.044,
+    2.577, 2.163, 1.777, 1.434, 1.158, 0.977,  2.213, 1.876, 1.559, 1.277, 1.050, 0.903,
+    1.908, 1.630, 1.369, 1.135, 0.947, 0.830);
 const float VV_WATER_CAUSTIC_NORM[54] = float[54](
-    1.000, 1.000, 1.000, 1.000, 1.000, 1.000,  0.972, 0.973, 0.975, 0.979, 0.986, 0.994,
-    0.777, 0.828, 0.878, 0.924, 0.961, 0.984,  0.744, 0.804, 0.861, 0.912, 0.952, 0.979,
-    0.743, 0.803, 0.860, 0.910, 0.949, 0.975,  0.734, 0.793, 0.850, 0.902, 0.942, 0.971,
-    0.718, 0.777, 0.835, 0.889, 0.933, 0.964,  0.699, 0.758, 0.817, 0.873, 0.920, 0.956,
-    0.681, 0.738, 0.798, 0.855, 0.906, 0.946);
+    1.000, 1.000, 1.000, 1.000, 1.000, 1.000,  0.960, 0.961, 0.963, 0.968, 0.978, 0.990,
+    0.737, 0.787, 0.840, 0.892, 0.939, 0.973,  0.676, 0.740, 0.805, 0.869, 0.924, 0.964,
+    0.681, 0.743, 0.807, 0.868, 0.920, 0.959,  0.670, 0.731, 0.795, 0.857, 0.911, 0.952,
+    0.653, 0.712, 0.775, 0.838, 0.895, 0.941,  0.633, 0.690, 0.752, 0.816, 0.876, 0.927,
+    0.614, 0.669, 0.729, 0.793, 0.856, 0.911);
 
 // Shoreline (D79). Where the water behind a texel is only a sliver deep, the
 // surface thins out over two texels so the bank meets it softly, and a foam
@@ -370,31 +375,58 @@ vec3 vvWaterCausticWave(vec2 world, float t, vec2 cycles, float speed, float w)
     return -vec3(k.x * k.x, k.x * k.y, k.y * k.y) * s;
 }
 
-// The surface curvature the bed sees at a world XZ: ten waves from 1.5 down
-// to 0.4 blocks, spread over the compass without a lattice (directions and
-// lengths drawn once at random and kept), longest first so Low's first five
-// are the ones that carry the web. A slow drift bends them further.
+// The surface curvature the bed sees at a world XZ: ten waves from 1.6 down
+// to 0.42 blocks, their directions spread over the compass (no two of a
+// tier's five within 25 degrees) so no pair settles into a lattice, longest
+// first so Low's five carry the web. A short drift bends the cells; on top,
+// the odd and the even waves each drift by their OWN slow field (about 11
+// blocks across), so the phase between any two waves changes from place to
+// place and the web never repeats the same weave (D96: in game the D93 set
+// read as one regular woven map).
 vec3 vvWaterCausticCurvature(vec2 world, float t, float waves)
 {
     const float K = VV_WATER_TWO_PI / 4096.0;
     world += VV_WATER_CAUSTIC_WARP * vec2(sin(dot(vec2(2300.0, -1300.0) * K, world) - t * 0.7),
                                           sin(dot(vec2(1100.0, 2500.0) * K, world) + t * 0.6));
-    vec3 h = vvWaterCausticWave(world, t, vec2(2449.0, 1248.0), 1.03, 1.341)
-           + vvWaterCausticWave(world, t, vec2(2997.0, 803.0), 1.09, 1.262)
-           + vvWaterCausticWave(world, t, vec2(3075.0, 2768.0), 1.26, 1.093)
-           + vvWaterCausticWave(world, t, vec2(437.0, 4157.0), 1.27, 1.087)
-           + vvWaterCausticWave(world, t, vec2(3657.0, 4358.0), 1.48, 0.932);
-    float scale = VV_WATER_CAUSTIC_CURVE * 1.41421;
+    vec2 wa = world + VV_WATER_CAUSTIC_PHASE_WARP * vec2(sin(dot(vec2(310.0, -170.0) * K, world) - t * 0.21),
+                                                         sin(dot(vec2(150.0, 345.0) * K, world) + t * 0.17));
+    vec2 wb = world + VV_WATER_CAUSTIC_PHASE_WARP * vec2(sin(dot(vec2(-220.0, -290.0) * K, world) + t * 0.19),
+                                                         sin(dot(vec2(380.0, -120.0) * K, world) - t * 0.23));
+    vec3 h = vvWaterCausticWave(wa, t, vec2(2504.0, 532.0), 0.99, 1.336)
+           + vvWaterCausticWave(wb, t, vec2(1949.0, -2242.0), 1.07, 1.240)
+           + vvWaterCausticWave(wa, t, vec2(420.0, 3420.0), 1.15, 1.152)
+           + vvWaterCausticWave(wb, t, vec2(-3707.0, 1498.0), 1.24, 1.069)
+           + vvWaterCausticWave(wa, t, vec2(-2661.0, -3800.0), 1.33, 0.992);
+    // Five waves carrying the curvature spread of ten: sqrt(10 / the sum of
+    // their five squared weights).
+    float scale = VV_WATER_CAUSTIC_CURVE * 1.215;
     if (waves > 7.5)
     {
-        h += vvWaterCausticWave(world, t, vec2(-5455.0, 1878.0), 1.49, 0.925)
-           + vvWaterCausticWave(world, t, vec2(-6134.0, 2731.0), 1.60, 0.858)
-           + vvWaterCausticWave(world, t, vec2(1510.0, 6543.0), 1.60, 0.858)
-           + vvWaterCausticWave(world, t, vec2(8022.0, 3405.0), 1.83, 0.753)
-           + vvWaterCausticWave(world, t, vec2(-8497.0, 6173.0), 2.01, 0.686);
+        h += vvWaterCausticWave(wb, t, vec2(-1393.0, 5199.0), 1.44, 0.921)
+           + vvWaterCausticWave(wa, t, vec2(-5237.0, -3401.0), 1.55, 0.855)
+           + vvWaterCausticWave(wb, t, vec2(-7240.0, 253.0), 1.67, 0.794)
+           + vvWaterCausticWave(wa, t, vec2(2875.0, 7899.0), 1.80, 0.737)
+           + vvWaterCausticWave(wb, t, vec2(7989.0, -5594.0), 1.93, 0.684);
         scale = VV_WATER_CAUSTIC_CURVE;     // twice the waves: the same curvature spread
     }
     return h * scale;
+}
+
+// How hard the wind is working the surface here, as a gain on the lens. On
+// still water a breeze only reaches some patches (cat's paws): there the web
+// is sharp, elsewhere the surface is nearly glass and the bed nearly even. A
+// strong wind works the whole pond, so the patches even out. Three slow
+// fields 10 to 40 blocks across, whole cycles per 4096 blocks; expanded with
+// a smoothstep before use, since a sum of sines piles up around its middle.
+// Varies over many blocks, so each point keeps its own mean (the tables).
+float vvWaterCausticGust(vec2 world, float t, float wind)
+{
+    const float K = VV_WATER_TWO_PI / 4096.0;
+    float g = (sin(K * (-260.0 * world.x + 190.0 * world.y) + t * 0.13)
+             + sin(K * (95.0 * world.x + 400.0 * world.y) - t * 0.11)
+             + sin(K * (430.0 * world.x - 60.0 * world.y) + t * 0.09)) / 3.0;
+    float patch = smoothstep(-0.55, 0.55, g);
+    return mix(0.3 + 0.95 * patch, 0.75 + 0.4 * patch, clamp(wind, 0.0, 1.0));
 }
 
 // Light reaching a floor through the curvature h, relative to flat water.
@@ -447,11 +479,14 @@ vec3 vvWaterCausticWeb(vec2 world, float t, float depth, float extraSoft, vec2 f
     // The lens reaches its focus around VV_WATER_CAUSTIC_FOCUS blocks down and
     // holds there, softening, instead of folding into noise deeper still.
     float lensDepth = VV_WATER_CAUSTIC_FOCUS * (1.0 - exp(-depth / (0.45 * VV_WATER_CAUSTIC_FOCUS)));
-    // Calm water still focuses a little; wind sharpens it.
-    float f = lensDepth * (1.0 - VV_WATER_ETA) * (0.7 + 0.6 * wind);
+    // Calm water still focuses a little; wind sharpens it, unevenly (the
+    // gusts), and falling rain breaks the surface up into a weaker, softer lens.
+    float rain = clamp(vv_waterCausticRain, 0.0, 1.0);
+    float f = lensDepth * (1.0 - VV_WATER_ETA) * (0.7 + 0.6 * wind)
+            * vvWaterCausticGust(world, t, wind) * (1.0 - VV_WATER_CAUSTIC_RAIN_FLAT * rain);
     float blur = clamp(vv_waterCausticBlur, 0.0, 1.0);
     float s = VV_WATER_CAUSTIC_SHARP + VV_WATER_CAUSTIC_SPREAD * depth
-            + VV_WATER_CAUSTIC_BLUR_SOFT * blur + extraSoft;
+            + VV_WATER_CAUSTIC_BLUR_SOFT * blur + VV_WATER_CAUSTIC_RAIN_SOFT * rain + extraSoft;
 
     vec3 h = vvWaterCausticStreak(vvWaterCausticCurvature(world, t, vv_waterCausticWaves), flowDir, flowAmount);
     float split = VV_WATER_CAUSTIC_DISPERSION * clamp(vv_waterCausticDispersion, 0.0, 1.0);
@@ -811,7 +846,7 @@ vec4 vvWaterSurface(vec4 color, vec3 pos, vec3 faceNormal, float shadowBright,
                 // lines turn the teal of the water rather than staying white.
                 vec3 downTransmit = exp(-VV_WATER_ABSORB * sunPath * depthTint * 0.75);
                 causticWeb = 1.0 + (web - 1.0) * downTransmit
-                           * (VV_WATER_CAUSTIC_SUN_SHARE * sunLight * caustics * fade);
+                           * (VV_WATER_CAUSTIC_SUN_SHARE * VV_WATER_CAUSTIC_CONTRAST * sunLight * caustics * fade);
             }
         }
 #endif

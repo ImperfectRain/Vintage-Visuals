@@ -4440,3 +4440,67 @@ sides equally, interleaved; the governor is bypassed during benches and closes
 its timing in the outer finalizer), three mutations run singly. Not run in
 game: whether trials settle on the faster side in a forest and at a pond, and
 whether the half-second of mixed frames is visible as a hitch, are unchecked.
+
+## D96 - Caustics vary with the scene: wind patches, drifting wave phases, rain, and a gentler contrast
+
+**Context.** The D93 amendment's first look in game (Elijah, 2026-11-27)
+read as "too regular and strong": one woven map stamped across the pond,
+the same everywhere, playing back on a loop. The earlier, softer D93 look
+was preferred. He asked for caustics that answer to what the game is doing,
+or at least a map varied enough not to repeat, with the real lighting still
+shaping the result.
+
+**Decision.** Keep D93's lens, light conservation and composition, and
+change what drives it:
+
+- **A new wave set.** D93's three longest waves lay within 27 degrees of
+  each other, which is the diagonal weave. The new ten run from 1.6 to 0.42
+  blocks with no two of a tier's five within 25 degrees. Low's five now take
+  the scale sqrt(10 / their summed squared weights) = 1.215 instead of
+  sqrt(2), so Low's mean stays within 12 percent of the table.
+- **Drifting phases.** The odd and the even waves each drift by their own
+  slow field (`VV_WATER_CAUSTIC_PHASE_WARP` 0.6 blocks, about 11 blocks
+  across). The phase between two waves then changes from place to place, so
+  no lattice holds over more than a few blocks. Unlike a shared warp, which
+  only bends one weave, this breaks it.
+- **Wind patches (`vvWaterCausticGust`).** The game's wind (`vv_sceneWind`)
+  now scales the lens unevenly. On still air some patches are worked by a
+  breeze and show a sharp web, and others are nearly glass, with gain from
+  0.3 to 1.25. A strong wind works the whole pond, from 0.75 to 1.15. Three
+  fields 10 to 40 blocks across, expanded by a smoothstep (summed sines pile
+  up around their middle). The gain enters the lens strength f before the
+  mean table lookup, so each point keeps its own mean.
+- **Rain.** New uniform `vv_waterCausticRain`, the world's falling rain, not
+  config-scaled; 0 leaves the lens as it was. Full rain takes 35 percent of
+  the lens strength and adds 0.3 softness: drops break up the surface that
+  focuses the sun.
+- **Gentler.** `VV_WATER_CAUSTIC_SHOULDER` 2.5 -> 1.3 (a line peaks at 2.3x
+  the mean, was 3.5x), `VV_WATER_CAUSTIC_BLUR_SOFT` back to 0.4, and a new
+  `VV_WATER_CAUSTIC_CONTRAST` 0.75, the share of the lens's contrast shown.
+  This is art direction: the full contrast read too strong in game. It is a
+  constant, not a slider default, because a saved config keeps its old
+  slider value. Both tables were remeasured offline for the new waves, drifts
+  and shoulder.
+
+What the scene already shaped is unchanged and still applies: the sun's
+height and visibility past the clouds, the shadow at the surface, the bed's
+own lit colour from the waterscene frame, depth, flow streaks, and N.L.
+
+**Not done.** Tying the web to the surface waves that are actually drawn
+would be the fully scene-driven version. The texel normals are known only at
+the surface texel, not at the point where the refracted sun entered, and
+sampling them there would mean a second wave evaluation per tap. The
+caustic field still uses its own waves, with matching speeds and wind.
+
+**Verification.** Checks, each with a mutation, all killed when run singly:
+- the odd and even waves use distinct drift fields;
+- the calm-air gain spans less than 0.45 to more than 1.1, while windy air
+  varies by less than 1.7x, all within 0.2 to 1.3;
+- rain weakens and softens the lens and no rain leaves it exact;
+- gust fields have whole cycles;
+- the rain uniform is uploaded.
+
+The mean-conservation sweep now follows both drifts and passes within 6
+percent. `tools/verifypatches` passes. L2: not seen in game, and cost not
+measured. Expect roughly the same cost as D93: four more sines per
+curvature evaluation, five per pixel with taps.
