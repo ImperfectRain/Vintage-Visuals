@@ -4353,7 +4353,7 @@ watercaustics and water + watercaustics + waterscene against the game's own
 `chunkliquid.fsh` in every define combination. Previewed offline in Python
 with the same formulas. Not seen in game.
 
-**Amendment (2026-11-27): gate on the crown around the gap, not the gap.** An
+**D94 amendment (2026-11-27): gate on the crown around the gap, not the gap.** An
 in-game test on 399c650 (1440p, High) found no floor sunspots and no shafts
 under the canopy; the pass drew only against the sky, and cost 0.37 ms. Both
 gates read the leaf map's cell straight above the point, and a sunspot or a
