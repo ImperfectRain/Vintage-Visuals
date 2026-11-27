@@ -36,6 +36,7 @@ debugging rounds.
 | `VisualTuningStudioController.cs` | The live mutation boundary: set, reset, debug select, notify once. |
 | `SettingAvailability.cs` | Whether a setting can change the picture in this build and config, and if not, why not. |
 | `VisualTuningStudioDialog.cs` | The native Vintage Story dialog shell and row composition. |
+| `SavedLooks.cs` | Three player save slots for a whole look, in `ModConfig/vintagevisuals-looks.json`. |
 
 ## Values live in the config; presentation lives here
 
@@ -186,6 +187,31 @@ note in white small text rather than an orange heading; the Reflections tab's
 note points at debug views 41 and 42 and the Show advanced toggle. Not yet seen
 in game.
 
+## Station pass (D98, 2026-11-27)
+
+Driven by the 2026-11-27 in-game audit. Not yet seen in game.
+
+- **Tabs** are what the player looks at: Overview, Colour, Light, Surfaces,
+  Nature, Weather, Atmosphere, Water, Reflections, Performance, Debug. Mirrors
+  stay out until that prototype settles.
+- **Size** follows the screen (62% wide, 86% tall, clamped), and the wheel moves
+  84 px a notch.
+- **Rows** show the first sentence of the description. The details strip under
+  the list shows the whole description, where to look, the default, the cost
+  and whether it rebuilds shaders, for the row under the pointer. Hints are
+  grey, "turn on X" warnings are amber. Toggles that rebuild shaders carry `*`.
+- **Sliders** show a small mark at the default and their value bubble only
+  while dragging (`StudioSlider`). Quality tier is a named dropdown.
+- **Search** in the header matches name, description and section across every
+  tab, grouped by tab and section.
+- **Overview** has a card per tab. **Debug** fits system and view on one line;
+  water diagnostics moved there from the Water tab.
+- **Footer**: Advanced switch, Compare on/off (the split-screen wipe), Reset Tab.
+- **Light tab** has Subtle / Default / Cinematic sunlight looks. **Performance**
+  has buttons for the three benches and shows the last bench report.
+- **Saved looks**: three slots at the bottom of the sidebar, Save and Load.
+- **ConfigLib** lists shared settings in the same order (checked).
+
 ## In-game acceptance tests
 
 Nothing below has been run. The build, `tools/smoketest` and `tools/mutate` say
@@ -208,4 +234,9 @@ the code has the shape described above; only these say it works.
    reflection rows must not appear as working controls; with Advanced on they
    appear disabled with a reason. Turn Surface materials off: its rows say
    "Turn on Surface materials".
+4. **Station pass.** Search "rain" and click a result's control. Hover a row and
+   read the details strip. Drag a slider and let go: no bubble stays. Scroll so
+   a slider sits at the viewport edge: no thumb above the clip. Save a look in
+   slot 1, change things, Load slot 1. Toggle Compare. Check Cinematic and
+   Reset Tab do not overlap, and greyed rows show no Reset.
 

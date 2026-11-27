@@ -103,10 +103,25 @@ namespace VintageVisuals.Ui
                       { "pbr_motes", 0.9f }, { "pbr_moonflecks", 0.8f } } },
             };
 
-        /// <summary>Applies one of <see cref="SunlightPresets"/>; returns how many settings changed.</summary>
+        /// <summary>The name of the preset that puts the sunlight sliders back to their shipped defaults.</summary>
+        public const string DefaultPreset = "Default";
+
+        /// <summary>
+        /// Applies one of <see cref="SunlightPresets"/>, or <see cref="DefaultPreset"/>
+        /// (the same five sliders at their shipped defaults); returns how many
+        /// settings changed.
+        /// </summary>
         public int ApplyPreset(string name)
         {
-            if (!SunlightPresets.TryGetValue(name, out IReadOnlyDictionary<string, float> values)) return 0;
+            IReadOnlyDictionary<string, float> values;
+            if (string.Equals(name, DefaultPreset, StringComparison.Ordinal))
+            {
+                values = SunlightPresets["Subtle"].Keys
+                    .Select(VisualSettingRegistry.ByCode)
+                    .Where(x => x != null)
+                    .ToDictionary(x => x.Code, x => ConfigAccess.Default(x.Path), StringComparer.Ordinal);
+            }
+            else if (!SunlightPresets.TryGetValue(name, out values)) return 0;
             VintageVisualsConfig config = Config;
             int changed = 0;
             foreach (KeyValuePair<string, float> pair in values)
@@ -184,6 +199,77 @@ namespace VintageVisuals.Ui
             Config.ClampToValidRanges();
             _notifyChanged();
             return true;
+        }
+
+        /// <summary>The value Compare sets: the seam in the middle of the frame.</summary>
+        public const float CompareSplit = 0.5f;
+
+        public bool CompareActive
+        {
+            get { return Math.Abs(ConfigAccess.Get(Config, "CompareWipe")) > 1e-6f; }
+        }
+
+        /// <summary>
+        /// The quick A/B button: splits the frame between vanilla and the mod,
+        /// or puts it back. The same CompareWipe the Debug tab's slider edits.
+        /// </summary>
+        public bool ToggleCompare()
+        {
+            VisualSetting wipe = VisualSettingRegistry.ByCode("compare_wipe");
+            if (wipe == null) return false;
+            return Set(wipe, CompareActive ? 0f : CompareSplit);
+        }
+
+        /// <summary>
+        /// Every tuning value a saved look keeps: all registry settings except
+        /// diagnostics, by code, as invariant text. Debug views, the compare
+        /// wipe and the shader dump are never part of a look.
+        /// </summary>
+        public Dictionary<string, string> CaptureLook()
+        {
+            var look = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (VisualSetting setting in VisualSettingRegistry.All.Where(x => !x.DebugOnly))
+            {
+                look[setting.Code] = setting.Kind == SettingKind.Dropdown
+                    ? StringValue(setting) ?? ""
+                    : Value(setting).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
+            return look;
+        }
+
+        /// <summary>
+        /// Puts a saved look back, then clamps and notifies ONCE, however many
+        /// values moved. Codes this build does not know are skipped, so a look
+        /// saved by an older or newer version still loads what it can.
+        /// </summary>
+        public int ApplyLook(IReadOnlyDictionary<string, string> look)
+        {
+            if (look == null) return 0;
+            VintageVisualsConfig config = Config;
+            int changed = 0;
+            foreach (KeyValuePair<string, string> pair in look)
+            {
+                VisualSetting setting = VisualSettingRegistry.ByCode(pair.Key);
+                if (setting == null || setting.DebugOnly) continue;
+
+                if (setting.Kind == SettingKind.Dropdown)
+                {
+                    string before = ConfigAccess.GetString(config, setting.Path);
+                    if (ConfigAccess.SetString(config, setting.Path, pair.Value) &&
+                        !string.Equals(before, pair.Value, StringComparison.Ordinal)) changed++;
+                    continue;
+                }
+
+                float value;
+                if (!float.TryParse(pair.Value, System.Globalization.NumberStyles.Float,
+                                    System.Globalization.CultureInfo.InvariantCulture, out value)) continue;
+                float old = ConfigAccess.Get(config, setting.Path);
+                if (ConfigAccess.Set(config, setting.Path, value) && Math.Abs(old - value) > 1e-6f) changed++;
+            }
+            if (changed == 0) return 0;
+            config.ClampToValidRanges();
+            _notifyChanged();
+            return changed;
         }
 
         /// <summary>Refresh is intentionally read-only; ConfigLib can move values while the dialog is open.</summary>

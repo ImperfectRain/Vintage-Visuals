@@ -74,7 +74,7 @@ failure to upload degrades to *vanilla output*, never to a black screen.
    The world turns greyscale immediately, with no world reload. This is the
    cheapest end-to-end proof that patching, config and uniform upload all work,
    and it is the check that closed Phase 1's milestone. With ConfigLib
-   installed, dragging the Saturation slider on <kbd>F7</kbd> does the same
+   installed, dragging the Saturation slider in the ConfigLib panel does the same
    thing through the same code path.
 3. Set it back to `1.0`, press <kbd>Ctrl</kbd>+<kbd>V</kbd>, confirm it returns.
 

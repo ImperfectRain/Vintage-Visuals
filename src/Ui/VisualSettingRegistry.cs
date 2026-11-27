@@ -36,6 +36,9 @@ namespace VintageVisuals.Ui
         public static readonly string[] GradeStyles =
             { "None", "Filmic", "Muted", "Vivid", "Cold", "Warm" };
 
+        /// <summary>Performance.Quality 0..3, by name.</summary>
+        public static readonly string[] QualityTiers = { "Low", "Medium", "High", "Ultra" };
+
         private static readonly List<VisualSetting> _all = Build();
 
         public static IReadOnlyList<VisualSetting> All { get { return _all; } }
@@ -78,84 +81,94 @@ namespace VintageVisuals.Ui
                 => s.Add(new VisualSetting(code, path, name, desc, tab, section, SettingKind.Slider,
                                            min, max, step, unit, advanced, cost, reload, debugOnly));
 
+            // Sidebar order, then top to bottom within each tab. Within a tab
+            // the master switch comes first, then the controls a player reaches
+            // for most, then the fine ones (most of those are Advanced).
+            //
+            // Each description opens with ONE sentence that stands alone: that
+            // sentence is what the row shows beside the name, and the details
+            // strip under the list shows the rest when the pointer is over it.
+
+            void Choice(string code, string path, string name, string desc, SettingTab tab,
+                        string section, string[] choices, bool advanced = false,
+                        SettingCost cost = SettingCost.Free, bool reload = false, bool debugOnly = false)
+                => s.Add(new VisualSetting(code, path, name, desc, tab, section, SettingKind.Choice,
+                                           0f, choices.Length - 1, 1f, null, advanced, cost, reload, debugOnly, choices));
+
             // ---- COLOUR ------------------------------------------------------
             const SettingTab C = SettingTab.Color;
 
             Toggle("colorgrade_enabled", "ColorGrade.Enabled", "Colour grading",
-                   "Master switch for exposure, contrast, saturation and the tonemap. Off returns the game's own colours exactly.",
+                   "Master switch for exposure, contrast, saturation and the tonemap. Off shows the game's own colours exactly.",
                    C, "Basic look");
 
             Slider("colorgrade_exposure", "ColorGrade.Exposure", "Exposure",
-                   "Overall brightness, applied before the tonemap. Your choice, and you may clip the highlights with it if you want to.",
+                   "Overall brightness. Applied before the tonemap, so high values can clip highlights if you want them to.",
                    C, "Basic look", 0.1f, 4f, 0.05f);
 
             Slider("colorgrade_contrast", "ColorGrade.Contrast", "Contrast",
-                   "How far apart the darks and brights sit. 1 leaves the image as the game rendered it.",
+                   "How far apart the darks and the brights sit. 1 leaves the image as the game rendered it.",
                    C, "Basic look", 0f, 2f, 0.05f);
 
             Slider("colorgrade_saturation", "ColorGrade.Saturation", "Saturation",
-                   "How strong the colours are. This mod deliberately keeps its hand light here - Vintage Story's palette is the point.",
+                   "How strong the colours are. 1 is the game's palette, which this mod deliberately keeps.",
                    C, "Basic look", 0f, 2f, 0.05f);
 
             Slider("colorgrade_temperature", "ColorGrade.Temperature", "Temperature",
                    "Warms the image toward orange or cools it toward blue. 0 is neutral.",
                    C, "Basic look", -1f, 1f, 0.05f);
 
-            Slider("colorgrade_tonemapstrength", "ColorGrade.TonemapStrength", "Tonemap",
-                   "Rolls off bright areas instead of letting them clip to white. Automatic eye adaptation raises this on its own when it brightens a dark scene.",
+            Slider("colorgrade_tonemapstrength", "ColorGrade.TonemapStrength", "Highlight roll-off",
+                   "Rolls bright areas off softly instead of letting them clip to white. Eye adaptation raises this on its own when it brightens a dark scene.",
                    C, "Basic look", 0f, 1f, 0.05f);
 
-            Toggle("adaptive_enabled", "AdaptiveExposure.Enabled", "Eye adaptation",
-                   "Brightens dark scenes and settles bright ones, the way an eye does walking out of a cave.",
-                   C, "Automatic light adaptation");
-
-            Slider("adaptive_darkgain", "AdaptiveExposure.DarkGain", "Dark adaptation",
-                   "How far the image is lifted in the dark. Raising this also raises the tonemap, so the extra light has somewhere to go.",
-                   C, "Automatic light adaptation", 0.25f, 4f, 0.05f);
-
-            Slider("adaptive_brightgain", "AdaptiveExposure.BrightGain", "Bright adaptation",
-                   "How far the image is pulled down in bright scenes. 1 leaves them alone.",
-                   C, "Automatic light adaptation", 0.25f, 4f, 0.05f);
-
-            Slider("adaptive_brightenseconds", "AdaptiveExposure.BrightenSeconds", "Time to brighten",
-                   "How long the eye takes to adjust to darkness. Slower than the reverse, as in life.",
-                   C, "Automatic light adaptation", 0f, 60f, 0.1f, "s", true);
-
-            Slider("adaptive_darkenseconds", "AdaptiveExposure.DarkenSeconds", "Time to darken",
-                   "How long the eye takes to adjust to sudden brightness.",
-                   C, "Automatic light adaptation", 0f, 60f, 0.1f, "s", true);
-
-            Toggle("grade_adaptive", "AdaptiveGrade.Enabled", "World-responsive colour",
-                   "Lets the time of day, the weather, the biome and where you are standing shift the grade on their own.",
-                   C, "World-responsive colour");
-
             s.Add(new VisualSetting("grade_style", "AdaptiveGrade.Style", "Style",
-                "A look to lean toward. One more capped contributor on top of the world, never a preset that replaces your settings.",
+                "A look to lean toward: filmic, muted, vivid, cold or warm. It adds on top of the world's own grading and never replaces your settings.",
                 C, "Style", SettingKind.Dropdown, choices: GradeStyles));
 
             Slider("grade_stylestrength", "AdaptiveGrade.StyleStrength", "Style strength",
-                   "How far toward the chosen style to lean. 0 ignores it entirely.",
+                   "How far toward the chosen style to lean. 0 ignores the style.",
                    C, "Style", 0f, 1f, 0.05f);
 
-            Slider("grade_response", "AdaptiveGrade.ResponseSeconds", "Response speed",
-                   "How quickly the world-responsive grade follows a change in the weather or the light.",
-                   C, "Style", 0.1f, 30f, 0.1f, "s", true);
+            Toggle("adaptive_enabled", "AdaptiveExposure.Enabled", "Eye adaptation",
+                   "Brightens dark scenes and settles bright ones, like an eye walking out of a cave.",
+                   C, "Eye adaptation");
+
+            Slider("adaptive_darkgain", "AdaptiveExposure.DarkGain", "Lift in the dark",
+                   "How far the image is lifted in caves and at night. Raising it also raises the highlight roll-off, so the extra light has room.",
+                   C, "Eye adaptation", 0.25f, 4f, 0.05f);
+
+            Slider("adaptive_brightgain", "AdaptiveExposure.BrightGain", "Calm in bright light",
+                   "How far the image is pulled down in very bright scenes, such as snow at noon. 1 leaves them alone.",
+                   C, "Eye adaptation", 0.25f, 4f, 0.05f);
+
+            Slider("adaptive_brightenseconds", "AdaptiveExposure.BrightenSeconds", "Time to adjust to dark",
+                   "How long the eye takes to adjust to darkness. Slower than the reverse, as in life.",
+                   C, "Eye adaptation", 0f, 60f, 0.1f, "s", true);
+
+            Slider("adaptive_darkenseconds", "AdaptiveExposure.DarkenSeconds", "Time to adjust to light",
+                   "How long the eye takes to adjust to sudden brightness.",
+                   C, "Eye adaptation", 0f, 60f, 0.1f, "s", true);
+
+            Toggle("grade_adaptive", "AdaptiveGrade.Enabled", "World-responsive colour",
+                   "Lets the time of day, weather, biome, season and where you stand shift the colours on their own. Off keeps only your own settings and the style.",
+                   C, "World-responsive colour");
 
             Slider("grade_timeofday", "AdaptiveGrade.TimeOfDayStrength", "Time of day",
-                   "Golden hour warmth near sunrise and sunset, and the desaturated blue of night vision.",
+                   "Golden warmth near sunrise and sunset, and the cool blue of night vision.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
             Slider("grade_weather", "AdaptiveGrade.WeatherStrength", "Weather",
-                   "Rain and cloud draining colour and contrast out of the scene.",
-                   C, "World-responsive colour", 0f, 2f, 0.05f);
-
-            Slider("grade_biome", "AdaptiveGrade.BiomeStrength", "Biome",
-                   "Heat, cold, aridity and lushness colouring the light where you are standing.",
+                   "Rain and cloud draining colour and contrast from the scene.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
             Slider("grade_season", "AdaptiveGrade.SeasonStrength", "Season",
-                   "The colour of the light through the year, cooler and crisper in winter. Never recolours leaves or grass; the game does that itself.",
+                   "The colour of the light through the year, cooler and crisper in winter. It never recolours leaves or grass; the game does that itself.",
                    C, "World-responsive colour", 0f, 2.0f, 0.05f);
+
+            Slider("grade_biome", "AdaptiveGrade.BiomeStrength", "Biome",
+                   "Heat, cold, dryness and lushness colouring the light where you stand.",
+                   C, "World-responsive colour", 0f, 2f, 0.05f);
 
             Slider("grade_indoor", "AdaptiveGrade.IndoorStrength", "Indoors",
                    "How differently light reads under a roof or inside a building.",
@@ -166,146 +179,125 @@ namespace VintageVisuals.Ui
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
             Slider("grade_underwater", "AdaptiveGrade.UnderwaterStrength", "Underwater",
-                   "How strongly water colours everything seen through it.",
+                   "How strongly the water colours everything you see while submerged.",
                    C, "World-responsive colour", 0f, 2f, 0.05f);
 
-            // ---- MATERIALS ---------------------------------------------------
+            Slider("grade_response", "AdaptiveGrade.ResponseSeconds", "Response time",
+                   "How quickly the world-responsive colour follows a change in the weather or the light.",
+                   C, "World-responsive colour", 0.1f, 30f, 0.1f, "s", true);
+
+            // ---- LIGHT -------------------------------------------------------
+            const SettingTab L = SettingTab.Light;
+
+            Slider("pbr_dapple", "PseudoPBR.SunDapple", "Canopy shade",
+                   "Soft green shade and dappling on the ground under trees, taken from the game's own shadow map. Torchlight is left alone.",
+                   L, "Sunlight under trees", 0f, 2f, 0.05f);
+
+            Slider("pbr_sunflecks", "PseudoPBR.SunFlecks", "Sunflecks",
+                   "Bright spots and pools of sunlight inside the shade under trees. Stretched by a low sun and swaying in the wind; only under leaves, and never brighter than open sunlight.",
+                   L, "Sunlight under trees", 0f, 2f, 0.05f);
+
+            Slider("pbr_shafts", "PseudoPBR.SunShafts", "Sun shafts",
+                   "Beams of light through real gaps in a canopy, strongest looking toward the sun in humid air. Drawn through the game's own god-ray pass.",
+                   L, "Sunlight under trees", 0f, 2f, 0.05f);
+
+            Toggle("pbr_fastbeams", "PseudoPBR.FastBeams", "Fast shaft pass",
+                   "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. In the 2026-11-27 test it showed fewer beams under a canopy than the full pass.",
+                   L, "Sunlight under trees", false, SettingCost.Low, true);
+
+            Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
+                   "A few specks of dust drifting in the sun shafts under a canopy. None under cloud or at night.",
+                   L, "Sunlight under trees", 0f, 1f, 0.05f);
+
+            Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
+                   "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees; 0 turns canopy shade off.",
+                   L, "Sunlight under trees", 0f, 16f, 0.5f, "blocks", true);
+
+            Slider("pbr_moonflecks", "PseudoPBR.MoonFlecks", "Moonlight flecks",
+                   "A faint, cool version of the sunflecks by moonlight. As bright as the game says the moon is, and always far dimmer than the sun's.",
+                   L, "Moonlight", 0f, 1f, 0.05f);
+
+            // ---- SURFACES (Materials) ----------------------------------------
             const SettingTab M = SettingTab.Materials;
 
             Toggle("pbr_enabled", "PseudoPBR.Enabled", "Surface materials",
-                   "Master switch for surface relief, roughness, metals, foliage light and the sun through leaves. This is the only subsystem that patches the shader drawing the world, so switching it rebuilds shaders.",
+                   "Master switch for surface relief, roughness, metals, foliage light and the sun through leaves. It patches the shader that draws the world, so switching it rebuilds shaders.",
                    M, "Surface detail", false, SettingCost.Medium, true);
 
             Slider("pbr_normalstrength", "PseudoPBR.NormalStrength", "Surface relief",
-                   "How strongly small surface details - mortar lines, plank edges, stone grain - catch the light and read as shape.",
+                   "How strongly small details such as mortar lines, plank edges and stone grain catch the light and read as shape.",
+                   M, "Surface detail", 0f, 3f, 0.05f);
+
+            Slider("pbr_cavity", "PseudoPBR.CavityStrength", "Crevice shading",
+                   "Darkens the grooves of a surface, at a scale the game's own ambient occlusion cannot see.",
                    M, "Surface detail", 0f, 2f, 0.05f);
 
             Slider("pbr_detaildistance", "PseudoPBR.DetailDistance", "Detail distance",
                    "How far away fine surface detail keeps working before it fades out. Lower is cheaper.",
                    M, "Surface detail", 4f, 192f, 1f, "blocks", false, SettingCost.Low);
 
-            Slider("pbr_cavity", "PseudoPBR.CavityStrength", "Crevice shading",
-                   "Darkening in the grooves of a surface, at a scale the game's own ambient occlusion cannot see.",
-                   M, "Surface detail", 0f, 2f, 0.05f);
-
-            Slider("pbr_specularstrength", "PseudoPBR.SpecularStrength", "Specular strength",
-                   "How brightly surfaces catch a direct highlight from the sun and moon.",
+            Slider("pbr_specularstrength", "PseudoPBR.SpecularStrength", "Sun highlights",
+                   "How brightly surfaces catch a direct highlight from the sun and the moon.",
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_ambientspecular", "PseudoPBR.AmbientSpecular", "Sky reflection",
-                   "How much of the sky a surface shows. On a metal this is also the only thing paying back the diffuse light metalness takes away, so lowering it dims metals rather than merely calming them.",
+                   "How much of the sky a surface reflects. On metals this is most of their brightness, so lowering it dims metals rather than only calming them.",
                    M, "Light response", 0f, 2f, 0.05f);
 
             Slider("pbr_blocklight", "PseudoPBR.BlockLightSpecular", "Torch and lava highlights",
-                   "Whether firelight makes a proper highlight on nearby surfaces, and shades their relief toward the flame (up to 1), rather than only brightening them.",
+                   "Lets firelight make a real highlight on nearby surfaces and shade their relief toward the flame, instead of only brightening them.",
                    M, "Light response", 0f, 2f, 0.05f);
+
+            Slider("pbr_torchfalloff", "PseudoPBR.TorchFalloff", "Torch light falloff",
+                   "Makes light pool around each torch instead of filling a room evenly, by steepening the game's own falloff. Only the dim edge of a torch's reach changes; 0 is vanilla.",
+                   M, "Light response", 0f, 1f, 0.05f);
 
             Slider("pbr_blocklightdir", "PseudoPBR.BlockLightDirectionality", "Torch highlight direction",
                    "How strongly a firelight highlight points back at the flame rather than sitting flat on the surface.",
                    M, "Light response", 0f, 1f, 0.05f, null, true);
 
-            Slider("pbr_torchfalloff", "PseudoPBR.TorchFalloff", "Torch light falloff",
-                   "Makes light pool around each torch instead of filling a room evenly, by steepening the game's own falloff. Only takes light from the dim edge of a torch's reach. 0 is vanilla.",
-                   M, "Light response", 0f, 1f, 0.05f);
-
-            Slider("pbr_roughnessbias", "PseudoPBR.RoughnessBias", "Roughness bias",
-                   "Shifts every surface toward polished or toward worn. 0 uses the material as it was measured.",
+            Slider("pbr_roughnessbias", "PseudoPBR.RoughnessBias", "Polish or wear",
+                   "Shifts every surface toward polished (below 0) or worn (above 0). 0 uses each material as measured.",
                    M, "Material response", -0.5f, 0.5f, 0.05f);
 
             Slider("pbr_metalresponse", "PseudoPBR.MetalResponse", "Metal response",
-                   "How strongly metals behave like metals - coloured reflections, no diffuse of their own.",
+                   "How strongly metals behave like metals: coloured reflections and no diffuse colour of their own.",
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
             Slider("pbr_grain", "PseudoPBR.GrainAnisotropy", "Wood grain highlight",
                    "Stretches the highlight along the grain on wood, the way a brushed surface streaks a reflection.",
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
-            Slider("pbr_specularaa", "PseudoPBR.SpecularAntiAliasing", "Specular antialiasing",
+            Slider("pbr_specularaa", "PseudoPBR.SpecularAntiAliasing", "Sparkle suppression",
                    "Stops distant detailed surfaces from sparkling as you move. Lower it only to see what it was doing.",
                    M, "Material response", 0f, 2f, 0.05f, null, true);
 
-            Slider("pbr_specocclusion", "PseudoPBR.SpecularOcclusion", "Specular occlusion",
+            Slider("pbr_specocclusion", "PseudoPBR.SpecularOcclusion", "Reflections in crevices",
                    "Keeps reflections out of crevices the sky cannot see into.",
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
-            Slider("pbr_energy", "PseudoPBR.EnergyCompensation", "Energy compensation",
+            Slider("pbr_energy", "PseudoPBR.EnergyCompensation", "Rough-surface brightness",
                    "Returns the light a rough surface would otherwise lose, so roughening something does not quietly darken it.",
                    M, "Material response", 0f, 1f, 0.05f, null, true);
 
-            Slider("pbr_foliage", "PseudoPBR.FoliageTranslucency", "Foliage translucency",
-                   "Light coming THROUGH leaves, plus a faint glow on their sunlit side. Strongest with a low sun behind the canopy, and it needs a clear sky - an overcast one has no beam to shine through.",
-                   M, "Foliage", 0f, 2f, 0.05f);
-
-            Slider("pbr_dapple", "PseudoPBR.SunDapple", "Sun dapple",
-                   "Sunflecks and green shade on the ground under trees, measured from the game's own shadow map. It leaves torchlight alone.",
-                   M, "Foliage", 0f, 2f, 0.05f);
-
-            Slider("pbr_sunflecks", "PseudoPBR.SunFlecks", "Sunflecks",
-                   "Spots and pools of sunlight inside the shade under trees, stretched by a low sun and swaying in the wind. Only under leaves, never under a roof or heavy cloud, and never brighter than open sunlight. Needs shadows on.",
-                   M, "Foliage", 0f, 1.5f, 0.05f);
-
-            Slider("pbr_moonflecks", "PseudoPBR.MoonFlecks", "Moonlight flecks",
-                   "A faint, cool version of the sunflecks by moonlight, as bright as the game says the moon is and always far dimmer than the sun's.",
-                   M, "Foliage", 0f, 1f, 0.05f);
-
-            Slider("pbr_shafts", "PseudoPBR.SunShafts", "Sun shafts",
-                   "Beams of light from real gaps in a canopy, strongest looking toward the sun and in humid air. Needs god-rays on in the game's graphics settings.",
-                   M, "Foliage", 0f, 2f, 0.05f);
-
-            Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",
-                   "A few specks of dust drifting in the sun shafts under a canopy. None under cloud or at night.",
-                   M, "Foliage", 0f, 1f, 0.05f);
-
-            Slider("pbr_gusts", "PseudoPBR.WindGusts", "Wind gusts",
-                   "Gusts rolling downwind across grass and crowns, brightening the bent tips and fluttering the sunflecks. The game's own wind direction and speed; none in still air.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_contactshade", "PseudoPBR.ContactShade", "Plant base shade",
-                   "Darkens the foot of grass, flowers and crops where stems crowd, so plants sit in the ground.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_damp", "PseudoPBR.Damp", "Damp and moss",
-                   "Sheltered rough stone, wood and soil under trees or in half-shade go a little darker and greener, most on north faces and in rainy climates.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_drips", "PseudoPBR.LeafDrips", "Leaf drips",
-                   "Drops falling from the leaves overhead during and after rain, until they dry.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_pollen", "PseudoPBR.Pollen", "Pollen",
-                   "Pale specks drifting downwind over vegetation on warm dry days in spring and summer.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_fireflies", "PseudoPBR.Fireflies", "Fireflies",
-                   "Swarms flashing together low over grass at dusk and on warm, humid summer nights. Replaces the game's fireflies; 0 brings them back.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_leaves", "PseudoPBR.FallingLeaves", "Falling leaves",
-                   "Leaves in each tree's own colours drifting down and along the wind; a few on still days, a flurry in an autumn gust.",
-                   M, "Foliage", 0f, 1.0f, 0.05f);
-
-            Slider("pbr_canopyradius", "PseudoPBR.CanopyRadius", "Canopy scale",
-                   "How wide a patch of shadow counts as a canopy. Larger reads as bigger trees.",
-                   M, "Foliage", 0f, 16f, 0.5f, "blocks", true);
-
-            Slider("pbr_emissive", "PseudoPBR.EmissiveStrength", "Emissive strength",
+            Slider("pbr_emissive", "PseudoPBR.EmissiveStrength", "Glow strength",
                    "How strongly forges, lamps and lava read as light sources rather than as bright textures.",
-                   M, "Emissive", 0f, 2f, 0.05f);
+                   M, "Glowing materials", 0f, 2f, 0.05f);
 
-            Slider("pbr_emissivetemperature", "PseudoPBR.EmissiveTemperature", "Emissive warmth",
-                   "How hot emitting surfaces look - deep red through orange to near white.",
-                   M, "Emissive", 0f, 1f, 0.05f);
+            Slider("pbr_emissivetemperature", "PseudoPBR.EmissiveTemperature", "Glow warmth",
+                   "How hot glowing surfaces look, from deep red through orange to near white.",
+                   M, "Glowing materials", 0f, 1f, 0.05f);
 
-            Slider("pbr_emissiveflicker", "PseudoPBR.EmissiveFlicker", "Emissive flicker",
+            Slider("pbr_emissiveflicker", "PseudoPBR.EmissiveFlicker", "Glow flicker",
                    "Movement in firelight. 0 is a perfectly steady flame.",
-                   M, "Emissive", 0f, 1f, 0.05f);
+                   M, "Glowing materials", 0f, 1f, 0.05f);
 
-            Slider("pbr_emissivebloom", "PseudoPBR.EmissiveBloom", "Emissive glow",
-                   "How much emitting surfaces feed the game's own bloom pass.",
-                   M, "Emissive", 0f, 1f, 0.05f);
+            Slider("pbr_emissivebloom", "PseudoPBR.EmissiveBloom", "Glow bloom",
+                   "How much glowing surfaces feed the game's own bloom.",
+                   M, "Glowing materials", 0f, 1f, 0.05f);
 
             Toggle("pbr_entitylighting", "PseudoPBR.EntityLighting", "Creature and player lighting",
-                   "Applies the same light response to animals, players and held items.",
+                   "Gives animals, players and held items the same light response as the world.",
                    M, "Creatures and particles");
 
             Slider("pbr_entityroughness", "PseudoPBR.EntityRoughness", "Creature roughness",
@@ -313,7 +305,7 @@ namespace VintageVisuals.Ui
                    M, "Creatures and particles", 0.04f, 1f, 0.05f, null, true);
 
             Slider("pbr_entityspecular", "PseudoPBR.EntitySpecular", "Creature highlights",
-                   "How brightly creatures catch a highlight.",
+                   "How brightly creatures and players catch a highlight.",
                    M, "Creatures and particles", 0f, 2f, 0.05f, null, true);
 
             Toggle("pbr_particlelighting", "PseudoPBR.ParticleLighting", "Particle lighting",
@@ -324,16 +316,59 @@ namespace VintageVisuals.Ui
                    "How brightly particles catch a highlight.",
                    M, "Creatures and particles", 0f, 2f, 0.05f, null, true);
 
+            // ---- NATURE ------------------------------------------------------
+            const SettingTab N = SettingTab.Nature;
+
+            Slider("pbr_foliage", "PseudoPBR.FoliageTranslucency", "Light through leaves",
+                   "Sunlight glowing through leaves and grass, with a faint sheen on their sunlit side. Strongest with a low clear sun behind the canopy.",
+                   N, "Plants", 0f, 2f, 0.05f);
+
+            Slider("pbr_gusts", "PseudoPBR.WindGusts", "Wind gusts",
+                   "Gusts rolling downwind across grass and crowns, brightening the bent tips and fluttering the sunflecks. Uses the game's own wind; none in still air.",
+                   N, "Plants", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_contactshade", "PseudoPBR.ContactShade", "Plant base shade",
+                   "Darkens the foot of grass, flowers and crops where stems crowd, so plants sit in the ground.",
+                   N, "Plants", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_damp", "PseudoPBR.Damp", "Damp and moss",
+                   "Sheltered rough stone, wood and soil under trees go a little darker and greener. Most on north faces and in rainy climates.",
+                   N, "Plants", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_leaves", "PseudoPBR.FallingLeaves", "Falling leaves",
+                   "Leaves in each tree's own colours drifting down on the wind. A few on still days, a flurry in an autumn gust.",
+                   N, "Life in the air", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_drips", "PseudoPBR.LeafDrips", "Leaf drips",
+                   "Drops falling from the leaves overhead during and after rain, until they dry.",
+                   N, "Life in the air", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_pollen", "PseudoPBR.Pollen", "Pollen",
+                   "Pale specks drifting downwind over plants on warm, dry spring and summer days.",
+                   N, "Life in the air", 0f, 1.0f, 0.05f);
+
+            Slider("pbr_fireflies", "PseudoPBR.Fireflies", "Fireflies",
+                   "Swarms flashing together low over grass at dusk and on warm, humid summer nights. Replaces the game's fireflies; 0 brings the game's back.",
+                   N, "Life in the air", 0f, 1.0f, 0.05f);
+
             // ---- WEATHER -----------------------------------------------------
             const SettingTab W = SettingTab.Weather;
 
             Toggle("weather_enabled", "Weather.Enabled", "Weather response",
-                   "Master switch for wetness, rain fog, cloud shadows, frost and snow.",
+                   "Master switch for wet surfaces, rain fog, cloud shadows, frost and snow. Changing it rebuilds shaders.",
                    W, "Rain and wetness", false, SettingCost.Free, true);
 
-            Slider("weather_wetness", "Weather.WetnessStrength", "Wetness",
-                   "How strongly rain darkens surfaces, smooths them and makes them reflect. The single biggest change rain makes to a scene.",
+            Slider("weather_wetness", "Weather.WetnessStrength", "Wet surfaces",
+                   "How strongly rain darkens surfaces, smooths them and makes them reflect. The biggest single change rain makes to a scene.",
                    W, "Rain and wetness", 0f, 2f, 0.05f);
+
+            Slider("weather_ripples", "Weather.RippleStrength", "Rain ripples",
+                   "Rings spreading on wet ground while it rains.",
+                   W, "Rain and wetness", 0f, 1f, 0.05f);
+
+            Slider("pbr_crevicewater", "PseudoPBR.CreviceWater", "Water in crevices",
+                   "On stone and brick, rain pools in the joints on top and runs down the sides around each stone. 0 is an even wet film.",
+                   W, "Rain and wetness", 0.0f, 1.0f, 0.05f);
 
             Slider("weather_dryingseconds", "Weather.DryingSeconds", "Drying time",
                    "How long surfaces stay wet after the rain stops.",
@@ -343,36 +378,28 @@ namespace VintageVisuals.Ui
                    "How much open sky a surface needs before rain reaches it. Higher keeps porches and overhangs drier.",
                    W, "Rain and wetness", 0f, 1f, 0.02f, null, true);
 
-            Slider("weather_ripples", "Weather.RippleStrength", "Rain ripples",
-                   "Rings spreading on wet surfaces while it rains.",
-                   W, "Rain and wetness", 0f, 1f, 0.05f);
-
-            Slider("pbr_crevicewater", "PseudoPBR.CreviceWater", "Water in crevices",
-                   "On stone and brick, rain pools in the joints between stones on a block's top and slides down its sides around each stone while it rains. 0 is an even wet film.",
-                   W, "Rain and wetness", 0.0f, 1.0f, 0.05f);
-
             Slider("weather_fogstrength", "Weather.FogStrength", "Rain fog",
                    "How much falling rain thickens the air and shortens the view.",
-                   W, "Fog", 0f, 1f, 0.05f);
+                   W, "Fog and overcast", 0f, 1f, 0.05f);
 
             Slider("weather_fogtint", "Weather.FogTint", "Rain fog colour",
-                   "How strongly rain fog takes on its own colour rather than the sky's.",
-                   W, "Fog", 0f, 1f, 0.05f);
+                   "How strongly rain fog takes on its own grey rather than the sky's colour.",
+                   W, "Fog and overcast", 0f, 1f, 0.05f);
 
             Slider("weather_overcast", "Weather.OvercastStrength", "Overcast softening",
-                   "How much heavy cloud flattens the light and softens shadows.",
-                   W, "Fog", 0f, 1f, 0.05f);
+                   "How much heavy cloud flattens the light and softens the shadows.",
+                   W, "Fog and overcast", 0f, 1f, 0.05f);
 
             Slider("weather_cloudshadow", "Weather.CloudShadowStrength", "Cloud shadows",
                    "Shadows of the sky's own clouds moving across the ground.",
                    W, "Clouds", 0f, 1f, 0.05f);
 
             Toggle("weather_cloudsfromgame", "Weather.CloudsFromGame", "Follow the game's clouds",
-                   "Reads cloud positions from the game's own cloud data so the shadows line up with the sky. Off uses a generated pattern instead.",
+                   "Reads the game's own cloud positions so the shadows line up with the sky. Off uses a generated pattern instead.",
                    W, "Clouds", true);
 
             Slider("weather_cloudscale", "Weather.CloudScale", "Cloud size",
-                   "How large the generated cloud pattern is. Only used when the game's own cloud data is not being followed.",
+                   "How large the generated cloud pattern is. Only used when the game's own clouds are not followed.",
                    W, "Clouds", 32f, 512f, 10f, "blocks", true);
 
             Slider("weather_clouddrift", "Weather.CloudDriftSpeed", "Cloud drift",
@@ -395,172 +422,176 @@ namespace VintageVisuals.Ui
             const SettingTab A = SettingTab.Atmosphere;
 
             Toggle("atmosphere_enabled", "Atmosphere.Enabled", "Atmosphere",
-                   "Master switch for how light travels through the air. Changing it rebuilds shaders.",
-                   A, "Air", false, SettingCost.Low, true);
+                   "Master switch for how light travels through the air: distance haze, sunlit air, mist. Changing it rebuilds shaders.",
+                   A, "Distance and sky", false, SettingCost.Low, true);
 
-            Slider("atmosphere_aerial", "Atmosphere.AerialPerspective", "Aerial perspective",
-                   "Distant things taking on the colour of the air between you and them, and the sun's direction colouring that haze. The one atmospheric effect the game genuinely lacks.",
-                   A, "Air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
+            Slider("atmosphere_aerial", "Atmosphere.AerialPerspective", "Distance haze",
+                   "Far things take on the colour of the air between you and them, tinted by where the sun is. The one atmospheric effect the game itself lacks.",
+                   A, "Distance and sky", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
+
+            Slider("atmosphere_sunscatter", "Atmosphere.SunScattering", "Sunlit air",
+                   "Light scattering in the air around the sun, brightening the half of the sky that faces it.",
+                   A, "Distance and sky", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
             Slider("atmosphere_horizon", "Atmosphere.HorizonScattering", "Horizon glow",
-                   "The horizon reading as more atmospheric than the ground at your feet.",
-                   A, "Air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
-
-            Slider("atmosphere_sunscatter", "Atmosphere.SunScattering", "Sun scattering",
-                   "Light scattering in the air around the sun, brightening the half of the sky facing it.",
-                   A, "Air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
-
-            Slider("atmosphere_heighthaze", "Atmosphere.HeightHaze", "Ground haze",
-                   "Haze pooling in low ground and valleys. Rendered by the game's own fog rather than by this mod, so it costs nothing extra.",
-                   A, "Height", 0f, 1f, 0.05f);
-
-            Slider("atmosphere_foresthaze", "Atmosphere.ForestHaze", "Forest haze",
-                   "A soft haze in the air under a canopy, so trunks fade into depth. Strongest under thick crowns in humid air.",
-                   A, "Height", 0f, 1.0f, 0.05f);
-
-            Slider("atmosphere_groundmist", "Atmosphere.GroundMist", "Ground mist",
-                   "A shallow mist settling into nearby low ground and over water on still, humid nights and mornings and after rain. The game's own height fog.",
-                   A, "Height", 0f, 1.0f, 0.05f);
+                   "The horizon reads as more atmospheric than the ground at your feet.",
+                   A, "Distance and sky", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
             Slider("atmosphere_heightattenuation", "Atmosphere.HeightAttenuation", "Thin mountain air",
-                   "Air thinning with altitude, so a mountain top sees further than a valley floor.",
-                   A, "Height", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
+                   "The air thins with altitude, so a mountain top sees further than a valley floor.",
+                   A, "Distance and sky", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
 
-            Slider("atmosphere_weatherextinction", "Atmosphere.WeatherExtinction", "Weather thickening",
-                   "How much rain and snow shorten the view through the air.",
+            Slider("atmosphere_heighthaze", "Atmosphere.HeightHaze", "Valley haze",
+                   "Haze pooling in low ground and valleys. Drawn by the game's own fog, so it costs nothing extra.",
+                   A, "Haze and mist", 0f, 1f, 0.05f);
+
+            Slider("atmosphere_groundmist", "Atmosphere.GroundMist", "Ground mist",
+                   "A shallow mist in low ground and over water on still, humid nights and mornings, and after rain.",
+                   A, "Haze and mist", 0f, 1.0f, 0.05f);
+
+            Slider("atmosphere_foresthaze", "Atmosphere.ForestHaze", "Forest haze",
+                   "A soft haze under a canopy, so trunks fade into depth. Strongest under thick crowns in humid air.",
+                   A, "Haze and mist", 0f, 1.0f, 0.05f);
+
+            Slider("atmosphere_weatherextinction", "Atmosphere.WeatherExtinction", "Weather visibility",
+                   "How much rain and snow shorten the view.",
                    A, "Weather in the air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
             Slider("atmosphere_weathertint", "Atmosphere.WeatherTint", "Weather colour",
                    "What the thickened air itself looks like, as opposed to how much it hides.",
                    A, "Weather in the air", 0f, 1f, 0.05f);
 
-            Slider("atmosphere_cloudatmosphere", "Atmosphere.CloudAtmosphere", "Cloud softening",
-                   "Heavy cloud softening the whole atmosphere, not just the shadows.",
-                   A, "Weather in the air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
-
             Slider("atmosphere_precipitation", "Atmosphere.PrecipitationScattering", "Falling rain and snow",
-                   "What rain and snow in the air do to light passing through them.",
+                   "What rain and snow in the air do to the light passing through them.",
                    A, "Weather in the air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
-            Slider("atmosphere_godrays", "Atmosphere.Godrays", "Godrays",
-                   "How much this mod's atmosphere feeds the game's own crepuscular ray pass. 0 leaves vanilla's rays exactly as they were.",
-                   A, "Godrays", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
+            Slider("atmosphere_cloudatmosphere", "Atmosphere.CloudAtmosphere", "Cloud softening",
+                   "Heavy cloud softening the whole atmosphere, not only the shadows.",
+                   A, "Weather in the air", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
-            Slider("atmosphere_godrayquality", "Atmosphere.GodrayQuality", "Godray quality",
-                   "0 low, 1 medium, 2 high. Quality only - it cannot switch godrays on.",
-                   A, "Godrays", 0f, 2f, 1f, null, true, SettingCost.Medium);
-
-            Slider("atmosphere_moon", "Atmosphere.MoonScattering", "Moonlight in the air",
-                   "Moonlight scattering on a clear night, driven by the game's own moon phase and capped hard.",
+            Slider("atmosphere_moon", "Atmosphere.MoonScattering", "Moonlit air",
+                   "Moonlight scattering in the air on a clear night, following the game's own moon phase.",
                    A, "Night", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
 
-            Slider("atmosphere_cloudedge", "Atmosphere.CloudEdgeScattering", "Broken cloud edges",
-                   "FOUNDATION ONLY. The data this needs - which way a cloud edge faces - is not available yet, so it is wired but does not do what its name says.",
-                   A, "Foundation", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
+            Slider("atmosphere_godrays", "Atmosphere.Godrays", "God-ray boost",
+                   "How much this mod's atmosphere feeds the game's own god-ray pass. 0 leaves the game's rays exactly as they were.",
+                   A, "Not wired yet", 0f, 1f, 0.05f, null, false, SettingCost.Low, true);
+
+            Slider("atmosphere_godrayquality", "Atmosphere.GodrayQuality", "God-ray quality",
+                   "0 low, 1 medium, 2 high. Quality only; it cannot switch god-rays on.",
+                   A, "Not wired yet", 0f, 2f, 1f, null, true, SettingCost.Medium);
+
+            Slider("atmosphere_cloudedge", "Atmosphere.CloudEdgeScattering", "Sun through broken cloud",
+                   "FOUNDATION ONLY. The data this needs, which way a cloud edge faces, is not available yet, so it does not do what its name says.",
+                   A, "Not wired yet", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
 
             Slider("atmosphere_dapple", "Atmosphere.DappleInteraction", "Dappled air",
-                   "FOUNDATION ONLY. Atmosphere responding to dappled sunlight, which needs a per-fragment link the current structure does not carry.",
-                   A, "Foundation", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
+                   "FOUNDATION ONLY. The air responding to dappled sunlight needs a per-pixel link the current structure does not carry.",
+                   A, "Not wired yet", 0f, 1f, 0.05f, null, true, SettingCost.Low, true);
+
+            // ---- WATER -------------------------------------------------------
+            const SettingTab H = SettingTab.Water;
+
+            Toggle("water_enabled", "Water.Enabled", "Water surface",
+                   "This mod's water: pixel reflections, depth colour, ripples, glints, shorelines and caustics, built on the game's own water. Off compiles the game's water untouched.",
+                   H, "Surface", false, SettingCost.Low, true);
+
+            Slider("water_waves", "Water.Waves", "Wave relief",
+                   "How much the small waves tilt the reflection and the glints. Wind makes them taller, rivers stretch them along the current and still ponds calm them. 0 is a flat mirror.",
+                   H, "Surface", 0f, 2f, 0.05f);
+
+            Slider("water_ripples", "Water.RainRipples", "Rain ripples on water",
+                   "Rings where rain lands on open water, only while rain is falling.",
+                   H, "Surface", 0f, 1f, 0.05f);
+
+            Slider("water_shore", "Water.Shore", "Shorelines",
+                   "The water thins over its last sliver of depth so the bank meets it softly, and a pixel foam line laps along the edge. The game's own edge foam steps back while this is on.",
+                   H, "Surface", 0f, 1f, 0.05f);
+
+            Slider("water_glints", "Water.Glints", "Sun and moon glints",
+                   "Sharp highlights of the sun and moon on the waves, one water pixel at a time. The game's own broad highlight steps back as these come in.",
+                   H, "Surface", 0f, 1f, 0.05f);
+
+            Slider("water_sky", "Water.SkyReflection", "Reflection strength",
+                   "How much of the sky and the surroundings the water reflects, more at a glancing angle. One colour per water pixel, like the block reflections.",
+                   H, "Reflection", 0f, 1f, 0.05f);
+
+            Toggle("water_scene", "Water.SceneReflections", "World in the water",
+                   "Banks, trees and the far shore reflected in the water, found in the frame already drawn. Anything off screen falls back to the sky; off compiles the sky-only water.",
+                   H, "Reflection", false, SettingCost.Medium, true);
+
+            Slider("water_refraction", "Water.Refraction", "Refraction",
+                   "How much the waves bend your view of the bottom. 0 is a straight view.",
+                   H, "Reflection", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+
+            Slider("water_soft", "Water.ReflectionSoftness", "Reflection softness",
+                   "A subtle blur of the reflection between neighbouring water pixels. Each pixel stays one colour; 0 is the sharp pixel image.",
+                   H, "Reflection", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+
+            Slider("water_depthtint", "Water.DepthTint", "Depth colour",
+                   "Deep water turns blue-green and opaque while shallow water stays clear, measured from what is really behind the surface.",
+                   H, "Depth and clarity", 0f, 1f, 0.05f);
+
+            Slider("water_clarity", "Water.ShallowClarity", "Shallow clarity",
+                   "How see-through water under about a block deep is. 0 keeps the game's own opacity.",
+                   H, "Depth and clarity", 0f, 1f, 0.05f);
+
+            Slider("water_caustics", "Water.Caustics", "Caustics",
+                   "The moving web of sunlight the waves focus onto the bottom, in the colour of the bed it lands on. Follows the sun, shadows and clouds; 0 compiles the caustic code out.",
+                   H, "Caustics", 0f, 1f, 0.05f);
+
+            Slider("water_causticblur", "Water.CausticBlur", "Caustic softness",
+                   "Blurs the caustic web on the bottom's own pixel grid. 0 is crisp focus lines, around 0.35 the soft glow of a clear lake, 1 broad dappled light.",
+                   H, "Caustics", 0f, 1f, 0.05f);
+
+            Slider("water_causticglow", "Water.CausticGlow", "Caustic glow",
+                   "Blooms the brightest caustic lines into a soft halo while the cells between keep their edges. 0 is even softness.",
+                   H, "Caustics", 0f, 1f, 0.05f);
+
+            Slider("water_causticdispersion", "Water.CausticDispersion", "Caustic colour split",
+                   "Faint coloured fringes on the sharpest caustic lines, as water bends blue light more than red. 1 exaggerates it for style.",
+                   H, "Caustics", 0f, 1f, 0.05f);
 
             // ---- REFLECTIONS -------------------------------------------------
             const SettingTab R = SettingTab.Reflections;
 
-            Toggle("reflections_scene", "Reflections.SceneReflections", "Scene reflections",
-                   "Reflect actual world content - trees, terrain, buildings - instead of only an approximated sky. Captures the finished frame every frame into its own buffer, so it is the most expensive setting in this mod.",
-                   R, "Scene reflections", false, SettingCost.High, true);
+            Slider("pbr_pixelreflect", "PseudoPBR.PixelReflection", "Block reflections",
+                   "How much of the surroundings a wet, polished or metal block reflects. One colour per texture pixel on purpose: a pixel-art reflection, not a mirror.",
+                   R, "Blocks", 0f, 1f, 0.05f);
 
-            Slider("pbr_pixelreflect", "PseudoPBR.PixelReflection", "Reflection strength",
-                   "How much of the environment a reflective surface shows. One colour per texture pixel, on purpose - this is a pixel-art reflection rather than a mirror.",
-                   R, "Scene reflections", 0f, 1f, 0.05f);
+            Toggle("reflections_scene", "Reflections.SceneReflections", "Reflect the world on blocks",
+                   "Reflects real trees, terrain and buildings on blocks instead of only the sky. Copies the finished frame every frame, which makes it the most expensive setting in the mod.",
+                   R, "Blocks", false, SettingCost.High, true);
 
-            // ---- WATER (on the Reflections tab) ------------------------------
-            Toggle("water_enabled", "Water.Enabled", "Water surface",
-                   "This mod's water: texel-locked sky reflection, depth colour, rain ripples and sun glints, built on the game's own water. Off compiles the game's water untouched.",
-                   R, "Water", false, SettingCost.Low, true);
+            // ---- PERFORMANCE -------------------------------------------------
+            const SettingTab P = SettingTab.Performance;
 
-            Slider("water_sky", "Water.SkyReflection", "Water reflection",
-                   "How much of the sky and horizon the water reflects, more at a glancing angle. One colour per water pixel, like the block reflections. 0 is off.",
-                   R, "Water", 0f, 1f, 0.05f);
+            Choice("perf_quality", "Performance.Quality", "Quality tier",
+                   "Scales what the effects cost (canopy taps, detail distance, water blur, ripple layers and caustic waves). It never switches on an effect you turned off; High is the reference look.",
+                   P, "Quality", QualityTiers);
 
-            Slider("water_soft", "Water.ReflectionSoftness", "Reflection softness",
-                   "A subtle blur of the water reflection between neighbouring water pixels. Each pixel stays one colour; neighbours just differ by less. 0 is the sharp pixel image.",
-                   R, "Water", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+            Toggle("perf_prepass", "Performance.DepthPrepass", "Depth prepass",
+                   "Draws the world's depth first so hidden pixels are skipped later. It stands aside on its own where measured GPU time says it costs more than it saves. Changing it rebuilds shaders.",
+                   P, "Quality", false, SettingCost.Low, true);
 
-            Slider("water_waves", "Water.Waves", "Wave relief",
-                   "How much the small waves tilt the reflection and the glints, per water pixel. Wind makes them taller, rivers stretch them into streaks along the current, still ponds calm them, and long swells come in on far water. 0 is a flat mirror.",
-                   R, "Water", 0f, 2f, 0.05f);
-
-            Slider("water_depthtint", "Water.DepthTint", "Depth colour",
-                   "Deep water turns blue-green and opaque; shallow water stays clear. Measured from what is actually behind the surface. 0 is off.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_clarity", "Water.ShallowClarity", "Shallow clarity",
-                   "How see-through water less than about a block deep is. 0 keeps the game's own opacity.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_ripples", "Water.RainRipples", "Rain ripples on water",
-                   "Rings where rain lands on open water, only while rain is falling. 0 is off.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_glints", "Water.Glints", "Sun and moon glints",
-                   "Sharp highlights of the sun and moon on the waves, one water pixel at a time. The game's own broad highlight steps back as these come in. 0 is off.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_shore", "Water.Shore", "Shorelines",
-                   "The water thins out over its last sliver of depth so the bank meets it softly, and a pixel foam line laps in and out along the edge. The game's own edge foam steps back while it is on. 0 is off.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_caustics", "Water.Caustics", "Caustics",
-                   "Moving web of sunlight the waves focus onto the bottom of open water: brighter lines, dimmer cells, the same light overall, in the colour of the bottom it lands on. Follows the game's sun colour, shadows and clouds, soft in the shallows, sharpest a few blocks down and fading deeper. 0 is off and compiles the caustic code out.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_causticblur", "Water.CausticBlur", "Caustic softness",
-                   "Blurs the caustic web on the bottom's own pixel grid. 0 is crisp focus lines, around 0.35 the soft glow of a clear sunlit lake, 1 broad dappled light.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_causticglow", "Water.CausticGlow", "Caustic glow",
-                   "Blurs the brightest caustic lines more than the dim ones, so strong focused light blooms into a soft halo while the cells between keep their edges. 0 is even softness.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Slider("water_causticdispersion", "Water.CausticDispersion", "Caustic colour split",
-                   "Water bends blue light slightly more than red, so the sharpest caustic lines get faint coloured fringes. 0 is none; 1 exaggerates it for style.",
-                   R, "Water", 0f, 1f, 0.05f);
-
-            Toggle("water_scene", "Water.SceneReflections", "World in the water",
-                   "Banks, trees and the far shore reflected in the water, one colour per water pixel, found in the frame already drawn. Needs no scene capture. Anything off screen falls back to the sky. Off compiles the sky-only water.",
-                   R, "Water", false, SettingCost.Medium, true);
-
-            Slider("water_refraction", "Water.Refraction", "Refraction",
-                   "How much the waves bend the view of the bottom through the water. Needs World in the water. 0 is the straight view.",
-                   R, "Water", 0f, 1f, 0.05f, null, false, SettingCost.Low);
+            Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
+                   "Shows milliseconds per render stage and per mod pass in the top-left corner, measured on the GPU. Same as .vvperf.",
+                   P, "Measure");
 
             // ---- DEBUG -------------------------------------------------------
             const SettingTab D = SettingTab.Debug;
 
             Slider("compare_wipe", "CompareWipe", "Compare wipe",
-                   "Splits the frame between vanilla and Vintage Visuals. 0 is normal rendering; 0.5 puts the comparison seam in the middle.",
+                   "Splits the frame between vanilla and Vintage Visuals at this point. 0 is normal rendering and 0.5 puts the seam in the middle; the Compare button below sets it for you.",
                    D, "Debug utilities", 0f, 1f, 0.05f, null, false, SettingCost.Free, false, true);
 
             Toggle("shader_debug_dump", "EnableShaderDebugDump", "Shader debug dump",
-                   "Writes patched shader source to the game's ShaderDebug folder so patch delivery can be inspected after a reload.",
+                   "Writes the patched shader source to the game's ShaderDebug folder on every load, so patch delivery can be inspected. Leave off for play.",
                    D, "Debug utilities", true, SettingCost.Free, false, true);
 
             Toggle("write_scene_report", "WriteSceneReport", "Write scene report",
-                   "Writes one scene report describing what the world asked for and what each subsystem was allowed to change.",
+                   "Writes one report describing what the world asked for and what each subsystem was allowed to change.",
                    D, "Debug utilities", true, SettingCost.Free, false, true);
-
-            Slider("water_debug", "Water.DebugView", "Water debug view",
-                   "0 off. 1 texel normal, 2 reflected sky, 3 depth behind the surface (8 blocks is white), 4 reflected share x4, 5 glints alone, 6 the water texel grid, 7 caustic light on the bed, 8 foam line (red), river flow (green) and far swell (blue), 9 the world the reflected ray found (black is a miss).",
-                   D, "Water", 0f, 9f, 1f, null, false, SettingCost.Free, false, true);
-
-            // ---- PERFORMANCE (on the Debug tab) -------------------------------
-            Slider("perf_quality", "Performance.Quality", "Quality tier",
-                   "0 Low, 1 Medium, 2 High, 3 Ultra. Scales what the effects cost (canopy taps, detail distance, water blur, ripple layers and caustic waves), never switches on an effect that is off. 2 is the reference look.",
-                   D, "Performance", 0f, 3f, 1f);
-
-            Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
-                   "Shows milliseconds per render stage and per mod pass in the top-left corner, measured on the GPU. Also .vvperf; .vvbench records a summary to the log.",
-                   D, "Performance");
 
             return s;
         }

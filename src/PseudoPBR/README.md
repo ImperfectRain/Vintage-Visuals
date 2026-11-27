@@ -441,7 +441,7 @@ more than rough ones.
 Debug view 8 shows the roughness the model actually uses. Where it is much
 brighter than view 2, a surface was sparkling and is now being held down.
 
-### A note on the F7 panel
+### A note on the ConfigLib panel
 
 Every slider above is declared in `assets/vintagevisuals/config/configlib-patches.json`,
 which is data nothing validates at build time. Two settings sharing a `weight`
@@ -454,7 +454,7 @@ both directions.
 
 `PseudoPBR.DebugView` replaces the finished image with one layer of the material
 system. Switching between views applies live — through <kbd>Ctrl</kbd>+<kbd>V</kbd>
-or the F7 slider — because the view number is a uniform. Leaving view 0, or
+or the ConfigLib slider — because the view number is a uniform. Leaving view 0, or
 returning to it, reloads the shaders once (D90): the view code exists in the
 terrain shaders only while the `pbrterraindebug` group defines
 `VV_TERRAIN_DEBUG_VIEWS`, so normal play compiles without it.

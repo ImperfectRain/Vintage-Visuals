@@ -283,7 +283,7 @@ No atmospheric constant in this file exists to cancel a colour-management error.
 
 ## Debug views
 
-`Atmosphere.AirDebugView`, or "Atmosphere debug view" in the F7 panel.
+`Atmosphere.AirDebugView`, or "Atmosphere debug view" in the ConfigLib panel and the Visual Tuning Studio (Ctrl+U).
 
 The list is built to separate four questions that look identical on screen:
 
@@ -367,7 +367,7 @@ in a world.
 
 ## Configuration
 
-All fifteen settings appear in the F7 panel under Atmosphere, and every one is a
+All fifteen settings appear in the ConfigLib panel and the Visual Tuning Studio (Ctrl+U) under Atmosphere, and every one is a
 plain strength where 0 means vanilla. There is no separate enabled flag per
 feature: zero is already the vanilla value, it is what an unset GLSL uniform reads
 as, and a second flag would be a second way to say the same thing that could

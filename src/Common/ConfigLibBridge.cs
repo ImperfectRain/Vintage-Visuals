@@ -5,7 +5,7 @@ using Vintagestory.API.Datastructures;
 namespace VintageVisuals.Common
 {
     /// <summary>
-    /// Optional live-tuning bridge to the ConfigLib mod (in-game GUI, F7).
+    /// Optional live-tuning bridge to the ConfigLib mod (its own settings window; the mod's own panel is Ctrl+U).
     ///
     /// This file references NO ConfigLib types. ConfigLib publishes every
     /// setting change onto the game's ordinary event bus, so the whole
@@ -216,6 +216,12 @@ namespace VintageVisuals.Common
                     break;
                 case "perf_quality":
                     _mod.ConfigManager.Config.Performance.Quality = tree.GetFloat("value", _mod.ConfigManager.Config.Performance.Quality);
+                    break;
+                case "perf_prepass":
+                    _mod.ConfigManager.Config.Performance.DepthPrepass = tree.GetBool("value", _mod.ConfigManager.Config.Performance.DepthPrepass);
+                    break;
+                case "pbr_fastbeams":
+                    pbr.FastBeams = tree.GetBool("value", pbr.FastBeams);
                     break;
                 case "perf_frametimes":
                     _mod.ConfigManager.Config.Performance.ShowFrameTimes = tree.GetBool("value", _mod.ConfigManager.Config.Performance.ShowFrameTimes);

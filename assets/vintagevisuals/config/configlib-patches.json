@@ -2,6 +2,20 @@
   "version": 1,
   "settings": {
     "boolean": {
+      "pbr_fastbeams": {
+        "ingui": "Fast shaft pass",
+        "comment": "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. Showed fewer beams under a canopy than the full pass in testing. Changing it rebuilds shaders.",
+        "default": false,
+        "clientSide": true,
+        "weight": 47
+      },
+      "perf_prepass": {
+        "ingui": "Depth prepass",
+        "comment": "Draws the world's depth first so hidden pixels are skipped later. Stands aside on its own where measured GPU time says it costs more than it saves. Changing it rebuilds shaders.",
+        "default": true,
+        "clientSide": true,
+        "weight": 219
+      },
       "colorgrade_enabled": {
         "ingui": "Enable colour grading",
         "comment": "Master toggle. When off the grading pass is a no-op and the image is vanilla.",
@@ -14,84 +28,84 @@
         "comment": "Brightens dark places and settles back in the light, like an eye adjusting.",
         "default": true,
         "clientSide": true,
-        "weight": 10
+        "weight": 14
       },
       "grade_adaptive": {
         "ingui": "Adaptive grading",
         "comment": "Let the world grade itself: time of day, weather, biome, indoors, depth, underwater. Off leaves your own settings reaching the screen unmodified.",
         "default": true,
         "clientSide": true,
-        "weight": 6
+        "weight": 24
       },
       "pbr_entitylighting": {
         "ingui": "Light mobs like the world",
         "comment": "Give creatures the same microfacet lighting as the terrain they stand on: sun specular, sky term, torch highlights and a wet response. Off leaves them with vanilla's flat diffuse.",
         "default": true,
         "clientSide": true,
-        "weight": 9
+        "weight": 92
       },
       "pbr_particlelighting": {
         "ingui": "Light particles like the world",
         "comment": "Give falling leaves, pollen, dust, sparks and smoke the same lighting as everything else. They belonged to no lighting model at all before.",
         "default": true,
         "clientSide": true,
-        "weight": 15
+        "weight": 98
       },
       "weather_cloudsfromgame": {
         "ingui": "Cloud shadows follow real clouds",
         "comment": "Read cloud positions from the game's own cloud renderer so shadows land under the clouds that cast them. Off falls back to a noise field that moves and covers correctly but cannot line up with the sky.",
         "default": true,
         "clientSide": true,
-        "weight": 8
+        "weight": 138
       },
       "pbr_enabled": {
         "ingui": "Surface relief (PBR)",
         "comment": "Derived normal maps give stone, wood and gravel real surface relief. Off by default: this is the only setting that patches the shader drawing the world.",
         "default": true,
         "clientSide": true,
-        "weight": 20
+        "weight": 54
       },
       "weather_enabled": {
         "ingui": "Weather effects",
         "comment": "Rain makes exposed surfaces wet: smoother, more reflective and darker, drying out after the rain stops.",
         "default": true,
         "clientSide": true,
-        "weight": 40
+        "weight": 118
       },
       "reflections_scene": {
         "ingui": "Scene reflections",
         "comment": "Let reflective surfaces show ACTUAL WORLD CONTENT - trees, stone, buildings - instead of only the sky. Captures the previous frame at quarter resolution and reads it back when shading, so anything visible on screen can be reflected and anything off screen falls back to the sky. Costs a framebuffer and one full-screen copy per frame, so it is off by default. Needs Pixel reflections above zero to do anything.",
         "default": false,
         "clientSide": true,
-        "weight": 72
+        "weight": 216
       },
       "atmosphere_enabled": {
         "ingui": "Atmosphere",
         "comment": "The air between you and everything else. Most of it is driven through the game's own atmosphere rather than through this mod's shaders, so it reaches the sky, the water and the animals as well as the ground. Off leaves Vintage Story's atmosphere exactly as it was.",
         "default": true,
         "clientSide": true,
-        "weight": 73
+        "weight": 150
       },
       "water_enabled": {
         "ingui": "Water surface",
         "comment": "This mod's water: texel-locked sky reflection, depth colour, rain ripples and sun glints, built on the game's own water. Off compiles the game's water untouched.",
         "default": true,
         "clientSide": true,
-        "weight": 105
+        "weight": 184
       },
       "perf_frametimes": {
         "ingui": "Frame-time readout",
         "comment": "Shows milliseconds per render stage and mod pass in the top-left corner. Also .vvperf and .vvbench.",
         "default": false,
         "clientSide": true,
-        "weight": 115
+        "weight": 220
       },
       "water_scene": {
         "ingui": "World in the water",
         "comment": "Banks, trees and the far shore reflected in the water, found in the frame already drawn. Anything off screen falls back to the sky. Off compiles the sky-only water.",
         "default": true,
         "clientSide": true,
-        "weight": 118
+        "weight": 196
       }
     },
     "float": {
@@ -100,7 +114,7 @@
         "comment": "Linear exposure multiplier applied before the tonemap. 1.0 is unchanged.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 1,
+        "weight": 2,
         "range": {
           "min": 0.1,
           "max": 4.0,
@@ -112,7 +126,7 @@
         "comment": "Pivots around display mid-grey. 1.0 is unchanged, 0 is flat.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 2,
+        "weight": 4,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -124,7 +138,7 @@
         "comment": "0 is greyscale, 1.0 is unchanged, above 1 oversaturates.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 3,
+        "weight": 6,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -136,7 +150,7 @@
         "comment": "White balance. Negative is cooler/bluer, positive is warmer/oranger.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 4,
+        "weight": 8,
         "range": {
           "min": -1.0,
           "max": 1.0,
@@ -148,7 +162,7 @@
         "comment": "Blend between vanilla output and the filmic ACES curve. 0 disables the tonemap only.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 5,
+        "weight": 10,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -160,7 +174,7 @@
         "comment": "Exposure multiplier in pitch darkness. 1.0 disables the brightening.",
         "default": 1.6,
         "clientSide": true,
-        "weight": 11,
+        "weight": 16,
         "range": {
           "min": 0.25,
           "max": 4.0,
@@ -172,7 +186,7 @@
         "comment": "Exposure multiplier in full light. 1.0 leaves bright scenes as authored.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 12,
+        "weight": 18,
         "range": {
           "min": 0.25,
           "max": 4.0,
@@ -184,7 +198,7 @@
         "comment": "Seconds to settle after entering darkness. Slow, like real dark adaptation.",
         "default": 4.0,
         "clientSide": true,
-        "weight": 13,
+        "weight": 20,
         "range": {
           "min": 0.0,
           "max": 60.0,
@@ -196,7 +210,7 @@
         "comment": "Seconds to settle after stepping into light. Fast, like real light adaptation.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 14,
+        "weight": 22,
         "range": {
           "min": 0.0,
           "max": 60.0,
@@ -208,10 +222,10 @@
         "comment": "Global multiplier on the relief. 1.0 is the tuned look, 0 is flat.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 21,
+        "weight": 56,
         "range": {
           "min": 0.0,
-          "max": 2.0,
+          "max": 3.0,
           "step": 0.05
         }
       },
@@ -220,7 +234,7 @@
         "comment": "Microfacet specular, and the energy it removes from the diffuse. 1.0 is the tuned look, 0 is exactly vanilla.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 22,
+        "weight": 62,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -232,7 +246,7 @@
         "comment": "Shifts every material's roughness. Negative is glossier and wetter, positive is drier and more matte.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 23,
+        "weight": 72,
         "range": {
           "min": -0.5,
           "max": 0.5,
@@ -244,7 +258,7 @@
         "comment": "How metallic reflective materials read. 0 gives every surface a white highlight; 1 lets metals tint theirs by their own colour.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 24,
+        "weight": 74,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -256,7 +270,7 @@
         "comment": "Strength of the ambient sky highlight. Without it metal in shade or indoors has no highlight at all.",
         "default": 0.35,
         "clientSide": true,
-        "weight": 25,
+        "weight": 64,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -268,7 +282,7 @@
         "comment": "Widens highlights by how much the normal varies within a pixel, which is what stops rough surfaces sparkling as you move. Leave at 1 unless comparing.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 26,
+        "weight": 78,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -280,7 +294,7 @@
         "comment": "Distance at which surface relief has faded out. Higher shows more detail at range and more aliasing with it.",
         "default": 48.0,
         "clientSide": true,
-        "weight": 27,
+        "weight": 60,
         "range": {
           "min": 4.0,
           "max": 192.0,
@@ -292,7 +306,7 @@
         "comment": "Strength of highlights from torches, lava, lanterns and glowing blocks. Works underground and at night, where the sun cannot reach.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 28,
+        "weight": 66,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -304,7 +318,7 @@
         "comment": "0 treats block light as coming from everywhere. 1 estimates where the light actually is, so highlights track a torch as you pass it.",
         "default": 0.7,
         "clientSide": true,
-        "weight": 29,
+        "weight": 70,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -316,7 +330,7 @@
         "comment": "How wet rain makes surfaces look. Above 1 exaggerates past anything physical.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 41,
+        "weight": 120,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -328,7 +342,7 @@
         "comment": "How long a soaked surface takes to dry once the rain stops. Surfaces wet in seconds either way; the slow dry is what makes it read as weather.",
         "default": 60.0,
         "clientSide": true,
-        "weight": 42,
+        "weight": 126,
         "range": {
           "min": 1.0,
           "max": 600.0,
@@ -340,7 +354,7 @@
         "comment": "How exposed to the sky a surface must be before rain reaches it. Raise it to keep porches, canopy and doorways dry.",
         "default": 0.82,
         "clientSide": true,
-        "weight": 43,
+        "weight": 128,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -352,7 +366,7 @@
         "comment": "How much rain thickens the air. 0 leaves vanilla fog alone.",
         "default": 0.35,
         "clientSide": true,
-        "weight": 44,
+        "weight": 130,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -364,7 +378,7 @@
         "comment": "How much rain drains colour from the fog and cools it. Shifts vanilla's fog colour rather than replacing it.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 45,
+        "weight": 132,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -376,7 +390,7 @@
         "comment": "Depth of cloud shadows on the ground at noon. Cover and drift direction come from the game's own cloud density and wind, so shadows thicken and travel with the real sky.",
         "default": 0.35,
         "clientSide": true,
-        "weight": 46,
+        "weight": 136,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -388,7 +402,7 @@
         "comment": "Blocks across one cloud cell. Larger means broader, slower-moving shadows.",
         "default": 190.0,
         "clientSide": true,
-        "weight": 47,
+        "weight": 140,
         "range": {
           "min": 32.0,
           "max": 512.0,
@@ -400,7 +414,7 @@
         "comment": "How fast cloud shadows travel, in cells per minute, along the world's wind direction.",
         "default": 0.9,
         "clientSide": true,
-        "weight": 48,
+        "weight": 142,
         "range": {
           "min": 0.0,
           "max": 8.0,
@@ -412,7 +426,7 @@
         "comment": "How much frost changes a surface, on top of the game's own frost. Vanilla decides where frost is and tints it white; this makes it behave like frost - rough, with the highlight of whatever it covers killed.",
         "default": 0.8,
         "clientSide": true,
-        "weight": 62,
+        "weight": 146,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -424,7 +438,7 @@
         "comment": "A thin film of snow on surfaces the sky can see. Does not compete with the game's own snow blocks - this is the dusting on fence rails, crates and rocks.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 63,
+        "weight": 148,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -436,7 +450,7 @@
         "comment": "How hard rain lands in the water it left. Rides the material shader's normal, so it needs PseudoPBR on and a wet, up-facing, sky-exposed surface.",
         "default": 0.8,
         "clientSide": true,
-        "weight": 50,
+        "weight": 122,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -448,7 +462,7 @@
         "comment": "How completely cloud cover diffuses the sun. Weakens direct highlights and lifts the sky term, rather than darkening everything.",
         "default": 0.7,
         "clientSide": true,
-        "weight": 51,
+        "weight": 134,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -460,7 +474,7 @@
         "comment": "World height the shadow-casting cloud deck sits at. Decides how far a shadow slides from what casts it as the sun drops.",
         "default": 160.0,
         "clientSide": true,
-        "weight": 49,
+        "weight": 144,
         "range": {
           "min": 40.0,
           "max": 400.0,
@@ -472,7 +486,7 @@
         "comment": "How far toward the chosen style to lean. The style is one more capped contributor on top of the world, not a preset that replaces your settings. Set Style in the config file: None, Filmic, Muted, Vivid, Cold or Warm.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 38,
+        "weight": 12,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -484,7 +498,7 @@
         "comment": "Golden hour warmth near sunrise and sunset, and the desaturated blue shift of night vision.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 31,
+        "weight": 26,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -496,7 +510,7 @@
         "comment": "How much rain and cloud cover drain colour and contrast out of the scene.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 32,
+        "weight": 28,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -508,7 +522,7 @@
         "comment": "Heat, cold, aridity and lushness at the player's position. Deserts warm and glare, tundra drains, rainforest saturates.",
         "default": 0.7,
         "clientSide": true,
-        "weight": 33,
+        "weight": 32,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -532,7 +546,7 @@
         "comment": "Colour draining out with depth below sea level.",
         "default": 0.8,
         "clientSide": true,
-        "weight": 35,
+        "weight": 36,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -544,7 +558,7 @@
         "comment": "The blue-green shift of being submerged. Water absorbs red first and blue last.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 36,
+        "weight": 38,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -556,7 +570,7 @@
         "comment": "How long the grade takes to travel most of the way to a new one. Too fast and a doorway is a flash.",
         "default": 2.5,
         "clientSide": true,
-        "weight": 37,
+        "weight": 40,
         "range": {
           "min": 0.1,
           "max": 30.0,
@@ -568,7 +582,7 @@
         "comment": "How much emitting surfaces read as hot rather than merely bright. Driven by the game's own glow data, so a forge lights a room and a white marble block does not.",
         "default": 0.8,
         "clientSide": true,
-        "weight": 57,
+        "weight": 84,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -580,7 +594,7 @@
         "comment": "How much a bright emitter shifts toward white at its core, the way real hot things do. Most of what makes something read as hot rather than as painted orange.",
         "default": 0.55,
         "clientSide": true,
-        "weight": 58,
+        "weight": 86,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -592,7 +606,7 @@
         "comment": "How much a flame is allowed to breathe. Seeded by position, so two torches on one wall do not flicker in step.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 59,
+        "weight": 88,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -604,7 +618,7 @@
         "comment": "How much emitters add to the game's own bloom pass. Driven by actual emission rather than pixel brightness, which is the difference between a bloom that finds light sources and one that finds snow.",
         "default": 0.35,
         "clientSide": true,
-        "weight": 61,
+        "weight": 90,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -616,7 +630,7 @@
         "comment": "Sunlight scattering through foliage, so a canopy with the sun behind it glows. Applies to whatever vanilla treats as wind-affected: leaves, grass, crops, flowers.",
         "default": 0.7,
         "clientSide": true,
-        "weight": 52,
+        "weight": 102,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -628,7 +642,7 @@
         "comment": "Occlusion in the grooves, from the material normal's curvature. The scale vanilla's SSAO cannot see - mortar lines, plank gaps, bark furrows. Costs four extra texture samples.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 53,
+        "weight": 58,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -645,7 +659,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 67
+        "weight": 80
       },
       "pbr_energy": {
         "ingui": "Rough-surface energy",
@@ -657,7 +671,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 68
+        "weight": 82
       },
       "pbr_grain": {
         "ingui": "Wood grain highlight",
@@ -669,7 +683,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 69
+        "weight": 76
       },
       "pbr_dapple": {
         "ingui": "Sunlight dapple under trees",
@@ -681,7 +695,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 65
+        "weight": 42
       },
       "pbr_sunflecks": {
         "ingui": "Sunflecks in canopy shade",
@@ -689,11 +703,11 @@
         "default": 0.6,
         "range": {
           "min": 0.0,
-          "max": 1.5,
+          "max": 2.0,
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 90
+        "weight": 44
       },
       "pbr_moonflecks": {
         "ingui": "Moonlight flecks",
@@ -705,7 +719,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 91
+        "weight": 52
       },
       "pbr_gusts": {
         "ingui": "Travelling wind gusts",
@@ -717,7 +731,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 93
+        "weight": 104
       },
       "pbr_contactshade": {
         "ingui": "Shade at plant bases",
@@ -729,7 +743,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 94
+        "weight": 106
       },
       "pbr_damp": {
         "ingui": "Damp and moss on sheltered stone",
@@ -741,7 +755,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 95
+        "weight": 108
       },
       "pbr_crevicewater": {
         "ingui": "Water in crevices",
@@ -753,7 +767,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 103
+        "weight": 124
       },
       "pbr_torchfalloff": {
         "ingui": "Torch light falloff",
@@ -765,7 +779,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 104
+        "weight": 68
       },
       "pbr_drips": {
         "ingui": "Drips from wet leaves",
@@ -777,7 +791,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 96
+        "weight": 112
       },
       "pbr_pollen": {
         "ingui": "Pollen in the air",
@@ -789,7 +803,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 97
+        "weight": 114
       },
       "pbr_fireflies": {
         "ingui": "Fireflies",
@@ -801,7 +815,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 98
+        "weight": 116
       },
       "pbr_leaves": {
         "ingui": "Falling leaves",
@@ -813,7 +827,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 102
+        "weight": 110
       },
       "atmosphere_foresthaze": {
         "ingui": "Forest haze",
@@ -825,7 +839,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 99
+        "weight": 164
       },
       "atmosphere_groundmist": {
         "ingui": "Ground mist in hollows",
@@ -837,7 +851,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 100
+        "weight": 162
       },
       "grade_season": {
         "ingui": "Adaptive: season",
@@ -849,7 +863,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 101
+        "weight": 30
       },
       "pbr_motes": {
         "ingui": "Dust motes in sun shafts",
@@ -861,7 +875,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 92
+        "weight": 48
       },
       "pbr_shafts": {
         "ingui": "Sunbeams through the canopy",
@@ -873,14 +887,14 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 66
+        "weight": 46
       },
       "pbr_particlespecular": {
         "ingui": "Particle specular",
         "comment": "How much of the particle specular lobe reaches the image. Low on purpose: a highlight that reads as detail on a wall reads as twinkling noise on a cloud of dust.",
         "default": 0.45,
         "clientSide": true,
-        "weight": 64,
+        "weight": 100,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -892,7 +906,7 @@
         "comment": "How matte creatures read. They have no derived material atlas, so one roughness covers all of them.",
         "default": 0.65,
         "clientSide": true,
-        "weight": 54,
+        "weight": 94,
         "range": {
           "min": 0.04,
           "max": 1.0,
@@ -904,7 +918,7 @@
         "comment": "How much of the creature specular lobe reaches the image. 0 is vanilla.",
         "default": 0.8,
         "clientSide": true,
-        "weight": 55,
+        "weight": 96,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -916,7 +930,7 @@
         "comment": "Numbered in the entity path's own terms, not the material system's: 0 off, 1 the specular lobe alone, 2 wetness, 3 how much the scene is holding the mod back.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 56,
+        "weight": 226,
         "range": {
           "min": 0.0,
           "max": 3.0,
@@ -928,7 +942,7 @@
         "comment": "0 normal rendering. 1 normal map, 2 roughness, 3 specular mask, 4 relief only, 5 highlight only, 6 world-space normal, 7 reflectance, 8 roughness as shaded, 9 block-light direction, 10 wetness, 11 rain ripples, 12 crevice occlusion, 13 foliage transmission, 14 emission, 15 dapple mask, 16 raw sun exposure, 17 godray shaft mask, 18 specular occlusion, 19 metalness, 20 height, 21 baked occlusion, 22 emission mask, 23 reflectance from metalness, 24 wood grain. 25-29 are the canopy audit: 25 vanilla's own sun visibility, 26 shadow breakup at three radii, 27 breakup at the coarse radius, 28 breeze against sun direction, 29 the canopy gate the dapple system now uses, 30 the occluder count at three ring radii, 31 the raw count banded into false colour. 32-37 and 52 are the pixel reflection: 32 reflection direction, 33 the material texel grid with derivative anti-aliasing and unresolved grey, 34 the quantised reflection, 35 the reflection's own contribution, 36 the fallback mask, 37 reflection coarseness, 52 material texels per screen pixel (green resolvable, yellow near one, red undersampled). 38-42 are the scene reflection bridge: 38 the captured-frame coordinate being read, 39 the validity traffic light (green means this pixel really is reflecting the world), 40 the raw scene sample, 41 the capture itself, 42 camera movement since capture. 43 is the capture coordinate (red U, green V) - the view that exposes a wrong camera reprojection. 44 flora class by colour, 45 tissue thinness and height up the plant, 46 which plants take canopy dapple 47 optical role: which surfaces can receive canopy-filtered sunlight, which is NOT the same as 46. 48-50 are the reflection march itself, and are only meaningful once 39 shows green somewhere: 48 why each ray ended (green hit, yellow found the surface and rejected it as too thick, red never crossed anything, orange the far end was unusable, dark red the origin projected off frame, magenta the ray points behind the camera, blue no capture), 49 whether the stride survived the step budget (red means the ray was walked coarser than VV_SSR_STRIDE asks), 50 how far behind the surface the refined crossing landed against the tolerance that judges it, 51 whether that decision is being made on geometry or on rounding - red means the local captured-depth quantum is coarser than the half-block hit tolerance, green measures the crossing residual in local depth quanta, blue means rejected as too thick, black means no crossing was available to measure. 59-62 are the forest lighting model: 59 world canopy density, 60 world canopy colour, 61 forest ambient filter, 62 vegetation LOD. 63 is the modular terrain shading path: green full material, orange missing the second atlas, blue plant tissue on the foliage path. 64-72 are the modular canopy and forest views (sunflecks, leaf map, shaft sources, fleck light, beams, gusts, damp and moss, plant base shade, backlit rim). 73 the crevice maps: grey the stone shape, blue the joint network, cyan the rain paths on walls, black where the material holds no water. 74 torchlight on the normals: terrain lit by block light alone as untextured clay through the stone shape (or each texel's own normal where there are no crevice maps), with the torch highlight on top. 75 water in crevices, live: grey the damp film, blue standing water on top faces, cyan water running down walls. The Studio lists only what the active terrain path draws.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 60,
+        "weight": 228,
         "range": {
           "min": 0.0,
           "max": 75.0,
@@ -945,14 +959,14 @@
           "step": 1.0
         },
         "clientSide": true,
-        "weight": 7
+        "weight": 224
       },
       "pbr_canopyradius": {
         "ingui": "Debug: canopy ring radius",
         "comment": "Ring radius in shadow-map texels for the canopy test the sun dapple uses. This is a property of the shadow map rather than of the world - how many texels apart canopy gaps land depends on your shadow quality and viewing distance - so it is exposed rather than guessed. Debug views 30 and 31 show what it is counting: raise or lower it until the area under a tree crown FILLS rather than being outlined. 0 disables dapple entirely.",
         "default": 6.0,
         "clientSide": true,
-        "weight": 70,
+        "weight": 50,
         "range": {
           "min": 0.0,
           "max": 16.0,
@@ -964,7 +978,7 @@
         "comment": "Reflective surfaces resolve what they face per texture pixel and show a discrete, low-resolution impression of their surroundings. With scene reflections enabled under Reflections, that includes actual world geometry, carried across one frame; without it, an analytic sky, horizon band and dimmed ground. Exactly one colour per texture pixel, locked to the surface, so it stays pixel-art rather than becoming a mirror. Where it shows is decided by the existing specular and metalness, so wood and soil stay matte and wet stone lifts on its own. 0 is vanilla.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 71,
+        "weight": 214,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -976,7 +990,7 @@
         "comment": "Haze that pools in low ground on still, humid mornings and burns off as the day warms. Rendered by the game's own height fog, so it fills valleys, reaches the sky and the water, and thins as you climb out of it. Strongest in rainforest and after rain; wind disperses it; there is none underground. 0 is vanilla.",
         "default": 0.4,
         "clientSide": true,
-        "weight": 74,
+        "weight": 160,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -988,7 +1002,7 @@
         "comment": "Distant haze picks up the sun's colour when you look toward it and stays cool when you look away, instead of being the same grey in every direction. Strongest with a low sun and a long view. This is the one atmospheric effect the game does not already have. 0 is vanilla, and 0 removes the shader code rather than muting it, so it needs a moment to reload shaders when you cross it.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 75,
+        "weight": 152,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1000,7 +1014,7 @@
         "comment": "Draws an atmospheric diagnostic instead of the world. 0 off, 1 final atmosphere, 2 raw state, 3 transmittance, 4 horizon colour, 5 sun scattering, 6 height factor, 7 weather extinction, 8 cloud contribution, 9 godrays, 10 precipitation, 11 moon, 12 dapple, 13 combined transport. Numbered in this subsystem's own terms; see src/Atmosphere/README.md.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 76,
+        "weight": 230,
         "range": {
           "min": 0.0,
           "max": 13.0,
@@ -1012,7 +1026,7 @@
         "comment": "The horizon becomes more atmospheric than the ground at your feet, because you are looking through more air to reach it. Warms toward whatever colour the game has given the sun, and only while the sun is low - there is no fixed sky palette here. 0 is vanilla.",
         "default": 0.4,
         "clientSide": true,
-        "weight": 77,
+        "weight": 156,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1024,7 +1038,7 @@
         "comment": "Air looking toward the sun brightens and takes its colour; air looking away stays cool. Vanilla's fog is the same grey in every direction, and this difference is most of what makes distance read as distance. Strongest with a low sun. 0 is vanilla.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 78,
+        "weight": 154,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1036,7 +1050,7 @@
         "comment": "A mountain top sees further than the valley below it. Restrained: Vintage Story does not model how air density changes with height, so this is an approximation standing in for one. Not the same as ground haze, which puts a layer on the ground rather than thinning what is above it. 0 is vanilla.",
         "default": 0.3,
         "clientSide": true,
-        "weight": 79,
+        "weight": 158,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1048,7 +1062,7 @@
         "comment": "Rain and snow thicken the air, so distant things fade sooner. Snow closes the world down harder than rain does. This is how much the air TAKES; what the thickened air itself looks like is the precipitation setting below. Now reaches animals and particles, not only terrain. 0 is vanilla.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 80,
+        "weight": 166,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1060,7 +1074,7 @@
         "comment": "How much rain drains the colour out of the air it thickens. Shifts the game's own fog colour toward grey rather than replacing it - rain does not repaint the sky, it drains it.",
         "default": 0.6,
         "clientSide": true,
-        "weight": 81,
+        "weight": 168,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1072,7 +1086,7 @@
         "comment": "Cloud cover diffuses the directional atmosphere, so an overcast day is flat and even rather than aimed at a sun you cannot see. Reads the same cloud state the cloud shadows do and does not simulate clouds of its own. 0 is vanilla.",
         "default": 0.4,
         "clientSide": true,
-        "weight": 82,
+        "weight": 172,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1084,7 +1098,7 @@
         "comment": "A sky that is neither clear nor solid scatters more light. FOUNDATION ONLY: the game's cloud data says how much cloud is above a place, never where one cloud ends, so this responds to broken cover rather than to an actual cloud edge. 0 is vanilla.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 83,
+        "weight": 180,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1096,7 +1110,7 @@
         "comment": "How much this mod feeds Vintage Story's own crepuscular ray pass. FOUNDATION ONLY: the buffer channel that pass reads is already written by this mod's sunbeam code, and two systems cannot write one line. The setting and its debug view work; nothing reaches the frame yet. 0 is vanilla.",
         "default": 0.4,
         "clientSide": true,
-        "weight": 84,
+        "weight": 176,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1108,7 +1122,7 @@
         "comment": "0 low, 1 medium, 2 high. Scales how much of the frame is offered to the godray pass. It can never switch godrays on: at contribution 0 nothing is contributed whatever this says. The pass's own sample count belongs to Vintage Story's graphics settings, not to this mod.",
         "default": 1.0,
         "clientSide": true,
-        "weight": 85,
+        "weight": 178,
         "range": {
           "min": 0.0,
           "max": 2.0,
@@ -1120,7 +1134,7 @@
         "comment": "What falling weather does to the air itself, as opposed to how much it thickens it. Rain scatters hard toward the sun; snow scatters in every direction, so a blizzard glows and a downpour only brightens where the sun is. 0 is vanilla.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 86,
+        "weight": 170,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1132,7 +1146,7 @@
         "comment": "Air facing the moon on a clear night. Driven by the game's own moon phase and light, and capped hard - a night this makes brighter is a bug, not a stronger setting. Contributes nothing by day. 0 is vanilla.",
         "default": 0.5,
         "clientSide": true,
-        "weight": 87,
+        "weight": 174,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1144,7 +1158,7 @@
         "comment": "FOUNDATION ONLY, and it will stay that way until a structural decision is made. Dappled sunlight and cloud shadows belong to other patch groups, and a shader function shared between groups means one failing takes the others down. The setting arrives; nothing reads it. 0 is vanilla.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 88,
+        "weight": 182,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1156,7 +1170,7 @@
         "comment": "Splits the screen: vanilla on the left, Vintage Visuals on the right. 0 off, 0.5 down the middle, 1 renders everything as vanilla. It is not a second render - every effect already has an 'off' path and this takes it on one side, so it costs almost nothing. Colour grading, tonemapping and ground haze cannot be split: they act on the whole finished frame. Everything the world shaders do - materials, canopy shade, light through leaves, wetness, atmosphere - does split.",
         "default": 0.0,
         "clientSide": true,
-        "weight": 89,
+        "weight": 222,
         "range": {
           "min": 0.0,
           "max": 1.0,
@@ -1173,7 +1187,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 106
+        "weight": 194
       },
       "water_soft": {
         "ingui": "Reflection softness",
@@ -1185,7 +1199,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 107
+        "weight": 200
       },
       "water_waves": {
         "ingui": "Wave relief",
@@ -1197,7 +1211,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 108
+        "weight": 186
       },
       "water_depthtint": {
         "ingui": "Depth colour",
@@ -1209,7 +1223,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 109
+        "weight": 202
       },
       "water_clarity": {
         "ingui": "Shallow clarity",
@@ -1221,7 +1235,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 110
+        "weight": 204
       },
       "water_ripples": {
         "ingui": "Rain ripples on water",
@@ -1233,7 +1247,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 111
+        "weight": 188
       },
       "water_glints": {
         "ingui": "Sun and moon glints",
@@ -1245,7 +1259,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 112
+        "weight": 192
       },
       "water_shore": {
         "ingui": "Shorelines",
@@ -1257,7 +1271,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 117
+        "weight": 190
       },
       "water_caustics": {
         "ingui": "Caustics",
@@ -1269,7 +1283,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 116
+        "weight": 206
       },
       "water_causticblur": {
         "ingui": "Caustic softness",
@@ -1281,7 +1295,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 120
+        "weight": 208
       },
       "water_causticglow": {
         "ingui": "Caustic glow",
@@ -1293,7 +1307,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 121
+        "weight": 210
       },
       "water_causticdispersion": {
         "ingui": "Caustic colour split",
@@ -1305,7 +1319,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 122
+        "weight": 212
       },
       "water_refraction": {
         "ingui": "Refraction",
@@ -1317,7 +1331,7 @@
           "step": 0.05
         },
         "clientSide": true,
-        "weight": 119
+        "weight": 198
       },
       "water_debug": {
         "ingui": "Water debug view",
@@ -1329,7 +1343,7 @@
           "step": 1.0
         },
         "clientSide": true,
-        "weight": 113
+        "weight": 232
       },
       "perf_quality": {
         "ingui": "Quality tier",
@@ -1341,7 +1355,7 @@
           "step": 1.0
         },
         "clientSide": true,
-        "weight": 114
+        "weight": 218
       }
     }
   }

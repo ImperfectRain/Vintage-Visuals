@@ -4617,3 +4617,40 @@ faces were culled and back faces drawn, and leaves and entities survived only
 because they draw without culling. Top-level passes are now odd and nested
 ones alternate. The topsoil alpha (fog alpha below 0.5) is real but was not
 what hid the floors; the any-alpha coverage stays.
+
+## D98. The tuning studio is grouped by what the player sees, and ConfigLib follows its order
+
+From the 2026-11-27 in-game audit (19 findings). Code facts below; the panel
+has not been opened in game since.
+
+**Grouping.** Tabs are what a player looks at, not which C# class owns the
+property: Overview, Colour, Light, Surfaces, Nature, Weather, Atmosphere,
+Water, Reflections, Performance, Debug. Sunflecks and shafts are PseudoPBR
+properties and live on Light; caustics are Water properties and live on
+Water. Atmosphere rows that nothing reads yet sit under "Not wired yet" rather
+than among working ones. Mirrors are deliberately absent (their settings live
+in `vintagevisuals-mirrors.json` until that prototype settles).
+
+**One order, two panels.** ConfigLib's weights are now the studio's
+registration order, and `tools/smoketest` fails when they diverge, so a player
+who learned where a setting sits in one panel finds it in the same place in the
+other. The proper fix - generating the ConfigLib JSON from the registry -
+remains deferred.
+
+**Tiers and modes are named.** `SettingKind.Choice` stores a number but shows a
+label (Quality tier: Low/Medium/High/Ultra). The water diagnostic left the
+Water tab for the Debug tab's named views, like every other diagnostic, and its
+names are checked against the `mode == N` arms of `vvWaterSurface`.
+
+**Slider faults were in the native element, not the dialog.**
+`GuiElementSlider` draws its value bubble while a private hover flag is set,
+and that flag updates only on mouse moves the scroll container forwards, so it
+outlived the drag. Its handle is taller than its track, so at the clip edge a
+fragment drew outside the viewport. `StudioSlider` clears the flag each frame
+unless dragging and pushes a stacked scissor while partly clipped. Both touch a
+private field by reflection and fail soft: if the field is renamed, the bubble
+simply behaves as vanilla.
+
+**Saved looks** are three slots in `ModConfig/vintagevisuals-looks.json`,
+written through the controller like any other edit (clamped, one
+notification). Debug-only settings are never saved into a look.
