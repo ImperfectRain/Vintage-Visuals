@@ -53,6 +53,18 @@ namespace VintageVisuals.SmokeTest
                 Regex.Matches(cs, @"VertexShader\.PrefixCode\s*=").Count == 1,
                 "");
 
+            // 2b. The game raises a chunk vertex shader to #version 430 for its
+            //     SSBO face data only when Shader.Filename starts with "chunk".
+            //     A twin without the game's file names compiled at 330 and failed
+            //     on every machine with allowSSBOs on (the first install).
+            check("I-split: each twin shader carries the game's file name, so the game gives it the same #version (SSBO 430)",
+                cs.Contains("GetField(\"Filename\", f)") &&
+                cs.Contains("_fShaderFilename.SetValue(p.VertexShader, _fShaderFilename.GetValue(main.VertexShader));") &&
+                cs.Contains("_fShaderFilename.SetValue(p.FragmentShader, _fShaderFilename.GetValue(main.FragmentShader));") &&
+                cs.IndexOf("_fShaderFilename.SetValue(p.VertexShader", StringComparison.Ordinal) <
+                    cs.IndexOf("if (!p.Compile())", StringComparison.Ordinal),
+                "");
+
             // 3. The swap is undone: all three fields, and the leaf program unbound.
             int swapOut = cs.IndexOf("private static void SwapOut()", StringComparison.Ordinal);
             string swapOutBody = swapOut >= 0 ? cs.Substring(swapOut, Math.Min(600, cs.Length - swapOut)) : "";

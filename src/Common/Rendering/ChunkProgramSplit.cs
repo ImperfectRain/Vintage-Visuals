@@ -73,7 +73,7 @@ namespace VintageVisuals.Common.Rendering
         private static ILogger _logger;
         private static Func<bool> _wanted;
         private static ChunkSplitGl _gl;
-        private static FieldInfo _fProgramId, _fUniforms, _fTextures, _fAttributes, _fPassName;
+        private static FieldInfo _fProgramId, _fUniforms, _fTextures, _fAttributes, _fPassName, _fShaderFilename;
         private static bool _failed;
         private static Twin _depth, _flora;
         private static int _frame;
@@ -111,6 +111,19 @@ namespace VintageVisuals.Common.Rendering
                 _fAttributes = program.GetField("attributes", f);
                 _fPassName = programBase.GetField("PassName", f);
                 if (_fPassName != null && _fPassName.FieldType != typeof(string)) _fPassName = null;
+                // The game decides a chunk vertex shader's #version from its FILE
+                // NAME: Shader.UsesSSBOs() is Filename.StartsWith("chunk"), and with
+                // allowSSBOs on, only a shader it says yes to is raised to 430. A
+                // twin with no name compiles at 330 and fails on the SSBO block
+                // ("unexpected ... at token buffer"), which is how the first
+                // install shipped. The name is copied, so this field is required.
+                Type shader = HarmonyLib.AccessTools.TypeByName("Vintagestory.Client.NoObf.Shader");
+                _fShaderFilename = shader?.GetField("Filename", f);
+                if (_fShaderFilename == null || _fShaderFilename.FieldType != typeof(string))
+                {
+                    Refuse("Shader has no Filename field, so a twin would not get the game's SSBO version");
+                    return;
+                }
                 if (_fProgramId == null || _fProgramId.FieldType != typeof(int) ||
                     _fUniforms == null || _fUniforms.FieldType != typeof(Dictionary<string, int>) ||
                     _fTextures == null || _fTextures.FieldType != typeof(Dictionary<string, int>))
@@ -383,6 +396,10 @@ namespace VintageVisuals.Common.Rendering
                     // The define FIRST: the game inserts the prefix on the line
                     // after #version, and a define is legal above #extension.
                     p.FragmentShader.PrefixCode = "#define " + define + " 1\n" + (main.FragmentShader.PrefixCode ?? "");
+                    // Same file names as the game's shaders, so the game picks the
+                    // same #version for each stage (see _fShaderFilename).
+                    _fShaderFilename.SetValue(p.VertexShader, _fShaderFilename.GetValue(main.VertexShader));
+                    _fShaderFilename.SetValue(p.FragmentShader, _fShaderFilename.GetValue(main.FragmentShader));
 
                     if (_fAttributes != null)
                     {

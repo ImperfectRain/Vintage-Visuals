@@ -4785,6 +4785,18 @@ the game's program drawing everything.
 the depth twin and the game's program disagree about which pool-0 fragments
 are opaque; debug only. Not measured; not seen in game (L2).
 
+**Amendment, 2026-11-27: the twins need the game's file names.** On the first
+install both twins failed to compile (`unexpected identifier ... at token
+"buffer"`, then `undefined variable "faces"`), and the game's program kept
+drawing everything. `ClientPlatformWindows.CompileShader` rewrites `#version`
+to 430 only when `Shader.UsesSSBOs()`, which is `Filename.StartsWith("chunk")`
+for a vertex shader; a shader made by `NewShader` has an empty name, so the
+twin's vertex stage stayed at 330 under `USESSBO 1` and its SSBO block did not
+parse. The twins now copy `Shader.Filename` from the game's shaders by
+reflection (an internal field, required: the split refuses to run without it).
+verifypatches compiles the source as written and never applies that rewrite,
+which is why it passed. A check on the copy and a mutation for it.
+
 ## D101. The fast beam pass is the default
 
 The D99 forest bench put the per-pixel beam march at 2.3 to 3.7 ms of GPU time
@@ -4795,4 +4807,3 @@ to take the saving now and tune the pass to match afterwards, so
 "Fast shaft pass", ConfigLib, `.vvbeams`), and off brings the per-pixel march
 back exactly as before (D91 compiles it in again). A config file that already
 says false keeps false; the default only reaches new configs. Not re-measured.
-
