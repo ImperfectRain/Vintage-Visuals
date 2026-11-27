@@ -345,10 +345,11 @@ drawn from last frame's buffers (calling the particle system again would step
 the simulation twice). The player's reflection uses the third-person animator,
 the switch the game itself makes for the player's shadow, so it costs nothing.
 
-**Coverage.** After everything has drawn, the mask is drawn again writing only
-alpha 1, with depth test GREATER and no depth write: alpha marks exactly the
-pixels something drew. The game's shaders cannot be trusted for it - the
-topsoil writes its fog alpha there, which hid every grass-topped block.
+**Coverage.** The region clears to alpha 0, and the shader counts any alpha
+above 0 as "something drew here". The game's shaders do not write alpha 1 -
+the topsoil writes its fog alpha (and discards below 0.005) - so the first
+cut's 0.5 threshold hid every grass-topped block. A depth-tested second mask
+draw for coverage was tried and reduced mirrors to slivers in game; removed.
 
 **Limits.** Never water, glass or quad particles; the analytic sky, not the
 game's; per-rect, not

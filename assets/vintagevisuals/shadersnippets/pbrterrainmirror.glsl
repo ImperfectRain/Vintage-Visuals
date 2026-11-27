@@ -61,7 +61,7 @@ vec4 vvTerrainMirrorLook(int box)
 }
 
 // What the mirror shows at this fragment's cell: rgb, and alpha 1 where the
-// capture drew something (0 where it saw only sky, or has no picture), so the
+// capture drew anything (any alpha above 0) (0 where it saw only sky, or has no picture), so the
 // caller keeps its own reflection there.
 vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos)
 {
@@ -96,5 +96,10 @@ vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos)
     vec4 crop = vv_mirrorCrop[slot];
     vec2 local = clamp((uv - crop.xy) / max(crop.zw - crop.xy, vec2(1e-6)), vec2(0.0), vec2(1.0 - 1e-4));
     vec4 seen = textureLod(vv_mirrorTex, atlas.xy + local * atlas.zw, 0.0);
-    return vec4(max(seen.rgb, vec3(0.0)), step(0.5, seen.a));
+    // Coverage is "any alpha at all": the region is cleared to alpha 0 and
+    // every program that draws into it writes something above 0 - but not
+    // necessarily 1. The topsoil writes its FOG alpha (and discards below
+    // 0.005), which a 0.5 threshold read as "nothing here" and dropped every
+    // grass top (seen in game 2026-11-27).
+    return vec4(max(seen.rgb, vec3(0.0)), step(1e-6, seen.a));
 }

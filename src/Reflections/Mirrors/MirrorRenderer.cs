@@ -727,7 +727,7 @@ namespace VintageVisuals.Reflections.Mirrors
                     // Depth: "near" everywhere, "far" on the mirror's own visible rects.
                     _gl.ClearDepthTo(0.0);
                     double[] parentMv = n.Parent == null ? cmo : MirrorMath.Mul(cmo, n.Parent.T);
-                    DrawMask(n, pCrop, parentMv, false);
+                    DrawMask(n, pCrop, parentMv);
 
                     double range = s.ReflectionRange + n.Distance;
                     _culler.ViewDistanceSq = (int)Math.Min(savedViewSq, range * range + 400);
@@ -744,11 +744,6 @@ namespace VintageVisuals.Reflections.Mirrors
                         _oneArg[0] = dt;
                         _renderOpaque.Invoke(_chunkRenderer, _oneArg);
                         if (s.Content >= 2) _content.Draw(s.Content, dt, _culler, range);
-                        // Coverage: alpha 1 wherever anything drew. The game's
-                        // shaders do not agree on what their alpha means - the
-                        // topsoil writes its fog alpha there - so it cannot be
-                        // read as "something is here".
-                        DrawMask(n, pCrop, parentMv, true);
                     }
                     finally
                     {
@@ -780,22 +775,16 @@ namespace VintageVisuals.Reflections.Mirrors
             }
         }
 
-        /// <summary>
-        /// The mirror's visible rects at depth 1. Before the terrain (coverage
-        /// false): depth only, test ALWAYS, opening the footprint. After it
-        /// (coverage true): alpha only, test GREATER and no depth write, so it
-        /// lands exactly where something drew in front of the far plane.
-        /// </summary>
-        private void DrawMask(Node n, double[] pCrop, double[] parentMv, bool coverage)
+        /// <summary>The mirror's visible rects at depth 1, depth only, test ALWAYS: opens the footprint for the terrain.</summary>
+        private void DrawMask(Node n, double[] pCrop, double[] parentMv)
         {
             IRenderAPI r = _capi.Render;
             double[] vp = MirrorMath.Mul(pCrop, parentMv);
             r.GlDisableCullFace();
-            r.GlToggleBlend(false);
-            r.GlColorMask(false, false, false, coverage);
-            r.GLDepthMask(!coverage);
+            r.GlColorMask(false, false, false, false);
+            r.GLDepthMask(true);
             r.GLEnableDepthTest();
-            _gl.DepthFunc(coverage ? MirrorGl.Greater : MirrorGl.Always);
+            _gl.DepthFunc(MirrorGl.Always);
             _mask.Use();
             try
             {

@@ -4596,9 +4596,11 @@ kept as an experimental feature. Two additions, both L2:
 **Second amendment (2026-11-27).** At tier 3 in game, grass-topped blocks were
 missing from mirrors. The cause was that `chunktopsoil.fsh` ends with
 `outColor.a = rgbaFog.a`, and the mirror took alpha 0.5 as "something drew
-here". Coverage now comes from a second mask draw after all the content: the
-mirror's rects at depth 1, writing alpha only, with test GREATER and no depth
-write. The game's alpha is no longer read for coverage.
+here". A second mask draw for coverage (alpha only, depth test GREATER) was
+tried first and reduced mirrors to slivers in game, for a reason not pinned
+down. It was removed. The shader now counts any alpha above 0 as coverage,
+which works because the region clears to 0 and the topsoil discards
+fragments with alpha below 0.005.
 
 The player's reflected body posed with the first-person animator. While the
 self is drawn into a mirror, a prefix on `EntityPlayer.AnimManager` returns
