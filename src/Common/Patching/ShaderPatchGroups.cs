@@ -54,6 +54,9 @@ namespace VintageVisuals.Common.Patching
                 new[] { "pbrterraindebug", "pseudopbrtopsoil" },
                 new[] { "pbrterrainfastbeams", "pseudopbr" },
                 new[] { "pbrterrainfastbeams", "pseudopbrtopsoil" },
+                // D97. The mirror define sits in the modular material snippet.
+                new[] { "pbrterrainmirror", "pseudopbr" },
+                new[] { "pbrterrainmirror", "pseudopbrtopsoil" },
             };
 
         /// <summary>
@@ -70,6 +73,7 @@ namespace VintageVisuals.Common.Patching
                 { "pbrterrainreflect", new[] { "pbrterrainmaterial" } },
                 { "pbrterraindebug", new[] { "pbrterrainmaterial" } },
                 { "pbrterrainfastbeams", new[] { "pbrterrainmaterial" } },
+                { "pbrterrainmirror", new[] { "pbrterrainmaterial" } },
                 { "watercaustics", new[] { "water" } },
             };
 

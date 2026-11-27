@@ -109,6 +109,21 @@ uniform float vv_pbrPixelReflect;
 VvReflectHit vvTerrainSceneMarch(vec3 origin, vec3 r, vec3 v, float blur);
 #endif
 
+// Mirror surfaces (D97) belong to another group (pbrterrainmirror), which owns
+// the mirror atlas sampler and declares it directly above main, and inserts
+// the define on the line after this marker. Absent that group, no fragment
+// here is ever a mirror.
+// vintagevisuals-hook: terrain mirrors define
+
+#ifdef VV_TERRAIN_MIRRORS
+int vvTerrainMirrorFind(vec3 cameraRelativePos, vec3 faceNormal);
+vec4 vvTerrainMirrorLook(int box);
+vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos);
+// The reflection roughness of a fully polished mirror: below the water floor,
+// because a mirror is the one surface that is meant to be a picture.
+const float VV_TERRAIN_MIRROR_POLISHED = 0.02;
+#endif
+
 const float VV_TERRAIN_MIN_ROUGHNESS = 0.18;
 // The floor for the reflection alone: still water, a polished metal, glass.
 const float VV_TERRAIN_MIRROR_ROUGHNESS = 0.04;
@@ -2709,6 +2724,25 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
 
     VvTerrainMaterial m = vvDecodeTerrainMaterial(litColor, baseColor, faceNormal,
                                                   materialUv, cameraRelativePos);
+#ifdef VV_TERRAIN_MIRRORS
+    // A mirror keeps its own colour and metalness (silver stays silver, gold
+    // stays gold) and is made flat and polished: the normal map and the
+    // cavity stop breaking up the picture. Strength lifts a dielectric toward
+    // a metal, for a mirror made of marble or glass.
+    int mirrorBox = vvTerrainMirrorFind(cameraRelativePos, m.faceNormal);
+    if (mirrorBox >= 0)
+    {
+        vec4 mirrorLook = vvTerrainMirrorLook(mirrorBox);
+        float polish = clamp(mirrorLook.x, 0.0, 1.0);
+        m.normal = vvTerrainSafeNormalize(mix(m.normal, m.faceNormal, polish), m.faceNormal);
+        m.reflectRoughness = mix(m.reflectRoughness, VV_TERRAIN_MIRROR_POLISHED, polish);
+        m.perceptualRoughness = mix(m.perceptualRoughness, VV_TERRAIN_MIN_ROUGHNESS, polish);
+        m.alphaRoughness = max(VV_TERRAIN_MIN_ROUGHNESS * VV_TERRAIN_MIN_ROUGHNESS,
+                               m.perceptualRoughness * m.perceptualRoughness);
+        m.ao = mix(m.ao, 1.0, polish);
+        m.metalness = max(m.metalness, clamp(mirrorLook.y, 0.0, 1.0));
+    }
+#endif
     vec3 viewDir = vvTerrainSafeNormalize(vvTerrainToEye(cameraRelativePos), m.faceNormal);
 
     float directionalRelief = vvDirectionalShadeTerrain(m.normal) -
@@ -2747,6 +2781,15 @@ vec4 vvTerrainMaterialPrimary(vec4 litColor, vec3 baseColor, vec3 faceNormal,
     vec3 blockSpec = vvTerrainBlockSpecular(m, viewDir, blockLight, cameraRelativePos);
     VvTerrainReflection reflection = vvTerrainPixelReflection(m, cameraRelativePos, materialUv,
                                                               environmentColor, litColor.rgb, viewDir, blockLight);
+#ifdef VV_TERRAIN_MIRRORS
+    // The mirror camera's picture replaces what the reflection saw, wherever
+    // it drew something; where it saw only sky the analytic sky stays.
+    if (mirrorBox >= 0)
+    {
+        vec4 seen = vvTerrainMirrorSample(mirrorBox, cameraRelativePos);
+        reflection.image = mix(reflection.image, seen.rgb, seen.a);
+    }
+#endif
     vec3 ambientSpec = vvTerrainAmbientSpecular(m, viewDir, reflection.image);
 
     // Multiple-scattering compensation is real only where the lobe is wide and

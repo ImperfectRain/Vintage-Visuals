@@ -90,6 +90,20 @@ namespace VintageVisuals
 
         public PseudoPbrSubsystem Pbr { get; private set; }
 
+        /// <summary>Player-marked mirror surfaces (D97, prototype).</summary>
+        public VintageVisuals.Reflections.Mirrors.MirrorsSubsystem Mirrors { get; private set; }
+
+        /// <summary>
+        /// For a subsystem whose own state (not the config) decides whether a
+        /// patch group exists: re-derives the gating and reloads shaders if it
+        /// changed. The mirrors use it when the first mirror is placed.
+        /// </summary>
+        public void RequestPatchGatingCheck()
+        {
+            if (ConfigManager == null || ShaderPatcher == null) return;
+            ReloadShadersIfPatchGatingChanged();
+        }
+
         /// <summary>
         /// The one place this mod asks the game what is going on.
         ///
@@ -283,6 +297,16 @@ namespace VintageVisuals
                        VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView);
             }
 
+            // D97. The mirror atlas sampler exists in source only while this
+            // world has a mirror and mirrors are on, so a world without one
+            // compiles none of it. Rides the material path.
+            if (group == VintageVisuals.Reflections.Mirrors.MirrorsSubsystem.GroupName)
+            {
+                return PseudoPbrSubsystem.TerrainMaterialPrimaryPatchEnabled &&
+                       ConfigManager.Config.PseudoPBR.Enabled &&
+                       Mirrors != null && Mirrors.ShaderWanted;
+            }
+
             // D91. The terrain's beam march is compiled out while the fast beam
             // pass draws the beams.
             if (group == PseudoPbrSubsystem.TerrainFastBeamsGroupName)
@@ -396,6 +420,7 @@ namespace VintageVisuals
                    (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
                    (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
                    (TerrainBeamsInPass() ? "Q" : "-") +
+                   (Mirrors != null && Mirrors.ShaderWanted ? "X" : "-") +
                    VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;
         }
 
@@ -465,6 +490,9 @@ namespace VintageVisuals
             _subsystems.Add(Pbr);
 
             _subsystems.Add(new WaterSubsystem());
+
+            Mirrors = new VintageVisuals.Reflections.Mirrors.MirrorsSubsystem();
+            _subsystems.Add(Mirrors);
 
             Performance = new PerformanceTools(Capi, Mod.Logger, () => ConfigManager.NotifyChanged());
 

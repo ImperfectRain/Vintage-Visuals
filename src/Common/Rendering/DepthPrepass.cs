@@ -208,6 +208,9 @@ namespace VintageVisuals.Common.Rendering
         public static bool RenderOpaquePrefix(object __instance, float __0)
         {
             if (_busy) return true; // this is the nested prepass call itself
+            // A mirror camera's pass (D97) is drawn into its own small target
+            // and neither gains from a prepass nor may disturb this frame's.
+            if (VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive) return true;
             RanLastFrame = false;
             _governed = false;
             if (!ShouldRun()) return true;
@@ -244,6 +247,7 @@ namespace VintageVisuals.Common.Rendering
 
         public static Exception RenderOpaqueFinalizer(Exception __exception)
         {
+            if (VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive) return __exception;
             if (!_busy)
             {
                 _phase = Phase.None;

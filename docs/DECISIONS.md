@@ -4504,3 +4504,74 @@ The mean-conservation sweep now follows both drifts and passes within 6
 percent. `tools/verifypatches` passes. L2: not seen in game, and cost not
 measured. Expect roughly the same cost as D93: four more sines per
 curvature evaluation, five per pixel with taps.
+
+## D97 - Mirror surfaces: a real reflected camera per marked plane, read on the texel grid
+
+**Status.** Experimental prototype, L2.
+
+**Asked for.** Players mark surfaces (silver or gold voxels, marble floors,
+any face) as mirrors that keep their PBR colour and stay usable floors. The
+game renders a second camera placed by real mirror geometry. No cost when the
+player is far or cannot see the mirror, down to the part of it they see. One
+camera shared by every block or chisel piece of one mirror. Mirrors that
+reflect each other. The picture snapped to the mod's texel grid, captured at
+the resolution that grid needs, with a distance LOD (1, 2x2, 4x4 ... texels).
+
+**Decision.** Re-run the game's own terrain pass, `ChunkRenderer.RenderOpaque`
+(the method the depth prepass already runs twice, D88), once per mirror plane in
+view, with three things swapped and restored in a finally. The view becomes
+`CameraMatrixOrigin * R`, where R reflects across the plane in camera-relative
+space, so every world-space input of the terrain shader keeps its meaning.
+The projection is cropped to the mirror's screen box, with its near plane
+replaced by the mirror plane (Lengyel's oblique clipping), so the wall behind
+a mirror never draws in front of the reflection. The game's frustum culler
+gets the same matrices, and the view distance is cut to the reflection range.
+The target is a region of one shared atlas, sized so one capture pixel covers
+one reflected cell at the mirror's nearest point. The mirror's own visible
+rectangles are drawn as the only "far" depth over a "near" clear, so the pass
+shades only the mirror's footprint. The terrain shader reads the region at the
+screen position of each fragment's cell centre, through the existing
+reflection BRDF.
+
+**Why not screen space.** The scene capture (D62) cannot show what is behind
+the camera, which is exactly what a floor mirror or a wall mirror shows. A
+planar reflection of the real terrain is exact for a plane, which every marked
+surface is.
+
+**Why the game's own pass.** It brings the whole material path with it (PBR,
+shadows, fog, the texel grid) with no second terrain renderer. The price is
+that it brings only chunk terrain: entities, water and particles are not in
+the reflection.
+
+**Grouping.** Marks are stored per plane (axis, side, offset in 1/16 block)
+and merged into rectangles, so a mirror over many blocks or chisel pieces is
+one plane and one camera.
+
+**Culling.** Per rectangle: within `CullDistance`, facing the eye, on screen,
+and visible by CPU rays through full opaque blocks. The rays are cached 8
+frames, at most 64 a frame. A culled mirror costs no GL at all. Without a
+mirror in the world, the shader group is not compiled.
+
+**Mirrors in mirrors.** A plane seen in a mirror's view gets a child pass
+(view `CMO * R_parent * R_child`), drawn first into its own region. The
+parent's pass reads it the way the main pass reads a root. Capped by
+`MaxDepth` 1 and `MaxPasses` 4.
+
+**Alternatives rejected.** A camera per block was rejected because it
+multiplies the cost by the block count for the same picture. A full-screen
+reflection target was rejected because it renders pixels the texel grid then
+discards. Stencil masking was rejected because the depth trick needs no
+stencil buffer on the atlas. Clip planes in the shader were rejected because
+the oblique projection does the job without touching a shader the game owns.
+
+**Limits.** Terrain only. Occlusion is per rectangle, not per voxel. Nested
+passes take their LOD from the real eye. The atlas is sampled while a nested
+pass draws into a different region of it, which GL leaves undefined. The scene
+capture's march is off inside mirror passes (`vv_reflectValid` 0), and the
+analytic sky stands in.
+
+**Verification.** `dotnet build` passes, `tools/smoketest` passes, and
+`tools/verifypatches` passes: the group compiles in all 48 combinations and
+fails closed without the material path. verifypatches now accepts two
+dependents of one base failing closed together. L2: not seen in game, and the
+cost has not been measured.

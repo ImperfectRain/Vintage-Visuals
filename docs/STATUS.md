@@ -268,6 +268,7 @@ program (patch group `water`, [D71](DECISIONS.md), `src/Water/README.md`).
 | `[~]` | Water: caustics on the bed seen through open water | **L2** | `Water.Caustics` (0.6), `CausticBlur` (0.35), `CausticGlow` (0.3), `CausticDispersion` (0.25); [D93](DECISIONS.md), replacing D77's look. Ten focusing waves refract the sun into a moving web that REDISTRIBUTES the light on the bed (bright lines, dim cells, mean kept at 1 by a measured table), in the bed's own colour from the waterscene frame (assumed albedo without it). Soft in the shallows, a network near 1 to 3 blocks, fading by 6 blocks and with distance, by N.L. Blur on the bed's texel grid (analytic softness, plus 4 texel taps on Medium and above), glow blurs bright lines more, optional colour split. Compiled in only while Caustics is above 0 (group `watercaustics`). D77 first look 2026-11-25 failed (white web everywhere); D77's amendment then read as a harsh pale net (2026-11-26). D93 first look 2026-11-27: no lift, shade dark, but only soft mottling (the web was dimmed twice by the water in front of it, and too soft); amended (path fade removed, sharper default softness). Amendment seen 2026-11-27: too regular and strong, one woven map. [D96](DECISIONS.md): new wave set, odd and even waves drift by their own fields (no repeating weave), the game's wind works the surface in patches (calm air: patchy, strong wind: even), falling rain weakens and softens the lens, gentler contrast (shoulder 1.3, contrast 0.75, softer default). D96 not seen in game; cost not measured |
 | `[~]` | Water: shorelines, rivers and far swells | **L2** | [D79](DECISIONS.md). `Water.Shore` (0.7): the water thins out over its last 0.06 block at a bank and a pixel foam line laps along it, measured across the surface behind each texel; vanilla's edge foam steps back to 0.35. Rivers: vanilla's flow vector streaks the waves along the current and quickens chop and glitter; still water in still air calms. Far swells blend in from 20 to 60 blocks. Screen-space limit: foam on banks facing the camera. Previewed offline; not seen in game; cost not measured |
 | `[ ]` | Underwater (camera below the surface): absorption, attenuation, caustics, distortion | — | |
+| `[~]` | Mirror surfaces the player marks (experimental) | **L2** | [D97](DECISIONS.md), `src/Reflections/Mirrors/`. Ctrl+Shift+M / Ctrl+Shift+N or `.vvmirror` mark a face, a voxel material on a chiselled block, or a flood of connected blocks as a mirror; stored per world. Coplanar marks merge into one plane with one camera. Each plane in view (within `CullDistance` 48, passing a cached CPU line-of-sight test) re-runs the game's own terrain pass through a reflected camera with an oblique near plane, cropped to the mirror's screen box, into a shared 1024^2 atlas at one capture pixel per reflected cell; the mirror's own rects are a depth mask, so terrain lands only on its footprint. The terrain shader reads it at each cell centre (texel up close, 2x2, 4x4 ... with distance) through the existing BRDF, so silver and gold keep their colour. One level of mirrors in mirrors, at most 4 passes a frame. Group `pbrterrainmirror` is compiled only while the world has a mirror. Verified: builds, smoketest, verifypatches (48 combinations). Not seen in game; cost not measured |
 
 **Known limitations of the reflection, all current:**
 
@@ -280,6 +281,13 @@ program (patch group `water`, [D71](DECISIONS.md), `src/Water/README.md`).
   not yet used as reflection hits.
 - Entities are unsupported - no material atlas, so no texel grid.
 - Never profiled.
+- Mirrors (D97) reflect chunk terrain only: no entities, players, water, glass or
+  particles. Sky in a mirror is the analytic sky. Occlusion is per marked
+  rectangle by CPU rays through full opaque blocks, not per voxel. Nested
+  mirror passes size their LOD from the real eye's distance. The atlas is
+  sampled while a nested pass renders into another region of it, which GL
+  calls undefined; disjoint regions work on the drivers tested elsewhere but
+  not here.
 
 ## 8. Not yet started elsewhere
 

@@ -365,6 +365,15 @@ namespace VintageVisuals.PseudoPBR
                     }
                 }
 
+                // Mirror cameras (D97): the shared mirror atlas, into a program
+                // that declares it, which only the pbrterrainmirror group does.
+                int mirrorId = VintageVisuals.Reflections.Mirrors.MirrorRenderer.AtlasTextureId;
+                if (mirrorId != 0 && program.HasUniform(VintageVisuals.Reflections.Mirrors.MirrorRenderer.SamplerUniform))
+                {
+                    program.BindTexture2D(VintageVisuals.Reflections.Mirrors.MirrorRenderer.SamplerUniform, mirrorId,
+                                          VintageVisuals.Reflections.Mirrors.MirrorRenderer.TextureUnit);
+                }
+
                 if (PerDrawAuxiliaryBindingEnabled)
                 {
                     // The world volume is deliberately still fenced off. It is

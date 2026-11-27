@@ -1,0 +1,43 @@
+# Vintage Visuals - mirror surfaces on the modular terrain path (D97).
+#
+# Owns the mirror atlas sampler, so it is its own group: if it fails it rolls
+# back to the material path alone, and the material path never depends on it.
+# chunkopaque only - the prototype marks solid and chiselled blocks, which
+# draw there. Gated on the world having a mirror at all.
+#
+# Asserting the material group's entry point makes this group fail closed
+# rather than declare a sampler into a program the material path did not
+# patch. afterGroups only orders; the assert is what enforces.
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: vec4 vvTerrainMaterialPrimaryDebug(
+
+- type: assert
+  phase: Assertions
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: uniform sampler2D liquidDepth;
+
+# Directly above main: below vanilla's last sampler, so link-time unit
+# assignment of vanilla's samplers is unchanged, and below the material
+# snippet, whose eye and origin uniforms this reads.
+- type: insert_before
+  phase: Declarations
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: void main()
+  snippet: pbrterrainmirror.glsl
+
+# Tell the material path the mirrors exist. Inserted by this group so it rolls
+# back with the sampler: without it the material path has no reference to the
+# mirrors at all.
+- type: insert_after
+  phase: Declarations
+  filename: chunkopaque.fsh
+  after: pbrterrainmaterial
+  tokens: "// vintagevisuals-hook: terrain mirrors define"
+  content: |
+    #define VV_TERRAIN_MIRRORS 1

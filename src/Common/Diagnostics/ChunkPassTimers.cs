@@ -108,6 +108,9 @@ namespace VintageVisuals.Common.Diagnostics
 
         public static void RenderOpaquePrefix(object __instance)
         {
+            // Mirror cameras (D97) have their own span; their terrain must not
+            // stretch the player's chunk spans.
+            if (VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive) return;
             _depth++;
             if (_depth != 1 || _failed) return;
             _chunkRenderer = __instance;
@@ -119,6 +122,7 @@ namespace VintageVisuals.Common.Diagnostics
 
         public static Exception RenderOpaqueFinalizer(Exception __exception)
         {
+            if (VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive) return __exception;
             if (_depth == 1 && !_failed)
             {
                 FrameProfiler p = FrameProfiler.Active;

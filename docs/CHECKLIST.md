@@ -238,6 +238,7 @@ consumer reads it yet.
 | Texel quantisation | x | x | x | x | x | – | – | – | x |
 | Analytic fallback | x | x | x | x | x | – | – | – | x |
 | Water reflections | – | – | – | – | – | – | – | – | x |
+| Mirror surfaces (D97) | x | x | x | – | – | – | – | – | x |
 
 Not yet validated, and each is a separate question:
 
@@ -249,6 +250,19 @@ Not yet validated, and each is a separate question:
 - [ ] wet stone reflects more strongly than dry, through the material path alone
 - [ ] performance cost of the capture measured
 - [ ] reflection survives a world reload
+
+**Mirror surfaces** (D97, experimental):
+
+- [x] `pbrterrainmirror.yaml` matches and compiles with the material path against the game's own `chunkopaque.fsh` in all 48 combinations, and fails closed without `pbrterrainmaterial` (`tools/verifypatches`)
+- [x] every mirror uniform has an upload (`UniformWiringChecks`)
+- [ ] a silver or gold face reflects the room, upright and mirrored the right way, staying put as the player moves
+- [ ] the wall behind a wall mirror and the floor under a floor mirror never show in the reflection (oblique near plane)
+- [ ] a chiselled inlay reflects only on its own voxels
+- [ ] a mirror behind a wall, or beyond 48 blocks, costs nothing (`.vvmirror stats` shows 0 passes)
+- [ ] two facing mirrors show each other once
+- [ ] the reflection steps to 2x2, 4x4 cells with distance and stays on the texel grid
+- [ ] frame cost measured with `.vvbench` (span `vv mirror cameras`)
+- [ ] mirrors survive a world reload
 
 **Water** has its own patch group on `chunkliquid.fsh` since 2026-11-25 (D71):
 texel-locked sky reflection, depth colour, rain ripples and glints, L2 only.

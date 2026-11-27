@@ -206,7 +206,17 @@ namespace VintageVisuals.VerifyPatches
             patcher.SetPatches(allPatches.Where(p => set.Contains(p.Group)));
             patcher.Patch(filename, vanilla);
 
-            string[] collateral = set.Where(g => g != orphan && !patcher.IsGroupHealthy(g)).ToArray();
+            // Every group whose base is missing from this set is expected to
+            // fail closed with it: two dependents of the same base (the scene
+            // capture bridge and the mirrors, D97) are both orphans here, and
+            // neither failing is collateral of the other.
+            string[] collateral = set.Where(g => g != orphan && !patcher.IsGroupHealthy(g) &&
+                                                 !ShaderPatchGroups.RequiredBy(g).Any(r => !set.Contains(r))).ToArray();
+            string[] otherOrphans = set.Where(g => g != orphan &&
+                                                   ShaderPatchGroups.RequiredBy(g).Any(r => !set.Contains(r)) &&
+                                                   patcher.IsGroupHealthy(g)).ToArray();
+            if (otherOrphans.Length > 0)
+                Fail(filename + ": '" + string.Join(", ", otherOrphans) + "' applied without its required group instead of failing closed");
             if (patcher.IsGroupHealthy(orphan))
                 Fail(filename + ": '" + orphan + "' applied without " +
                      string.Join(", ", ShaderPatchGroups.RequiredBy(orphan)) + " instead of failing closed");

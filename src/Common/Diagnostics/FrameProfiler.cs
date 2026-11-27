@@ -132,6 +132,8 @@ namespace VintageVisuals.Common.Diagnostics
             Bracket("shadownear", "shadows near", EnumRenderStage.ShadowNear);
 
             int opaqueStart = Add(EnumRenderStage.Opaque, First);
+            int mirrorsStart = Add(EnumRenderStage.Opaque, 0.359);  // MirrorRenderer runs at 0.36 (D97)
+            int mirrorsEnd = Add(EnumRenderStage.Opaque, 0.361);
             int leavesStart = Add(EnumRenderStage.Opaque, 0.499);
             int leavesEnd = Add(EnumRenderStage.Opaque, 0.501);
             int beamsStart = Add(EnumRenderStage.Opaque, 0.979);   // BeamPassRenderer runs at 0.98 (D87/D92)
@@ -139,6 +141,7 @@ namespace VintageVisuals.Common.Diagnostics
             int opaqueEnd = Add(EnumRenderStage.Opaque, Last);
             Span("opaque", "opaque (terrain, entities)", opaqueStart, opaqueEnd);
             AddChunkPassSpans();
+            Span("vv.mirrors", "vv mirror cameras", mirrorsStart, mirrorsEnd, true);
             Span("vv.leaves", "vv falling leaves", leavesStart, leavesEnd, true);
             Span("vv.beams", "vv light shafts pass", beamsStart, beamsEnd, true);
 

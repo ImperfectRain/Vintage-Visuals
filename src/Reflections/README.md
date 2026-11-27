@@ -35,6 +35,7 @@ AfterPostProcessing  ---> capture ---> reflection ray
 |---|---|
 | `SceneCaptureRenderer.cs` | The capture. Owns the framebuffer, copies the frame, records the transform it was drawn with |
 | `ReflectionsSubsystem.cs` | Lifecycle. Starts and stops the capture from config, registers the renderer |
+| `Mirrors/` | Player-marked mirror surfaces (D97): `MirrorStore` (per-world marks, settings), `MirrorSelector` (hotkeys, `.vvmirror`), `MirrorRenderer` (the mirror cameras), `MirrorMath`, `MirrorGl`, `MirrorsSubsystem`. Shader half: `pbrterrainmirror.glsl` / `.yaml`, mask `vvmirrormask.vsh/.fsh`. See the section below |
 | `WorldReflectionVolume.cs` | Local classified block volume. Builds the 2D atlas used when screen-space reflection has no valid scene hit |
 | `../../assets/vintagevisuals/shaders/vvscenecapture.vsh` | Fullscreen quad, clip space, no matrix |
 | `../../assets/vintagevisuals/shaders/vvscenecapture.fsh` | Copies scene colour to RGB, linear view depth to alpha |
@@ -283,3 +284,53 @@ live, so it needs no capture and has no frame lag.
 
 **Entities are not supported.** They have no material atlas, so there is no texel
 grid to attach a reflection to.
+
+## Mirror surfaces (D97, experimental)
+
+The player marks surfaces as mirrors; each marked plane in view gets a real
+reflected camera, not a screen-space trace.
+
+**Marking.** Ctrl+Shift+M marks, Ctrl+Shift+N unmarks, the face under the
+crosshair. `.vvmirror add <mode>` picks how much: `face` (that block face),
+`voxel` (the chiselled cuboids touching that face), `material` (every voxel of
+the looked-at material on that plane, across up to 256 blocks), `flood` (all
+connected coplanar faces of that block type, up to 1024). `auto` is `material`
+on a chiselled block and `face` otherwise. Marks are stored per world in
+`ModConfig/vintagevisuals-mirrors-<world>.json`, merged per plane into
+rectangles in 1/16-block units. `.vvmirror polish <0..1>` and
+`strength <0..1>` set the look of the plane under the crosshair (strength lifts
+a dielectric like marble toward a metal). `.vvmirror set cull|lod|res|depth|passes|range <v>`,
+`on`, `off`, `list`, `clear`, `clearall`, `stats`. Settings in
+`ModConfig/vintagevisuals-mirrors.json`.
+
+**One camera per plane.** All marks on one plane (axis, side, offset) are one
+mirror, however many blocks or chisel pieces they span.
+
+**Each frame** (`MirrorRenderer`, Opaque 0.36, before the terrain at 0.37): for
+each plane, the marked rectangles within `CullDistance` that face the eye,
+project on screen, and pass a CPU line-of-sight test (a few rays per rect
+through full opaque blocks, cached 8 frames, at most 64 rays a frame). The
+nearest `MaxPasses` planes get a pass: `ChunkRenderer.RenderOpaque` again with
+the view times the reflection, a projection cropped to the mirror's screen box
+with its near plane moved onto the mirror (oblique clipping), and the frustum
+culler pointed at it with the view distance cut to `ReflectionRange`. It draws
+into a region of one 1024^2 RGBA16F atlas sized to one capture pixel per
+reflected cell. The region's depth is cleared to 0 and the mirror's visible
+rects drawn at depth 1, so terrain lands only on the mirror's own footprint.
+Mirrors seen inside a mirror get a child pass (`MaxDepth` 1), drawn first.
+
+**The shader** (`pbrterrainmirror.glsl`, unit 9) finds the mirror box a
+fragment lies in, flattens and polishes the material, and replaces the
+reflection image with the atlas pixel at the screen position of the fragment's
+cell centre: one texel (1/32 block) within `LodStart`, then 2x2, 4x4 ... up to
+64x64 with each doubling of distance. The picture goes through the existing
+BRDF, so metalness, Fresnel and colour still apply. Where the capture saw only
+sky, the normal reflection stays.
+
+**Cost.** No mirror in the world: no GLSL, no pass, one check a frame. Mirrors
+out of view: CPU box and ray tests only. In view: one extra terrain draw per
+plane at a fraction of the screen's pixels, plus the atlas (about 12 MB, made
+on first use). Not measured.
+
+**Limits.** Terrain only (no entities, water, glass, particles); per-rect, not
+per-voxel, occlusion; nested LOD from the real eye. L2: not seen in game.
