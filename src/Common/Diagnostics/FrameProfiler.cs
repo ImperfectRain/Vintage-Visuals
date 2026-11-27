@@ -361,6 +361,7 @@ namespace VintageVisuals.Common.Diagnostics
                     _frameHead = (_frameHead + 1) % Window;
                     if (_frameCount < Window) _frameCount++;
                     if (_benchFrames != null) _benchFrames.Add(ms);
+                    try { FrameObserved?.Invoke(ms); } catch { }
                 }
             }
 
@@ -421,6 +422,9 @@ namespace VintageVisuals.Common.Diagnostics
 
         /// <summary>Receives one line per hitch while '.vvhitch' is on; null otherwise.</summary>
         public Action<string> HitchTrace { get; set; }
+
+        /// <summary>D99. Every frame's wall time in ms while acquired, for the scene settle probe.</summary>
+        public Action<double> FrameObserved { get; set; }
 
         private readonly double[] _recent = new double[120];
         private int _recentCount, _recentHead;

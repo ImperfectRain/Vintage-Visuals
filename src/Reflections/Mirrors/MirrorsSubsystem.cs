@@ -47,7 +47,7 @@ namespace VintageVisuals.Reflections.Mirrors
 
             MirrorRenderer.ModSystemCapi = _capi;
             _renderer = new MirrorRenderer(_capi, _store, CaptureValid, mod.HarmonyId);
-            _capi.Event.RegisterRenderer(_renderer, EnumRenderStage.Opaque, "vintagevisuals-mirrors");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(_capi, _renderer, EnumRenderStage.Opaque, "vintagevisuals-mirrors");
             _registered = true;
 
             _selector = new MirrorSelector(_capi, _store, () => _renderer.Stats(), OnSettingsChanged);
@@ -106,7 +106,7 @@ namespace VintageVisuals.Reflections.Mirrors
             {
                 _capi.Event.ReloadShader -= OnShadersReloaded;
                 _capi.Event.LevelFinalize -= TryLoadWorld;
-                if (_registered && _renderer != null) _capi.Event.UnregisterRenderer(_renderer, EnumRenderStage.Opaque);
+                if (_registered && _renderer != null) VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_capi, _renderer, EnumRenderStage.Opaque);
             }
             if (_store != null) _store.Changed -= OnStoreChanged;
             _renderer?.Dispose();

@@ -91,7 +91,7 @@ namespace VintageVisuals.Reflections
                 return;
             }
 
-            _capi.Event.RegisterRenderer(capture, EnumRenderStage.AfterPostProcessing,
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(_capi, capture, EnumRenderStage.AfterPostProcessing,
                                          "vintagevisuals-scenecapture");
             _registered = true;
             _capture = capture;
@@ -152,7 +152,7 @@ namespace VintageVisuals.Reflections
 
             if (_registered)
             {
-                _capi.Event.UnregisterRenderer(_capture, EnumRenderStage.AfterPostProcessing);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_capi, _capture, EnumRenderStage.AfterPostProcessing);
                 _registered = false;
             }
 

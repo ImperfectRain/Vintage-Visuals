@@ -43,6 +43,22 @@ namespace VintageVisuals.Ui
 
         public static IReadOnlyList<VisualSetting> All { get { return _all; } }
 
+        /// <summary>D99. The systems that declare sweeps, in registry order; index = Performance.ProfilerSweepSystem.</summary>
+        public static string[] SweepSystemNames()
+        {
+            string[] names = VintageVisuals.Common.Diagnostics.Profiling.ProfileRegistry.Shared.Systems
+                .Where(x => x.Sweeps.Count > 0).Select(x => x.DisplayName).ToArray();
+            return names.Length > 0 ? names : new[] { "(none)" };
+        }
+
+        /// <summary>D99. The system id at a Performance.ProfilerSweepSystem value, or null.</summary>
+        public static string SweepSystemId(float index)
+        {
+            var list = VintageVisuals.Common.Diagnostics.Profiling.ProfileRegistry.Shared.Systems.Where(x => x.Sweeps.Count > 0).ToList();
+            int i = (int)Math.Round(index);
+            return i >= 0 && i < list.Count ? list[i].Id : null;
+        }
+
         public static IEnumerable<VisualSetting> ForTab(SettingTab tab)
         {
             return _all.Where(s => s.Tab == tab);
@@ -577,6 +593,24 @@ namespace VintageVisuals.Ui
             Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
                    "Shows milliseconds per render stage and per mod pass in the top-left corner, measured on the GPU. Same as .vvperf.",
                    P, "Measure");
+
+            // D99. The profiler's own controls. Studio-only on purpose: bench
+            // parameters are not a look, so ConfigLib does not list them.
+            Slider("perf_profilerseconds", "Performance.ProfilerSeconds", "Seconds per run",
+                   "How long each profiler run records after it settles. Longer runs smooth out noise; 6 s is enough on a steady scene.",
+                   P, "Profiler", 3f, 30f, 1f, "s");
+
+            Slider("perf_profilerrounds", "Performance.ProfilerRounds", "Rounds per comparison",
+                   "How many times each comparison repeats, alternating the order (A B, B A, ...) so slow drift cancels. The result shows the median and the spread; a cost inside the spread is marked noise.",
+                   P, "Profiler", 1f, 6f, 1f);
+
+            Toggle("perf_profilercpu", "Performance.ProfilerCpuInReadout", "Mod CPU time in the readout",
+                   "Adds the mod's own CPU time per system (environment scan, leaves, uniform uploads, ...) to the frame-time readout. The timers always run; this only shows them.",
+                   P, "Profiler");
+
+            Choice("perf_profilersystem", "Performance.ProfilerSweepSystem", "System to sweep",
+                   "Which system the Sweep system button below measures: every slider that system declares, stepped from off to full, so you see what each strength costs.",
+                   P, "Profiler", SweepSystemNames());
 
             // ---- DEBUG -------------------------------------------------------
             const SettingTab D = SettingTab.Debug;

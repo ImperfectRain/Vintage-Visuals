@@ -111,6 +111,27 @@
     <None Remove="tools\**" />
   </ItemGroup>
 
+  <!--
+    D99. Stamps the git commit into AssemblyInformationalVersion ("0.0.1+abc1234",
+    "-dirty" when the tree has uncommitted changes), so every bench result says
+    which build produced it. A build outside git keeps the plain version.
+  -->
+  <Target Name="StampGitRevision" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <Exec Command="git rev-parse --short=7 HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low"
+          IgnoreExitCode="true" ContinueOnError="true" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="VvGitHash" />
+      <Output TaskParameter="ExitCode" PropertyName="VvGitExit" />
+    </Exec>
+    <Exec Command="git status --porcelain --untracked-files=no" ConsoleToMSBuild="true" StandardOutputImportance="low"
+          IgnoreExitCode="true" ContinueOnError="true" WorkingDirectory="$(MSBuildProjectDirectory)" Condition="'$(VvGitExit)' == '0'">
+      <Output TaskParameter="ConsoleOutput" PropertyName="VvGitDirty" />
+    </Exec>
+    <PropertyGroup Condition="'$(VvGitExit)' == '0'">
+      <SourceRevisionId>$(VvGitHash)</SourceRevisionId>
+      <SourceRevisionId Condition="'$(VvGitDirty)' != ''">$(VvGitHash)-dirty</SourceRevisionId>
+    </PropertyGroup>
+  </Target>
+
   <Target Name="EnsureLocalSettings" BeforeTargets="PrepareForBuild" Condition="!Exists('Properties\localSettings.props')">
     <MakeDir Directories="Properties" />
     <WriteLinesToFile File="Properties\localSettings.props" Overwrite="true" Lines="&lt;Project&gt;%0A  &lt;PropertyGroup&gt;%0A    &lt;GameDirectory&gt;%24(VINTAGE_STORY)&lt;/GameDirectory&gt;%0A    &lt;!-- Uncomment for Vintage Story 1.21, which shipped on .NET 8: --&gt;%0A    &lt;!-- &lt;TargetFramework&gt;net8.0&lt;/TargetFramework&gt; --&gt;%0A  &lt;/PropertyGroup&gt;%0A&lt;/Project&gt;" />

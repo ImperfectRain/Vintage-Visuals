@@ -67,7 +67,7 @@ namespace VintageVisuals.SmokeTest
                 mod.Contains("return vanilla == 2 && group == VintageVisuals.Common.Rendering.DepthPrepass.GroupName;") &&
                 mod.IndexOf("int vanilla = VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;", StringComparison.Ordinal) <
                     mod.IndexOf("if (group == PseudoPbrSubsystem.TerrainBaseGroupName)", StringComparison.Ordinal) &&
-                mod.Contains("VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;\n        }"),
+                mod.Contains("VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench +\n                   VintageVisuals.Common.Diagnostics.Profiling.BenchOverrides.Signature;\n        }"),
                 "");
         }
     }

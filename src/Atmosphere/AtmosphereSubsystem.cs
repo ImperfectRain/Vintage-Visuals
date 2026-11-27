@@ -59,7 +59,7 @@ namespace VintageVisuals.Atmosphere
             // well as on. A subsystem that only registered while enabled would
             // leave its modifier sitting in the game's ambient stack the moment
             // the player unticked it.
-            mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-atmosphere");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, this, EnumRenderStage.Before, "vintagevisuals-atmosphere");
 
             // The uniform upload is a separate renderer from this one on
             // purpose. This one must run whether or not the patch group applied
@@ -67,7 +67,7 @@ namespace VintageVisuals.Atmosphere
             // binder must not, because a program that never got the uniforms
             // has nothing to say and should stay quiet rather than log.
             _binder = new AtmosphereShaderBinder(mod.Capi, mod);
-            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-atmosphere-uniforms");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _binder, EnumRenderStage.Before, "vintagevisuals-atmosphere-uniforms");
 
             _registered = true;
 
@@ -185,8 +185,8 @@ namespace VintageVisuals.Atmosphere
 
             if (_registered && _mod != null && _mod.Capi != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
-                if (_binder != null) _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, this, EnumRenderStage.Before);
+                if (_binder != null) VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _binder, EnumRenderStage.Before);
             }
 
             _binder = null;

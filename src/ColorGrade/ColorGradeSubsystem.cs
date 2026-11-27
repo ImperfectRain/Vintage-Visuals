@@ -109,7 +109,7 @@ namespace VintageVisuals.ColorGrade
             // per-program state that survives until the program is relinked, so
             // this does no per-frame work beyond an early return once the
             // config has settled and adaptation has converged.
-            mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-colorgrade");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, this, EnumRenderStage.Before, "vintagevisuals-colorgrade");
         }
 
         /// <summary>0 = drawn first. Nothing else should hold a shader program at this point.</summary>
@@ -397,7 +397,7 @@ namespace VintageVisuals.ColorGrade
         {
             if (_mod?.Capi != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, this, EnumRenderStage.Before);
             }
 
             _adaptation.Reset();

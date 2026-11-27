@@ -47,6 +47,7 @@ with its own table, at the end of this file.
 | Visual Tuning Studio UX redesign | x | x | x | x | – | – | – | – | x |
 | Visual Tuning Studio layout geometry | x | x | x | x | – | – | – | – | x |
 | Visual Tuning Studio station pass (D98) | x | x | x | x | – | – | – | – | x |
+| Whole-mod profiler (D99) | x | x | x | x | – | – | – | n/a | x |
 | Environment state / tracker | x | x | x | x | x | – | – | n/a | x |
 | Visual budget arbitration | x | x | x | x | x | – | – | – | x |
 
@@ -376,7 +377,7 @@ VINTAGE_STORY=/path/to/VintageStory bash tools/mutate/mutation-test.sh
 | A subsystem enabled by default and wholly inert (`D44`) | "disappointed in the atmosphere effects" | I14 | x |
 
 **136 mutations, 136 caught, 0 missed** (127 on a clean tree at 1301bee; the cover rows and the v7/v8 fleck, shaft and mote rows run singly) at `HEAD` when the mutation harness was
-last run on a clean tree. Since then the four v9 canopy-shade rows and the corrected sunfleck-tint row (stale after v8) were run singly: all caught. v10 added nine rows and refreshed four whose literals moved (leaf-map validity, humid air in the shader and the spawner, the shaft cap): all run singly, all caught. v11 added six beam-march rows, v12 three more (and refreshed three), v13 three more (and refreshed two), run singly, all caught. D84 to D86 added three rows and D87 four more (fast beams, including the blend mode), each run singly, all caught. D92 two more and one refreshed (shadow-map shafts), run singly, all caught. D88 (depth prepass) added ten, each run singly, all caught. D88b (ConfigLib group type) and D89 (chunk pass timers) added four, each run singly. D90 (debug views compiled out) added three, each run singly. D91 (terrain beam march compiled out) added three. D95 (prepass governor) added three, each run singly.
+last run on a clean tree. Since then the four v9 canopy-shade rows and the corrected sunfleck-tint row (stale after v8) were run singly: all caught. v10 added nine rows and refreshed four whose literals moved (leaf-map validity, humid air in the shader and the spawner, the shaft cap): all run singly, all caught. v11 added six beam-march rows, v12 three more (and refreshed three), v13 three more (and refreshed two), run singly, all caught. D84 to D86 added three rows and D87 four more (fast beams, including the blend mode), each run singly, all caught. D92 two more and one refreshed (shadow-map shafts), run singly, all caught. D88 (depth prepass) added ten, each run singly, all caught. D88b (ConfigLib group type) and D89 (chunk pass timers) added four, each run singly. D90 (debug views compiled out) added three, each run singly. D91 (terrain beam march compiled out) added three. D95 (prepass governor) added three, each run singly. D99 (profiler coverage, override order, prerequisites, paired deltas) added six, each run singly.
 
 **What this table does not say.** Every invariant above is arithmetic over source.
 None of them can tell you an effect is visible, and all of them pass on a mod

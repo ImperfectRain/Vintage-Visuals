@@ -28,9 +28,24 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool DepthPrepass { get; set; } = true;
 
+        /// <summary>D99. Seconds each profiler run records (.vvbench groups / sweep / suite).</summary>
+        public float ProfilerSeconds { get; set; } = 6f;
+
+        /// <summary>D99. Interleaved rounds per profiler plan (ABBA order); 3 gives a usable spread.</summary>
+        public float ProfilerRounds { get; set; } = 3f;
+
+        /// <summary>D99. Adds the mod's CPU time per system to the frame-time readout.</summary>
+        public bool ProfilerCpuInReadout { get; set; } = true;
+
+        /// <summary>D99. Which system the panel's "Sweep system" button sweeps: an index into the systems that declare sweeps.</summary>
+        public float ProfilerSweepSystem { get; set; } = 0f;
+
         public void ClampToValidRanges(List<string> corrections)
         {
             Quality = ColorGradeConfig.Clamp(Quality, 0f, 3f, "Performance.Quality", corrections);
+            ProfilerSeconds = ColorGradeConfig.Clamp(ProfilerSeconds, 3f, 30f, "Performance.ProfilerSeconds", corrections);
+            ProfilerRounds = ColorGradeConfig.Clamp(ProfilerRounds, 1f, 6f, "Performance.ProfilerRounds", corrections);
+            ProfilerSweepSystem = ColorGradeConfig.Clamp(ProfilerSweepSystem, 0f, 64f, "Performance.ProfilerSweepSystem", corrections);
         }
     }
 }

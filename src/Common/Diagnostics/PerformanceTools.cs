@@ -28,7 +28,7 @@ namespace VintageVisuals.Common.Diagnostics
     /// while a bench runs: the numbers compare like with like only when the
     /// view does not change.
     /// </summary>
-    public sealed class PerformanceTools : IDisposable
+    public sealed partial class PerformanceTools : IDisposable
     {
         private const float SettleSeconds = 1.5f;
 
@@ -45,13 +45,16 @@ namespace VintageVisuals.Common.Diagnostics
         private readonly Action _reapply;
 
         /// <param name="reapply">Re-applies the config, so a bench override that gates a shader patch reloads the shaders.</param>
-        public PerformanceTools(ICoreClientAPI capi, ILogger logger, Action reapply = null)
+        public PerformanceTools(ICoreClientAPI capi, ILogger logger, Action reapply = null,
+                                Profiling.IProfilerHost host = null)
         {
             _capi = capi;
             _logger = logger;
             _reapply = reapply;
             _profiler = new FrameProfiler(capi, logger);
+            _host = host;
             RegisterCommands();
+            RegisterProfilerCommands();
         }
 
         public FrameProfiler Profiler { get { return _profiler; } }
@@ -60,6 +63,9 @@ namespace VintageVisuals.Common.Diagnostics
         public void Apply(PerformanceConfig config)
         {
             QualityTier.SetConfigured(config.Quality);
+            ProfilerSeconds = config.ProfilerSeconds;
+            ProfilerRounds = Math.Max(1, (int)Math.Round(config.ProfilerRounds));
+            FrameTimeHud.ShowCpuSpans = config.ProfilerCpuInReadout;
             SetHud(config.ShowFrameTimes);
         }
 
@@ -102,12 +108,19 @@ namespace VintageVisuals.Common.Diagnostics
                     .HandleWith(_ => ToggleHitch());
 
                 _capi.ChatCommands.Create("vvbench")
-                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]', '.vvbench debugcode [seconds]', '.vvbench beamcode [seconds]' or '.vvbench vanilla [seconds]'")
-                    .WithArgs(parsers.OptionalWord("mode"), parsers.OptionalInt("seconds", 0))
+                    .WithDescription("Vintage Visuals: record frame times. '.vvbench [seconds]', '.vvbench tiers [seconds]', '.vvbench leaves [seconds]', '.vvbench features [seconds]', '.vvbench beams [seconds]', '.vvbench prepass [seconds]', '.vvbench debugcode [seconds]', '.vvbench beamcode [seconds]', '.vvbench vanilla [seconds]'; profiler: '.vvbench groups [all|active|group,..]', '.vvbench sweep <setting|system> [v1,v2,..]', '.vvbench suite [quick]', each with [seconds] [rN] [@scene], and '.vvbench stop|status'")
+                    .WithArgs(parsers.OptionalAll("args"))
                     .HandleWith(args =>
                     {
-                        string mode = args[0] as string;
-                        int seconds = args[1] is int s ? s : 0;
+                        string all = (args[0] as string ?? "").Trim();
+                        string[] words = all.Length == 0 ? new string[0] : all.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+                        // D99: the profiler's modes take their own argument lists.
+                        TextCommandResult profiled = TryProfilerBench(words);
+                        if (profiled != null) return profiled;
+
+                        string mode = words.Length > 0 ? words[0] : null;
+                        int seconds = 0;
+                        if (words.Length > 1) int.TryParse(words[1], out seconds);
                         if (int.TryParse(mode, out int asNumber)) { seconds = asNumber; mode = null; }
                         return StartBench(mode, seconds);
                     });
@@ -138,9 +151,9 @@ namespace VintageVisuals.Common.Diagnostics
 
         private TextCommandResult StartBench(string mode, int seconds)
         {
-            if (_profiler.Recording || _benchCallback != 0)
+            if (_profiler.Recording || _benchCallback != 0 || (_runner != null && _runner.Running))
             {
-                return TextCommandResult.Error("A bench is already running.");
+                return TextCommandResult.Error("A bench is already running ('.vvbench stop' ends a profiler bench).");
             }
 
             if (string.Equals(mode, "leaves", StringComparison.OrdinalIgnoreCase))
@@ -465,6 +478,7 @@ namespace VintageVisuals.Common.Diagnostics
 
         public void Dispose()
         {
+            DisposeProfiler();
             if (_benchCallback != 0) _capi.Event.UnregisterCallback(_benchCallback);
             QualityTier.SetOverride(-1);
             FeatureBench.Mode = FeatureBench.Normal;
