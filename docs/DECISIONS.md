@@ -4654,3 +4654,58 @@ simply behaves as vanilla.
 **Saved looks** are three slots in `ModConfig/vintagevisuals-looks.json`,
 written through the controller like any other edit (clamped, one
 notification). Debug-only settings are never saved into a look.
+
+## D99. One profiler for the whole mod, and every feature declares itself to it
+
+Until now each bench was written for one question (`.vvbench tiers`,
+`features`, `leaves`, `beams`, `prepass`, `debugcode`), so a system nobody had
+written a bench for was never measured: atmosphere, colour grade, weather,
+water reflections and mirrors had no number at all. D90 also showed that the
+cost that matters is often compiled-in source, not the effect's strength, and
+only a bench that compiles a group out can see it.
+
+**A catalogue, filled by the features.** `ProfileRegistry` is built by
+reflection over every `IProfileDeclarer` in the assembly. Each system declares
+its patch groups, the groups it needs, the config paths it owns, the sliders
+worth sweeping, its renderers, CPU scopes and GPU spans. The alternative, one
+central table in the profiler, is the one every new feature forgets; a
+declarer lives beside the feature and `tools/smoketest` fails, by name, on any
+patch group, non-debug panel setting, renderer or mod GPU span no system
+claims. Things that ship unclaimed anyway are still measured under their raw
+names and listed by `.vvprofile coverage`.
+
+**Renderers are timed by construction.** Every per-frame renderer is registered
+through `ModRenderers.Register`, which wraps it in a timing shim (Stopwatch and
+`GC.GetAllocatedBytesForCurrentThread`, always on). A raw
+`Event.RegisterRenderer` outside the shim and the GPU markers fails the
+smoketest. Always on rather than toggled, because the numbers should exist the
+moment someone asks.
+
+**Compiled out vs in.** `BenchOverrides` forces a group in or out ahead of the
+config in `IsPatchGroupEnabled`, and its signature joins the gating signature,
+so the existing reload path does the work. Prerequisites are held in and
+dependents out, so a delta is one group's source.
+
+**Statistics.** Variants run in ABBA order across rounds, and a cost is the
+median of same-round differences from the baseline, so slow drift cancels; a
+result counts only beyond the spread of those differences. Each run records
+the GPU clock, temperature and NVML throttle reasons, and the game settings it
+ran under, because a number without its conditions cannot be compared.
+
+**Scenes** are saved per world and reached with the game's own commands (`/tp`,
+`/time`, `/weather`), so a suite can run unattended and two builds look at the
+same pixels.
+
+Rejected: injecting GPU timer queries per patch group (a group's cost lives
+inside vanilla's stage and is not separable without compiling it out); a
+per-uniform zero sweep for groups (measures the effect, not the source, which
+is what D90 showed is the wrong question).
+
+Verification: build, smoketest (all checks), six mutations. First run in game the same day (L3, see the amendment).
+
+**Amendment (2026-11-27, first run in game).** The noise floor is now half the
+spread of the figure the cost is reported in (the GPU delta when timestamps
+exist), not the wider of the GPU and frame spreads. In the first forest bench
+the depth prepass saved 1.30 to 1.47 ms of GPU time in every round, but one
+round's frame time moved by 5 ms (a hitch outside the GPU), and the result was
+printed as noise. Frame time is still recorded beside it.

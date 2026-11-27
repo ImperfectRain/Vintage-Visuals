@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using VintageVisuals.Atmosphere;
@@ -276,6 +277,17 @@ namespace VintageVisuals
                 return vanilla == 2 && group == VintageVisuals.Common.Rendering.DepthPrepass.GroupName;
             }
 
+            // D99. A profiler bench holding this group compiled in or out
+            // (.vvbench groups). Runtime only; the config is never touched.
+            bool? forced = VintageVisuals.Common.Diagnostics.Profiling.BenchOverrides.GroupOverride(group);
+            if (forced.HasValue) return forced.Value;
+            return IsPatchGroupEnabledByConfig(group);
+        }
+
+        /// <summary>The config's own decision for a group, with no bench override (D99).</summary>
+        private bool IsPatchGroupEnabledByConfig(string group)
+        {
+
             if (group == PseudoPbrSubsystem.TerrainBaseGroupName)
             {
                 return PseudoPbrSubsystem.TerrainBasePatchEnabled &&
@@ -422,7 +434,73 @@ namespace VintageVisuals
                    (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
                    (TerrainBeamsInPass() ? "Q" : "-") +
                    (Mirrors != null && Mirrors.ShaderWanted ? "X" : "-") +
-                   VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench;
+                   VintageVisuals.Common.Rendering.ShaderSpecialisation.VanillaBench +
+                   VintageVisuals.Common.Diagnostics.Profiling.BenchOverrides.Signature;
+        }
+
+        private int _shaderLoads;
+
+        /// <summary>
+        /// D99. What the profiler may touch: patch groups, panel settings and an
+        /// in-memory re-apply. Lives here because Common may not reference Ui.
+        /// </summary>
+        private sealed class ProfilerHost : VintageVisuals.Common.Diagnostics.Profiling.IProfilerHost
+        {
+            private readonly VintageVisualsModSystem _mod;
+            private List<string> _groups;
+            private List<VintageVisuals.Common.Diagnostics.Profiling.SweepTarget> _targets;
+
+            public ProfilerHost(VintageVisualsModSystem mod) { _mod = mod; }
+
+            public IReadOnlyList<string> PatchGroups
+            {
+                get
+                {
+                    if (_groups != null) return _groups;
+                    try
+                    {
+                        _groups = _mod.Capi.Assets.GetMany(ShaderPatchLoader.PatchCategory, _mod.Mod.Info.ModID)
+                            .Select(a => System.IO.Path.GetFileNameWithoutExtension(a.Name))
+                            .Distinct().OrderBy(n => n, StringComparer.Ordinal).ToList();
+                    }
+                    catch { _groups = new List<string>(); }
+                    return _groups;
+                }
+            }
+
+            public bool GroupEnabledByConfig(string group) { return _mod.IsPatchGroupEnabledByConfig(group); }
+
+            public bool GroupApplied(string group)
+            {
+                foreach (ShaderPatchGroup g in _mod.ShaderPatcher.Groups)
+                    if (g.Name == group) return g.PatchedFiles.Count > 0;
+                return false;
+            }
+
+            public int ShaderLoads { get { return _mod._shaderLoads; } }
+            public string GatingSignature { get { return _mod.PatchGatingSignature(); } }
+
+            public IReadOnlyList<VintageVisuals.Common.Diagnostics.Profiling.SweepTarget> Targets
+            {
+                get
+                {
+                    if (_targets != null) return _targets;
+                    _targets = VintageVisuals.Ui.VisualSettingRegistry.All.Select(v => new VintageVisuals.Common.Diagnostics.Profiling.SweepTarget
+                    {
+                        Code = v.Code, Path = v.Path, DisplayName = v.DisplayName, Tab = v.Tab.ToString(),
+                        Min = v.Min, Max = v.Max, Step = v.Step,
+                        IsToggle = v.Kind == VintageVisuals.Ui.SettingKind.Toggle,
+                        IsChoice = v.Kind == VintageVisuals.Ui.SettingKind.Choice,
+                        Choices = v.Choices, RequiresShaderReload = v.RequiresShaderReload, DebugOnly = v.DebugOnly,
+                    }).Where(t => VintageVisuals.Ui.ConfigAccess.TypeOf(t.Path) != typeof(string)).ToList();
+                    return _targets;
+                }
+            }
+
+            public float Get(string path) { return VintageVisuals.Ui.ConfigAccess.Get(_mod.ConfigManager.Config, path); }
+            public bool Set(string path, float value) { return VintageVisuals.Ui.ConfigAccess.Set(_mod.ConfigManager.Config, path, value); }
+            public void Reapply() { _mod.ConfigManager.NotifyChanged(); }
+            public VintageVisualsConfig Config { get { return _mod.ConfigManager.Config; } }
         }
 
         private bool TerrainBeamsInPass()
@@ -472,7 +550,7 @@ namespace VintageVisuals
         private void RegisterSubsystems()
         {
             Environment = new EnvironmentTracker(Capi, Mod.Logger);
-            Capi.Event.RegisterRenderer(Environment, EnumRenderStage.Before, "vintagevisuals-environment");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(Capi, Environment, EnumRenderStage.Before, "vintagevisuals-environment");
 
             _subsystems.Add(new ColorGradeSubsystem());
             Weather = new WeatherSubsystem();
@@ -495,7 +573,7 @@ namespace VintageVisuals
             Mirrors = new VintageVisuals.Reflections.Mirrors.MirrorsSubsystem();
             _subsystems.Add(Mirrors);
 
-            Performance = new PerformanceTools(Capi, Mod.Logger, () => ConfigManager.NotifyChanged());
+            Performance = new PerformanceTools(Capi, Mod.Logger, () => ConfigManager.NotifyChanged(), new ProfilerHost(this));
 
             // D88. Hooks the chunk renderer; fails closed to vanilla on its own.
             _depthPrepass = new VintageVisuals.Common.Rendering.DepthPrepass(HarmonyIdValue, Capi, Mod.Logger,
@@ -596,6 +674,7 @@ namespace VintageVisuals
 
         private bool OnReloadShader()
         {
+            _shaderLoads++;
             // Fired as the reload starts, so re-read the patch files from disk
             // first: a developer editing patch YAML expects a shader reload to
             // pick the edits up without restarting the game.
@@ -681,7 +760,7 @@ namespace VintageVisuals
         {
             if (Environment != null && Capi != null)
             {
-                Capi.Event.UnregisterRenderer(Environment, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(Capi, Environment, EnumRenderStage.Before);
                 Environment.Dispose();
                 Environment = null;
             }

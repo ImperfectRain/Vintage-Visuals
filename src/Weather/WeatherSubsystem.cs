@@ -146,11 +146,11 @@ namespace VintageVisuals.Weather
             // Before, like ColorGrade: no GL work happens here, but the tick
             // has to be frame-paced rather than on a game timer so the easing
             // is smooth, and this is the stage that is guaranteed quiet.
-            mod.Capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "vintagevisuals-weather");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, this, EnumRenderStage.Before, "vintagevisuals-weather");
 
             _clouds = new CloudTileReader(mod.Capi, mod.Mod.Logger);
             _binder = new WeatherShaderBinder(mod.Capi, this);
-            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-weather-uniforms");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _binder, EnumRenderStage.Before, "vintagevisuals-weather-uniforms");
         }
 
         public double RenderOrder { get { return 0.0; } }
@@ -230,11 +230,11 @@ namespace VintageVisuals.Weather
         {
             if (_mod?.Capi != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, this, EnumRenderStage.Before);
 
                 if (_binder != null)
                 {
-                    _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Before);
+                    VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _binder, EnumRenderStage.Before);
                 }
             }
 

@@ -416,6 +416,9 @@ void main(void) {
 
         GlslOrderChecks.Run(Repo, Check);
 
+        // D99: the profiler's catalogue covers every group, setting, renderer and GPU span.
+        ProfilingChecks.Run(Repo, Check);
+
         DocumentationChecks.Run(Repo, Check);
 
         Console.WriteLine();

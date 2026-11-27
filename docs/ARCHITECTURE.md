@@ -63,7 +63,7 @@ state instead, and neither knows the other exists.
 | `src/Common/ConfigLibBridge.cs` | optional ConfigLib panel, over the event bus, zero coupling |
 | `tools/verifypatches` | every patch against the game's own shaders, every define combination |
 | `tools/smoketest` | the engine and every pure rule, without a game |
-| `src/Common/Diagnostics/` | frame-time readout and bench (GPU timestamp queries per render stage), and the quality tier ([D72](DECISIONS.md)) |
+| `src/Common/Diagnostics/` | frame-time readout and bench (GPU timestamp queries per render stage), and the quality tier ([D72](DECISIONS.md)); `Profiling/` is the whole-mod profiler: every system declares itself to `ProfileRegistry`, every renderer is timed through `ModRenderers` ([D99](DECISIONS.md)) |
 
 ### Scene Understanding
 
@@ -594,6 +594,8 @@ measured by comparison.
 | Water surface (`water`, D71) | per water fragment: 4 waves + 2 value-noise octaves per tap, 1-5 taps (tier), one `depthTex` read, two GGX lobes; no sampler, no pass | per water fragment | no | water on screen |
 | Water world reflection (`waterscene`, D82) | per top-face water texel that can show a reflection: one projected ray, up to 16/24/40 march steps (tier) + 5 bisections, each a `depthTex` read, one colour read on a hit; refraction one colour and one depth read; no pass, no target, Primary colour sampled in place | per water fragment | no | water on screen |
 | Frame profiler (D72, chunk pass timers D89) | ~26 stage timestamp queries plus up to ~30 inside the chunk renderer (D89), and reflected GL calls, per frame | only while the readout or a bench is on | reads queries 3 frames old | — |
+| CPU spans (D99) | two Stopwatch and two allocation-counter reads per mod renderer and per `CpuSpans.Measure` scope, about fifteen | yes, always on | no | renderer count |
+| GPU telemetry (D99) | one NVML read set every 250 ms on a background thread | only while a profiler bench records | no | — |
 
 Three costs are paid ahead of the exact pixel that may use them: the scene
 capture, the local world-reflection/canopy scan, and terrain-wide shadow taps.

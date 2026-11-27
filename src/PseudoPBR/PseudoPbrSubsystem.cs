@@ -157,7 +157,7 @@ namespace VintageVisuals.PseudoPBR
             // atlas is uploaded, and registering it here rather than at upload
             // time keeps renderer lifetime tied to subsystem lifetime, which is
             // the only pairing Dispose() can honour.
-            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Opaque, "vintagevisuals-pbr");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _binder, EnumRenderStage.Opaque, "vintagevisuals-pbr");
 
             // D87: the fast beams. Registered always and idle unless wanted,
             // like the binder; when it cannot draw, the terrain's own beams do.
@@ -168,17 +168,17 @@ namespace VintageVisuals.PseudoPBR
             // draws; if the pass fails, re-apply the config (next tick, never
             // mid-draw) so the patch gating rebuilds the terrain with it.
             _beams.Failed = () => mod.Capi.Event.RegisterCallback(_ => _mod?.ConfigManager?.NotifyChanged(), 0);
-            mod.Capi.Event.RegisterRenderer(_beams, EnumRenderStage.Opaque, "vintagevisuals-beams");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _beams, EnumRenderStage.Opaque, "vintagevisuals-beams");
             mod.Capi.Event.ReloadShader += OnShadersReloaded;
             RegisterBeamCommand(mod.Capi);
 
             _motes = new DustMoteSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR);
-            mod.Capi.Event.RegisterRenderer(_motes, EnumRenderStage.Before, "vintagevisuals-motes");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _motes, EnumRenderStage.Before, "vintagevisuals-motes");
             _leafRenderer = new LeafRenderer(mod.Capi, LeafWind);
-            mod.Capi.Event.RegisterRenderer(_leafRenderer, EnumRenderStage.Opaque, "vintagevisuals-leaves");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _leafRenderer, EnumRenderStage.Opaque, "vintagevisuals-leaves");
             _forestLife = new ForestLifeSpawner(mod.Capi, () => _mod?.Environment, () => _mod?.ConfigManager?.Config?.PseudoPBR,
                                                 _leafRenderer);
-            mod.Capi.Event.RegisterRenderer(_forestLife, EnumRenderStage.Before, "vintagevisuals-forestlife");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _forestLife, EnumRenderStage.Before, "vintagevisuals-forestlife");
         }
 
         private DustMoteSpawner _motes;
@@ -736,27 +736,27 @@ namespace VintageVisuals.PseudoPBR
         {
             if (_mod != null && _mod.Capi != null && _binder != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Opaque);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _binder, EnumRenderStage.Opaque);
             }
             if (_mod != null && _mod.Capi != null && _beams != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_beams, EnumRenderStage.Opaque);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _beams, EnumRenderStage.Opaque);
                 _mod.Capi.Event.ReloadShader -= OnShadersReloaded;
                 _beams.Dispose();
                 _beams = null;
             }
             if (_mod != null && _mod.Capi != null && _motes != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_motes, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _motes, EnumRenderStage.Before);
             }
             if (_mod != null && _mod.Capi != null && _forestLife != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_forestLife, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _forestLife, EnumRenderStage.Before);
                 _forestLife.Dispose();
             }
             if (_mod != null && _mod.Capi != null && _leafRenderer != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_leafRenderer, EnumRenderStage.Opaque);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _leafRenderer, EnumRenderStage.Opaque);
                 _leafRenderer.Dispose();
                 _leafRenderer = null;
             }

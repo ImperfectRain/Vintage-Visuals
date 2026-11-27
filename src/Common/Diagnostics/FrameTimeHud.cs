@@ -15,6 +15,9 @@ namespace VintageVisuals.Common.Diagnostics
     public sealed class FrameTimeHud : HudElement
     {
         private const string TextKey = "vvperf";
+
+        /// <summary>D99. Show the mod's CPU time per system under the stages (Performance.ProfilerCpuInReadout).</summary>
+        public static bool ShowCpuSpans { get; set; } = true;
         private readonly FrameProfiler _profiler;
         private long _lastUpdate;
 
@@ -29,8 +32,8 @@ namespace VintageVisuals.Common.Diagnostics
 
         private void Compose()
         {
-            ElementBounds bounds = ElementBounds.Fixed(EnumDialogArea.LeftTop, 12, 60, 380, 300);
-            ElementBounds textBounds = ElementBounds.Fixed(0, 0, 380, 300);
+            ElementBounds bounds = ElementBounds.Fixed(EnumDialogArea.LeftTop, 12, 60, 380, 420);
+            ElementBounds textBounds = ElementBounds.Fixed(0, 0, 380, 420);
             ElementBounds bg = ElementBounds.Fill.WithFixedPadding(6);
             bg.BothSizing = ElementSizing.FitToChildren;
             bg.WithChildren(textBounds);
@@ -80,6 +83,22 @@ namespace VintageVisuals.Common.Diagnostics
                 }
                 sb.Append('\n');
             }
+
+            if (ShowCpuSpans && Profiling.CpuSpans.All.Count > 0)
+            {
+                sb.Append("mod CPU ").Append(Profiling.CpuSpans.TotalMsPerFrame.ToString("0.00", CultureInfo.InvariantCulture)).Append(" ms/frame\n");
+                int shown = 0;
+                foreach (Profiling.CpuSpans.Stat s in System.Linq.Enumerable.OrderByDescending(Profiling.CpuSpans.All, x => x.MsPerFrame))
+                {
+                    if (shown++ >= 5 || s.MsPerFrame < 0.005) break;
+                    sb.Append("  ").Append(s.Name.Replace("vintagevisuals-", "")).Append("  ")
+                      .Append(s.MsPerFrame.ToString("0.00", CultureInfo.InvariantCulture)).Append(" ms");
+                    if (s.BytesPerFrame >= 512) sb.Append("  ").Append((s.BytesPerFrame / 1024).ToString("0", CultureInfo.InvariantCulture)).Append(" KB");
+                    sb.Append('\n');
+                }
+            }
+            string status = PerformanceTools.Current?.ProfilerStatus;
+            if (status != null) sb.Append("bench ").Append(status).Append('\n');
             return sb.ToString();
         }
     }

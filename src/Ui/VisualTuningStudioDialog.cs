@@ -902,6 +902,8 @@ namespace VintageVisuals.Ui
         {
             if (tab != SettingTab.Performance) yield break;
 
+            foreach (RowItem row in ProfilerRows()) yield return row;
+
             yield return RowItem.ForSection("Benches");
             yield return RowItem.ForAction("Closes this panel, then measures:",
                 new ActionButton("10 s bench", () => RunBench(".vvbench")),
@@ -925,6 +927,56 @@ namespace VintageVisuals.Ui
                 yield return RowItem.ForNote(ShortText(line.Trim(), CharsFor(ContentWidth - 40)));
                 if (++shown >= 18) break;
             }
+        }
+
+        /// <summary>
+        /// D99. The line every row's details end with: which profiled system
+        /// owns the setting and the command that measures it, so the panel and
+        /// the profiler stay in step without a second list.
+        /// </summary>
+        private static string ProfilerLine(VisualSetting setting)
+        {
+            if (setting.DebugOnly) return "";
+            var owner = VintageVisuals.Common.Diagnostics.Profiling.ProfileRegistry.Shared.ForSettingPath(setting.Path);
+            if (setting.Kind == SettingKind.Dropdown) return owner == null ? "" : " Profiled under " + owner.DisplayName + ".";
+            return " Measure: .vvbench sweep " + setting.Code + (owner != null ? " (" + owner.DisplayName + ")." : ".");
+        }
+
+        /// <summary>D99. The profiler's buttons and status, above the older benches.</summary>
+        private IEnumerable<RowItem> ProfilerRows()
+        {
+            yield return RowItem.ForSection("Profiler");
+            yield return RowItem.ForAction("Shader cost, compiled out vs in:",
+                new ActionButton("All groups", () => RunBench(".vvbench groups all")),
+                new ActionButton("Active only", () => RunBench(".vvbench groups active")));
+            yield return RowItem.ForAction("Cost curves and everything at once:",
+                new ActionButton("Sweep system", () => RunSweepSystem()),
+                new ActionButton("Quick suite", () => RunBench(".vvbench suite quick")),
+                new ActionButton("Full suite", () => RunBench(".vvbench suite")));
+            yield return RowItem.ForAction("Coverage and control:",
+                new ActionButton("Coverage", () => RunCommand(".vvprofile coverage")),
+                new ActionButton("CPU now", () => RunCommand(".vvprofile cpu")),
+                new ActionButton("Stop bench", () => RunCommand(".vvbench stop")));
+
+            var perf = VintageVisuals.Common.Diagnostics.PerformanceTools.Current;
+            string status = perf?.ProfilerStatus;
+            yield return RowItem.ForNote(status != null ? "Running " + status + "."
+                : "Results go to VintagestoryData/vv-bench/ as CSV, with your game settings and GPU clock beside every run. " +
+                  "Add @name to any bench command to run it in a scene saved with .vvscene save name.");
+        }
+
+        private bool RunSweepSystem()
+        {
+            string id = VisualSettingRegistry.SweepSystemId(_controller.Config.Performance.ProfilerSweepSystem);
+            if (id == null) return true;
+            return RunBench(".vvbench sweep " + id);
+        }
+
+        /// <summary>A command that only reports in chat: the panel stays open.</summary>
+        private bool RunCommand(string command)
+        {
+            capi.TriggerChatMessage(command);
+            return true;
         }
 
         private bool RunBench(string command)
@@ -1294,6 +1346,7 @@ namespace VintageVisuals.Ui
             text += "  Default " + DefaultValue(setting) + ".";
             if (setting.Cost != SettingCost.Free) text += " Cost: " + CostLabel(setting.Cost) + ".";
             if (setting.RequiresShaderReload) text += " Changing it rebuilds shaders (a short pause).";
+            text += ProfilerLine(setting);
             return text;
         }
 

@@ -42,8 +42,12 @@ namespace VintageVisuals.SmokeTest
             check("IsPatchGroupEnabled was found at all", gateStart >= 0, "");
             if (gateStart < 0) return;
 
-            string gate = modSystem.Substring(gateStart,
-                modSystem.IndexOf("\n        }", gateStart, StringComparison.Ordinal) - gateStart);
+            // D99 split the gate in two: IsPatchGroupEnabled consults the bench
+            // overrides, then IsPatchGroupEnabledByConfig holds the per-group
+            // rules. The gate is both bodies.
+            int configStart = modSystem.IndexOf("private bool IsPatchGroupEnabledByConfig(", StringComparison.Ordinal);
+            int gateEnd = modSystem.IndexOf("\n        }", configStart > gateStart ? configStart : gateStart, StringComparison.Ordinal);
+            string gate = modSystem.Substring(gateStart, gateEnd - gateStart);
 
             // The gate compares against constants, so resolve them first -
             // QUALIFIED by their class. Three subsystems each call theirs

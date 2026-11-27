@@ -106,6 +106,11 @@ hierarchy, the budgets, and what this project deliberately does not build.
 - `src/Common/Diagnostics/` — the frame profiler (`.vvperf`, `.vvbench`) and
   the quality tier. Measure before and after any change that could cost frame
   time; a tier scales cost and is exactly the reference look at High.
+  `Profiling/` is the whole-mod profiler (D99). **Every new system adds an
+  `IProfileDeclarer`** beside it naming its patch groups, settings, sweeps,
+  renderers and spans, and registers renderers with `ModRenderers.Register`,
+  never `Event.RegisterRenderer`; `tools/smoketest` fails on anything
+  unclaimed. See `src/Common/Diagnostics/Profiling/README.md`.
 - `assets/vintagevisuals/shaderpatches/*.yaml` — regex/token patches against
   **vanilla** shaders, one file per subsystem.
 - `assets/vintagevisuals/shadersnippets/*.glsl` — GLSL bodies the patches inject.

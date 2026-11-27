@@ -43,7 +43,7 @@ namespace VintageVisuals.Water
             _sceneBind.Install();
 
             _binder = new WaterShaderBinder(mod.Capi, mod);
-            mod.Capi.Event.RegisterRenderer(_binder, EnumRenderStage.Before, "vintagevisuals-water-uniforms");
+            VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Register(mod.Capi, _binder, EnumRenderStage.Before, "vintagevisuals-water-uniforms");
         }
 
         public void Apply()
@@ -55,7 +55,7 @@ namespace VintageVisuals.Water
         {
             if (_binder != null && _mod != null && _mod.Capi != null)
             {
-                _mod.Capi.Event.UnregisterRenderer(_binder, EnumRenderStage.Before);
+                VintageVisuals.Common.Diagnostics.Profiling.ModRenderers.Unregister(_mod.Capi, _binder, EnumRenderStage.Before);
             }
             _binder = null;
             if (_sceneBind != null) _sceneBind.Uninstall();

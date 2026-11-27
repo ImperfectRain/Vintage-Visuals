@@ -205,6 +205,9 @@ namespace VintageVisuals.Common.Rendering
             return wanted && ShaderReady();
         }
 
+        /// <summary>D99. CpuSpans name of the prepass's own CPU work.</summary>
+        public const string CpuSpanName = "depthprepass.draw";
+
         public static bool RenderOpaquePrefix(object __instance, float __0)
         {
             if (_busy) return true; // this is the nested prepass call itself
@@ -229,7 +232,9 @@ namespace VintageVisuals.Common.Rendering
             {
                 _capi.Render.GlColorMask(false, false, false, false);
                 OneArg[0] = __0;
-                _renderOpaque.Invoke(__instance, OneArg);
+                // D99: the prepass's CPU side (a second walk of every pool) is its own span.
+                using (VintageVisuals.Common.Diagnostics.Profiling.CpuSpans.Measure(CpuSpanName))
+                    _renderOpaque.Invoke(__instance, OneArg);
                 RanLastFrame = true;
             }
             catch (Exception ex)

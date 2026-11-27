@@ -207,6 +207,34 @@ One fixed scene, so numbers from different builds compare like with like.
 Report the GPU frame figure and the opaque and transparent stage figures, not
 the fps counter alone: fps folds in CPU and vsync.
 
+### Bench scenes (D99)
+
+The profiler can stand in a saved scene and hold its hour and weather, so a
+bench taken today and one taken next week look at the same pixels. Save each
+once per world with `.vvscene save <name> [rain=0..1|auto] [wind=<code>] [note]`
+while standing where it should be measured; `.vvscene go <name>` returns there,
+and `@<name>` on any `.vvbench` command runs the bench there (several, comma
+separated, run in turn).
+
+| Name | Where | Hour | Weather | What it loads |
+|---|---|---|---|---|
+| F | inside dense forest, looking along the floor | 17:00 | clear | leaf pool, canopy, flecks, shafts, falling leaves |
+| P | pond shore, 2 blocks up, facing across | 12:00 | clear | water surface, water reflection and refraction, caustics |
+| V | open hill with a long view | 12:00 | clear | atmosphere, distance haze, colour grade |
+| R | forest edge in rain | 14:00 | `rain=0.8` | weather, wetness, ripples, cloud shadows |
+| C | cave mouth looking in | 12:00 | clear | crevice shading, block light, emissives |
+| M | a placed mirror, filling a third of the view | 12:00 | clear | mirrors |
+
+Hour is the hour current when the scene was saved, so set it with `/time set`
+first. Rain defaults to 0 (held clear); `rain=auto` leaves the weather alone.
+
+The results land in `VintagestoryData/vv-bench/` as `<date>-<build>-runs.csv`
+(every run, with the settings, GPU clock, temperature and throttle reasons it
+ran under) and `-summary.csv` (one row per variant: median cost against the
+plan's baseline and its noise). `python3 tools/benchcompare/benchcompare.py
+OLD-summary.csv NEW-summary.csv` compares two builds and warns when the
+settings differ.
+
 ### Water
 
 - [ ] the water reflects the sky more at a glancing angle than looking down
