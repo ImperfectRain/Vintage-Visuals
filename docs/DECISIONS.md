@@ -4264,6 +4264,21 @@ light reaches the 0.6 cap. Two mutations (each gate back on the cell) run
 singly and caught. L2: not seen in game. Cost: one more array read per step;
 not measured.
 
+**D94 second amendment (2026-11-27): smooth gate, gentler lift.** Seen in
+game after the first amendment: the sunspots appeared, but as very bright,
+blocky rectangles. The shape came from the gate, not the shadow map: the five
+hard 2-block cell reads stepped the "inside a forest" test on and off along
+cell edges, and the whole sunlit ground inside a step took the full lift. The
+sunspot now reads `vvTerrainCrownAroundSmooth` (each of the five reads a
+smoothstepped bilinear blend of four cells, the leaf height weighted by
+density; twenty array reads per sunlit receiver fragment within 32 blocks), so
+the lift varies continuously and the visible shape is the shadow map's own.
+The lift is 0.22 (was 0.55) with a soft shoulder that fills the headroom to
+0.85 luma and never reaches it, bloom 0.04 (was 0.1), strength capped at 1.
+The march keeps the hard reads (it integrates along the ray and is filtered).
+A mutation (the sunspot back on the hard reads) runs singly and is caught. L2:
+not seen in game; cost not measured.
+
 ## D93 - Caustics redistribute the sun on the bed, in the bed's own colour, softened on the texel grid
 
 **Context.** Elijah's screenshots (2026-11-26) still showed the D77 web as a

@@ -1065,7 +1065,7 @@ void main()
                           // Both gate on the crown AROUND the column, never the column's
                           // own cell: that cell is the gap the light came through
                           // (in game 2026-11-27, no spots and no shafts under a canopy).
-                          (GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainSunspot(") ?? "").Contains("vec2 around = vvTerrainCrownAround(world.xz);") &&
+                          (GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainSunspot(") ?? "").Contains("vec2 around = vvTerrainCrownAroundSmooth(world.xz);") &&
                           (GlslEval.FunctionBody(beamSnippet, "float vvBeamUnderCanopy(") ?? "").Contains("vec2 around = vvTerrainCrownAround(p.xz);") &&
                           shadowBody.Contains("float level = lit * contrast * sunAngle * ds") &&
                           shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&

@@ -1569,6 +1569,42 @@ vec2 vvTerrainCrownAround(vec2 worldXZ)
     return vec2(sum * 0.2, lowest);
 }
 
+// The same, blended continuously: each of the five reads is a bilinear mix
+// of the four nearest cell centres. For a per-fragment gate on a surface,
+// where the hard version's 2-block cell edges drew square bright patches on
+// the forest floor (in game 2026-11-27). Four times the reads, so the march,
+// which integrates along a ray and is filtered after, keeps the hard one.
+vec2 vvTerrainCanopyCellSmooth(vec2 worldXZ)
+{
+    vec2 g = worldXZ * 0.5 - 0.5;
+    vec2 i = floor(g);
+    vec2 f = g - i;
+    f = f * f * (3.0 - 2.0 * f);
+    vec2 a = vvTerrainCanopyCell((i + vec2(0.5, 0.5)) * 2.0);
+    vec2 b = vvTerrainCanopyCell((i + vec2(1.5, 0.5)) * 2.0);
+    vec2 c = vvTerrainCanopyCell((i + vec2(0.5, 1.5)) * 2.0);
+    vec2 d = vvTerrainCanopyCell((i + vec2(1.5, 1.5)) * 2.0);
+    // Density blends directly; the leaf height blends weighted by density,
+    // so an empty cell (height 0) does not drag a crown's height to the ground.
+    vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+    vec4 dens = vec4(a.x, b.x, c.x, d.x);
+    float density = dot(w, dens);
+    float height = dot(w * dens, vec4(a.y, b.y, c.y, d.y)) / max(density, 1e-4);
+    return vec2(density, height);
+}
+
+vec2 vvTerrainCrownAroundSmooth(vec2 worldXZ)
+{
+    vec2 c0 = vvTerrainCanopyCellSmooth(worldXZ);
+    vec2 c1 = vvTerrainCanopyCellSmooth(worldXZ + vec2(4.0, 0.0));
+    vec2 c2 = vvTerrainCanopyCellSmooth(worldXZ - vec2(4.0, 0.0));
+    vec2 c3 = vvTerrainCanopyCellSmooth(worldXZ + vec2(0.0, 4.0));
+    vec2 c4 = vvTerrainCanopyCellSmooth(worldXZ - vec2(0.0, 4.0));
+    float sum = c0.x + c1.x + c2.x + c3.x + c4.x;
+    float lowest = (c0.x * c0.y + c1.x * c1.y + c2.x * c2.y + c3.x * c3.y + c4.x * c4.y) / max(sum, 1e-4);
+    return vec2(sum * 0.2, lowest);
+}
+
 // How much of one cell's crown a sun ray at height rayY passes through, as a
 // density 0..1, SOFT in height: the crown is taken to start at its lowest
 // leaf and run about as deep as its leaf count, and to sit above the
@@ -1954,8 +1990,8 @@ float vvTerrainSunRelight(float sunVisibility)
 // scales with how much sun gets through, and adds a little bloom through
 // vanilla's glow channel. Open ground keeps vanilla's sunlit level.
 #ifdef VV_TERRAIN_BEAMS_IN_PASS
-const float VV_TERRAIN_SUNSPOT_LIFT = 0.55;   // extra share of the sunlit colour at full strength
-const float VV_TERRAIN_SUNSPOT_GLOW = 0.1;    // bloom at full strength; vanilla's own is 0.1 x shadowIntensity
+const float VV_TERRAIN_SUNSPOT_LIFT = 0.22;   // extra share of the sunlit colour at full strength
+const float VV_TERRAIN_SUNSPOT_GLOW = 0.04;   // bloom at full strength; vanilla's own is 0.1 x shadowIntensity
 const float VV_TERRAIN_SUNSPOT_REACH = 32.0;  // the leaf map's reach
 
 vec3 vvTerrainSunspot(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float sunVisibility)
@@ -1971,7 +2007,7 @@ vec3 vvTerrainSunspot(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float
     // Inside a forest: crown around this column (the gap itself is thin)
     // whose lowest leaves are well above this point.
     vec3 world = cameraRelativePos + vv_pbrOrigin;
-    vec2 around = vvTerrainCrownAround(world.xz);
+    vec2 around = vvTerrainCrownAroundSmooth(world.xz);
     float crown = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, around.x)
                 * smoothstep(world.y + 1.0, world.y + 3.0, around.y);
     if (crown <= 0.0) return color;
@@ -1982,15 +2018,22 @@ vec3 vvTerrainSunspot(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float
     float strength = clamp(sunVisibility, 0.0, 1.0) * crown * facing * fade
                    * vvTerrainSunPresence() * vvTerrainClearSky()
                    * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * (1.0 - vvTerrainLocalLightShare());
-    strength = clamp(strength, 0.0, 1.5);
+    strength = clamp(strength, 0.0, 1.0);
     if (strength <= 0.0) return color;
 
     vv_fleckGlow = max(vv_fleckGlow, strength * VV_TERRAIN_SUNSPOT_GLOW);
     // Brighter and a touch whiter, never more saturated: the v7 flecks read
     // as yellow paint when they pushed the albedo's own hue (D51).
     float y = vvTerrainLuma(color);
-    vec3 paler = mix(color, vec3(y), 0.2 * min(strength, 1.0));
-    return paler * (1.0 + VV_TERRAIN_SUNSPOT_LIFT * strength);
+    vec3 paler = mix(color, vec3(y), 0.15 * strength);
+    // A soft shoulder on the ADDED light only: it fills the headroom up to
+    // 0.85 luma and never reaches it, so a patch that is already bright
+    // gains little instead of clipping to a flat block (in game 2026-11-27,
+    // "very bright and blocky").
+    float headroom = max(0.85 - y, 0.0);
+    float added = y * VV_TERRAIN_SUNSPOT_LIFT * strength;
+    float gain = headroom * (1.0 - exp(-added / max(headroom, 1e-4)));
+    return paler * ((y + gain) / max(y, 1e-4));
 }
 #endif
 
