@@ -102,6 +102,8 @@ namespace VintageVisuals.VerifyPatches
 
             VerifyBeamPass(haveGlslang);
 
+            VerifyTwinLink(haveGlslang);
+
             Console.WriteLine();
             Console.WriteLine(failures == 0 ? "ALL PATCHES VERIFIED" : failures + " FAILURE(S)");
             return failures == 0 ? 0 : 1;
@@ -273,7 +275,77 @@ namespace VintageVisuals.VerifyPatches
                                   " all applied together");
 
                 if (haveGlslang) Compile(filename, vanilla, patched);
+
+                // D100. The game's program is compiled again as two twins, each
+                // with one fragment define. A define that breaks the source only
+                // breaks it in the twin, which no per-group pass ever compiles.
+                if (filename == "chunkopaque.fsh" || filename == "chunkopaque.vsh")
+                    CombinedChunkopaque[filename] = patched;
+                if (haveGlslang && filename == "chunkopaque.fsh")
+                {
+                    foreach (string twin in TwinDefines.Where(d => TwinApplies(patched, d)))
+                        Compile(filename + " [" + twin + " twin]", vanilla, WithTwinDefine(patched, twin));
+                }
             }
+        }
+
+        static readonly string[] TwinDefines = { "VV_DEPTH_ONLY", "VV_FLORA_ONLY" };
+
+        /// <summary>The last combined chunkopaque stages, for the twin link check.</summary>
+        static readonly Dictionary<string, string> CombinedChunkopaque = new Dictionary<string, string>();
+
+        static bool TwinApplies(string fragment, string define)
+        {
+            return define == "VV_DEPTH_ONLY" ? fragment.Contains("VV_PREPASS_ON") : fragment.Contains("#ifdef VV_FLORA_ONLY");
+        }
+
+        /// <summary>Same as ChunkProgramSplit: the define on the line after #version.</summary>
+        static string WithTwinDefine(string source, string define)
+        {
+            int cut = source.IndexOf('\n') + 1;
+            return source.Substring(0, cut) + "#define " + define + " 1\n" + source.Substring(cut);
+        }
+
+        /// <summary>
+        /// D100. Links each twin's fragment stage with the game's (patched)
+        /// vertex stage, the pair the game would link. A varying the twin still
+        /// reads that the vertex stage stopped writing compiles and fails here.
+        /// </summary>
+        static void VerifyTwinLink(bool haveGlslang)
+        {
+            Console.WriteLine();
+            Console.WriteLine("split chunk programs (D100, chunkopaque compiled again with one fragment define)");
+            string vert, frag;
+            if (!CombinedChunkopaque.TryGetValue("chunkopaque.vsh", out vert) || !CombinedChunkopaque.TryGetValue("chunkopaque.fsh", out frag))
+            {
+                Fail("split chunk programs: no combined chunkopaque stages to link");
+                return;
+            }
+            if (!vert.Contains("invariant gl_Position")) Fail("split chunk programs: the combined vertex stage lacks 'invariant gl_Position'");
+            else Pass("split chunk programs: the combined vertex stage declares gl_Position invariant");
+            if (!haveGlslang) return;
+
+            var prefixes = new[]
+            {
+                new Dictionary<string, int> { { "SHADOWQUALITY", 0 }, { "SSAOLEVEL", 0 }, { "GODRAYS", 0 }, { "NORMALVIEW", 0 }, { "SHINYEFFECT", 0 } },
+                new Dictionary<string, int> { { "SHADOWQUALITY", 2 }, { "SSAOLEVEL", 1 }, { "GODRAYS", 1 }, { "NORMALVIEW", 0 }, { "SHINYEFFECT", 1 } },
+            };
+            foreach (string twin in new[] { (string)null }.Concat(TwinDefines))
+            {
+                if (twin != null && !TwinApplies(frag, twin)) { Fail("split chunk programs: " + twin + " has nothing to act on in the combined source"); continue; }
+                foreach (var prefix in prefixes)
+                {
+                    string label = "chunkopaque " + (twin ?? "game program") + " links [" + Describe(prefix) + "]";
+                    string f = twin == null ? frag : WithTwinDefine(frag, twin);
+                    if (TryLink(StripExtensions(vert), StripExtensions(f), prefix, out string error)) Pass(label);
+                    else Fail(label + ": " + error);
+                }
+            }
+        }
+
+        static string StripExtensions(string source)
+        {
+            return string.Join("\n", source.Replace("\r\n", "\n").Split('\n').Where(l => !l.TrimStart().StartsWith("#extension")));
         }
 
         /// <summary>Finds a vv_ uniform declared more than once, which never compiles.</summary>

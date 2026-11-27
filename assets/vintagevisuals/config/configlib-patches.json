@@ -16,6 +16,13 @@
         "clientSide": true,
         "weight": 219
       },
+      "perf_split": {
+        "ingui": "Split shader programs",
+        "comment": "Draws the depth prepass and the leaves with smaller programs of their own, so they run faster on the GPU. Plants look the same; doors, trapdoors and roofing lose screen-space and mirror reflections (they keep the sky). Changing it rebuilds shaders.",
+        "default": true,
+        "clientSide": true,
+        "weight": 220
+      },
       "colorgrade_enabled": {
         "ingui": "Enable colour grading",
         "comment": "Master toggle. When off the grading pass is a no-op and the image is vanilla.",
@@ -98,7 +105,7 @@
         "comment": "Shows milliseconds per render stage and mod pass in the top-left corner. Also .vvperf and .vvbench.",
         "default": false,
         "clientSide": true,
-        "weight": 220
+        "weight": 221
       },
       "water_scene": {
         "ingui": "World in the water",

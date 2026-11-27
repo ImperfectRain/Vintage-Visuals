@@ -73,7 +73,7 @@ void main()
             check("depthprepass group healthy on vanilla chunkopaque", patcher.IsGroupHealthy("depthprepass"), "");
 
             int discard = src.IndexOf("if (aTest < alphaTest || rgba.a < 0.005) discard;", StringComparison.Ordinal);
-            int early = src.IndexOf("if (vv_depthPrepass > 0.5) {", StringComparison.Ordinal);
+            int early = src.IndexOf("if (VV_PREPASS_ON) {", StringComparison.Ordinal);
             int material = src.IndexOf("vvTerrainMaterialPrimary(", StringComparison.Ordinal);
             string block = early >= 0 ? src.Substring(early, Math.Min(400, src.Length - early)) : "";
             Match threshold = Regex.Match(block, @"outColor\.a\s*<\s*([0-9.]+)");
@@ -88,7 +88,7 @@ void main()
                 "discard@" + discard + " early@" + early + " material@" + material + " threshold " + t);
 
             check("I-prepass: the shadow lookup is skipped only in the prepass and only feeds colour",
-                src.Contains("float b = vv_depthPrepass > 0.5 ? 1.0 : getBrightnessFromShadowMap();") &&
+                src.Contains("float b = VV_PREPASS_ON ? 1.0 : getBrightnessFromShadowMap();") &&
                 src.Contains("rgbaPixel *= vec4(b, b, b, 1);") &&
                 src.Contains("if (glitchStrength > Epsilon) texColor = applyRustEffect(texColor, normal, vertexPosition, 1);"),
                 "");
@@ -96,23 +96,43 @@ void main()
             // Amendment 4: what the prepass skips before the discard must reach only rgb.
             // Between the murk line and the discard nothing may write outColor whole or
             // its alpha, and murkiness may feed only the fog weight and the rgb murk.
-            int murk = src.IndexOf("float murkiness = vv_depthPrepass > 0.5 ? 0.0 : getUnderwaterMurkiness();", StringComparison.Ordinal);
+            int murk = src.IndexOf("float murkiness = VV_PREPASS_ON ? 0.0 : getUnderwaterMurkiness();", StringComparison.Ordinal);
             string between = murk >= 0 && discard > murk ? src.Substring(murk, discard - murk) : "";
             string afterMurkLine = between.Length > 0 ? between.Substring(between.IndexOf('\n') + 1) : "";
             check("I-prepass: the skipped murk and sky fade reach only rgb before the discard",
                 murk >= 0 && murk < early &&
-                src.Contains("if (haxyFade > 0 && vv_depthPrepass < 0.5) {") &&
+                src.Contains("if (haxyFade > 0 && !VV_PREPASS_ON) {") &&
                 Regex.Matches(afterMurkLine, @"outColor\s*=").Count == 1 &&
                 afterMurkLine.Contains("outColor = applyFogAndShadowFromBrightness(texColor, clamp(fogAmount - 50*murkiness, 0, 1),") &&
                 !Regex.IsMatch(afterMurkLine, @"outColor\.a\s*[-+*/]?=") &&
                 Regex.Matches(afterMurkLine, @"\bmurkiness\b").Count == 2,
                 "murk@" + murk);
 
+            // D100. Every test above is VV_PREPASS_ON. In the game's own program it
+            // must stay the uniform test (the prepass flag decides per draw), and
+            // only the depth twin, which never draws the real pass, may make it a
+            // constant. A constant in the game's program would run the real pass
+            // as a prepass: no shadows, no material, depth only.
+            string flag = resolveSnippet("depthprepass.glsl");
+            int ifdef = flag.IndexOf("#ifdef VV_DEPTH_ONLY", StringComparison.Ordinal);
+            int elseAt = ifdef >= 0 ? flag.IndexOf("#else", ifdef, StringComparison.Ordinal) : -1;
+            int endif = elseAt >= 0 ? flag.IndexOf("#endif", elseAt, StringComparison.Ordinal) : -1;
+            string twinBranch = elseAt > ifdef ? flag.Substring(ifdef, elseAt - ifdef) : "";
+            string mainBranch = endif > elseAt ? flag.Substring(elseAt, endif - elseAt) : "";
+            check("I-prepass: the prepass test is the uniform in the game's program and a constant only in the depth twin",
+                ifdef >= 0 && Regex.IsMatch(twinBranch, @"#define\s+VV_PREPASS_ON\s+true\b") &&
+                Regex.IsMatch(mainBranch, @"#define\s+VV_PREPASS_ON\s+\(\s*vv_depthPrepass\s*>\s*0\.5\s*\)") &&
+                Regex.Matches(flag, @"#define\s+VV_PREPASS_ON").Count == 2 &&
+                !src.Split('\n').Any(l => !l.TrimStart().StartsWith("#define", StringComparison.Ordinal) &&
+                                         Regex.IsMatch(l, @"vv_depthPrepass\s*[<>]\s*0\.5")),
+                "");
+
             string cs = File.ReadAllText(Path.Combine(repo, "src/Common/Rendering/DepthPrepass.cs"));
             check("I-prepass: only the Opaque and OpaqueNoCull pools draw in the prepass, and the real pass resets the flag",
                 cs.Contains("private const int PassOpaque = 0;") &&
                 cs.Contains("private const int PassOpaqueNoCull = 1;") &&
-                cs.Contains("pass <= PassOpaqueNoCull && pass < pools.Length") &&
+                cs.Contains("int pass = ChunkPassOf(pool, chunkRenderer, PassOpaqueNoCull);") &&
+                cs.Contains("pass <= lastPass && pass < pools.Length") &&
                 cs.Contains("if (!prepassed || !hasUniform) return false;") &&
                 cs.Contains("float mode = _gl.BlendEnabled(true) ? 1f : 2f;") &&
                 cs.Contains("if (hasUniform) shader.Uniform(PrepassUniform, 0f);") &&
@@ -121,7 +141,7 @@ void main()
                 "");
 
             check("I-prepass: a pool left out of the prepass mask is neither prepassed nor given GL_LEQUAL",
-                cs.Contains("if (ReferenceEquals(perAtlas[i], pool)) return ((PoolMask >> pass) & 1) != 0 ? pass : -1;") &&
+                cs.Contains("return pass >= 0 && ((PoolMask >> pass) & 1) != 0 ? pass : -1;") &&
                 cs.Contains("bool prepassed = PrepassedPassOf(__instance, _chunkRenderer) >= 0;"),
                 "");
         }

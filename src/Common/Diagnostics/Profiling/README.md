@@ -63,7 +63,7 @@ tab has a Profiler section with buttons for the common ones.
 .vvbench suite [quick] [secs] [rN] [@scene,...]
 .vvbench stop | status
 .vvscene save <name> [rain=0..1|auto] [wind=<code>] [note] | list | go <name> | delete <name> | release
-.vvprofile coverage | cpu | systems
+.vvprofile coverage | cpu | systems | shaders
 ```
 
 ## How a number is made
@@ -97,3 +97,12 @@ tab has a Profiler section with buttons for the common ones.
 - GPU telemetry is NVIDIA only.
 - Cost of the always-on CPU spans: two timestamp and two allocation-counter
   reads per renderer per frame (about fifteen). Not measured.
+
+`.vvprofile shaders` (D100) prints, per chunk program the game and the split
+use (chunkopaque, chunktopsoil and the two twins), its GL handle, active
+uniforms, binary size and the compiler's own instruction and register counts
+read from the driver's program binary (NVIDIA carries them as assembly
+comments; other drivers print "no register counts"). Saved to
+`vv-bench/shaders.txt`. Registers are the number a split exists to change, so
+read it beside `.vvbench groups` rather than trusting frame time alone.
+

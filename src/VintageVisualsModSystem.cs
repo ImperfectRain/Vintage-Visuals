@@ -366,6 +366,13 @@ namespace VintageVisuals
                 return ConfigManager.Config.Performance.DepthPrepass;
             }
 
+            // D100. Only declares gl_Position invariant; the twins are built
+            // from the game's program only while that declaration is in it.
+            if (group == VintageVisuals.Common.Rendering.ChunkProgramSplit.GroupName)
+            {
+                return ConfigManager.Config.Performance.SplitPrograms;
+            }
+
             if (group == ColorGradeSubsystem.GroupName)
             {
                 return ConfigManager.Config.ColorGrade.Enabled;
@@ -431,6 +438,7 @@ namespace VintageVisuals
                    (ConfigManager.Config.Water.SceneReflections ? "O" : "-") +
                    (ConfigManager.Config.Water.CausticsCompiled ? "K" : "-") +
                    (ConfigManager.Config.Performance.DepthPrepass ? "Z" : "-") +
+                   (ConfigManager.Config.Performance.SplitPrograms ? "Y" : "-") +
                    (VintageVisuals.Common.Rendering.ShaderSpecialisation.DebugCodeWanted(ConfigManager.Config.PseudoPBR.DebugView) ? "V" : "-") +
                    (TerrainBeamsInPass() ? "Q" : "-") +
                    (Mirrors != null && Mirrors.ShaderWanted ? "X" : "-") +
@@ -578,6 +586,9 @@ namespace VintageVisuals
             // D88. Hooks the chunk renderer; fails closed to vanilla on its own.
             _depthPrepass = new VintageVisuals.Common.Rendering.DepthPrepass(HarmonyIdValue, Capi, Mod.Logger,
                 () => ConfigManager.Config.Performance.DepthPrepass);
+            // D100. Twin chunk programs, driven from the prepass's own hooks.
+            VintageVisuals.Common.Rendering.ChunkProgramSplit.Initialize(Capi, Mod.Logger,
+                () => ConfigManager.Config.Performance.SplitPrograms);
             _depthPrepass.Install();
             RegisterPrepassCommand();
 
@@ -786,6 +797,7 @@ namespace VintageVisuals
             }
 
             _depthPrepass?.Uninstall();
+            VintageVisuals.Common.Rendering.ChunkProgramSplit.Dispose();
             _depthPrepass = null;
 
             if (_interceptor != null) _interceptor.Uninstall();

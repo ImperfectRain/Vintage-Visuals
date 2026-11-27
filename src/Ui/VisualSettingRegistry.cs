@@ -590,6 +590,10 @@ namespace VintageVisuals.Ui
                    "Draws the world's depth first so hidden pixels are skipped later. It stands aside on its own where measured GPU time says it costs more than it saves. Changing it rebuilds shaders.",
                    P, "Quality", false, SettingCost.Low, true);
 
+            Toggle("perf_split", "Performance.SplitPrograms", "Split shader programs",
+                   "Draws the depth prepass and the leaves with smaller programs of their own, so they run faster on the GPU. Plants look the same; doors, trapdoors and roofing lose screen-space and mirror reflections (they keep the sky). Changing it rebuilds shaders.",
+                   P, "Quality", false, SettingCost.Low, true);
+
             Toggle("perf_frametimes", "Performance.ShowFrameTimes", "Frame-time readout",
                    "Shows milliseconds per render stage and per mod pass in the top-left corner, measured on the GPU. Same as .vvperf.",
                    P, "Measure");

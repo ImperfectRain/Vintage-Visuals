@@ -28,6 +28,16 @@ namespace VintageVisuals.Common
         /// </summary>
         public bool DepthPrepass { get; set; } = true;
 
+        /// <summary>
+        /// D100. Draws the depth prepass and the leaf pool with programs of
+        /// their own, compiled from the same source with the material they do
+        /// not run left out, so they stop paying the full material's register
+        /// budget. Gates the <c>terrainsplit</c> patch group. The leaf program
+        /// drops scene reflections and mirrors on the few BLOCKS in the leaf
+        /// pool (doors, trapdoors, roofing); plants are unchanged.
+        /// </summary>
+        public bool SplitPrograms { get; set; } = true;
+
         /// <summary>D99. Seconds each profiler run records (.vvbench groups / sweep / suite).</summary>
         public float ProfilerSeconds { get; set; } = 6f;
 

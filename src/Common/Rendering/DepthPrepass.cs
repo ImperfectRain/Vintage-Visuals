@@ -156,7 +156,8 @@ namespace VintageVisuals.Common.Rendering
                     finalizer: new HarmonyMethod(AccessTools.Method(typeof(DepthPrepass), nameof(RenderOpaqueFinalizer))));
                 _harmony.Patch(poolRender,
                     prefix: new HarmonyMethod(AccessTools.Method(typeof(DepthPrepass), nameof(PoolRenderPrefix))),
-                    postfix: new HarmonyMethod(AccessTools.Method(typeof(DepthPrepass), nameof(PoolRenderPostfix))));
+                    postfix: new HarmonyMethod(AccessTools.Method(typeof(DepthPrepass), nameof(PoolRenderPostfix))),
+                    finalizer: new HarmonyMethod(AccessTools.Method(typeof(DepthPrepass), nameof(PoolRenderFinalizer))));
 
                 _installed = true;
                 _logger.Notification("[VintageVisuals] depth prepass: hooks installed (exact; '.vvprepass' toggles, " +
@@ -214,6 +215,7 @@ namespace VintageVisuals.Common.Rendering
             // A mirror camera's pass (D97) is drawn into its own small target
             // and neither gains from a prepass nor may disturb this frame's.
             if (VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive) return true;
+            ChunkProgramSplit.BeginFrame();
             RanLastFrame = false;
             _governed = false;
             if (!ShouldRun()) return true;
@@ -234,7 +236,13 @@ namespace VintageVisuals.Common.Rendering
                 OneArg[0] = __0;
                 // D99: the prepass's CPU side (a second walk of every pool) is its own span.
                 using (VintageVisuals.Common.Diagnostics.Profiling.CpuSpans.Measure(CpuSpanName))
-                    _renderOpaque.Invoke(__instance, OneArg);
+                {
+                    // D100: the prepass draws with its own depth-only program
+                    // when the split has one; otherwise with the game's, as before.
+                    bool twin = ChunkProgramSplit.EnterDepthTwin();
+                    try { _renderOpaque.Invoke(__instance, OneArg); }
+                    finally { if (twin) ChunkProgramSplit.ExitTwin(); }
+                }
                 RanLastFrame = true;
             }
             catch (Exception ex)
@@ -264,25 +272,53 @@ namespace VintageVisuals.Common.Rendering
         /// <summary>Which prepassed pass this pool manager draws, or -1.</summary>
         private static int PrepassedPassOf(MeshDataPoolManager pool, object chunkRenderer)
         {
+            int pass = ChunkPassOf(pool, chunkRenderer, PassOpaqueNoCull);
+            return pass >= 0 && ((PoolMask >> pass) & 1) != 0 ? pass : -1;
+        }
+
+        /// <summary>Which chunk render pass (up to <paramref name="lastPass"/>) this pool manager draws, or -1.</summary>
+        private static int ChunkPassOf(MeshDataPoolManager pool, object chunkRenderer, int lastPass)
+        {
             var pools = _poolsField.GetValue(chunkRenderer) as MeshDataPoolManager[][];
             if (pools == null) return -1;
-            for (int pass = PassOpaque; pass <= PassOpaqueNoCull && pass < pools.Length; pass++)
+            for (int pass = PassOpaque; pass <= lastPass && pass < pools.Length; pass++)
             {
                 MeshDataPoolManager[] perAtlas = pools[pass];
                 if (perAtlas == null) continue;
                 for (int i = 0; i < perAtlas.Length; i++)
                 {
-                    if (ReferenceEquals(perAtlas[i], pool)) return ((PoolMask >> pass) & 1) != 0 ? pass : -1;
+                    if (ReferenceEquals(perAtlas[i], pool)) return pass;
                 }
             }
             return -1;
         }
 
         private static object _chunkRenderer;
+        private static bool _reportedSplitLookup;
 
         public static bool PoolRenderPrefix(MeshDataPoolManager __instance, out bool __state)
         {
             __state = false;
+
+            // D100: the leaf pool of the main pass draws with its own program
+            // when the split has one. Before anything below, so the prepass
+            // mode written next lands in whichever program will draw. Runs with
+            // the prepass off too; never inside the prepass or a mirror pass.
+            if (!_busy && !VintageVisuals.Reflections.Mirrors.MirrorRenderer.MirrorPassActive)
+            {
+                try
+                {
+                    if (_chunkRenderer == null) _chunkRenderer = FindChunkRenderer();
+                    if (_chunkRenderer != null) ChunkProgramSplit.BeforePool(ChunkPassOf(__instance, _chunkRenderer, PassOpaqueNoCull));
+                }
+                catch (Exception ex)
+                {
+                    if (!_reportedSplitLookup)
+                        _logger?.Warning("[VintageVisuals] split chunk programs: pool lookup failed: " + ex.Message);
+                    _reportedSplitLookup = true;
+                }
+            }
+
             if (_phase == Phase.None) return true;
 
             try
@@ -329,6 +365,13 @@ namespace VintageVisuals.Common.Rendering
             if (!__state) return;
             try { _gl.DepthFunc(_savedDepthFunc); }
             catch (Exception ex) { Fail(ex); }
+        }
+
+        /// <summary>D100: puts the game's program back after a leaf draw, on a throw as well.</summary>
+        public static Exception PoolRenderFinalizer(Exception __exception)
+        {
+            ChunkProgramSplit.AfterPool();
+            return __exception;
         }
 
         private static object FindChunkRenderer()

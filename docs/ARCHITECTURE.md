@@ -415,6 +415,33 @@ prepass, and keeps the cheaper side (3% hysteresis). Between trials it issues
 no queries. Benches hold the prepass on; no GPU timer or any exception keeps
 it on everywhere, the D88 behaviour. The image is identical either way.
 
+### Split chunk programs (D100)
+
+One program draws every chunk pool but topsoil, so the prepass and the leaves
+paid the register budget of the block material they never run.
+`ChunkProgramSplit` compiles the game's own chunkopaque source again with one
+fragment define and swaps the game's program object onto the twin for the
+draw:
+
+```
+game's chunkopaque (source = vanilla + every live group)
+   + "#define VV_DEPTH_ONLY 1"  -> depth twin: nested prepass RenderOpaque
+   + "#define VV_FLORA_ONLY 1"  -> flora twin: main pass, OpaqueNoCull pool
+swap: ProgramId, uniformLocations, textureLocations -> twin's; restored after
+   prepass: Use() and every setter inside RenderOpaque fill the twin directly
+   leaves:  copy active uniforms game -> twin (glGetUniform, glProgramUniform),
+            arrays once per frame, the rest per atlas; bind twin; draw; rebind
+```
+
+Ownership: the twins belong to `ChunkProgramSplit`, rebuilt (one per frame)
+whenever the game's program object, handle or source changes, and disposed
+with the mod. Both are driven from `DepthPrepass`'s existing hooks, so the
+order with the prepass uniform is fixed: the swap happens first. Depth agrees
+because `terrainsplit` declares `invariant gl_Position` in the shared vertex
+source. Fallback: no twin, a failed compile or any exception and the game's
+program draws, the D88 path. Cost: two extra programs' memory, a compile of
+each after every shader reload, and the leaf copy on the CPU (not measured).
+
 ### Shader specialisation (D90)
 
 Code that only some settings need is compiled in only while those settings

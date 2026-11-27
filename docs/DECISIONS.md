@@ -4709,3 +4709,79 @@ exist), not the wider of the GPU and frame spreads. In the first forest bench
 the depth prepass saved 1.30 to 1.47 ms of GPU time in every round, but one
 round's frame time moved by 5 ms (a hitch outside the GPU), and the result was
 printed as noise. Frame time is still recorded beside it.
+
+## D100. The depth prepass and the leaf pool draw with twin programs of their own
+
+**Problem.** chunkopaque is one program for every chunk pool but topsoil, and
+the terrain material lives in it. The compiler allocates registers for the
+heaviest path, and every fragment the program shades pays that in occupancy
+(D90 measured it: dead debug code cost about 6 ms). Two large parts of a
+forest frame never take the heavy path: the depth prepass (D88) returns right
+after vanilla's discard, and the leaves leave the material for the short flora
+shade. The D99 forest bench showed the price directly: the leaf prepass cost
+1.64 ms on vanilla's program and 3.46 ms on the patched one while running the
+same instructions.
+
+**Decision.** `ChunkProgramSplit` compiles the game's own chunkopaque source
+(every other group's patches included) twice more, each time with one define
+prepended to the FRAGMENT prefix only:
+
+- `VV_DEPTH_ONLY` draws the prepass. `depthprepass.glsl` defines
+  `VV_PREPASS_ON` as `true` there and as `(vv_depthPrepass > 0.5)` everywhere
+  else, so every prepass test is a constant in the twin and the material after
+  its early return is dead code. The game's program keeps the uniform test, so
+  the prepass still works (more slowly) with the split off.
+- `VV_FLORA_ONLY` draws the OpaqueNoCull pool in the main pass. Plants leave
+  the material before anything it drops, so they shade identically.
+
+**How the twin gets its state.** The game addresses the program through one
+object (`ShaderPrograms.Chunkopaque`), so the swap is made on that object: its
+`ProgramId`, `uniformLocations` and `textureLocations` are pointed at the
+twin's for the draw and put back after (finally and a Harmony finalizer).
+Every uniform the game and the pool manager set in that window lands in the
+twin, with no list of names to keep in step with the game. The prepass runs
+the whole nested `RenderOpaque` swapped, so `Use()` and every setter there
+fill the depth twin; it needs no copy, because nothing before the prepass's
+return depends on a mod uniform for ALPHA (vvAtmosphere passes alpha through
+on every non-debug return; smoketest I-split pins it). The leaf twin is
+swapped for the pool draw only, after the game and the mod's binders already
+wrote the game's program, so its active uniforms are copied first with
+glGetUniform and glProgramUniform (GL 4.1, no bind): arrays once per frame,
+the rest before each atlas. CPU cost is the `terrainsplit.copy` span.
+
+**Depth agrees across programs** because `terrainsplit.yaml` declares
+`invariant gl_Position` in the shared vertex source (GLSL 4.30 4.6.1: the
+cross-program guarantee needs it in both). The main pass draws with GL_LEQUAL
+against prepass depth, so an ulp of difference would show as speckle. This is
+the one new runtime assumption and the first thing to look for in game.
+
+**Alternatives rejected.** Copying every uniform into the depth twin too
+(hundreds of glGet calls a frame for values the prepass never reads). Having
+every binder write every twin (one-time uploads would miss a twin built later,
+and a new binder would have to know). Uniform buffers (a rewrite of every
+binder and of vanilla's uniform plumbing). Two draws of the leaf pool, one per
+program with the other half discarded (doubles the pool's vertex work and
+still launches every leaf fragment at the heavy occupancy).
+
+**Visual trade-off.** The few BLOCKS in the OpaqueNoCull pool (doors,
+trapdoors, roofing, some decor) lose the screen-space scene march and mirrors
+in the leaf twin; their reflection is the analytic sky and environment, which
+is what every surface shows when the scene capture is unavailable. Chosen
+because those two features carry the largest live state in the block path.
+Whether that is where the registers are is measured, not assumed:
+`.vvprofile shaders` prints each program's instruction and register counts from
+the driver's binary (NVIDIA), and a follow-up may trim the leaf twin's block
+path further or keep more, on that evidence.
+
+**Gating.** `Performance.SplitPrograms` (default on, panel Performance >
+Quality, ConfigLib) gates the `terrainsplit` group, and a twin is built only
+from a program carrying its invariant declaration, so off is the source and
+the drawing exactly as before, and `.vvbench groups` measures the split by
+compiling that group out. Twins rebuild when the game's program changes, one
+per frame. Never in a mirror pass, never with NORMALVIEW. Any failure leaves
+the game's program drawing everything.
+
+**Edge cases.** An atmosphere debug view that changes alpha (mode 2) would make
+the depth twin and the game's program disagree about which pool-0 fragments
+are opaque; debug only. Not measured; not seen in game (L2).
+
