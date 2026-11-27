@@ -4,8 +4,8 @@
     "boolean": {
       "pbr_fastbeams": {
         "ingui": "Fast shaft pass",
-        "comment": "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. Showed fewer beams under a canopy than the full pass in testing. Changing it rebuilds shaders.",
-        "default": false,
+        "comment": "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. On by default; turn it off for the full per-pixel beams, which showed more beams under a canopy in testing. Changing it rebuilds shaders.",
+        "default": true,
         "clientSide": true,
         "weight": 47
       },

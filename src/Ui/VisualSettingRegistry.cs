@@ -218,7 +218,7 @@ namespace VintageVisuals.Ui
                    L, "Sunlight under trees", 0f, 2f, 0.05f);
 
             Toggle("pbr_fastbeams", "PseudoPBR.FastBeams", "Fast shaft pass",
-                   "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. In the 2026-11-27 test it showed fewer beams under a canopy than the full pass.",
+                   "Draws the sun shafts in one half-resolution pass instead of inside every terrain pixel, saving 2 to 4 ms. On by default; turn it off for the full per-pixel beams, which showed more beams under a canopy in the 2026-11-27 test.",
                    L, "Sunlight under trees", false, SettingCost.Low, true);
 
             Slider("pbr_motes", "PseudoPBR.DustMotes", "Dust motes",

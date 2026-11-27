@@ -4785,3 +4785,14 @@ the game's program drawing everything.
 the depth twin and the game's program disagree about which pool-0 fragments
 are opaque; debug only. Not measured; not seen in game (L2).
 
+## D101. The fast beam pass is the default
+
+The D99 forest bench put the per-pixel beam march at 2.3 to 3.7 ms of GPU time
+against the half-resolution pass (D87, D92). The in-game comparison on
+2026-11-27 showed fewer beams under a canopy with the fast pass. Elijah chose
+to take the saving now and tune the pass to match afterwards, so
+`PseudoPBR.FastBeams` defaults to true. It stays one setting (panel
+"Fast shaft pass", ConfigLib, `.vvbeams`), and off brings the per-pixel march
+back exactly as before (D91 compiles it in again). A config file that already
+says false keeps false; the default only reaches new configs. Not re-measured.
+
