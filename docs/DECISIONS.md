@@ -4592,3 +4592,16 @@ kept as an experimental feature. Two additions, both L2:
   double matrix, since entities and particles read the float copy. The real
   sky dome was left out: `SystemRenderSkyColor` advances the frame seed and
   resets the 3D projection, which would undo the mirror's.
+
+**Second amendment (2026-11-27).** At tier 3 in game, grass-topped blocks were
+missing from mirrors. The cause was that `chunktopsoil.fsh` ends with
+`outColor.a = rgbaFog.a`, and the mirror took alpha 0.5 as "something drew
+here". Coverage now comes from a second mask draw after all the content: the
+mirror's rects at depth 1, writing alpha only, with test GREATER and no depth
+write. The game's alpha is no longer read for coverage.
+
+The player's reflected body posed with the first-person animator. While the
+self is drawn into a mirror, a prefix on `EntityPlayer.AnimManager` returns
+`TpAnimManager`. That is the same switch the game makes for the self's shadow
+pass, and that animator already runs every frame for the shadow, so the fix
+costs one static bool test per getter call.

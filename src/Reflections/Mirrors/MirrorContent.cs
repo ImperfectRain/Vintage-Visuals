@@ -59,7 +59,44 @@ namespace VintageVisuals.Reflections.Mirrors
         private readonly List<(Entity entity, bool was)> _saved = new List<(Entity, bool)>();
         private readonly object[] _oneArg = new object[1];
 
-        public MirrorContent(ICoreClientAPI capi) { _capi = capi; }
+        private readonly Harmony _harmony;
+        private bool _animPatched;
+        private static bool _forceTpAnim;
+        private static long _selfId = long.MinValue;
+
+        public MirrorContent(ICoreClientAPI capi, Harmony harmony) { _capi = capi; _harmony = harmony; }
+
+        /// <summary>
+        /// While the self is drawn into a mirror, its animation manager is the
+        /// third-person one - the same switch the game makes for the self's
+        /// shadow pass (EntityPlayer.AnimManager checks selfNowShadowPass), so
+        /// the body poses as other players see it, at no extra cost: the game
+        /// already runs that animator every frame for the shadow. Outside a
+        /// mirror draw this is one static bool test.
+        /// </summary>
+        public static bool AnimManagerPrefix(EntityPlayer __instance, ref IAnimationManager __result)
+        {
+            if (!_forceTpAnim || __instance.EntityId != _selfId) return true;
+            IAnimationManager tp = __instance.TpAnimManager;
+            if (tp == null) return true;
+            __result = tp;
+            return false;
+        }
+
+        private void PatchAnim()
+        {
+            if (_animPatched) return;
+            _animPatched = true;
+            try
+            {
+                MethodInfo getter = AccessTools.PropertyGetter(typeof(EntityPlayer), "AnimManager");
+                if (getter != null) _harmony.Patch(getter, prefix: new HarmonyMethod(typeof(MirrorContent), nameof(AnimManagerPrefix)));
+            }
+            catch (Exception ex)
+            {
+                _capi.Logger.Warning("[VintageVisuals] mirrors: could not give the player's reflection third-person animations: " + ex.Message);
+            }
+        }
 
         public string Describe(int tier)
         {
@@ -165,7 +202,13 @@ namespace VintageVisuals.Reflections.Mirrors
                     if (en == self) selfRenderer = r;
                 }
 
-                if (selfRenderer != null) selfModeWas = ForceThirdPerson(selfRenderer);
+                if (selfRenderer != null)
+                {
+                    selfModeWas = ForceThirdPerson(selfRenderer);
+                    PatchAnim();
+                    _selfId = self.EntityId;
+                    _forceTpAnim = true;
+                }
 
                 _oneArg[0] = dt;
                 _entityOpaque.Invoke(_entitySystem, _oneArg);
@@ -178,6 +221,7 @@ namespace VintageVisuals.Reflections.Mirrors
             }
             finally
             {
+                _forceTpAnim = false;
                 if (selfRenderer != null && selfModeWas != null) { try { _selfMode.SetValue(selfRenderer, selfModeWas); } catch { } }
                 foreach (var (entity, was) in _saved) entity.IsRendered = was;
                 _saved.Clear();

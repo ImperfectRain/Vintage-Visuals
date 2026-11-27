@@ -15,6 +15,7 @@ namespace VintageVisuals.Reflections.Mirrors
     internal sealed class MirrorGl
     {
         public const int Less = 0x0201;
+        public const int Greater = 0x0204;
         public const int Always = 0x0207;
         public const int Cw = 0x0900;
         public const int Ccw = 0x0901;

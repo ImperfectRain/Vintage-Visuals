@@ -342,9 +342,15 @@ the analytic sky. 2: also the game's entity renderer, with each entity's
 visibility recomputed from the mirror's frustum and the player's own renderer
 switched to third person for the call. 3: also the opaque cube particle pools,
 drawn from last frame's buffers (calling the particle system again would step
-the simulation twice).
+the simulation twice). The player's reflection uses the third-person animator,
+the switch the game itself makes for the player's shadow, so it costs nothing.
+
+**Coverage.** After everything has drawn, the mask is drawn again writing only
+alpha 1, with depth test GREATER and no depth write: alpha marks exactly the
+pixels something drew. The game's shaders cannot be trusted for it - the
+topsoil writes its fog alpha there, which hid every grass-topped block.
 
 **Limits.** Never water, glass or quad particles; the analytic sky, not the
-game's; the self in a mirror uses first-person animations; per-rect, not
+game's; per-rect, not
 per-voxel, occlusion; nested LOD from the real eye. Seen working in game
 2026-11-27 at tier 1; the half-texel and tiers are L2.
