@@ -4353,6 +4353,25 @@ watercaustics and water + watercaustics + waterscene against the game's own
 `chunkliquid.fsh` in every define combination. Previewed offline in Python
 with the same formulas. Not seen in game.
 
+**Amendment (2026-11-27): gate on the crown around the gap, not the gap.** An
+in-game test on 399c650 (1440p, High) found no floor sunspots and no shafts
+under the canopy; the pass drew only against the sky, and cost 0.37 ms. Both
+gates read the leaf map's cell straight above the point, and a sunspot or a
+shaft stands exactly where that cell is thin: it is the gap the sun came
+through. So each gated itself off wherever it should appear. Both now read
+`vvTerrainCrownAround` (the mean density of the column's cell and the four
+cells four blocks out, and their density-weighted lowest leaf): "inside a
+forest", not "under leaves here". The march's bilinear canopy read is gone
+(five hard reads per step instead of four blended ones; the composite filters
+the step). The shafts were also too weak to read against forest shade:
+`VV_BEAM_SCATTER` 0.15 under the march's own shoulder `VV_BEAM_MAX` 0.5, the
+composite's ring moved from seven to fourteen low-resolution texels (a shaft
+wider than the first ring was removed as its own veil), `VV_SHAFT_BASE` 0.25
+and `VV_SHAFT_EDGE` 3. Worked noon veil: about 0.04; a low-sun shaft toward the
+light reaches the 0.6 cap. Two mutations (each gate back on the cell) run
+singly and caught. L2: not seen in game. Cost: one more array read per step;
+not measured.
+
 ## D95 - Run the depth prepass only where measured GPU time says it pays
 
 **Context.** D88's prepass is exact: whether it runs never changes a pixel. It

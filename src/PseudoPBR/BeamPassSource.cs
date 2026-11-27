@@ -210,8 +210,11 @@ void main()
     // even level, and drawing it whole hid every shadow on the ground. The
     // neighbourhood is depth weighted like the filter above, so a trunk does
     // not count toward the air behind it.
-    const vec2 ring[8] = vec2[8](vec2(7.0, 0.0), vec2(-7.0, 0.0), vec2(0.0, 7.0), vec2(0.0, -7.0),
-                                 vec2(5.0, 5.0), vec2(-5.0, 5.0), vec2(5.0, -5.0), vec2(-5.0, -5.0));
+    // Fourteen low-resolution texels out (28 pixels at half resolution): a
+    // shaft is often wider than the first ring of seven, which then read as
+    // its own neighbourhood and was removed with the veil (in game 2026-11-27).
+    const vec2 ring[8] = vec2[8](vec2(14.0, 0.0), vec2(-14.0, 0.0), vec2(0.0, 14.0), vec2(0.0, -14.0),
+                                 vec2(10.0, 10.0), vec2(-10.0, 10.0), vec2(10.0, -10.0), vec2(-10.0, -10.0));
     vec3 wideSum = beam;
     float wideWeight = 1.0;
     for (int k = 0; k < 8; k++)
@@ -223,8 +226,8 @@ void main()
         wideWeight += w;
     }
     vec3 wide = wideSum / wideWeight;
-    const float VV_SHAFT_BASE = 0.35;
-    const float VV_SHAFT_EDGE = 2.0;
+    const float VV_SHAFT_BASE = 0.25;
+    const float VV_SHAFT_EDGE = 3.0;
     vec3 shaft = beam * VV_SHAFT_BASE + max(beam - wide, vec3(0.0)) * VV_SHAFT_EDGE;
     outColor = vec4(min(shaft, vec3(0.6)), 0.0);   // alpha 0: (ONE, ONE_MINUS_SRC_ALPHA) adds
 }

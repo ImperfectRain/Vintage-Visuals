@@ -1550,6 +1550,25 @@ vec2 vvTerrainCanopyCell(vec2 worldXZ)
     return vec2(floor(code / 512.0) / 7.0, mod(code, 512.0));
 }
 
+// The crown AROUND a column, for light that comes through a gap (D94
+// amendment): x the mean leaf density of this cell and the four cells four
+// blocks out, y the lowest leaf of those cells weighted by their density.
+// A sunspot or a shaft stands exactly where the column's own cell is thin -
+// that is the gap the sun came through - so a gate on the column alone shut
+// both off wherever they should be (in game 2026-11-27: no floor spots, no
+// shafts under the canopy). The neighbourhood says "inside a forest" instead.
+vec2 vvTerrainCrownAround(vec2 worldXZ)
+{
+    vec2 c0 = vvTerrainCanopyCell(worldXZ);
+    vec2 c1 = vvTerrainCanopyCell(worldXZ + vec2(4.0, 0.0));
+    vec2 c2 = vvTerrainCanopyCell(worldXZ - vec2(4.0, 0.0));
+    vec2 c3 = vvTerrainCanopyCell(worldXZ + vec2(0.0, 4.0));
+    vec2 c4 = vvTerrainCanopyCell(worldXZ - vec2(0.0, 4.0));
+    float sum = c0.x + c1.x + c2.x + c3.x + c4.x;
+    float lowest = (c0.x * c0.y + c1.x * c1.y + c2.x * c2.y + c3.x * c3.y + c4.x * c4.y) / max(sum, 1e-4);
+    return vec2(sum * 0.2, lowest);
+}
+
 // How much of one cell's crown a sun ray at height rayY passes through, as a
 // density 0..1, SOFT in height: the crown is taken to start at its lowest
 // leaf and run about as deep as its leaf count, and to sit above the
@@ -1949,16 +1968,12 @@ vec3 vvTerrainSunspot(vec3 color, vec3 cameraRelativePos, vec3 faceNormal, float
     vec3 l = vvTerrainSafeNormalize(lightPosition, vec3(0.0, 1.0, 0.0));
     if (l.y < 0.06) return color;
 
-    // Under a crown: the column above, or the column the light came down
-    // through (four blocks up-sun), has leaves above this point.
+    // Inside a forest: crown around this column (the gap itself is thin)
+    // whose lowest leaves are well above this point.
     vec3 world = cameraRelativePos + vv_pbrOrigin;
-    vec2 up = vvTerrainCanopyCell(world.xz);
-    vec2 upSun = vvTerrainCanopyCell(world.xz + normalize(l.xz + vec2(1e-4)) * 4.0);
-    float crownHere = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, up.x)
-                    * smoothstep(world.y + 1.0, world.y + 3.0, up.y);
-    float crownSun = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, upSun.x)
-                   * smoothstep(world.y + 1.0, world.y + 3.0, upSun.y);
-    float crown = max(crownHere, crownSun);
+    vec2 around = vvTerrainCrownAround(world.xz);
+    float crown = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, around.x)
+                * smoothstep(world.y + 1.0, world.y + 3.0, around.y);
     if (crown <= 0.0) return color;
 
     float facing = vvTerrainIsFlora() ? mix(0.55, 1.0, abs(dot(faceNormal, l)))

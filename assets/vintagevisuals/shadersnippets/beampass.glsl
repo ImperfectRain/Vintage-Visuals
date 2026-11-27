@@ -30,8 +30,9 @@ uniform vec2 vv_beamShadowValid; // x far cascade usable, y near cascade usable;
 
 const int VV_BEAM_STEPS = 20;          // samples along the view ray
 const float VV_BEAM_REACH = 32.0;      // blocks of air marched; the leaf map's reach
-const float VV_BEAM_SCATTER = 0.07;    // share of the sunlit colour per block of lit air seen
-const float VV_BEAM_UNDER_LEAF = 0.5;  // air must be this far below the lowest leaf of its column
+const float VV_BEAM_SCATTER = 0.15;    // share of the sunlit colour per block of lit air seen
+const float VV_BEAM_UNDER_LEAF = 0.5;
+const float VV_BEAM_MAX = 0.5;       // the march's own shoulder; the composite caps the add  // air must be this far below the lowest leaf of its column
 
 // 1 where the sun reaches this camera-relative point, 0 in shadow, -1 where
 // neither cascade covers it. Same depth biases as vanilla's own lookup.
@@ -52,28 +53,15 @@ float vvBeamSunLit(vec3 rel)
     return -1.0;
 }
 
-// How much this point of air may carry a shaft: under a crown, below its
-// lowest leaf. Soft at both edges so a crown's outline does not draw a line.
-//
-// The leaf map is 2-block cells; read hard, a cell edge drew a square step in
-// the light. So the four nearest cell centres are blended (bilinear).
-vec2 vvBeamCanopySmooth(vec2 xz)
-{
-    vec2 g = xz * 0.5 - 0.5;
-    vec2 i = floor(g);
-    vec2 f = g - i;
-    vec2 a = vvTerrainCanopyCell((i + vec2(0.5, 0.5)) * 2.0);
-    vec2 b = vvTerrainCanopyCell((i + vec2(1.5, 0.5)) * 2.0);
-    vec2 c = vvTerrainCanopyCell((i + vec2(0.5, 1.5)) * 2.0);
-    vec2 d = vvTerrainCanopyCell((i + vec2(1.5, 1.5)) * 2.0);
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
+// How much this point of air may carry a shaft: inside a forest (crown
+// around its column, vvTerrainCrownAround) and below those crowns' lowest
+// leaves. Not the column's own cell: the air of a shaft stands under the gap
+// it came through, where that cell is thin (D94 amendment).
 float vvBeamUnderCanopy(vec3 p)
 {
-    vec2 here = vvBeamCanopySmooth(p.xz);
-    float crown = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, here.x);
-    float below = smoothstep(0.0, 1.5, here.y - VV_BEAM_UNDER_LEAF - p.y);
+    vec2 around = vvTerrainCrownAround(p.xz);
+    float crown = smoothstep(VV_TERRAIN_BEAM_CROWN * 0.5, VV_TERRAIN_BEAM_CROWN + 0.15, around.x);
+    float below = smoothstep(0.0, 1.5, around.y - VV_BEAM_UNDER_LEAF - p.y);
     return crown * below;
 }
 
@@ -140,5 +128,5 @@ float vvBeamShadowInscatter(vec3 cameraRelativePos, float fogDensity)
                 * clamp(vv_pbrShafts, 0.0, 2.0) / 0.45 * vvSceneVisibilityDampen();
     // A soft shoulder instead of a clip: a long run of lit air approaches
     // the cap without flattening into one milky level.
-    return VV_TERRAIN_BEAM_MAX * (1.0 - exp(-max(level, 0.0) / VV_TERRAIN_BEAM_MAX));
+    return VV_BEAM_MAX * (1.0 - exp(-max(level, 0.0) / VV_BEAM_MAX));
 }

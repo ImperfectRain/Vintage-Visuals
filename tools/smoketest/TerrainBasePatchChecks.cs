@@ -1062,6 +1062,11 @@ void main()
                           // visibility), compiled in only with the pass.
                           Regex.IsMatch(terrainSnippet, @"#ifdef VV_TERRAIN_BEAMS_IN_PASS\s+if \(sunVisibility < 0\.0\) sunVisibility = vvTerrainSunVisibility\(\);\s+color = vvTerrainSunspot\(color, cameraRelativePos, faceNormal, sunVisibility\);") &&
                           terrainSnippet.Contains("float strength = clamp(sunVisibility, 0.0, 1.0) * crown * facing * fade") &&
+                          // Both gate on the crown AROUND the column, never the column's
+                          // own cell: that cell is the gap the light came through
+                          // (in game 2026-11-27, no spots and no shafts under a canopy).
+                          (GlslEval.FunctionBody(terrainSnippet, "vec3 vvTerrainSunspot(") ?? "").Contains("vec2 around = vvTerrainCrownAround(world.xz);") &&
+                          (GlslEval.FunctionBody(beamSnippet, "float vvBeamUnderCanopy(") ?? "").Contains("vec2 around = vvTerrainCrownAround(p.xz);") &&
                           shadowBody.Contains("float level = lit * contrast * sunAngle * ds") &&
                           shadowBody.Contains("if (vv_beamShadowValid.x < 0.5 && vv_beamShadowValid.y < 0.5) return 0.0;") &&
                           sunLitBody.Contains("texture(vv_beamShadowNear, vec3(n.xy, n.z - 0.0005))") &&
