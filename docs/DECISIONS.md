@@ -4352,3 +4352,43 @@ mutations run singly, all caught; verifypatches compiles water, water +
 watercaustics and water + watercaustics + waterscene against the game's own
 `chunkliquid.fsh` in every define combination. Previewed offline in Python
 with the same formulas. Not seen in game.
+
+## D95 - Run the depth prepass only where measured GPU time says it pays
+
+**Context.** D88's prepass is exact: whether it runs never changes a pixel. It
+trades one depth-only draw of the Opaque and OpaqueNoCull pools against the
+material work that draw saves on hidden layers. In game the trade went both
+ways. Forest, 2026-11-26: frame 38.0 -> 25.1 ms, later about 4 ms saved. Pond
+with open ground, 2026-11-27 (D93 build, 1440p, High): 14.56 ms off, 15.24 ms
+on, 15.40 ms leaves only - the prepass cost 2.5-2.7 ms and saved about 2.
+No fixed default is right for both, and a pool mask does not fix it either.
+
+**Decision.** `PrepassGovernor` decides per view from the GPU time of the
+chunk draw itself. Every 900 frames it runs a trial: 4 rounds of 6 frames with
+the prepass and 6 without, interleaved so a slow change in the view favours
+neither side, each frame's outer `ChunkRenderer.RenderOpaque` timed with two
+timestamp queries read without waiting. The cheaper median wins by more than
+3%; inside that margin, or with fewer than 10 samples a side, the current
+choice stands. A change is logged once with both medians.
+
+**Alternatives.** A fixed default (wrong in one of the two measured scenes).
+Prepassing leaves only (measured no better). Deciding from CPU-side scene
+statistics such as leaf pool size (a proxy for what the timer measures
+directly).
+
+**Safety.** The prepass is exact, so the governor can only cost frame time.
+No GPU timer: no trials, prepass on (D88 behaviour). Any exception: governor
+off for the session, prepass on. Every bench holds the prepass on so bench
+runs stay comparable; `.vvbench prepass` still forces each side.
+`Performance.DepthPrepass` off still removes the patch group entirely.
+
+**Cost.** Between trials, nothing. During a trial (under a second at 60 fps),
+two timestamps a frame, and the frames on the losing side cost what that side
+costs.
+
+**Verification.** L2: build, smoketest (decision picks the cheaper side and
+keeps its choice in the margin and on too few samples; trial measures both
+sides equally, interleaved; the governor is bypassed during benches and closes
+its timing in the outer finalizer), three mutations run singly. Not run in
+game: whether trials settle on the faster side in a forest and at a pond, and
+whether the half-second of mixed frames is visible as a hitch, are unchecked.

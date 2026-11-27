@@ -385,6 +385,7 @@ void main(void) {
         DepthPrepassChecks.Run(Repo, Check);
         ChunkPassTimerChecks.Run(Repo, Check);
         ShaderSpecialisationChecks.Run(Repo, Check);
+        PrepassGovernorChecks.Run(Repo, Check);
 
         Console.WriteLine("Water surface and quality tiers");
         WaterChecks.Run(Repo, Check);

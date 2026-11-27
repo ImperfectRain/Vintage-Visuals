@@ -406,6 +406,14 @@ read per fragment) and one frustum cull per pool. Saves the mod's whole
 per-fragment material on every hidden layer. Final depth equals vanilla's, so
 nothing downstream (entities, water, scene capture, beam pass) changes.
 
+Whether the extra pass pays depends on the view (D95): a dense forest saved
+about 4 ms, a pond with open ground lost 0.7 ms. `PrepassGovernor` therefore
+times the whole outer `RenderOpaque` with two GPU timestamps during a short
+trial every 900 frames, interleaving 6-frame blocks with and without the
+prepass, and keeps the cheaper side (3% hysteresis). Between trials it issues
+no queries. Benches hold the prepass on; no GPU timer or any exception keeps
+it on everywhere, the D88 behaviour. The image is identical either way.
+
 ### Shader specialisation (D90)
 
 Code that only some settings need is compiled in only while those settings

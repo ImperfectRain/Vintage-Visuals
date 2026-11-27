@@ -100,6 +100,20 @@ namespace VintageVisuals.Common.Rendering
         /// <summary>True while the nested prepass RenderOpaque is drawing, for the chunk pass timers.</summary>
         public static bool InPrepass { get { return _phase == Phase.Prepass; } }
 
+        /// <summary>
+        /// D95: runs the prepass only where measured GPU time says it pays.
+        /// Null (no governor) keeps the D88 behaviour: on whenever wanted.
+        /// </summary>
+        public static PrepassGovernor Governor { get; private set; }
+        private static bool _governed;
+
+        /// <summary>Every bench measures with the prepass held on (D88), so its runs stay comparable.</summary>
+        private static bool BenchRecording()
+        {
+            var p = VintageVisuals.Common.Diagnostics.FrameProfiler.Active;
+            return p != null && p.Recording;
+        }
+
         /// <summary>Whether the prepass ran on the last frame, for the bench report and the log.</summary>
         public static bool RanLastFrame { get; private set; }
 
@@ -112,6 +126,7 @@ namespace VintageVisuals.Common.Rendering
             _capi = capi;
             _logger = logger;
             _wanted = wanted;
+            Governor = new PrepassGovernor(line => logger.Notification(line));
         }
 
         public bool Install()
@@ -194,7 +209,16 @@ namespace VintageVisuals.Common.Rendering
         {
             if (_busy) return true; // this is the nested prepass call itself
             RanLastFrame = false;
+            _governed = false;
             if (!ShouldRun()) return true;
+
+            // D95: outside a bench, the governor decides from measured GPU time
+            // whether this view gains from the prepass. Exact either way.
+            if (BenchOverride < 0 && Governor != null && !BenchRecording())
+            {
+                _governed = true;
+                if (!Governor.Begin()) return true;
+            }
 
             _busy = true;
             _phase = Phase.Prepass;
@@ -220,7 +244,11 @@ namespace VintageVisuals.Common.Rendering
 
         public static Exception RenderOpaqueFinalizer(Exception __exception)
         {
-            if (!_busy) _phase = Phase.None;
+            if (!_busy)
+            {
+                _phase = Phase.None;
+                if (_governed) { _governed = false; Governor?.End(); }
+            }
             return __exception;
         }
 
