@@ -4807,3 +4807,29 @@ to take the saving now and tune the pass to match afterwards, so
 "Fast shaft pass", ConfigLib, `.vvbeams`), and off brings the per-pixel march
 back exactly as before (D91 compiles it in again). A config file that already
 says false keeps false; the default only reaches new configs. Not re-measured.
+
+## D102. The fast beam pass keeps the old beams' crown glow
+
+Elijah compared the two beam models in game on 2026-11-27. The fast pass
+(D92) was the better base, with true shafts standing in the gaps against the
+sky, which the per-pixel march could never draw because it ran only on terrain
+fragments. But the old march lit the crown layer itself: toward the sun the
+leaves sat in a warm haze, and the fast pass's gate, which admits only air
+under the lowest leaf, cannot draw that.
+
+So the march carries a second term instead of switching models back.
+`vvBeamGates` returns two disjoint weights from the one canopy read: x for the
+shaft air under the crowns, as before, and y for air inside the crown band
+(from where x lets go, up to the crown depth `vvTerrainCanopyLeafAt` assumes).
+Lit crown air, from the same shadow map, adds a glow through a tighter forward
+lobe (`pow(cos, VV_BEAM_GLOW_LOBE)`, 6) at `VV_BEAM_CROWN_GLOW` (0.55 of a shaft
+per block), half strength at a high sun. It does not take the shaft's contrast
+weight, because a haze is meant to be even along the ray. The composite's veil
+removal (D94) still applies, so a glow spread evenly across the screen keeps
+only a quarter of itself. The real leaf holes and the sun's direction give it
+edges, so it reads where it should. Constants rather than a setting until
+Elijah has judged it; a setting would follow the panel rule.
+
+Cost: no new texture or canopy reads, a few multiply-adds per step. Not
+measured; not seen in game (L2).
+
