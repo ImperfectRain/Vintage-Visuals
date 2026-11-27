@@ -332,5 +332,19 @@ out of view: CPU box and ray tests only. In view: one extra terrain draw per
 plane at a fraction of the screen's pixels, plus the atlas (about 12 MB, made
 on first use). Not measured.
 
-**Limits.** Terrain only (no entities, water, glass, particles); per-rect, not
-per-voxel, occlusion; nested LOD from the real eye. L2: not seen in game.
+**Half-texel detail.** Within `FineDistance` (1.5 blocks, `.vvmirror set fine`),
+a reflected cell is half a texel, each texel split 2x2. Only the reflected
+picture changes; every other texel effect keeps the texture's grid.
+
+**Content tiers** (`.vvmirror set content 1|2|3`, `MirrorContent`). 1, the
+default: the terrain pass alone (blocks, topsoil, block plants and leaves) and
+the analytic sky. 2: also the game's entity renderer, with each entity's
+visibility recomputed from the mirror's frustum and the player's own renderer
+switched to third person for the call. 3: also the opaque cube particle pools,
+drawn from last frame's buffers (calling the particle system again would step
+the simulation twice).
+
+**Limits.** Never water, glass or quad particles; the analytic sky, not the
+game's; the self in a mirror uses first-person animations; per-rect, not
+per-voxel, occlusion; nested LOD from the real eye. Seen working in game
+2026-11-27 at tier 1; the half-texel and tiers are L2.

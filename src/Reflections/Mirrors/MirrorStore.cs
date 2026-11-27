@@ -105,6 +105,15 @@ namespace VintageVisuals.Reflections.Mirrors
         /// <summary>How far past the mirror the reflected world is drawn, in blocks.</summary>
         public float ReflectionRange { get; set; } = 64f;
 
+        /// <summary>Within this many blocks a reflected cell is HALF a texture texel (each texel split
+        /// into 2x2), for a mirror seen from right next to it. Only the reflected picture is finer; every
+        /// other texel effect keeps the texture's own grid. 0 turns it off.</summary>
+        public float FineDistance { get; set; } = 1.5f;
+
+        /// <summary>What a mirror shows: 1 terrain (blocks, topsoil, plants that are blocks) and the
+        /// analytic sky; 2 adds entities, other players and the player themselves; 3 adds particles.</summary>
+        public int Content { get; set; } = 1;
+
         public void Clamp()
         {
             CullDistance = Math.Max(4f, Math.Min(256f, CullDistance));
@@ -113,6 +122,8 @@ namespace VintageVisuals.Reflections.Mirrors
             MaxDepth = Math.Max(0, Math.Min(2, MaxDepth));
             MaxPasses = Math.Max(1, Math.Min(8, MaxPasses));
             ReflectionRange = Math.Max(8f, Math.Min(256f, ReflectionRange));
+            FineDistance = Math.Max(0f, Math.Min(Math.Min(LodStart, 8f), FineDistance));
+            Content = Math.Max(1, Math.Min(3, Content));
         }
     }
 

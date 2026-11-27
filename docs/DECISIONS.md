@@ -4575,3 +4575,20 @@ analytic sky stands in.
 fails closed without the material path. verifypatches now accepts two
 dependents of one base failing closed together. L2: not seen in game, and the
 cost has not been measured.
+
+**Amendment (2026-11-27, after the first look).** Seen working in game, and
+kept as an experimental feature. Two additions, both L2:
+
+- **Half-texel cells.** Within `FineDistance` (1.5 blocks) the LOD goes to -1,
+  a cell of 1/64 block, on both the CPU sizing and the shader read. Only the
+  mirror's sample position changes, so no other texel-grid effect is touched.
+- **Content tiers.** Tier 1 (the default) is the terrain pass as before. Tier 2
+  calls the game's `SystemRenderEntities.OnRenderOpaque3D` inside the pass,
+  with `IsRendered` set from the mirror frustum and restored, and the self
+  renderer's `renderMode` forced to third person. Tier 3 also draws the cube
+  particle pools' meshes with the game's program, without calling the
+  system's `Render`, because that calls `OnNewFrame` and would step the
+  simulation twice. `CameraMatrixOriginf` is now overwritten alongside the
+  double matrix, since entities and particles read the float copy. The real
+  sky dome was left out: `SystemRenderSkyColor` advances the frame seed and
+  resets the 3D projection, which would undo the mirror's.

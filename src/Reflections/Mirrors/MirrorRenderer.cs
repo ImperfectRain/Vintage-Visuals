@@ -118,6 +118,7 @@ namespace VintageVisuals.Reflections.Mirrors
         private readonly Func<bool> _captureValid;
         private readonly Harmony _harmony;
         private readonly Context _main = new Context();
+        private MirrorContent _content;
 
         private bool _failed;
         private bool _initialised;
@@ -158,6 +159,7 @@ namespace VintageVisuals.Reflections.Mirrors
             _captureValid = captureValid;
             _harmony = new Harmony(harmonyId + ".mirrors");
             _hookLogger = capi.Logger;
+            _content = new MirrorContent(capi);
         }
 
         public string Stats()
@@ -405,7 +407,7 @@ namespace VintageVisuals.Reflections.Mirrors
             int shelfX = 0, shelfY = 0, shelfH = 0;
             foreach (Node n in passes.ToList())
             {
-                int lod = Lod(n.Distance, settings.LodStart);
+                int lod = Lod(n.Distance, settings.LodStart, settings.FineDistance);
                 double cell = Math.Pow(2, lod) / 32.0;
                 double ppc = focal * cell / Math.Max(0.05, n.Distance);
                 double scale = Math.Max(1.0 / 64.0, Math.Min(1.0, settings.Resolution / Math.Max(1e-3, ppc)));
@@ -434,8 +436,10 @@ namespace VintageVisuals.Reflections.Mirrors
             _lastPixels = passes.Sum(p => p.Wpx * p.Hpx);
         }
 
-        private static int Lod(double distance, float start)
+        /// <summary>-1 (half a texel) within the fine distance, 0 (one texel) within the start, then one octave per doubling. Mirrored in pbrterrainmirror.glsl.</summary>
+        private static int Lod(double distance, float start, float fine)
         {
+            if (fine > 0 && distance <= fine) return -1;
             if (distance <= start) return 0;
             return (int)Math.Min(6, Math.Floor(Math.Log(distance / start, 2)) + 1);
         }
@@ -654,7 +658,7 @@ namespace VintageVisuals.Reflections.Mirrors
                 ctx.Planes[k * 4 + 0] = (float)g.Nx; ctx.Planes[k * 4 + 1] = (float)g.Ny;
                 ctx.Planes[k * 4 + 2] = (float)g.Nz; ctx.Planes[k * 4 + 3] = (float)g.W;
                 ctx.Look[k * 4 + 0] = g.Plane.Polish; ctx.Look[k * 4 + 1] = g.Plane.Strength;
-                ctx.Look[k * 4 + 2] = s.LodStart; ctx.Look[k * 4 + 3] = 0;
+                ctx.Look[k * 4 + 2] = s.LodStart; ctx.Look[k * 4 + 3] = s.FineDistance;
                 if (n != null)
                 {
                     ctx.Atlas[k * 4 + 0] = n.X / (float)AtlasSize; ctx.Atlas[k * 4 + 1] = n.Y / (float)AtlasSize;
@@ -693,6 +697,9 @@ namespace VintageVisuals.Reflections.Mirrors
             FrameBufferRef previous = r.CurrentFrameBuffer;
             double[] liveCmo = r.CameraMatrixOrigin;   // the array RenderOpaque reads; overwritten per pass, restored after
             double[] savedCmo = MirrorMath.Copy(liveCmo);
+            // The float copy entities and particles read; kept in step with the double one.
+            float[] liveCmof = r.CameraMatrixOriginf;
+            float[] savedCmof = (float[])liveCmof.Clone();
             int savedViewSq = _culler.ViewDistanceSq;
             BlockPos playerBlock = player.Pos.AsBlockPos;
             double[] toCamRel = Mat4d.Create();
@@ -725,6 +732,7 @@ namespace VintageVisuals.Reflections.Mirrors
                     _culler.ViewDistanceSq = (int)Math.Min(savedViewSq, range * range + 400);
                     _culler.CalcFrustumEquations(playerBlock, pFinal, MirrorMath.Mul(mv, toCamRel));
                     Array.Copy(mv, liveCmo, 16);
+                    for (int i = 0; i < 16; i++) liveCmof[i] = (float)mv[i];
                     r.PMatrix.Push(pFinal);
                     if (n.Odd) _gl.FrontFace(MirrorGl.Cw);
                     _current = n.Ctx;
@@ -734,6 +742,7 @@ namespace VintageVisuals.Reflections.Mirrors
                     {
                         _oneArg[0] = dt;
                         _renderOpaque.Invoke(_chunkRenderer, _oneArg);
+                        if (s.Content >= 2) _content.Draw(s.Content, dt, _culler, range);
                     }
                     finally
                     {
@@ -742,6 +751,7 @@ namespace VintageVisuals.Reflections.Mirrors
                         _gl.FrontFace(MirrorGl.Ccw);
                         r.PMatrix.Pop();
                         Array.Copy(savedCmo, liveCmo, 16);
+                        Array.Copy(savedCmof, liveCmof, 16);
                     }
                 }
             }
@@ -750,6 +760,7 @@ namespace VintageVisuals.Reflections.Mirrors
                 _mirrorPassActive = false;
                 _current = _main;
                 Array.Copy(savedCmo, liveCmo, 16);
+                Array.Copy(savedCmof, liveCmof, 16);
                 _culler.ViewDistanceSq = savedViewSq;
                 _culler.CalcFrustumEquations(playerBlock, _gamePerspectiveProj, _gamePerspectiveView);
                 try { _gl.DepthFunc(MirrorGl.Less); _gl.FrontFace(MirrorGl.Ccw); } catch { }

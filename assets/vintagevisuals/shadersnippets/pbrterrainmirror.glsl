@@ -17,8 +17,8 @@
 // reflection in place.
 //
 // THE TEXEL GRID. A fragment reads the atlas at the screen position of the
-// centre of its reflected CELL, not its own: one texture pixel (1/32 block)
-// up close, then 2x2, 4x4 ... texels with distance, the same octave rule the
+// centre of its reflected CELL, not its own: half a texture pixel right next
+// to the mirror, one texture pixel (1/32 block) up close, then 2x2, 4x4 ... texels with distance, the same octave rule the
 // CPU used to size the capture, so one capture pixel lands on each cell.
 
 #define VV_MIRROR_MAX_BOXES 32
@@ -30,7 +30,7 @@ uniform vec4 vv_mirrorBox[VV_MIRROR_MAX_BOXES * 2];    // [min.xyz, slot] [max.x
 uniform vec4 vv_mirrorPlane[VV_MIRROR_MAX_SLOTS];      // n.xyz, w: the plane n.p + w = 0
 uniform vec4 vv_mirrorAtlas[VV_MIRROR_MAX_SLOTS];      // atlas rect xy, size; zero = no picture
 uniform vec4 vv_mirrorCrop[VV_MIRROR_MAX_SLOTS];       // the screen rect the capture covers, uv min, max
-uniform vec4 vv_mirrorLook[VV_MIRROR_MAX_SLOTS];       // polish, strength, LOD start, 0
+uniform vec4 vv_mirrorLook[VV_MIRROR_MAX_SLOTS];       // polish, strength, LOD start, fine (half-texel) distance
 uniform mat4 vv_mirrorViewProj;                        // the view-projection this pass sees mirrors through
 
 int vvTerrainMirrorSlot(int box)
@@ -70,8 +70,13 @@ vec4 vvTerrainMirrorSample(int box, vec3 cameraRelativePos)
     if (atlas.z <= 0.0 || atlas.w <= 0.0) return vec4(0.0);
 
     float distance = vvTerrainEyeDistance(cameraRelativePos);
+    // -1 within the fine distance: half a texel, each texel split 2x2, only
+    // here in the reflected picture - the texel grid of every other effect is
+    // untouched. Mirrors MirrorRenderer.Lod.
     float start = max(vv_mirrorLook[slot].z, 0.25);
+    float fine = vv_mirrorLook[slot].w;
     float lod = distance <= start ? 0.0 : min(6.0, floor(log2(distance / start)) + 1.0);
+    lod = (fine > 0.0 && distance <= fine) ? -1.0 : lod;
     float cell = exp2(lod) / 32.0;
 
     // Snap across the plane only; the plane coordinate itself stays exact.

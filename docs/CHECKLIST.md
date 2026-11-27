@@ -238,7 +238,7 @@ consumer reads it yet.
 | Texel quantisation | x | x | x | x | x | – | – | – | x |
 | Analytic fallback | x | x | x | x | x | – | – | – | x |
 | Water reflections | – | – | – | – | – | – | – | – | x |
-| Mirror surfaces (D97) | x | x | x | – | – | – | – | – | x |
+| Mirror surfaces (D97) | x | x | x | – | x | – | – | x | x |
 
 Not yet validated, and each is a separate question:
 
@@ -255,7 +255,9 @@ Not yet validated, and each is a separate question:
 
 - [x] `pbrterrainmirror.yaml` matches and compiles with the material path against the game's own `chunkopaque.fsh` in all 48 combinations, and fails closed without `pbrterrainmaterial` (`tools/verifypatches`)
 - [x] every mirror uniform has an upload (`UniformWiringChecks`)
-- [ ] a silver or gold face reflects the room, upright and mirrored the right way, staying put as the player moves
+- [x] a silver face reflects the scene and a second mirror (seen in game 2026-11-27, screenshots in the thread)
+- [ ] half-texel cells within 1.5 blocks, and no other texel effect changes with it
+- [ ] content tier 2 shows creatures and the player; tier 3 shows cube particles
 - [ ] the wall behind a wall mirror and the floor under a floor mirror never show in the reflection (oblique near plane)
 - [ ] a chiselled inlay reflects only on its own voxels
 - [ ] a mirror behind a wall, or beyond 48 blocks, costs nothing (`.vvmirror stats` shows 0 passes)

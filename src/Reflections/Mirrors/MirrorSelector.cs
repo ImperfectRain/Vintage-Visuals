@@ -141,7 +141,9 @@ namespace VintageVisuals.Reflections.Mirrors
                 case "depth": s.MaxDepth = (int)Math.Round(value); break;
                 case "passes": s.MaxPasses = (int)Math.Round(value); break;
                 case "range": s.ReflectionRange = value; break;
-                default: return TextCommandResult.Error("Settings: cull, lod, res, depth, passes, range");
+                case "fine": s.FineDistance = value; break;
+                case "content": s.Content = (int)Math.Round(value); break;
+                default: return TextCommandResult.Error("Settings: cull, lod, fine, res, depth, passes, range, content");
             }
             s.Clamp();
             _store.SaveSettings();
@@ -155,7 +157,8 @@ namespace VintageVisuals.Reflections.Mirrors
             return "Mirrors " + (s.Enabled ? "on" : "off") + ": cull " + s.CullDistance.ToString("0.#") + " blocks, full texel detail within "
                  + s.LodStart.ToString("0.##") + " blocks, resolution " + s.Resolution.ToString("0.##") + "x, mirrors in mirrors "
                  + (s.MaxDepth > 0 ? "on (depth " + s.MaxDepth + ")" : "off") + ", at most " + s.MaxPasses + " camera passes, reflected world "
-                 + s.ReflectionRange.ToString("0") + " blocks deep.";
+                 + s.ReflectionRange.ToString("0") + " blocks deep, half-texel detail within " + s.FineDistance.ToString("0.##")
+                 + " blocks, content tier " + s.Content + " (" + (s.Content >= 3 ? "terrain, entities, particles" : s.Content == 2 ? "terrain and entities" : "terrain") + ").";
         }
 
         private TextCommandResult List()
